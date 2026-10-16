@@ -5744,17 +5744,15 @@ class ProjectOrderInquiryService:
         ):
             rows_by_line[str(row.so_line_id)].append(row)
 
-        def _movable(
-            line_id: str, *, source: bool = False
-        ) -> Tuple[bool, Optional[OrderInquiryRow]]:
+        def _movable(line_id: str) -> Tuple[bool, Optional[OrderInquiryRow]]:
             """`(usable, its one live ORDER row or None)` under the pure split's guards.
 
-            A SOURCE row is also declined where `_settle_row_in_place` would decline it, so a
-            split never moves off a row the settle would not restate: one whose links name a
-            fully received document (that cover is not carried; moving it would hand the
-            target a received link and a fresh order), or a PLACED row with no link (moving
-            off it re-reads it as raised, and purchasing loses that they placed it). Declined,
-            nothing moves and the netting tells the line as it would with no splits."""
+            The source row AND the target row are also declined where `_settle_row_in_place`
+            would decline them, so a split never moves off or onto a row the settle would not
+            restate: one whose links name a fully received document (that cover is not
+            carried; a move would hand on a received link and a fresh order), or a PLACED row
+            with no link (a move re-reads it as raised, and purchasing loses that they placed
+            it). Declined, nothing moves and the netting tells both lines as without splits."""
             live = [
                 row for row in rows_by_line.get(line_id, [])
                 if row.state != INQUIRY_CANCELLED and row.verb != IV_CANCEL_BALANCE
@@ -5773,7 +5771,7 @@ class ProjectOrderInquiryService:
                 # A CS reserve link is tied to its reserve request row; it never moves.
                 and not any(link.reserve_request_row_id for link in links)
             )
-            if ok and source:
+            if ok:
                 if row.state == INQUIRY_PLACED and not links:
                     ok = False
                 elif links and self._received_documents_for(links):
@@ -5783,7 +5781,7 @@ class ProjectOrderInquiryService:
         for origin, views in linked_by_origin.items():
             if not views:
                 continue
-            usable, source = _movable(origin, source=True)
+            usable, source = _movable(origin)
             if not usable or source is None:
                 continue
             room = _dec(source.qty) - _dec(entries[origin].get("buy_qty"))
@@ -5845,8 +5843,14 @@ class ProjectOrderInquiryService:
         existing row, and its `buy_qty` (the split's quantity) is ADDED to that row rather
         than raised as a new one. A new row whose date differs from the source's reads as
         a moved instruction, the way `_settle_row_in_place` stamps one."""
-        source_line = self.db.get(ProjectSalesOrderLine, source.so_line_id)
-        source_no = source_line.line_no if source_line is not None else None
+        # The numbers staff know the lines by: AutoCount's (the core line's Seq, what the
+        # board prints), the mirror's only without a core line.
+        from app.services.project_line_split_service import display_line_nos
+
+        line_nos = display_line_nos(
+            self.db, [str(source.so_line_id), *(str(e["line"].id) for e in fresh)]
+        )
+        source_no = line_nos.get(str(source.so_line_id))
         links = sorted(
             self._links_of(source.id),
             key=lambda link: (
@@ -5931,7 +5935,9 @@ class ProjectOrderInquiryService:
                 self.db.flush()
                 self._invalidate_link_cache()
         moved_to = ", ".join(
-            str(e["line"].line_no) for e in fresh if e["line"].line_no is not None
+            str(line_nos[str(e["line"].id)])
+            for e in fresh
+            if line_nos.get(str(e["line"].id)) is not None
         )
         stamp = f"Split: {_qty_str(_dec(source.qty) - keep)} moved to line {moved_to}"
         source.note = f"{source.note}; {stamp}" if source.note else stamp
