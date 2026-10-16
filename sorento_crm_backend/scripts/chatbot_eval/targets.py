@@ -416,9 +416,10 @@ def _followup(row, item):
         checks = [("position", honoured, "The bot picked a different position than the one chosen.")]
         if gold.get("code"):
             code = _key(gold["code"])
-            checks.append(("tool_target", code in _tool_targets(row) or any(
-                str(gold["code"]).upper() in _dump(t.get("args")).upper() for t in _tools(row)),
-                "The lookup tool did not target the chosen item."))
+            # no named tool ran (the bot asked its next question): the target is unknown, not wrong
+            targeted = code in _tool_targets(row) or any(
+                str(gold["code"]).upper() in _dump(t.get("args")).upper() for t in _tools(row))
+            checks.append(("tool_target", targeted if _tools(row) else None, "The lookup tool did not target the chosen item."))
         return checks
     if kind == "answer" and gold.get("idea_ref"):
         return _ideas_answer(row, gold)
