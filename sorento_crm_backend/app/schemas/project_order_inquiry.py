@@ -353,6 +353,8 @@ class OrderInquiryWorklistRow(BaseModel):
     """
 
     id: str
+    #: OI-BULK-RESERVE v4: the header this row belongs to, for the Lines page's per-inquiry commit.
+    order_inquiry_id: Optional[str] = None
     #: `OI-000123` - the number of the inquiry this row belongs to, off its own header.
     #: Optional only so a record written before the column existed still reads; every
     #: inquiry raised since carries one. The S/O no beside it does not answer the same
@@ -542,6 +544,10 @@ class OrderInquiryWorklistRow(BaseModel):
     #: read N off this, not off a second lookup. Declared here because `response_model`
     #: silently drops a field it has not been told about.
     requested_qty: str = "0"
+    #: OI-BULK-RESERVE v4 (B2): the open request row's warehouse id and code, null when no
+    #: request is open. Declared here because `response_model` drops undeclared fields.
+    reserve_warehouse_id: Optional[str] = None
+    reserve_location: Optional[str] = None
     #: OI-RESERVE-RECEIVED (AC-RR-5): what a reserve request may still ask for - a NUMBER (AC-RR-5): qty less
     #: open links, reserve links and the bundle; links on a fully received PO/SPO line do
     #: not count. The screen never re-derives "received". Declared here because
