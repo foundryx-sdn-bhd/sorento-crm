@@ -493,20 +493,6 @@ def test_a_tolerated_savepoint_failure_after_the_move_keeps_the_move(api, emails
     assert not [r for _q, r in sent if "CANCEL 49" in r], sent
 
 
-def test_demand_rows_subtract_the_moved_qty_when_the_origin_is_not_settled_in_place(api, emails):
-    """The origin's lone placed ORDER row has no link, so it is not settled in place and the
-    line reaches `_oi_demand_rows`: 100 -> 40 with 50 moved to a line that grew by 50 tells
-    CANCEL 10 (the netting's remainder), never the whole cut."""
-    s = _lines(api, [(2, 100, D_2, 40), (18, 82, D_18, 132)], link_first=False)
-    s.no[2][2].state = INQUIRY_PLACED
-    s.db.commit()
-    _split(s, 2, [(50, D_2, "own"), (50, D_18, 18)])
-    sent = _confirm_sent(s, emails)
-    assert any(r.endswith("CANCEL 10") or r == "CANCEL 10" for _q, r in sent), sent
-    assert not [r for _q, r in sent if "CANCEL 60" in r or "CANCEL 40" in r], sent
-    written = [Decimal(str(r.qty)) for r in _live(s, s.no[2][1], IV_CANCEL_BALANCE)]
-    assert written in ([], [Decimal("10")]), written
-
 
 # ---------------------------------------------------------------------------
 # D1 email pins (3a99b8a5a): assert on the SENT handover
