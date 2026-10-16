@@ -5,11 +5,8 @@ import type { SettingsCatalog } from '../types/contactTag.types';
 export const EMPTY_CATALOG: SettingsCatalog = {
   access_types: [],
   brands: [],
-  companies: [],
   market_segments: [],
   attachment_types: [],
-  warehouses: [],
-  agents: [],
   field_reveals: [],
   portal_forms: [],
   spec_keys: [],

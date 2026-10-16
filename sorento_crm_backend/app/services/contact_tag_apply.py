@@ -147,8 +147,10 @@ def _w_agents(db: Session, contact, items, actor_id) -> None:
             .order_by(A.created_at, A.id)
             .all()
         )
-        if rows:  # the oldest row is the grant; a phone-only legacy row is adopted, never duplicated
+        if rows:  # the oldest row is the grant; a phone-only legacy row is adopted, duplicates removed
             row = rows[0]
+            for extra in rows[1:]:
+                db.delete(extra)
             row.respond_contact_id = cid
             row.is_allowed = want
             row.valid_from = None
@@ -228,10 +230,23 @@ def _w_policy(db: Session, contact, items, actor_id) -> None:
     inc, exc = ("warehouse_ids", "excluded_warehouse_ids") if stock else ("spec_keys", "excluded_spec_keys")
     row = db.query(model).filter(model.contact_id == cid).first()
     if row is None:
+        # Seeded from what the contact RESOLVES to now, so keys the tags do not set keep their
+        # inherited values (access type / segment / default) instead of resetting.
         row = model(contact_id=cid)
         if stock:
-            row.mode = (sv.resolve_policy(db, cid) or sv.default_policy(db)).mode
-            row.hide_zero_locations = False
+            eff = sv.resolve_policy(db, cid) or sv.default_policy(db)
+            row.mode = eff.mode
+            row.hide_zero_locations = bool(eff.hide_zero_locations)
+            row.warehouse_ids = sorted(eff.warehouse_ids) if eff.warehouse_ids is not None else None
+            row.excluded_warehouse_ids = (
+                sorted(eff.excluded_warehouse_ids) if eff.excluded_warehouse_ids is not None else None
+            )
+        else:
+            from app.services import spec_visibility as sp
+
+            eff = sp.resolve_policy(db, cid)
+            row.spec_keys = sorted(eff.spec_keys) if eff.spec_keys is not None else None
+            row.excluded_spec_keys = sorted(eff.excluded_spec_keys) if eff.excluded_spec_keys is not None else None
         db.add(row)
     want = {i["key"]: i["_raw"]["expected"] for i in items}
     for key, value in want.items():
@@ -301,7 +316,6 @@ def apply_settings(
     can: Callable[[str], bool],
     is_superadmin: Callable[[], bool],
     only_tags: Optional[set[str]] = None,
-    holder_order: bool = False,
 ) -> dict:
     """One row per contact in request order. The caller commits (`get_db` never does)."""
     from app.models.access import RespondContact
@@ -329,6 +343,9 @@ def apply_settings(
         # Stock / spec are one row per contact: a conflict inside the section holds the whole section back.
         held_back = {i["section"] for i in items if i["conflict"] and i["section"] in ("stock_visibility", "spec_visibility")}
         for i in items:
+            if i.get("blocked_reason"):
+                not_applied.append({"label": i["label"], "reason": i["blocked_reason"]})
+                continue
             if i["conflict"] or not i["differs"]:
                 continue
             if i["section"] in held_back:
@@ -337,8 +354,8 @@ def apply_settings(
             if _can_write(i["section"], can, is_superadmin):
                 todo.append(i)
             else:
-                word = _GATE_WORDS.get(i["section"], i["section"])
-                not_applied.append({"label": i["label"], "reason": f"You may not change {word} settings."})
+                title = cts.SECTION_TITLES[i["section"]]
+                not_applied.append({"label": title, "reason": f"You may not change {title}."})
         changes = [_change(cat, i) for i in todo]
         if not todo:
             results.append(_row(cid, label, "unchanged", conflicts=conflicts, not_applied=not_applied))

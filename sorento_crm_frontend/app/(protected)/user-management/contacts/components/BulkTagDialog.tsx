@@ -24,7 +24,8 @@ import type {
   BulkTagRow,
 } from '../../contact-tags/types/contactTag.types';
 import type { RespondContact } from '../types/contact.types';
-import { ChangeLine } from './ApplyTagSettingsDialog';
+import { ApplyRowCard, ChangeLine } from './ApplyTagSettingsDialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 /**
  * CONTACT-TAGS UAC T2.2/T2.3: "Add tag" / "Remove tag" for the selected contacts.
@@ -49,7 +50,13 @@ const STATUS: Record<
   failed: { label: 'Failed', variant: 'destructive' },
 };
 
-function PreviewRow({ row, showSettings }: { row: BulkTagRow; showSettings: boolean }) {
+function PreviewRow({
+  row,
+  showSettings,
+}: {
+  row: BulkTagRow;
+  showSettings: boolean;
+}) {
   const status = STATUS[row.status];
   const before = new Set(row.tags_before);
   const after = new Set(row.tags_after);
@@ -123,6 +130,8 @@ export default function BulkTagDialog({
   const [error, setError] = useState<string | null>(null);
   // Add mode only: apply the added tags' settings after the tag change (default), or just link.
   const [applyNow, setApplyNow] = useState(true);
+  // After an add that also applied settings: what happened, per contact (R6).
+  const [applied, setApplied] = useState<BulkTagResult | null>(null);
   const {
     data: options = [],
     isError: optionsFailed,
@@ -144,6 +153,7 @@ export default function BulkTagDialog({
     setPreview(null);
     setError(null);
     setApplyNow(true);
+    setApplied(null);
     run.reset();
   };
   const handleOpenChange = (next: boolean) => {
@@ -167,6 +177,10 @@ export default function BulkTagDialog({
         else
           toast.success(`Tagged ${changed} contact${changed === 1 ? '' : 's'}`);
         onApplied?.();
+        if (mode === 'add' && applyNow) {
+          setApplied(result);
+          return;
+        }
         handleOpenChange(false);
       },
       onError: (e: Error) => setError(e.message),
@@ -186,7 +200,44 @@ export default function BulkTagDialog({
           </DialogTitle>
         </DialogHeader>
         <DialogBody>
-          {!preview ? (
+          {applied ? (
+            <div data-testid="bulk-tag-result">
+              <div className="mb-3 flex flex-wrap gap-2">
+                <Badge variant="primary" appearance="light">
+                  {`${applied.counts.changed} tagged`}
+                </Badge>
+                {applied.counts.failed ? (
+                  <Badge variant="destructive" appearance="light">
+                    {`${applied.counts.failed} failed`}
+                  </Badge>
+                ) : null}
+              </div>
+              <div className="max-h-96 space-y-2 overflow-y-auto">
+                {applied.results.map((row) => (
+                  <div key={row.contact_id} className="space-y-1">
+                    <div className="flex items-center justify-between gap-2 text-sm font-medium">
+                      <span className="min-w-0 truncate" title={row.label}>
+                        {row.label}
+                      </span>
+                      {row.error ? (
+                        <span className="text-destructive">{row.error}</span>
+                      ) : null}
+                    </div>
+                    {row.settings ? (
+                      <ApplyRowCard
+                        row={{
+                          ...row.settings,
+                          contact_id: row.contact_id,
+                          label: 'Tag settings',
+                        }}
+                        done
+                      />
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : !preview ? (
             <div className="space-y-1.5">
               <Label>{mode === 'add' ? 'Tags to add' : 'Tags to remove'}</Label>
               <SearchableMultiSelect
@@ -218,20 +269,36 @@ export default function BulkTagDialog({
                 ) : null}
               </div>
               {mode === 'add' ? (
-                <div className="mb-3 space-y-1 text-sm" role="radiogroup" aria-label="Tag settings">
-                  <label className="flex items-center gap-2">
-                    <input type="radio" name="bulk-tag-apply" checked={applyNow} onChange={() => setApplyNow(true)} />
-                    Apply tag settings now
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input type="radio" name="bulk-tag-apply" checked={!applyNow} onChange={() => setApplyNow(false)} />
-                    Don&apos;t apply now
-                  </label>
-                </div>
+                <RadioGroup
+                  className="mb-3 gap-1 text-sm"
+                  aria-label="Tag settings"
+                  value={applyNow ? 'now' : 'later'}
+                  onValueChange={(v) => setApplyNow(v === 'now')}
+                >
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem id="bulk-tag-apply-now" value="now" />
+                    <Label htmlFor="bulk-tag-apply-now" className="font-normal">
+                      Apply tag settings now
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem id="bulk-tag-apply-later" value="later" />
+                    <Label
+                      htmlFor="bulk-tag-apply-later"
+                      className="font-normal"
+                    >
+                      Don&apos;t apply now
+                    </Label>
+                  </div>
+                </RadioGroup>
               ) : null}
               <div className="max-h-96 space-y-2 overflow-y-auto">
                 {preview.results.map((row) => (
-                  <PreviewRow key={row.contact_id} row={row} showSettings={mode === 'add' && applyNow} />
+                  <PreviewRow
+                    key={row.contact_id}
+                    row={row}
+                    showSettings={mode === 'add' && applyNow}
+                  />
                 ))}
               </div>
             </div>
@@ -243,7 +310,9 @@ export default function BulkTagDialog({
           ) : null}
         </DialogBody>
         <DialogFooter className="flex-wrap">
-          {!preview ? (
+          {applied ? (
+            <Button onClick={() => handleOpenChange(false)}>Finish</Button>
+          ) : !preview ? (
             <>
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 Cancel

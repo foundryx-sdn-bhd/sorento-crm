@@ -42,6 +42,7 @@ import BulkTagDialog from './BulkTagDialog';
 import ContactTagFilters from './ContactTagFilters';
 import ContactTagsCell from './ContactTagsCell';
 import ContactTagSettingsCell from './ContactTagSettingsCell';
+import { tagSettingsLabel } from '../lib/tagSettingsLabel';
 import { contactTagBulkActions } from '../lib/contactTagBulkActions';
 import { regionLabel } from '@/lib/packing-list-regions';
 import { useContactFiltersToolbar } from './ContactFiltersPopover';
@@ -405,7 +406,7 @@ export default function ContactsList() {
       },
       {
         id: 'tag_settings',
-        accessorFn: (row) => row.tag_settings?.status ?? 'none',
+        accessorFn: (row) => tagSettingsLabel(row.tag_settings),
         header: ({ column }) => <DataGridColumnHeader title="Tag settings" column={column} />,
         size: 140,
         enableSorting: false,

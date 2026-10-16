@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
+import { getContacts } from '../../contacts/[id]/services/contactService';
+import {
+  EMPTY_CATALOG,
+  getSettingsCatalog,
+} from '../services/contactTagSettingsCatalogService';
 import { toast } from '@/lib/toast';
 import type { ListPagerParams } from '@/hooks/useListPager';
 import {
@@ -9,6 +14,7 @@ import {
   createContactTag,
   getContactTag,
   getContactTags,
+  setContactTags,
   updateContactTag,
 } from '../services/contactTagService';
 import {
@@ -51,7 +57,7 @@ export function useContactTagOptions(enabled = true) {
           sorting: [{ id: 'sort_order', desc: false }],
           searchQuery: '',
         },
-        { is_active: 'true' },
+        { is_active: 'true', counts: 'false' },
       );
       return page.data.map((t) => ({ value: t.id, label: t.name }));
     },
@@ -110,7 +116,10 @@ export function useBulkTagContacts() {
 }
 
 /** Preview and apply of tag settings are one call with a flag; the lists refresh after an apply only. */
-export function useApplyTagSettings(target: { contactIds: string[]; tagId?: string }) {
+export function useApplyTagSettings(target: {
+  contactIds: string[];
+  tagId?: string;
+}) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (dryRun: boolean) =>
@@ -119,9 +128,81 @@ export function useApplyTagSettings(target: { contactIds: string[]; tagId?: stri
         : applyTagSettings({ contactIds: target.contactIds, dryRun }),
     onSuccess: (result) => {
       if (result.dry_run) return;
-      for (const key of ['respond-contacts', 'respond-contact', 'contact-tag-settings', 'contact-tags', 'contact-tag']) {
+      for (const key of [
+        'respond-contacts',
+        'respond-contact',
+        'contact-tag-settings',
+        'contact-tags',
+        'contact-tag',
+      ]) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }
     },
+  });
+}
+
+/** The contacts holding one tag (the detail page's Contacts section). */
+export function useContactTagHolders(
+  tagId: string,
+  enabled: boolean,
+  limit = 50,
+) {
+  return useQuery({
+    queryKey: ['respond-contacts', 'tag-holders', tagId],
+    queryFn: () =>
+      getContacts(
+        {
+          pageIndex: 0,
+          pageSize: limit,
+          sorting: [{ id: 'name', desc: false }],
+          searchQuery: '',
+        },
+        { tag: tagId },
+      ),
+    enabled,
+  });
+}
+
+/** The pick lists behind the settings editor; a list the viewer cannot read is absent. */
+export function useSettingsCatalog() {
+  const query = useQuery({
+    queryKey: ['contact-tag-settings-catalog'],
+    queryFn: getSettingsCatalog,
+    staleTime: 60_000,
+  });
+  return { ...query, catalog: query.data ?? EMPTY_CATALOG };
+}
+
+/** Save a tag's settings; the editor shows the thrown message in place, so there is no error toast. */
+export function useSaveTagSettings(tagId: string, onSaved: () => void) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: Record<string, unknown>) =>
+      updateContactTag(tagId, { settings }),
+    onSuccess: () => {
+      for (const key of [
+        'contact-tag',
+        'contact-tags',
+        'respond-contacts',
+        'contact-tag-settings',
+      ]) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
+      toast.success('Tag settings saved');
+      onSaved();
+    },
+  });
+}
+
+/** Replace one contact's tag set (the contact edit dialog). */
+export function useSetContactTags() {
+  return useMutation({
+    mutationFn: ({
+      contactId,
+      tagIds,
+    }: {
+      contactId: string;
+      tagIds: string[];
+    }) => setContactTags(contactId, tagIds),
   });
 }

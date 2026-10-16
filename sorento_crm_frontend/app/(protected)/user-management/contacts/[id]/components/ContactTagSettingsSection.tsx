@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -13,10 +12,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import ApplyTagSettingsDialog from '../../components/ApplyTagSettingsDialog';
-import {
-  getContactTagSettings,
-  type TagSettingsItem,
-} from '../services/contactTagSettingsService';
+import type { TagSettingsItem } from '../services/contactTagSettingsService';
+import { useContactTagSettings } from '../hooks/useContactTagSettings';
 
 function show(value: unknown): string {
   if (value === true) return 'On';
@@ -77,10 +74,7 @@ export default function ContactTagSettingsSection({
   /** Whether to offer Apply; the page passes the viewer's `contacts.edit`. */
   canApply?: boolean;
 }) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['contact-tag-settings', contactId],
-    queryFn: () => getContactTagSettings(contactId),
-  });
+  const { data, isLoading, error } = useContactTagSettings(contactId);
   const [applyOpen, setApplyOpen] = useState(false);
   const differing = (data?.items ?? []).filter((i) => i.differs);
 

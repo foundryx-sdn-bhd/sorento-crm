@@ -159,7 +159,9 @@ export default function ContactTagsAdmin() {
         enableSorting: false,
         meta: { headerTitle: 'Differs', skeleton: <Skeleton className="h-4 w-10" /> },
         cell: ({ row }) =>
-          (row.original.differs_count ?? 0) > 0 ? (
+          row.original.differs_count == null ? (
+            <span className="text-muted-foreground">-</span>
+          ) : row.original.differs_count > 0 ? (
             <Link
               href={`/user-management/contacts?${new URLSearchParams({
                 tag: row.original.id,

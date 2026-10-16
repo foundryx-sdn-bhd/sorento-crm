@@ -1162,7 +1162,17 @@ def _delete_market_segment(db: Session, payload: dict):
 def _delete_contact_tag(db: Session, payload: dict):
     from app.services.contact_tag_service import ContactTagService
 
-    return ContactTagService(db).delete_tag(_entity_id(payload))
+    from app.api.v1.system.companies import _is_superadmin
+    from app.services.user_service import UserPermissionService
+
+    # Same gates as clearing the tag's gated sections by PATCH. The actor is the requester.
+    actor = payload.get("requested_by_id")
+    perms = UserPermissionService(db)
+    gates = (
+        (lambda slug: bool(actor) and perms.check_user_has_permission(str(actor), slug)),
+        (lambda: bool(actor) and _is_superadmin(db, str(actor))),
+    )
+    return ContactTagService(db).delete_tag(_entity_id(payload), gates=gates)
 
 
 def _delete_onboarding_request(db: Session, payload: dict):

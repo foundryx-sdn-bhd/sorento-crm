@@ -155,20 +155,6 @@ export default function ContactProfilePage() {
                 <p className="font-medium text-muted-foreground">None assigned</p>
               )}
             </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Tags</p>
-              {contact.tags && contact.tags.length > 0 ? (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {contact.tags.map((t) => (
-                    <Badge key={t.id} variant="secondary" className="font-normal">
-                      {t.name}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <p className="font-medium text-muted-foreground">-</p>
-              )}
-            </div>
             {/* Companies decide WHICH ROWS this contact can be told about, before
                 any field-level access applies. A contact with none is answered
                 with nothing at all - so when an agent replies "no incoming

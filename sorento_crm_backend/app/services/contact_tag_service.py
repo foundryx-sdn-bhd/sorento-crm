@@ -49,7 +49,7 @@ class ContactTagService:
         ).all()
         return {str(t): int(n) for t, n in rows}
 
-    def _with_count(self, tags: list[ContactTag]) -> list[dict]:
+    def _with_count(self, tags: list[ContactTag], counts_on: bool = True) -> list[dict]:
         from app.services import contact_tag_settings as cts
 
         counts = self._counts([str(t.id) for t in tags])
@@ -62,12 +62,20 @@ class ContactTagService:
                 "sort_order": t.sort_order,
                 "settings": t.settings or {},
                 "contact_count": counts.get(str(t.id), 0),
-                "differs_count": cts.differs_count(self.db, str(t.id)) if cts.leaves_of(t.settings) else 0,
+                "differs_count": self._differs(cts, t, counts_on),
                 "created_at": t.created_at,
                 "updated_at": t.updated_at,
             }
             for t in tags
         ]
+
+    def _differs(self, cts, tag: ContactTag, counts_on: bool) -> Optional[int]:
+        """Holders whose status differs on this tag's keys; null when not asked for or too many to evaluate."""
+        if not counts_on:
+            return None
+        if not cts.leaves_of(tag.settings):
+            return 0
+        return cts.differs_count(self.db, str(tag.id))
 
     _SORTABLE = {
         "name": ContactTag.name,
@@ -84,6 +92,7 @@ class ContactTagService:
         is_active: Optional[bool],
         sort: Optional[str] = None,
         direction: Optional[str] = None,
+        counts: bool = True,
     ):
         q = self.db.query(ContactTag)
         if search and search.strip():
@@ -96,7 +105,7 @@ class ContactTagService:
         if column is not None:
             order = (column.desc() if direction == "desc" else column.asc(), ContactTag.name.asc())
         rows = q.order_by(*order).offset((page - 1) * limit).limit(limit).all()
-        return self._with_count(rows), total
+        return self._with_count(rows, counts), total
 
     def get_tag(self, tag_id: str) -> ContactTag:
         row = self._find(tag_id)
@@ -158,9 +167,15 @@ class ContactTagService:
         self.db.refresh(row)
         return self._with_count([row])[0]
 
-    def delete_tag(self, tag_id: str) -> None:
-        """Remove the tag; its contact links go by cascade. No contact access value changes."""
+    def delete_tag(self, tag_id: str, gates=None) -> None:
+        """Remove the tag; its contact links go by cascade. No contact access value changes.
+
+        Deleting clears every section the tag sets, so it needs the same gates as clearing them by PATCH."""
         row = self.get_tag(tag_id)
+        if gates is not None:
+            from app.services import contact_tag_settings as cts
+
+            cts.assert_gates(row.settings or {}, {}, *gates)
         self.db.execute(delete(ContactTag).where(ContactTag.id == str(row.id)))
         self.db.commit()
 
@@ -175,17 +190,37 @@ class ContactTagService:
             found[tag_id] = row
         return found
 
+    def _audit_membership(self, contact_id: str, tag_name: str, added: bool, actor_id: Optional[str]) -> None:
+        """One audit row per contact per tag added or removed (the junction writes bypass the ORM listener)."""
+        from app.services.audit_service import log_audit
+
+        log_audit(
+            self.db,
+            "respond_contacts",
+            contact_id,
+            "UPDATE",
+            user_id=actor_id,
+            description=f"Tag {'added' if added else 'removed'}: {tag_name}",
+        )
+
     def set_contact_tags(self, contact_id: str, tag_ids: list[str], actor_id: Optional[str]) -> list[dict]:
         contact = self.db.query(RespondContact).filter(RespondContact.id == contact_id).first()
         if contact is None:
             raise handle_not_found("Contact", contact_id)
         wanted = self._require_tags(tag_ids)
+        before = {t["id"]: t["name"] for t in tags_by_contact(self.db, [contact_id]).get(contact_id, [])}
         self.db.execute(delete(respond_contact_tags).where(respond_contact_tags.c.contact_id == contact_id))
         if wanted:
             self.db.execute(
                 insert(respond_contact_tags),
                 [{"contact_id": contact_id, "tag_id": t, "created_by": actor_id} for t in wanted],
             )
+        for tag_id, name in before.items():
+            if tag_id not in wanted:
+                self._audit_membership(contact_id, name, False, actor_id)
+        for tag_id, row in wanted.items():
+            if tag_id not in before:
+                self._audit_membership(contact_id, row.name, True, actor_id)
         self.db.commit()
         return tags_by_contact(self.db, [contact_id]).get(contact_id, [])
 
@@ -252,6 +287,11 @@ class ContactTagService:
                 )
             if inserts:
                 self.db.execute(insert(respond_contact_tags), inserts)
+            names = {**{k: v.name for k, v in add.items()}, **{k: v.name for k, v in remove.items()}}
+            for cid, tag_id in deletes:
+                self._audit_membership(cid, names[tag_id], False, actor_id)
+            for row in inserts:
+                self._audit_membership(row["contact_id"], names[row["tag_id"]], True, actor_id)
             self.db.flush()
 
         if apply_settings and add and gates is not None:

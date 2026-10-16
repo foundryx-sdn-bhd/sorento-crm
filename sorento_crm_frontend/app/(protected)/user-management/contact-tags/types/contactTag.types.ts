@@ -6,7 +6,8 @@ export interface ContactTag {
   sort_order: number;
   settings: Record<string, unknown>;
   contact_count: number;
-  differs_count?: number;
+  /** Null when counts were not asked for, or there are too many holders to evaluate. */
+  differs_count?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -61,11 +62,13 @@ export interface CatalogOption {
 export interface SettingsCatalog {
   access_types: CatalogOption[];
   brands: CatalogOption[];
-  companies: CatalogOption[];
   market_segments: CatalogOption[];
   attachment_types: CatalogOption[];
-  warehouses: CatalogOption[];
-  agents: CatalogOption[];
+  /** Absent when the viewer may not read them (stock / agents / companies). */
+  warehouses?: CatalogOption[];
+  agents?: CatalogOption[];
+  agent_fields?: { agent_code: string; resource: string; field_key: string }[];
+  companies?: CatalogOption[];
   field_reveals: CatalogOption[];
   portal_forms: CatalogOption[];
   spec_keys: CatalogOption[];

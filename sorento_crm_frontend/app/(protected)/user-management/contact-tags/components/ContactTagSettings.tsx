@@ -1,7 +1,6 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,12 +15,10 @@ import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
-import { toast } from '@/lib/toast';
-import { updateContactTag } from '../services/contactTagService';
 import {
-  EMPTY_CATALOG,
-  getSettingsCatalog,
-} from '../services/contactTagSettingsCatalogService';
+  useSaveTagSettings,
+  useSettingsCatalog,
+} from '../hooks/useContactTags';
 import type {
   CatalogOption,
   ContactTag,
@@ -443,7 +440,8 @@ function GroupBody({
     case 'field_reveals':
     case 'agents': {
       const m = (s[id] ?? {}) as Record<string, boolean>;
-      const options = id === 'agents' ? catalog.agents : catalog.field_reveals;
+      const options =
+        (id === 'agents' ? catalog.agents : catalog.field_reveals) ?? [];
       const keys = editing ? options.map((o) => o.value) : Object.keys(m);
       return (
         <div>
@@ -474,7 +472,7 @@ function GroupBody({
       const stock = id === 'stock_visibility';
       const incl = stock ? 'warehouse_ids' : 'spec_keys';
       const excl = stock ? 'excluded_warehouse_ids' : 'excluded_spec_keys';
-      const options = stock ? catalog.warehouses : catalog.spec_keys;
+      const options = (stock ? catalog.warehouses : catalog.spec_keys) ?? [];
       return (
         <div>
           {stock && (editing || v.mode !== undefined) ? (
@@ -494,7 +492,11 @@ function GroupBody({
             >
               <PickList
                 value={v[incl] as string[] | undefined}
-                onChange={(x) => upd(incl, x)}
+                onChange={(x) => {
+                  // One rule per contact row: setting a list clears its sibling.
+                  const next = put(v, incl, x);
+                  set(id, x && x.length ? put(next, excl, undefined) : next);
+                }}
                 options={options}
                 editing={editing}
                 placeholder="All"
@@ -507,7 +509,10 @@ function GroupBody({
             >
               <PickList
                 value={v[excl] as string[] | undefined}
-                onChange={(x) => upd(excl, x)}
+                onChange={(x) => {
+                  const next = put(v, excl, x);
+                  set(id, x && x.length ? put(next, incl, undefined) : next);
+                }}
                 options={options}
                 editing={editing}
                 placeholder="None"
@@ -548,13 +553,15 @@ type Entry = {
 
 function AgentFields({ s, set, editing, catalog }: BodyProps) {
   const entries = (s.agent_fields ?? []) as Entry[];
-  const [draft, setDraft] = useState({
-    agent_code: '',
-    resource: '',
-    field_key: '',
-  });
+  const [pick, setPick] = useState('');
+  const agents = catalog.agents ?? [];
   const agentName = (code: string) =>
-    catalog.agents.find((a) => a.code === code)?.label ?? 'Removed agent';
+    agents.find((a) => a.code === code)?.label ?? 'Removed agent';
+  // The gated fields the server knows, each with the agent that owns it: no free text.
+  const gated = (catalog.agent_fields ?? []).map((f) => ({
+    value: `${f.agent_code}|${f.resource}|${f.field_key}`,
+    label: `${agentName(f.agent_code)}: ${f.field_key}`,
+  }));
   return (
     <div>
       {entries.map((e, i) => (
@@ -578,50 +585,25 @@ function AgentFields({ s, set, editing, catalog }: BodyProps) {
         />
       ))}
       {editing ? (
-        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-4">
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
           <SearchableSelect
-            value={draft.agent_code}
-            onChange={(v) => setDraft((d) => ({ ...d, agent_code: v }))}
-            options={catalog.agents.map((a) => ({
-              value: a.code ?? '',
-              label: a.label,
-            }))}
-            placeholder="Agent"
+            value={pick}
+            onChange={setPick}
+            options={gated}
+            placeholder="Gated field"
             clearable
-          />
-          <Input
-            placeholder="Resource"
-            value={draft.resource}
-            onChange={(e) =>
-              setDraft((d) => ({ ...d, resource: e.target.value }))
-            }
-          />
-          <Input
-            placeholder="Field"
-            value={draft.field_key}
-            onChange={(e) =>
-              setDraft((d) => ({ ...d, field_key: e.target.value }))
-            }
           />
           <Button
             type="button"
             variant="outline"
-            disabled={
-              !draft.agent_code ||
-              !draft.resource.trim() ||
-              !draft.field_key.trim()
-            }
+            disabled={!pick}
             onClick={() => {
+              const [agent_code, resource, field_key] = pick.split('|');
               set('agent_fields', [
                 ...entries,
-                {
-                  ...draft,
-                  resource: draft.resource.trim(),
-                  field_key: draft.field_key.trim(),
-                  is_allowed: true,
-                },
+                { agent_code, resource, field_key, is_allowed: true },
               ]);
-              setDraft({ agent_code: '', resource: '', field_key: '' });
+              setPick('');
             }}
           >
             Add field
@@ -724,37 +706,46 @@ function cleaned(settings: S): S {
   return out;
 }
 
+const NOT_ON_A_TAG = [
+  'Linked customers',
+  'Linked staff user',
+  'Linked sales agent',
+  'CS routing',
+  'Memory facts and language',
+  'Default ledgers',
+  'Agent grant dates',
+  'Media usage counters',
+];
+
+/** group id -> the catalog list the viewer needs to read it; absent from the catalog = not visible to them. */
+const NEEDS_CATALOG: Record<string, keyof SettingsCatalog> = {
+  companies: 'companies',
+  agents: 'agents',
+  agent_fields: 'agents',
+  stock_visibility: 'warehouses',
+};
+
 export default function ContactTagSettings({
   tag,
   editing,
   onDone,
+  onEdit,
 }: {
   tag: ContactTag;
   editing: boolean;
   onDone: () => void;
+  /** Shown as the card's Edit button while viewing. */
+  onEdit?: () => void;
 }) {
-  const queryClient = useQueryClient();
   const [draft, setDraft] = useState<S>(() => ({ ...(tag.settings ?? {}) }));
   const [error, setError] = useState<string | null>(null);
-  const { data } = useQuery({
-    queryKey: ['contact-tag-settings-catalog'],
-    queryFn: getSettingsCatalog,
-    staleTime: 60_000,
-  });
-  const catalog = useMemo(() => data ?? EMPTY_CATALOG, [data]);
+  const { catalog, data: loadedCatalog } = useSettingsCatalog();
   const s: S = editing ? draft : (tag.settings ?? {});
-
-  const save = useMutation({
-    mutationFn: () => updateContactTag(tag.id, { settings: cleaned(draft) }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contact-tag'] });
-      queryClient.invalidateQueries({ queryKey: ['contact-tags'] });
-      queryClient.invalidateQueries({ queryKey: ['respond-contacts'] });
-      toast.success('Tag settings saved');
-      onDone();
-    },
-    onError: (e: Error) => setError(e.message),
-  });
+  const save = useSaveTagSettings(tag.id, onDone);
+  const notVisible = (id: string) =>
+    !!loadedCatalog &&
+    NEEDS_CATALOG[id] !== undefined &&
+    catalog[NEEDS_CATALOG[id]] === undefined;
 
   const setSection = (section: string, v: unknown) =>
     setDraft((d) => {
@@ -782,10 +773,16 @@ export default function ContactTagSettings({
         <CardHeading>
           <CardTitle>Access settings</CardTitle>
         </CardHeading>
+        {!editing && onEdit ? (
+          <Button variant="outline" size="sm" onClick={onEdit}>
+            Edit
+          </Button>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-3">
         {GROUPS.map((g) => {
           const on = isSet(g.sections);
+          const hidden = notVisible(g.id);
           return (
             <div
               key={g.id}
@@ -799,7 +796,7 @@ export default function ContactTagSettings({
                 >
                   {g.title}
                 </h4>
-                {editing ? (
+                {editing && !hidden ? (
                   <label className="flex items-center gap-2 text-sm">
                     <Switch
                       aria-label={`Set on this tag: ${g.title}`}
@@ -810,7 +807,11 @@ export default function ContactTagSettings({
                   </label>
                 ) : null}
               </div>
-              {on ? (
+              {hidden ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {on ? 'Not visible to you' : 'Not set'}
+                </p>
+              ) : on ? (
                 <div className="mt-2">
                   <GroupBody
                     id={g.id}
@@ -826,6 +827,14 @@ export default function ContactTagSettings({
             </div>
           );
         })}
+        <div className="rounded-md border border-dashed bg-muted/40 p-3 text-muted-foreground">
+          <h4 className="text-sm font-medium">Not on a tag</h4>
+          <ul className="mt-1 grid grid-cols-1 gap-x-4 gap-y-0.5 text-sm sm:grid-cols-2">
+            {NOT_ON_A_TAG.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
         {editing ? (
           <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
             {error ? (
@@ -843,7 +852,9 @@ export default function ContactTagSettings({
             <Button
               onClick={() => {
                 setError(null);
-                save.mutate();
+                save.mutate(cleaned(draft), {
+                  onError: (e: Error) => setError(e.message),
+                });
               }}
               disabled={save.isPending}
             >

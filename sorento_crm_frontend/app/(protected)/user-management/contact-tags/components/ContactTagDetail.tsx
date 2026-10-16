@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,8 +21,7 @@ import DeferredActionButton from '@/components/common/DeferredActionButton';
 import { useDeferredAction } from '@/hooks/useDeferredAction';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { formatDate } from '@/lib/helpers';
-import { getContacts } from '../../contacts/[id]/services/contactService';
-import { useContactTagQuery } from '../hooks/useContactTags';
+import { useContactTagHolders, useContactTagQuery } from '../hooks/useContactTags';
 import { contactTagsPagerQuery } from '../lib/listQuery';
 import { CONTACT_TAG_PERMS } from '../lib/permissions';
 import ContactTagFormDialog from './ContactTagFormDialog';
@@ -76,20 +74,7 @@ export default function ContactTagDetail({ id }: { id: string }) {
     onCommitted: () => router.push('/user-management/contact-tags'),
   });
 
-  const holders = useQuery({
-    queryKey: ['respond-contacts', 'tag-holders', id],
-    queryFn: () =>
-      getContacts(
-        {
-          pageIndex: 0,
-          pageSize: HOLDERS_LIMIT,
-          sorting: [{ id: 'name', desc: false }],
-          searchQuery: '',
-        },
-        { tag: id },
-      ),
-    enabled: !!tag,
-  });
+  const holders = useContactTagHolders(id, !!tag, HOLDERS_LIMIT);
 
   const actions = (
     <div className="flex flex-wrap items-center gap-2">
@@ -114,15 +99,6 @@ export default function ContactTagDetail({ id }: { id: string }) {
           {tag.contact_count > 0 ? (
             <Button size="sm" onClick={() => setApplyOpen(true)}>
               {`Apply to ${tag.contact_count} contact${tag.contact_count === 1 ? '' : 's'}`}
-            </Button>
-          ) : null}
-          {!editingSettings ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setEditingSettings(true)}
-            >
-              Edit settings
             </Button>
           ) : null}
           <DeferredActionButton
@@ -215,6 +191,7 @@ export default function ContactTagDetail({ id }: { id: string }) {
               tag={tag}
               editing={editingSettings}
               onDone={() => setEditingSettings(false)}
+              onEdit={canEdit ? () => setEditingSettings(true) : undefined}
             />
           ) : null}
 

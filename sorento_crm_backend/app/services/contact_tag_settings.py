@@ -40,6 +40,16 @@ SECTIONS: tuple[str, ...] = (
 )
 _SECTION_RANK = {s: i for i, s in enumerate(SECTIONS)}
 
+#: Section names in words (403 messages, redacted labels, the apply dialog).
+SECTION_TITLES: dict[str, str] = {
+    "access_types": "Access types", "brands": "Brands", "companies": "Companies",
+    "market_segments": "Market segments", "regions": "Regions", "chatbot": "Chatbot",
+    "portal_forms": "Portal forms", "requires_registered_project": "Requires registered project",
+    "field_reveals": "Field reveals", "agents": "Chatbot agents", "agent_fields": "Agent field access",
+    "media": "Media access", "attachment_types": "Attachment types", "stock_visibility": "Stock visibility",
+    "spec_visibility": "Spec visibility", "outbound_enabled": "Messaging (outbound)",
+}
+
 CHATBOT_BOOLS: dict[str, tuple[str, str]] = {
     # key -> (label, merge kind)
     "chatbot_allowed": ("AI replies", "and"),
@@ -82,8 +92,11 @@ _GATES: dict[str, Optional[str]] = {
 class Catalog:
     """Human names for the codes and ids a setting holds; each map is read once."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, scope_brands: bool = False):
         self.db = db
+        # Brands follow the caller's company scope when picking and validating; names shown on
+        # an item are read unscoped (a stored brand keeps its name whoever looks).
+        self.scope_brands = scope_brands
         self._maps: dict[str, dict[str, str]] = {}
         self._agents: Optional[dict[str, tuple[str, str]]] = None
 
@@ -105,8 +118,11 @@ class Catalog:
         elif name == "brands":
             from app.models.product import Brand
 
-            with company_scope(db, None):
+            if self.scope_brands:
                 out = {str(i): n for i, n in db.query(Brand.id, Brand.brand_name)}
+            else:
+                with company_scope(db, None):
+                    out = {str(i): n for i, n in db.query(Brand.id, Brand.brand_name)}
         elif name == "companies":
             from app.models.company import Company
 
@@ -208,7 +224,7 @@ def validate_settings(db: Session, settings: Any) -> dict:
     """The settings object, checked against the live catalogs, or 422 naming the offending key."""
     if not isinstance(settings, dict):
         raise _bad("settings", "must be an object")
-    cat = Catalog(db)
+    cat = Catalog(db, scope_brands=True)
     for section, value in settings.items():
         if section not in SECTIONS:
             raise _bad(section, "unknown setting")
@@ -300,6 +316,13 @@ def _v_agent_fields(db, cat, section, value):
             raise _bad("is_allowed", "must be true or false")
         if entry["agent_code"] not in codes:
             raise _bad(entry["agent_code"], "unknown agent")
+        from app.services.field_access import GATED_FIELDS
+
+        owner = GATED_FIELDS.get(entry["resource"], {}).get(entry["field_key"])
+        if owner is None:
+            raise _bad(entry["field_key"], f"{entry['resource']}.{entry['field_key']} is not a gated field")
+        if owner != entry["agent_code"]:
+            raise _bad(entry["field_key"], f"belongs to agent '{owner}', not '{entry['agent_code']}'")
 
 
 def _v_media(db, cat, section, value):
@@ -318,8 +341,10 @@ def _v_media(db, cat, section, value):
                     raise _bad(k, "must be true or false")
             elif k == "languages":
                 _str_list(k, v)
-            elif _is_bool(v) or not isinstance(v, int) or v < 0:
-                raise _bad(k, "must be a whole number, zero or more")
+            else:
+                low, high = (1, 3600) if k == "max_clip_seconds" else (0, 100000)
+                if _is_bool(v) or not isinstance(v, int) or not (low <= v <= high):
+                    raise _bad(k, f"must be a whole number from {low} to {high}")
 
 
 def _v_stock(db, cat, section, value):
@@ -397,7 +422,7 @@ def assert_gates(old: dict, new: dict, can: Callable[[str], bool], is_superadmin
         if not allowed:
             raise AppException(
                 status_code=403,
-                message=f"You may not change the {section} setting on a tag.",
+                message=f"You may not change {SECTION_TITLES[section]} on a tag.",
                 code="FORBIDDEN",
             )
 
@@ -527,7 +552,9 @@ def _merge_kind(section: str, key: str) -> str:
                 "hide_zero_locations": "or"}[key]
     if section == "spec_visibility":
         return "intersect" if key == "spec_keys" else "union"
-    return "intersect"  # access_types, brands, companies, market_segments, attachment_types
+    if section == "brands":
+        return "regions"  # an empty intersection has no value to write: a conflict, like regions
+    return "intersect"  # access_types, companies, market_segments, attachment_types
 
 
 _MERGE = {
@@ -665,32 +692,8 @@ class _Reader:
         if cid not in self._agent_codes:
             from app.services.field_access import contact_agent_codes
 
-            self._agent_codes[cid] = contact_agent_codes(self.db, cid) | self._legacy_codes(cid)
+            self._agent_codes[cid] = contact_agent_codes(self.db, cid)
         return self._agent_codes[cid]
-
-    def _legacy_codes(self, cid: str) -> set[str]:
-        """Agents granted on a phone-only legacy row count as this contact's own grant."""
-        from datetime import datetime
-
-        from sqlalchemy import or_
-
-        from app.models.access import AccessAgent, ContactAgentAccess as A
-
-        now = datetime.utcnow()
-        rows = (
-            self.db.query(AccessAgent.code)
-            .join(A, A.agent_id == AccessAgent.id)
-            .filter(
-                A.respond_contact_id.is_(None),
-                A.respond_contact_phone == self.contacts[cid].phone_number,
-                A.is_allowed.is_(True),
-                AccessAgent.is_active.is_(True),
-                or_(A.valid_from.is_(None), A.valid_from <= now),
-                or_(A.valid_to.is_(None), A.valid_to >= now),
-            )
-            .all()
-        )
-        return {c for (c,) in rows}
 
     def _media(self, cid: str, key: str) -> Any:
         from app.services import media_access_service as m
@@ -782,11 +785,15 @@ def evaluate(
     contacts: list,
     only_tags: Optional[set[str]] = None,
     tag_map: Optional[dict[str, list[TagRef]]] = None,
+    redact: frozenset[str] = frozenset(),
 ) -> dict[str, dict]:
     """`{contact_id: {status, tags, items}}` for every contact given.
 
     `only_tags`: keep only the keys a tag in that set takes part in (the tag-list Differs count and
     the `tag=` + `tag_settings=` list filter, so both count the same thing).
+
+    `redact`: sections the viewer may not read. Their items keep `section`, a generic label and
+    `differs`; `current`, `expected` and `decided_by` are null and no names leak (F1).
     """
     ids = [str(c.id) for c in contacts]
     tag_map = tag_map if tag_map is not None else tags_by_contact_with_settings(db, ids)
@@ -836,16 +843,22 @@ def evaluate(
                 conflict_tags = []
                 current = reader.current(cid, section, key, cat)
                 differs = current != expected
+            blocked = None
+            if section == "portal_forms" and key in _agent_only_kinds() and differs and expected is True:
+                if not _has_sales_agent(db, cid):
+                    blocked, differs = "Needs a linked sales agent", False
+            hidden = section in redact
             items.append(
                 {
                     "section": section,
                     "key": key,
-                    "label": _label(cat, section, key),
-                    "current": _display(cat, section, key, current),
-                    "expected": None if conflict else _display(cat, section, key, expected),
-                    "decided_by": decided,
+                    "label": SECTION_TITLES[section] if hidden else _label(cat, section, key),
+                    "blocked_reason": blocked,
+                    "current": None if hidden else _display(cat, section, key, current),
+                    "expected": None if hidden or conflict else _display(cat, section, key, expected),
+                    "decided_by": None if hidden else decided,
                     "conflict": conflict,
-                    "conflict_tags": conflict_tags,
+                    "conflict_tags": [] if hidden else conflict_tags,
                     "differs": differs,
                     # Raw (id / code valued) view for the writers; never serialised (response models drop it).
                     "_raw": {"expected": None if conflict else expected, "current": current},
@@ -856,13 +869,46 @@ def evaluate(
     return out
 
 
+def _agent_only_kinds() -> tuple[str, ...]:
+    from app.services.portal_service import AGENT_ONLY_FORM_TYPES
+
+    return AGENT_ONLY_FORM_TYPES
+
+
+def _has_sales_agent(db: Session, contact_id: str) -> bool:
+    from app.services import price_tag_request_service
+
+    return bool(price_tag_request_service.sales_agents_for_contact(db, contact_id))
+
+
+#: Sections only some viewers may read, with the check each needs.
+#: Whoever may EDIT a thing may read it, so each gate lists the view slug and the edit slug.
+_AGENTS_READ = ("user_management.access_agents.view", "user_management.access_agents.edit")
+_STOCK_READ = ("inventory.stock.view", "inventory.stock.edit")
+_READ_GATES: dict[str, Optional[tuple[str, ...]]] = {
+    "companies": None,  # superadmin
+    "agents": _AGENTS_READ,
+    "agent_fields": _AGENTS_READ,
+    "stock_visibility": _STOCK_READ,
+}
+
+
+def unreadable_sections(can: Callable[[str], bool], is_superadmin: Callable[[], bool]) -> frozenset[str]:
+    """The sections this viewer may not read (their item values and names are withheld)."""
+    out = set()
+    for section, slugs in _READ_GATES.items():
+        if not (is_superadmin() if slugs is None else any(can(s) for s in slugs)):
+            out.add(section)
+    return frozenset(out)
+
+
 def row_summary(result: dict) -> dict:
     diff = [i["label"] for i in result["items"] if i["differs"]]
     return {"status": result["status"], "differ_count": len(diff), "differ_labels": diff}
 
 
-def tag_settings_for_contact(db: Session, contact) -> dict:
-    return evaluate(db, [contact])[str(contact.id)]
+def tag_settings_for_contact(db: Session, contact, redact: frozenset[str] = frozenset()) -> dict:
+    return evaluate(db, [contact], redact=redact)[str(contact.id)]
 
 
 def holders_of(db: Session, tag_id: str) -> list:
@@ -875,10 +921,14 @@ def holders_of(db: Session, tag_id: str) -> list:
     )
 
 
-def differs_count(db: Session, tag_id: str) -> int:
+def differs_count(db: Session, tag_id: str) -> Optional[int]:
+    from app.services import contact_access_copy_service
+
     holders = holders_of(db, tag_id)
     if not holders:
         return 0
+    if len(holders) > contact_access_copy_service.MAX_DIFF_CANDIDATES:
+        return None  # the same cap as the list filter
     res = evaluate(db, holders, only_tags={tag_id})
     return sum(1 for r in res.values() if r["status"] == "differs")
 
@@ -888,31 +938,28 @@ def leaves_of(settings: Optional[dict]) -> list:
     return leaves(TagRef("", "", settings or {}))
 
 
-def settings_catalog(db: Session) -> dict:
-    """Every pick list the tag settings editor offers, as `[{value, label}]`, in one read."""
+def settings_catalog(db: Session, can: Callable[[str], bool], is_superadmin: Callable[[], bool]) -> dict:
+    """Every pick list the caller may read, as `[{value, label}]`, in one read.
+
+    A list the caller cannot read is ABSENT (companies: superadmin; agents and their field keys:
+    access_agents.view; warehouses: inventory.stock.view); brands follow the caller's company scope."""
     from app.models.product_spec import ProductSpecRegistry
     from app.services.contact_field_reveal_service import FIELD_REVEAL_KEYS
     from app.services.portal_form_visibility_service import _KIND_LABELS
     from app.services.portal_service import GRANTABLE_PORTAL_FORM_TYPES
 
-    cat = Catalog(db)
+    cat = Catalog(db, scope_brands=True)
 
     def opts(name: str) -> list[dict]:
         return sorted(
             ({"value": v, "label": n} for v, n in cat._load(name).items()), key=lambda o: o["label"].lower()
         )
 
-    return {
+    out = {
         "access_types": opts("access_types"),
         "brands": opts("brands"),
-        "companies": opts("companies"),
         "market_segments": opts("market_segments"),
         "attachment_types": opts("attachment_types"),
-        "warehouses": opts("warehouses"),
-        "agents": sorted(
-            ({"value": i, "label": n, "code": c} for i, (c, n) in cat.agents().items()),
-            key=lambda o: o["label"].lower(),
-        ),
         "field_reveals": [{"value": k, "label": label} for k, label in sorted(FIELD_REVEAL_KEYS)],
         "portal_forms": [
             {"value": k, "label": _KIND_LABELS.get(k, k.replace("_", " ").capitalize())}
@@ -925,3 +972,20 @@ def settings_catalog(db: Session) -> dict:
             .order_by(ProductSpecRegistry.label)
         ],
     }
+    if is_superadmin():
+        out["companies"] = opts("companies")
+    if any(can(s) for s in _AGENTS_READ):
+        from app.services.field_access import GATED_FIELDS
+
+        out["agents"] = sorted(
+            ({"value": i, "label": n, "code": c} for i, (c, n) in cat.agents().items()),
+            key=lambda o: o["label"].lower(),
+        )
+        out["agent_fields"] = [
+            {"agent_code": owner, "resource": resource, "field_key": field_key}
+            for resource, fields in GATED_FIELDS.items()
+            for field_key, owner in fields.items()
+        ]
+    if any(can(s) for s in _STOCK_READ):
+        out["warehouses"] = opts("warehouses")
+    return out

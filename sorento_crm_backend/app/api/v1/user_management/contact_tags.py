@@ -50,6 +50,7 @@ async def list_contact_tags(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=1000),
     search: Optional[str] = Query(None),
+    counts: bool = Query(True),
     # The DataGrid sends its search box as `query`; `search` is the same filter.
     query: Optional[str] = Query(None),
     sort: Optional[str] = Query(None),
@@ -59,7 +60,7 @@ async def list_contact_tags(
     db: Session = Depends(get_db),
 ):
     try:
-        rows, total = ContactTagService(db).list_tags(page, limit, search or query, is_active, sort, dir)
+        rows, total = ContactTagService(db).list_tags(page, limit, search or query, is_active, sort, dir, counts)
         return ListResponse(
             data=rows, pagination=PaginationResponse(total=total, page=page, limit=limit), empty=total == 0
         )
@@ -78,7 +79,7 @@ async def get_settings_catalog(
     from app.services import contact_tag_settings
 
     try:
-        return contact_tag_settings.settings_catalog(db)
+        return contact_tag_settings.settings_catalog(db, *_gates(db, current_user))
     except AppException:
         raise
     except Exception as e:
@@ -144,7 +145,7 @@ async def delete_contact_tag(
     db: Session = Depends(get_db),
 ):
     try:
-        ContactTagService(db).delete_tag(tag_id)
+        ContactTagService(db).delete_tag(tag_id, _gates(db, current_user))
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except AppException:
         raise
@@ -262,7 +263,9 @@ async def get_contact_tag_settings(
 
     try:
         contact = ContactService(db).get_contact(contact_id)
-        return contact_tag_settings.tag_settings_for_contact(db, contact)
+        return contact_tag_settings.tag_settings_for_contact(
+            db, contact, redact=contact_tag_settings.unreadable_sections(*_gates(db, current_user))
+        )
     except AppException:
         raise
     except Exception as e:

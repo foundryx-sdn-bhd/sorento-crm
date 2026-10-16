@@ -110,6 +110,7 @@ class ContactService:
         include_linked_users: bool = False,
         no_customers_only: bool = False,
         access_filters: Optional[dict] = None,
+        redact_sections: frozenset = frozenset(),
     ):
         """List contacts with pagination and filtering.
 
@@ -192,7 +193,9 @@ class ContactService:
         from app.services import contact_tag_settings
 
         only = set((access_filters or {}).get("tag_ids") or []) or None
-        tag_settings_map = contact_tag_settings.evaluate(self.db, contacts, only_tags=only)
+        tag_settings_map = contact_tag_settings.evaluate(
+            self.db, contacts, only_tags=only, redact=redact_sections
+        )
 
         # Validate and convert contacts to response models
         # Explicitly convert UUID to string to ensure Pydantic validation works
@@ -290,8 +293,6 @@ class ContactService:
                     tag_pivot.c.tag_id.in_(f["tag_ids"]),
                 )
             )
-        if f.get("tag_settings") in ("differs", "matches"):
-            q = self._filter_tag_settings(q, f)
         if f.get("no_tags"):
             from app.models.access import respond_contact_tags as tag_pivot
 
@@ -325,6 +326,9 @@ class ContactService:
                 self.db, source, q.all(), f.get("access_differs_skip") or frozenset()
             )
             q = q.filter(RespondContact.id.in_(ids))
+        # Last, so the candidate cap counts the set the other filters left (N1).
+        if f.get("tag_settings") in ("differs", "matches"):
+            q = self._filter_tag_settings(q, f)
         return q
 
     def _filter_tag_settings(self, q, f: dict):

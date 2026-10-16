@@ -245,7 +245,8 @@ export default function ApplyTagSettingsDialog({
   };
 
   const shown = result ?? preview;
-  const n = preview?.results.length ?? 0;
+  // Only the rows that will change: skipped, unchanged and failed rows are not applied to.
+  const n = preview?.results.filter((r) => r.status === 'changed').length ?? 0;
   const done = result !== null;
 
   return (
@@ -295,11 +296,8 @@ export default function ApplyTagSettingsDialog({
                 >
                   Retry
                 </Button>
-              ) : (
-                <Button
-                  disabled={run.isPending || preview.counts.changed === 0}
-                  onClick={runApply}
-                >
+              ) : n === 0 ? null : (
+                <Button disabled={run.isPending} onClick={runApply}>
                   {run.isPending ? (
                     <LoaderCircleIcon className="size-4 animate-spin" />
                   ) : null}

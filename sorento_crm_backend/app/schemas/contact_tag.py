@@ -53,7 +53,7 @@ class ContactTagResponse(BaseModel):
     sort_order: int
     settings: dict = {}
     contact_count: int = 0
-    differs_count: int = 0
+    differs_count: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -122,10 +122,11 @@ class TagSettingsItem(BaseModel):
     label: str
     current: object = None
     expected: object = None
-    decided_by: list[str] = []
+    decided_by: Optional[list[str]] = None
     conflict: bool = False
     conflict_tags: list[TagSettingsConflict] = []
     differs: bool = False
+    blocked_reason: Optional[str] = None
 
 
 class ContactTagSettingsResponse(BaseModel):

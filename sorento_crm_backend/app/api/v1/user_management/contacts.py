@@ -125,7 +125,11 @@ async def get_contacts(
         can_view_users = UserPermissionService(db).check_user_has_permission(
             current_user["id"], "user_management.users.view"
         )
+        from app.api.v1.user_management.contact_tags import _gates
+        from app.services.contact_tag_settings import unreadable_sections
+
         result = service.list_contacts(
+            redact_sections=unreadable_sections(*_gates(db, current_user)),
             page=page,
             limit=limit,
             query=query,
