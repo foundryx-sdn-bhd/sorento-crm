@@ -154,7 +154,9 @@ def test_a_linked_split_is_not_cancelled_on_the_origin_nor_re_ordered_on_the_tar
     assert live_18[0].ack_state == ACK_ACKNOWLEDGED, "purchasing is not asked to confirm again"
 
     remarks = [(h.get("line_no"), h["line"]["remark"], h["line"]["qty"]) for h in told]
-    assert not [r for r in remarks if "49" in r[1] or r[2] == "49"], remarks
+    delays_49 = [h for h in told if h.get("line_no") == 2 and h["line"]["qty"] == "49"]
+    assert len(delays_49) == 1 and delays_49[0]["line"]["remark"].startswith("DELAY"), (
+        "UAC D1: the split origin tells its 49 as a DELAY line", remarks)
     assert not [r for r in remarks if r[0] == 2 and "CANCEL" in r[1]], remarks
     assert not [r for r in remarks if r[0] == 18 and r[1].startswith("ORDER")], (
         "the 49 is not ordered again on line 18", remarks)
