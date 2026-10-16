@@ -51,7 +51,7 @@ _MONTHS = {
 _MONTH_RE = "|".join(sorted(_MONTHS, key=len, reverse=True))
 #: `DEC'25-NOV'26`, `Jan-Dec 2026`, `JAN-DEC'26`, `Dec 25 - Nov 26`.
 _WINDOW = re.compile(
-    rf"\b({_MONTH_RE})\s*'?\s*(\d{{2}}|\d{{4}})?\s*(?:-|TO|–)\s*({_MONTH_RE})\s*'?\s*(\d{{2}}|\d{{4}})\b",
+    rf"\b({_MONTH_RE})\s*'?\s*(\d{{2}}|\d{{4}})?\s*(?:-|TO|\u2013)\s*({_MONTH_RE})\s*'?\s*(\d{{2}}|\d{{4}})\b",
     re.IGNORECASE,
 )
 _PCT = re.compile(r"(\d+(?:\.\d+)?)\s*%")
