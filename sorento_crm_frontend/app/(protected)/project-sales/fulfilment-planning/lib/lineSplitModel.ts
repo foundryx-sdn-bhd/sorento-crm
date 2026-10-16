@@ -468,11 +468,15 @@ export function groupsOf(lines: SplitLine[]): SplitGroup[] {
   return groups;
 }
 
-/** The group's date columns: every line's base date and every split date, ascending. */
+/** The group's date columns: every line's base and AutoCount date and every split date,
+ * ascending. */
 export function datesOf(group: SplitGroup): string[] {
   const dates = new Set<string>();
   for (const line of group.lines) {
     if (line.baseDate) dates.add(line.baseDate);
+    // AutoCount's date too: a line it ADDED (base 0, no base date) still needs a column
+    // to receive splits on its own date.
+    if (line.nowDate) dates.add(line.nowDate);
     for (const split of splitsOf(line))
       if (!split.isCancel && split.deliveryDate) dates.add(split.deliveryDate);
   }

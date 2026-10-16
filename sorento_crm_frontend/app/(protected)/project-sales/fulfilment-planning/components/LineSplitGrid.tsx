@@ -259,6 +259,7 @@ const DropCell = React.memo(
     return (
       <div
         ref={setNodeRef}
+        data-testid={`line-split-cell-${row}-${col}`}
         title={original ? 'Original date of this line' : undefined}
         className={cn(
           'flex min-h-13 flex-col gap-1 border-r border-b border-border p-1',
