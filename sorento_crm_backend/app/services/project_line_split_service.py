@@ -520,17 +520,23 @@ class LineSplitService:
                 )
             plans.append((f, base_qty, base_date, rows))
 
-        before: Dict[str, Any] = {}
-        after: Dict[str, Any] = {}
+        changes: List[Tuple[LineFacts, Dict[str, Any], Dict[str, Any]]] = []
         for f, base_qty, base_date, rows in plans:
-            label = str(f.line_no)
-            before[label] = [_audit_split(split) for split in f.splits]
+            stored = f.splits[0] if f.splits else None
+            before = _audit_line(
+                f,
+                stored.base_qty if stored is not None else None,
+                stored.base_date if stored is not None else None,
+                [_audit_split(split) for split in f.splits],
+            )
             for existing in f.splits:
                 self.db.delete(existing)
             if self._is_unsplit(f, base_qty, base_date, rows):
-                after[label] = []
+                changes.append((f, before, _audit_line(f, None, None, [])))
                 continue
-            after[label] = [_audit_split(row) for row in rows]
+            changes.append(
+                (f, before, _audit_line(f, base_qty, base_date, [_audit_split(r) for r in rows]))
+            )
             for seq, r in enumerate(rows):
                 self.db.add(
                     SOLineSplit(
@@ -549,18 +555,21 @@ class LineSplitService:
                     )
                 )
         self.db.flush()
-        if before != after:
-            # One audit row per save, naming who split what (the split rows themselves are
-            # replaced wholesale and skip the per-row listener).
-            from app.services.audit_service import log_audit
+        from app.services.audit_service import log_audit
 
+        for f, before, after in changes:
+            if before == after:
+                continue
+            # One audit row per line whose splits (or the base they stand on: a stale plan
+            # saved again is re-based) changed, naming who did it. The split rows themselves
+            # are replaced wholesale and skip the per-row listener.
             log_audit(
                 self.db,
                 SOLineSplit.__audit_entity_type__,
-                str(order.id),
+                f.line_id,
                 "UPDATE",
-                old_values={"lines": before},
-                new_values={"lines": after},
+                old_values=before,
+                new_values=after,
                 user_id=actor_user_id,
                 # The order's company, so only its own admins list the row.
                 company_id=str(order.company_id) if order.company_id else None,
@@ -584,6 +593,18 @@ class LineSplitService:
             and only["delivery_date"] == base_date
             and not only["remark"]
         )
+
+
+def _audit_line(
+    f: "LineFacts", base_qty: Any, base_date: Optional[date], splits: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """One line's splits as the audit row records them, with the base they stand on."""
+    return {
+        "line_no": f.line_no,
+        "base_qty": qty_text(base_qty) if base_qty is not None else None,
+        "base_date": base_date.isoformat() if base_date else None,
+        "splits": splits,
+    }
 
 
 def _audit_split(split: Any) -> Dict[str, Any]:
