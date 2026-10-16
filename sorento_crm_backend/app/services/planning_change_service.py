@@ -3831,6 +3831,14 @@ def _oi_demand_rows(
     # of the order (`_apply_split_links`) is not a cancel - it is told as its split. Only
     # what actually moved, never every split sitting elsewhere: a split whose target was
     # not in the Confirm, did not grow, or that no longer acts moved nothing.
+    #
+    # Needed only where the moved origin did NOT settle in place (a settled line is skipped
+    # above): `_apply_split_links` admits a lone PLACED row with no link, and
+    # `_settle_row_in_place` declines exactly that row (and one whose links were all
+    # received), so the line reaches this netting with its from/to still spanning the moved
+    # qty. `cancellable_by_line` alone does not cap it there: from 100 -> 40 with 50 moved
+    # leaves 40 still held after the netting's own CANCEL 10, and the full drop of 60 would
+    # cancel those 40 too.
     from app.services.project_order_inquiry_service import explained_by_splits
 
     linked_out_by_line: Dict[str, Decimal] = defaultdict(lambda: _ZERO)
