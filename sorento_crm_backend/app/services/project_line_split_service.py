@@ -441,3 +441,125 @@ class LineSplitService:
             and only["delivery_date"] == base_date
             and not only["remark"]
         )
+
+
+# ---------------------------------------------------------------------- purchasing outputs
+
+
+def _fmt_date(value: Optional[date]) -> str:
+    """`21/07/2026`, the way the OI email and their sheet spell a date."""
+    return value.strftime("%d/%m/%Y") if value else ""
+
+
+@dataclass
+class SplitView:
+    """One stored split as the purchasing outputs read it."""
+
+    split: SOLineSplit
+    origin_line_no: Optional[int]
+    #: The line it sits on now (NULL once that line is cancelled, UAC C2).
+    sits_on: Optional[str]
+
+    @property
+    def origin(self) -> str:
+        return str(self.split.so_line_id)
+
+    @property
+    def word(self) -> str:
+        return change_word(
+            is_cancel=bool(self.split.is_cancel),
+            delivery_date=self.split.delivery_date,
+            base_date=self.split.base_date,
+        )
+
+
+class SplitOutputs:
+    """The splits an output (OI Excel, OI email, OI Lines) needs for a set of lines, in two
+    queries: every split OF those lines (origin view) and every split sitting ON them."""
+
+    def __init__(self, db: Session, line_ids: Iterable[str]):
+        wanted = sorted({str(i) for i in line_ids if i})
+        self.by_origin: Dict[str, List[SplitView]] = {}
+        self.by_sits_on: Dict[str, List[SplitView]] = {}
+        self.line_nos: Dict[str, Optional[int]] = {}
+        if not wanted:
+            return
+        from sqlalchemy import or_
+
+        splits = (
+            db.query(SOLineSplit)
+            .filter(
+                or_(
+                    SOLineSplit.so_line_id.in_(wanted),
+                    SOLineSplit.sits_on_line_id.in_(wanted),
+                )
+            )
+            .order_by(SOLineSplit.so_line_id, SOLineSplit.seq.asc(), SOLineSplit.created_at.asc())
+            .all()
+        )
+        if not splits:
+            return
+        service = LineSplitService(db)
+        sits = service.effective_sits_on(splits)
+        named = sorted(
+            {str(s.so_line_id) for s in splits}
+            | {str(s.sits_on_line_id) for s in splits if s.sits_on_line_id}
+        )
+        line_nos = {
+            str(line_id): line_no
+            for line_id, line_no in db.query(
+                ProjectSalesOrderLine.id, ProjectSalesOrderLine.line_no
+            )
+            .filter(ProjectSalesOrderLine.id.in_(named))
+            .all()
+        }
+        self.line_nos = line_nos
+        wanted_set = set(wanted)
+        for s in splits:
+            view = SplitView(
+                split=s,
+                origin_line_no=line_nos.get(str(s.so_line_id)),
+                sits_on=sits.get(str(s.id)),
+            )
+            if str(s.so_line_id) in wanted_set:
+                self.by_origin.setdefault(str(s.so_line_id), []).append(view)
+            if view.sits_on and view.sits_on in wanted_set:
+                self.by_sits_on.setdefault(view.sits_on, []).append(view)
+        for views in self.by_sits_on.values():
+            # Own splits first, then other lines' in line order.
+            views.sort(key=lambda v: (v.origin != v.sits_on, v.origin_line_no or 0, v.split.seq))
+
+    def sitting_remark(self, view: SplitView, line_id: str) -> str:
+        """REMARK of one OI Excel row printed for a split sitting on `line_id` (UAC D2):
+        the change word, "from line N" when it is another line's, and the remark."""
+        parts = [view.word]
+        if view.origin != str(line_id):
+            parts.append(f"from line {view.origin_line_no}")
+        if view.split.remark:
+            parts.append(view.split.remark)
+        return ", ".join(parts)
+
+    def plan_text(self, line_id: str) -> str:
+        """The split plan of one line in words, for an OI Excel row that cannot be printed
+        split by split: its own splits (and where they sit) then the other lines' splits
+        sitting on it. Empty for a line with none."""
+        line_id = str(line_id)
+        views = list(self.by_origin.get(line_id, []))
+        views += [v for v in self.by_sits_on.get(line_id, []) if v.origin != line_id]
+        if not views:
+            return ""
+        pieces = []
+        for v in views:
+            text = f"{qty_text(v.split.qty)} {v.word}"
+            if v.split.delivery_date:
+                text += f" {_fmt_date(v.split.delivery_date)}"
+            if v.origin != line_id:
+                text += f" from line {v.origin_line_no}"
+            elif not v.split.is_cancel and v.sits_on is None:
+                text += " new line"
+            elif not v.split.is_cancel and v.sits_on != line_id:
+                text += f" to line {self.line_nos.get(v.sits_on)}"
+            if v.split.remark:
+                text += f" ({v.split.remark})"
+            pieces.append(text)
+        return "SPLIT " + "; ".join(pieces)

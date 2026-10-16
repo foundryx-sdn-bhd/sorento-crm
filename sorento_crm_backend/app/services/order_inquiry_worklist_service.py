@@ -216,6 +216,9 @@ EXPORT_HEADINGS = (
     # only. APPENDED for the same reason ACKNOWLEDGED/TAKEN/REMAINING were: their own
     # filters are keyed on the columns before it being where they have always been.
     "SUGGESTED",
+    # OI-LINE-SPLIT (UAC D2): the split a row prints for, or the line's split plan when it
+    # cannot be printed split by split. APPENDED for the same reason as the four above.
+    "REMARK",
 )
 
 # The two routes a row can be attributed by, joined ONCE through a coalesce rather than
@@ -3397,12 +3400,43 @@ class OrderInquiryWorklistService:
         suggested_links = ProjectOrderInquiryService(self.db).suggested_links_for_rows(
             [row.id for row in rows]
         )
-        return [
-            self._serialize(
-                row, bundle_map=bundle_map, links=links, suggested_links=suggested_links
-            )
-            for row in rows
-        ]
+        return self._with_splits(
+            [
+                self._serialize(
+                    row, bundle_map=bundle_map, links=links, suggested_links=suggested_links
+                )
+                for row in rows
+            ]
+        )
+
+    def _with_splits(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """OI-LINE-SPLIT (UAC D2): a row whose line has splits sitting on it becomes one row
+        per such split (QTY and DELIVERY DATE the split's, REMARK its change word, "from
+        line N" when it is another line's, and its remark) when they add up to the row's
+        QTY; otherwise the row prints as it is with the line's split plan in REMARK. A
+        line with no splits prints as today, REMARK empty."""
+        from app.services.project_line_split_service import SplitOutputs
+
+        splits = SplitOutputs(self.db, [row.get("so_line_id") for row in rows])
+        if not splits.by_origin and not splits.by_sits_on:
+            return rows
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            line_id = row.get("so_line_id")
+            sitting = splits.by_sits_on.get(line_id or "", [])
+            if sitting and sum((_dec(v.split.qty) for v in sitting), _ZERO) == _dec(row.get("qty")):
+                for view in sitting:
+                    out.append(
+                        {
+                            **row,
+                            "qty": _qty_str(_dec(view.split.qty)),
+                            "delivery_date": view.split.delivery_date,
+                            "split_remark": splits.sitting_remark(view, line_id),
+                        }
+                    )
+                continue
+            out.append({**row, "split_remark": splits.plan_text(line_id) if line_id else ""})
+        return out
 
     def _write_sheet(
         self,
@@ -3453,6 +3487,7 @@ class OrderInquiryWorklistService:
                     _export_taken(row),
                     _export_remaining(row),
                     _export_suggested(row),
+                    row.get("split_remark") or "",
                 ]
                 # `columns` may be a PREFIX of `EXPORT_HEADINGS` (Lane C's worksheet, no
                 # ACKNOWLEDGED / TAKEN / REMAINING) - cut the row to match so the sheet
