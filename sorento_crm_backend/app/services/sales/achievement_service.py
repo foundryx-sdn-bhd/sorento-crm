@@ -436,7 +436,9 @@ def _achieved(
         stmt = stmt.join(
             cr,
             and_(
-                cr.c.ckind == ckind,
+                # One kind only (no dealer in the batch): no kind test, so the planner keeps
+                # its agent hash join (test_lines_outside_every_period_never_reach_a_join).
+                cr.c.ckind == ckind if len(kinds) > 1 else true(),
                 cr.c.agent_id == agent_id,
                 order_date.between(cr.c.valid_from, cr.c.valid_to),
             ),
@@ -469,7 +471,10 @@ def _achieved(
         )
         prior = func.sum(live_qty).over(
             # A line credited both by agent and by customer is read once per kind.
-            partition_by=(OL.sales_order_line_id, agent_lines.c.ckind),
+            partition_by=(
+                (OL.sales_order_line_id, agent_lines.c.ckind) if len(kinds) > 1
+                else OL.sales_order_line_id
+            ),
             order_by=(ORD.order_date.asc().nullslast(), ORD.id, OL.line_sequence),
             rows=(None, -1),
         )
