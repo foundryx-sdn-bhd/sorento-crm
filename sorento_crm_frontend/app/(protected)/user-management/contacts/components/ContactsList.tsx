@@ -13,7 +13,7 @@ import {
   useReactTable,
   getCoreRowModel,
 } from '@tanstack/react-table';
-import { Copy, Link2, MessageCircle, MessageCircleOff, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
@@ -23,9 +23,15 @@ import { DataGridListToolbar } from '@/components/ui/data-grid-list-toolbar';
 import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
 import { DataGridPagination } from '@/components/ui/data-grid-pagination';
 import { DataGridTable } from '@/components/ui/data-grid-table';
-import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
+import {
+  isSearchInFlight,
+  useDebouncedSearch,
+} from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
-import { PillOverflow, PillOverflowList } from '@/components/common/PillOverflow';
+import {
+  PillOverflow,
+  PillOverflowList,
+} from '@/components/common/PillOverflow';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -44,6 +50,8 @@ import ContactTagsCell from './ContactTagsCell';
 import ContactTagSettingsCell from './ContactTagSettingsCell';
 import { tagSettingsLabel } from '../lib/tagSettingsLabel';
 import { contactTagBulkActions } from '../lib/contactTagBulkActions';
+import { BulkActionsMenu } from '@/app/(protected)/scm/components/BulkActionsMenu';
+import { buildContactBulkActions } from '../lib/contactBulkActions';
 import { regionLabel } from '@/lib/packing-list-regions';
 import { useContactFiltersToolbar } from './ContactFiltersPopover';
 import PortalLinkButton from '@/components/contacts/PortalLinkButton';
@@ -51,7 +59,6 @@ import ContactOutboundCell from '@/components/contacts/ContactOutboundCell';
 import ContactOutboundDisableDialog from '@/components/contacts/ContactOutboundDisableDialog';
 import ContactOutboundSummary from '@/components/contacts/ContactOutboundSummary';
 import { useRespondContactOutboundMutations } from '@/hooks/useRespondContactOutbound';
-
 
 import { buildDetailSearch } from '@/lib/listNavQuery';
 import {
@@ -72,7 +79,11 @@ import { ContactImpersonateDialog } from './ContactImpersonateDialog';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 import UserAddDialog from '../../users/components/user-add-dialog';
 
-const TIER_LABEL: Record<string, string> = { dealer: 'Dealer', office: 'Office', end_user: 'End user' };
+const TIER_LABEL: Record<string, string> = {
+  dealer: 'Dealer',
+  office: 'Office',
+  end_user: 'End user',
+};
 
 /** A read-only on/off column (UAC A2.2): a light `Badge`, green when on. */
 function yesNoColumn(
@@ -85,14 +96,20 @@ function yesNoColumn(
   return {
     id,
     accessorFn: (row) => (isOn(row) ? onLabel : offLabel),
-    header: ({ column }) => <DataGridColumnHeader title={title} column={column} />,
+    header: ({ column }) => (
+      <DataGridColumnHeader title={title} column={column} />
+    ),
     size: 110,
     enableSorting: false,
     cell: ({ row }) =>
       isOn(row.original) ? (
-        <Badge variant="success" appearance="light">{onLabel}</Badge>
+        <Badge variant="success" appearance="light">
+          {onLabel}
+        </Badge>
       ) : (
-        <Badge variant="secondary" appearance="light">{offLabel}</Badge>
+        <Badge variant="secondary" appearance="light">
+          {offLabel}
+        </Badge>
       ),
     meta: { headerTitle: title, skeleton: <Skeleton className="h-5 w-16" /> },
   };
@@ -103,9 +120,15 @@ export default function ContactsList() {
   const canViewUsers = useHasPermission('user_management.users.view');
   const canAddUsers = useHasPermission('user_management.users.add');
   const canEditContacts = useHasPermission('user_management.contacts.edit');
-  const [createUserContact, setCreateUserContact] = useState<RespondContact | null>(null);
-  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 });
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'created_at', desc: true }]);
+  const [createUserContact, setCreateUserContact] =
+    useState<RespondContact | null>(null);
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 50,
+  });
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'created_at', desc: true },
+  ]);
   const {
     value: searchInput,
     setValue: setSearchInput,
@@ -116,14 +139,18 @@ export default function ContactsList() {
   // `chatbot_memory_level=own` (Settings > Chatbot > Memory's "N contacts" link,
   // review finding S13 / AC-MEM028) - the only filter this list reads from the URL
   // today, no filter UI of its own beyond the deep link that sets it.
-  const [chatbotMemoryLevel, setChatbotMemoryLevel] = useState<string | null>(null);
+  const [chatbotMemoryLevel, setChatbotMemoryLevel] = useState<string | null>(
+    null,
+  );
   const [customersNone, setCustomersNone] = useState(false);
   // CONTACT-BULK-ACCESS (UAC A2.3): tier / cost / escalation / ... filters.
   const [accessFilters, setAccessFilters] = useState<AccessFilters>({});
   // CONTACT-TAGS (UAC T4.2): the Tag filter (any-of) and the "No tags" checkbox.
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [noTags, setNoTags] = useState(false);
-  const [tagSettings, setTagSettings] = useState<TagSettingsFilter | null>(null);
+  const [tagSettings, setTagSettings] = useState<TagSettingsFilter | null>(
+    null,
+  );
 
   // Back hands the list its own query string back, and the pager keeps
   // rewriting it, so the list reads it (S3-01). One hook, every list.
@@ -153,7 +180,9 @@ export default function ContactsList() {
   ]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [contactToDelete, setContactToDelete] = useState<RespondContact | null>(null);
+  const [contactToDelete, setContactToDelete] = useState<RespondContact | null>(
+    null,
+  );
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkCopyDialogOpen, setBulkCopyDialogOpen] = useState(false);
@@ -161,7 +190,8 @@ export default function ContactsList() {
   const [bulkTagMode, setBulkTagMode] = useState<'add' | 'remove' | null>(null);
   // Apply tag settings: the selection, or the one row whose menu opened it.
   const [applyIds, setApplyIds] = useState<string[] | null>(null);
-  const [impersonateTarget, setImpersonateTarget] = useState<RespondContact | null>(null);
+  const [impersonateTarget, setImpersonateTarget] =
+    useState<RespondContact | null>(null);
   const [bulkDisableOutboundOpen, setBulkDisableOutboundOpen] = useState(false);
 
   // The list query, built through the shared key + fetch so the detail shell's
@@ -181,7 +211,17 @@ export default function ContactsList() {
         tagSettings,
       }),
     }),
-    [pagination, sorting, searchQuery, chatbotMemoryLevel, customersNone, accessFilters, tagIds, noTags, tagSettings],
+    [
+      pagination,
+      sorting,
+      searchQuery,
+      chatbotMemoryLevel,
+      customersNone,
+      accessFilters,
+      tagIds,
+      noTags,
+      tagSettings,
+    ],
   );
 
   // UAC A2.3: a filter change is written to the URL (same query string a row click
@@ -205,17 +245,21 @@ export default function ContactsList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listFiltersKey]);
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useQuery({
-    ...LIST_QUERY_OPTIONS,
-    queryKey: contactsListQueryKey(listParams),
-    queryFn: () => fetchContactsPage(listParams),
-    staleTime: Infinity,
-    gcTime: 1000 * 60 * 60,
-    retry: 1,
-  });
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } =
+    useQuery({
+      ...LIST_QUERY_OPTIONS,
+      queryKey: contactsListQueryKey(listParams),
+      queryFn: () => fetchContactsPage(listParams),
+      staleTime: Infinity,
+      gcTime: 1000 * 60 * 60,
+      retry: 1,
+    });
 
   const pageContacts = useMemo(() => data?.data ?? [], [data]);
-  const selectedContactIds = useMemo(() => Object.keys(rowSelection), [rowSelection]);
+  const selectedContactIds = useMemo(
+    () => Object.keys(rowSelection),
+    [rowSelection],
+  );
   const selectedContacts = useMemo(
     () => pageContacts.filter((c) => rowSelection[c.id]),
     [pageContacts, rowSelection],
@@ -250,10 +294,14 @@ export default function ContactsList() {
 
   const syncContactMutation = useMutation({
     mutationFn: async (contactId: string) => {
-      const response = await apiFetch(`/api/user-management/contacts/${contactId}/sync`, {
-        method: 'POST',
-      });
-      if (!response.ok) throw new Error(await contactSyncErrorMessage(response));
+      const response = await apiFetch(
+        `/api/user-management/contacts/${contactId}/sync`,
+        {
+          method: 'POST',
+        },
+      );
+      if (!response.ok)
+        throw new Error(await contactSyncErrorMessage(response));
       return response.json();
     },
     onSuccess: () => {
@@ -267,13 +315,21 @@ export default function ContactsList() {
 
   const bulkSyncMutation = useMutation({
     mutationFn: async (ids: string[]) => {
-      const response = await apiFetch('/api/user-management/contacts/bulk-sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids }),
-      });
-      if (!response.ok) throw new Error(await contactSyncErrorMessage(response));
-      return response.json() as Promise<{ succeeded: number; failed: number; errors: { id: string; message: string }[] }>;
+      const response = await apiFetch(
+        '/api/user-management/contacts/bulk-sync',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        },
+      );
+      if (!response.ok)
+        throw new Error(await contactSyncErrorMessage(response));
+      return response.json() as Promise<{
+        succeeded: number;
+        failed: number;
+        errors: { id: string; message: string }[];
+      }>;
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['respond-contacts'] });
@@ -304,18 +360,24 @@ export default function ContactsList() {
     return `/user-management/contacts/${contact.id}${search ? `?${search}` : ''}`;
   };
 
-
   const columns = useMemo<ColumnDef<RespondContact>[]>(
     () => [
       buildSelectColumn<RespondContact>(),
       {
         accessorKey: 'phone_number',
-        header: ({ column }) => <DataGridColumnHeader title="Phone Number" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Phone Number" column={column} />
+        ),
         size: 200,
-        meta: { headerTitle: 'Phone Number', skeleton: <Skeleton className="h-4 w-32" /> },
+        meta: {
+          headerTitle: 'Phone Number',
+          skeleton: <Skeleton className="h-4 w-32" />,
+        },
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
-            <span className="font-medium font-mono">{row.original.phone_number}</span>
+            <span className="font-medium font-mono">
+              {row.original.phone_number}
+            </span>
             <Button
               variant="ghost"
               size="sm"
@@ -323,12 +385,15 @@ export default function ContactsList() {
                 e.stopPropagation();
                 handleSync(row.original.id);
               }}
-              disabled={bulkSyncMutation.isPending || syncContactMutation.isPending}
+              disabled={
+                bulkSyncMutation.isPending || syncContactMutation.isPending
+              }
               title="Sync from Respond.io"
             >
               <RefreshCw
                 className={`size-4 ${
-                  syncContactMutation.isPending && syncContactMutation.variables === row.original.id
+                  syncContactMutation.isPending &&
+                  syncContactMutation.variables === row.original.id
                     ? 'animate-spin'
                     : ''
                 }`}
@@ -339,24 +404,40 @@ export default function ContactsList() {
       },
       {
         accessorKey: 'first_name',
-        header: ({ column }) => <DataGridColumnHeader title="First name" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="First name" column={column} />
+        ),
         size: 160,
         cell: ({ row }) =>
-          row.original.first_name || <span className="text-muted-foreground"> - </span>,
-        meta: { headerTitle: 'First name', skeleton: <Skeleton className="h-4 w-28" /> },
+          row.original.first_name || (
+            <span className="text-muted-foreground"> - </span>
+          ),
+        meta: {
+          headerTitle: 'First name',
+          skeleton: <Skeleton className="h-4 w-28" />,
+        },
       },
       {
         accessorKey: 'last_name',
-        header: ({ column }) => <DataGridColumnHeader title="Last name" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Last name" column={column} />
+        ),
         size: 160,
         cell: ({ row }) =>
-          row.original.last_name || <span className="text-muted-foreground"> - </span>,
-        meta: { headerTitle: 'Last name', skeleton: <Skeleton className="h-4 w-28" /> },
+          row.original.last_name || (
+            <span className="text-muted-foreground"> - </span>
+          ),
+        meta: {
+          headerTitle: 'Last name',
+          skeleton: <Skeleton className="h-4 w-28" />,
+        },
       },
       {
         id: 'customers',
         accessorFn: (row) => row.customer_codes?.join(', ') ?? '',
-        header: ({ column }) => <DataGridColumnHeader title="Customers" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Customers" column={column} />
+        ),
         size: 200,
         enableSorting: false,
         cell: ({ row }) => {
@@ -369,12 +450,17 @@ export default function ContactsList() {
             <span className="text-muted-foreground"> - </span>
           );
         },
-        meta: { headerTitle: 'Customers', skeleton: <Skeleton className="h-4 w-28" /> },
+        meta: {
+          headerTitle: 'Customers',
+          skeleton: <Skeleton className="h-4 w-28" />,
+        },
       },
       {
         id: 'access_types',
         accessorFn: (row) => row.access_type_codes?.join(',') ?? '',
-        header: ({ column }) => <DataGridColumnHeader title="Access types" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Access types" column={column} />
+        ),
         size: 220,
         enableSorting: false,
         cell: ({ row }) => {
@@ -393,34 +479,52 @@ export default function ContactsList() {
             />
           );
         },
-        meta: { headerTitle: 'Access types', skeleton: <Skeleton className="h-4 w-32" /> },
+        meta: {
+          headerTitle: 'Access types',
+          skeleton: <Skeleton className="h-4 w-32" />,
+        },
       },
       {
         id: 'tags',
         accessorFn: (row) => (row.tags ?? []).map((t) => t.name).join(', '),
-        header: ({ column }) => <DataGridColumnHeader title="Tags" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Tags" column={column} />
+        ),
         size: 200,
         enableSorting: false,
         cell: ({ row }) => <ContactTagsCell contact={row.original} />,
-        meta: { headerTitle: 'Tags', skeleton: <Skeleton className="h-4 w-28" /> },
+        meta: {
+          headerTitle: 'Tags',
+          skeleton: <Skeleton className="h-4 w-28" />,
+        },
       },
       {
         id: 'tag_settings',
         accessorFn: (row) => tagSettingsLabel(row.tag_settings),
-        header: ({ column }) => <DataGridColumnHeader title="Tag settings" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Tag settings" column={column} />
+        ),
         size: 140,
         enableSorting: false,
         cell: ({ row }) => <ContactTagSettingsCell contact={row.original} />,
-        meta: { headerTitle: 'Tag settings', skeleton: <Skeleton className="h-5 w-20" /> },
+        meta: {
+          headerTitle: 'Tag settings',
+          skeleton: <Skeleton className="h-5 w-20" />,
+        },
       },
       {
         id: 'brands',
-        accessorFn: (row) => (row.brands ?? []).map((b) => b.brand_name).join(', '),
-        header: ({ column }) => <DataGridColumnHeader title="Brands" column={column} />,
+        accessorFn: (row) =>
+          (row.brands ?? []).map((b) => b.brand_name).join(', '),
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Brands" column={column} />
+        ),
         size: 180,
         enableSorting: false,
         cell: ({ row }) => {
-          const label = (row.original.brands ?? []).map((b) => b.brand_name).join(', ');
+          const label = (row.original.brands ?? [])
+            .map((b) => b.brand_name)
+            .join(', ');
           return label ? (
             <span className="block truncate" title={label}>
               {label}
@@ -429,37 +533,81 @@ export default function ContactsList() {
             <span className="text-muted-foreground">All</span>
           );
         },
-        meta: { headerTitle: 'Brands', skeleton: <Skeleton className="h-4 w-28" /> },
+        meta: {
+          headerTitle: 'Brands',
+          skeleton: <Skeleton className="h-4 w-28" />,
+        },
       },
       // CONTACT-BULK-ACCESS (UAC A2.2): the access a bulk copy sets, readable per row.
       {
         id: 'chatbot_tier',
         accessorFn: (row) => row.chatbot_tier ?? '',
-        header: ({ column }) => <DataGridColumnHeader title="Tier" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Tier" column={column} />
+        ),
         size: 100,
         enableSorting: false,
         cell: ({ row }) =>
           row.original.chatbot_tier ? (
-            <span className="block truncate" title={TIER_LABEL[row.original.chatbot_tier] ?? row.original.chatbot_tier}>
-              {TIER_LABEL[row.original.chatbot_tier] ?? row.original.chatbot_tier}
+            <span
+              className="block truncate"
+              title={
+                TIER_LABEL[row.original.chatbot_tier] ??
+                row.original.chatbot_tier
+              }
+            >
+              {TIER_LABEL[row.original.chatbot_tier] ??
+                row.original.chatbot_tier}
             </span>
           ) : (
             <span className="text-muted-foreground"> - </span>
           ),
-        meta: { headerTitle: 'Tier', skeleton: <Skeleton className="h-4 w-16" /> },
+        meta: {
+          headerTitle: 'Tier',
+          skeleton: <Skeleton className="h-4 w-16" />,
+        },
       },
-      yesNoColumn('cost_visible', 'Cost', (r) => r.cost_visible === true, 'Visible', 'Hidden'),
-      yesNoColumn('chatbot_allowed', 'AI replies', (r) => r.chatbot_allowed === true, 'Allowed', 'Blocked'),
-      yesNoColumn('escalation_allowed', 'Escalation', (r) => r.escalation_allowed !== false, 'Allowed', 'Blocked'),
-      yesNoColumn('packing_list_allowed', 'Packing list', (r) => r.packing_list_allowed === true, 'Allowed', 'No'),
+      yesNoColumn(
+        'cost_visible',
+        'Cost',
+        (r) => r.cost_visible === true,
+        'Visible',
+        'Hidden',
+      ),
+      yesNoColumn(
+        'chatbot_allowed',
+        'AI replies',
+        (r) => r.chatbot_allowed === true,
+        'Allowed',
+        'Blocked',
+      ),
+      yesNoColumn(
+        'escalation_allowed',
+        'Escalation',
+        (r) => r.escalation_allowed !== false,
+        'Allowed',
+        'Blocked',
+      ),
+      yesNoColumn(
+        'packing_list_allowed',
+        'Packing list',
+        (r) => r.packing_list_allowed === true,
+        'Allowed',
+        'No',
+      ),
       {
         id: 'regions',
-        accessorFn: (row) => (row.regions ?? ['west']).map(regionLabel).join(', '),
-        header: ({ column }) => <DataGridColumnHeader title="Regions" column={column} />,
+        accessorFn: (row) =>
+          (row.regions ?? ['west']).map(regionLabel).join(', '),
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Regions" column={column} />
+        ),
         size: 200,
         enableSorting: false,
         cell: ({ row }) => {
-          const text = (row.original.regions ?? ['west']).map(regionLabel).join(', ');
+          const text = (row.original.regions ?? ['west'])
+            .map(regionLabel)
+            .join(', ');
           return (
             <div className="flex flex-wrap gap-1 truncate" title={text}>
               {(row.original.regions ?? ['west']).map((code) => (
@@ -470,9 +618,18 @@ export default function ContactsList() {
             </div>
           );
         },
-        meta: { headerTitle: 'Regions', skeleton: <Skeleton className="h-5 w-24" /> },
+        meta: {
+          headerTitle: 'Regions',
+          skeleton: <Skeleton className="h-5 w-24" />,
+        },
       },
-      yesNoColumn('chatbot_stock_allowed', 'Stock checks', (r) => r.chatbot_stock_allowed !== false, 'Allowed', 'Blocked'),
+      yesNoColumn(
+        'chatbot_stock_allowed',
+        'Stock checks',
+        (r) => r.chatbot_stock_allowed !== false,
+        'Allowed',
+        'Blocked',
+      ),
       // Identity S3 (AC-59): the linked user's name, a link; blank when none.
       // Hidden entirely without `users.view` - a caller who cannot open the
       // user has nothing to do with the name either.
@@ -496,13 +653,18 @@ export default function ContactsList() {
                 ) : (
                   <span className="text-muted-foreground"> - </span>
                 ),
-              meta: { headerTitle: 'User', skeleton: <Skeleton className="h-4 w-28" /> },
+              meta: {
+                headerTitle: 'User',
+                skeleton: <Skeleton className="h-4 w-28" />,
+              },
             } satisfies ColumnDef<RespondContact>,
           ]
         : []),
       {
         accessorKey: 'outbound_enabled',
-        header: ({ column }) => <DataGridColumnHeader title="Outbound" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Outbound" column={column} />
+        ),
         enableSorting: false,
         cell: ({ row }) => (
           <ContactOutboundCell
@@ -510,23 +672,33 @@ export default function ContactsList() {
             contactLabel={row.original.name || row.original.phone_number}
             disabled={outboundBusy}
             onChange={(enabled) =>
-              setOutboundOneRef.current.mutate({ contactId: row.original.id, enabled })
+              setOutboundOneRef.current.mutate({
+                contactId: row.original.id,
+                enabled,
+              })
             }
           />
         ),
         size: 210,
-        meta: { headerTitle: 'Outbound', skeleton: <Skeleton className="h-5 w-28" /> },
+        meta: {
+          headerTitle: 'Outbound',
+          skeleton: <Skeleton className="h-5 w-28" />,
+        },
       },
       {
         accessorKey: 'created_at',
-        header: ({ column }) => <DataGridColumnHeader title="Created At" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Created At" column={column} />
+        ),
         cell: ({ row }) => formatDate(new Date(row.original.created_at)),
         size: 150,
         meta: { headerTitle: 'Created At' },
       },
       {
         accessorKey: 'updated_at',
-        header: ({ column }) => <DataGridColumnHeader title="Updated At" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Updated At" column={column} />
+        ),
         cell: ({ row }) => formatDate(new Date(row.original.updated_at)),
         size: 150,
         meta: { headerTitle: 'Updated At' },
@@ -536,10 +708,17 @@ export default function ContactsList() {
         header: '',
         enableHiding: false,
         cell: ({ row }) => (
-          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="flex items-center justify-end gap-1"
+            onClick={(e) => e.stopPropagation()}
+          >
             <PortalLinkButton
               contactId={row.original.id}
-              contactLabel={row.original.name ?? row.original.phone_number ?? row.original.id}
+              contactLabel={
+                row.original.name ??
+                row.original.phone_number ??
+                row.original.id
+              }
               canSendViaRespondIo={!!row.original.respond_io_id}
               variant="icon"
             />
@@ -555,7 +734,9 @@ export default function ContactsList() {
                     setDeleteDialogOpen(true);
                   },
                   createUser: () => setCreateUserContact(row.original),
-                  applyTagSettings: canEditContacts ? () => setApplyIds([row.original.id]) : undefined,
+                  applyTagSettings: canEditContacts
+                    ? () => setApplyIds([row.original.id])
+                    : undefined,
                 },
                 // users.view too: without it the row carries no linked_user_id,
                 // so every contact would look unlinked (fix round 2, N3).
@@ -659,7 +840,11 @@ export default function ContactsList() {
               <ListSearchInput
                 value={searchInput}
                 onChange={setSearchInput}
-                isSettling={isSearchInFlight(searchSettling, isFetching, searchQuery)}
+                isSettling={isSearchInFlight(
+                  searchSettling,
+                  isFetching,
+                  searchQuery,
+                )}
                 placeholder="Search contacts..."
                 className="w-64"
               />
@@ -679,64 +864,42 @@ export default function ContactsList() {
                 />
               </div>
             }
-            bulkActions={[
-              ...(canEditContacts
-                ? [
+            bulkActionsSlot={({ openExport }) => (
+              <BulkActionsMenu
+                actions={[
+                  ...buildContactBulkActions(
                     {
-                      key: 'link-customers',
-                      label: `Link customers (${selectedContactIds.length})`,
-                      icon: Link2,
-                      onClick: () => setBulkLinkOpen(true),
+                      selectedCount: selectedContactIds.length,
+                      canEdit: canEditContacts,
+                      outboundBusy,
+                      syncBusy:
+                        bulkSyncMutation.isPending ||
+                        syncContactMutation.isPending,
                     },
-                  ]
-                : []),
-              {
-                key: 'outbound-enable',
-                label: `Enable messaging (${selectedContactIds.length})`,
-                icon: MessageCircle,
-                disabled: outboundBusy,
-                onClick: () => runOutboundBulk(true),
-              },
-              {
-                key: 'outbound-disable',
-                label: `Disable messaging (${selectedContactIds.length})`,
-                icon: MessageCircleOff,
-                destructive: true,
-                disabled: outboundBusy,
-                onClick: () => setBulkDisableOutboundOpen(true),
-              },
-              {
-                key: 'sync',
-                label: `Sync from Respond (${selectedContactIds.length})`,
-                icon: RefreshCw,
-                disabled: bulkSyncMutation.isPending || syncContactMutation.isPending,
-                onClick: handleBulkSync,
-              },
-              ...(canEditContacts
-                ? [
                     {
-                      key: 'copy-access',
-                      label: `Copy access from contact (${selectedContactIds.length})`,
-                      icon: Copy,
-                      onClick: () => setBulkCopyDialogOpen(true),
+                      onExport: openExport,
+                      onLinkCustomers: () => setBulkLinkOpen(true),
+                      onEnableMessaging: () => runOutboundBulk(true),
+                      onDisableMessaging: () =>
+                        setBulkDisableOutboundOpen(true),
+                      onSync: handleBulkSync,
+                      onCopyAccess: () => setBulkCopyDialogOpen(true),
+                      onDelete: () => setBulkDeleteDialogOpen(true),
                     },
-                  ]
-                : []),
-              ...contactTagBulkActions({
-                count: selectedContactIds.length,
-                canEdit: canEditContacts,
-                onAdd: () => setBulkTagMode('add'),
-                onRemove: () => setBulkTagMode('remove'),
-                onApply: () => setApplyIds(selectedContactIds),
-              }),
-              {
-                key: 'delete',
-                label: `Delete (${selectedContactIds.length})`,
-                icon: Trash2,
-                destructive: true,
-                onClick: () => setBulkDeleteDialogOpen(true),
-              },
-            ]}
+                  ),
+                  ...contactTagBulkActions({
+                    count: selectedContactIds.length,
+                    canEdit: canEditContacts,
+                    onAdd: () => setBulkTagMode('add'),
+                    onRemove: () => setBulkTagMode('remove'),
+                    onApply: () => setApplyIds(selectedContactIds),
+                  }),
+                ]}
+                modal={false}
+                // Most items open a dialog: focus belongs to it, not back on the menu trigger.
+                onCloseAutoFocus={(event) => event.preventDefault()}
+              />
+            )}
           />
         </CardHeader>
         <CardTable>
@@ -794,7 +957,9 @@ export default function ContactsList() {
         onOpenChange={setBulkCopyDialogOpen}
         onApplied={clearSelection}
         targetContacts={selectedContacts}
-        onCheckDiffers={(source) => setAccessFilters({ accessDiffersFrom: source.id })}
+        onCheckDiffers={(source) =>
+          setAccessFilters({ accessDiffersFrom: source.id })
+        }
       />
 
       {applyIds ? (

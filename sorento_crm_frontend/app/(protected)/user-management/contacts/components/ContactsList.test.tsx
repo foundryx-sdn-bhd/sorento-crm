@@ -177,6 +177,12 @@ describe('ContactsList - the outbound column', () => {
 });
 
 describe('ContactsList - bulk messaging actions', () => {
+  /** CONTACT-ACTIONS-COPY: bulk actions live in the "Actions" dropdown. Radix opens on pointerdown. */
+  async function bulkItem(name: RegExp) {
+    fireEvent.pointerDown(screen.getByRole('button', { name: /^Actions/ }), { button: 0, ctrlKey: false });
+    return screen.findByRole('menuitem', { name });
+  }
+
   async function selectAllRows() {
     // Wait for the rows themselves: the header checkbox renders during the
     // skeleton too, and toggling it then selects nothing.
@@ -189,7 +195,7 @@ describe('ContactsList - bulk messaging actions', () => {
     renderWithClient();
     await selectAllRows();
 
-    fireEvent.click(screen.getByRole('button', { name: /Enable messaging \(2\)/ }));
+    fireEvent.click(await bulkItem(/Enable messaging \(2\)/));
 
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(setBulkMutate).toHaveBeenCalledWith(
@@ -203,7 +209,7 @@ describe('ContactsList - bulk messaging actions', () => {
     renderWithClient();
     await selectAllRows();
 
-    fireEvent.click(screen.getByRole('button', { name: /Disable messaging \(2\)/ }));
+    fireEvent.click(await bulkItem(/Disable messaging \(2\)/));
 
     const dialog = screen.getByRole('alertdialog');
     expect(
