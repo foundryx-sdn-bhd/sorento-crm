@@ -43,7 +43,7 @@ delivery date + remark), before Confirm or inside Confirm.
 
 Storage (migration, company-scoped, UUID ids):
 - `projects.so_line_splits`: id, company_id, so_line_id (mirror `projects.sales_order_lines.id`, UNIQUE,
-  FK CASCADE), base_qty (the qty the split was made against), balance_mode remain|cancel, updated_by/at.
+  FK CASCADE), base_qty (the qty the split was made against), updated_by/at.
   Keyed on the mirror line: OI rows, `buy_lines["line"]`, `_split_row` and planning-change
   `project_line_id` all use it (`app/models/project_so.py:1011-1014`); it survives AutoCount re-sync
   (in-place update by DtlKey, `app/services/document_ingest_service.py:1527-1594`). Not in the board
@@ -87,4 +87,12 @@ handshake; an unlinked late tranche is placed against the line date (cascade rea
 
 ## Open
 
-- Card Q3 = (a) (crew, owner standing rules). Q1, Q2, Q4, Q5 with the owner. Mock v1 filed (defaults Q1a Q2a Q4a Q5a).
+- Owner answers 16 Oct ~22:05: Q1 (a), Q2 (b) splits add up EXACTLY to the line qty (no balance,
+  gap shown live, Save blocked), Q3 (a) staff-picked link, Q4 yes = (b) drag qty between SO lines of
+  the same SO (each split keeps its own line and records the line it sits on), Q5 (a). New owner
+  rule: the OI Excel is never split by month (separate PR #1748, crew ruled TOTAL QTY (a)).
+- Owner Lavish notes on v1 (22:30): split at header level on planning (all SO lines, drag and drop
+  across lines); never say "tranche", say "split"; real drag and drop (reuse @dnd-kit).
+- Mock v2 filed: whole-SO split view (rows = SO lines grouped by item + location, columns = dates,
+  New date, Cancel; a New line row), zoom pane = the single-line view. Design draft above still
+  holds; the balance mode column is dropped (Q2 b) and a split may be a cancel.
