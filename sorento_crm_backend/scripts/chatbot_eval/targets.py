@@ -356,6 +356,8 @@ def made_up_facts(row: dict[str, Any]) -> list[str]:
                     _dump([e for e in _looked_up_envelopes(row)]),
                     _dump(_product_list((_kind(row, "state").get("focus") or {}).get("products"))),
                     _dump(_mem_focus(row, "before")), _dump(_mem_focus(row, "after")),
+                    # a picker's option codes and labels (the open question) are things the bot was holding
+                    _dump(_kind(row, "state").get("open_question")), _dump(_kind(row, "memory").get("open_question")),
                     *(str(r.get("text") or "") for r in _trace(row) if r.get("kind") == "prompt_text")]
     # full tool results from the live runner carry no cap, so a recorded `truncated` flag no longer matters
     truncated = not full_results and any(
