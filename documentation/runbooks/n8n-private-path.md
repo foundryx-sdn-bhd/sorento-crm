@@ -12,14 +12,14 @@ private:
 
 | What | Today | After this runbook |
 | --- | --- | --- |
-| CRM API (about 151 workflow files) | `https://<CRM_DOMAIN>/...`, through Cloudflare | same URL, same TLS certificate, but the name resolves to `<CRM_TS_IP>` inside the n8n containers |
+| CRM API (about 151 files in the repo cache, about 29 live workflows) | `https://<CRM_DOMAIN>/...`, through Cloudflare | same URL, same TLS certificate, but the name resolves to `<CRM_TS_IP>` inside the n8n containers |
 | MCP (`MCP Client` / `MCP Client1` nodes) | `http://<CRM_ORIGIN>:8765/mcp`, plain http over the internet | `http://crm-private.internal:8765/mcp`, inside WireGuard |
 | CRM DB (`sorento-crm-db` credential, BL-049) | `<CRM_ORIGIN>:6432` over the internet | `crm-private.internal:6432`, inside WireGuard |
 
 The trick is Docker's `extra_hosts`: it writes lines into each n8n container's `/etc/hosts`. The
 API keeps its real hostname, so SNI, the certificate check and nginx's `server_name` all still
-match, and none of the 151 workflow files change. Only the MCP nodes and the DB credential
-change, because they name the raw address today.
+match, and none of those workflows change. Only the MCP nodes, the DB credential and the few
+HTTPS nodes on the raw address (step 4) change, because they name the raw address today.
 
 Everyone else (browsers, Respond.io, AutoCount, Cloudflare) is untouched: public DNS does not
 change.
@@ -48,13 +48,13 @@ Never write the real values into the repo, a PR or a comment.
 | 1 | Tailscale policy, then both boxes join | 15 min | no, if the policy keeps `autogroup:member` as written |
 | 2 | CRM box: let tailnet traffic in (nginx 8765 allowlist, ufw, pgbouncer) | 10 min | no, adds access only |
 | 3 | n8n box: `extra_hosts` | 10 min | yes, n8n restarts; keep the rollback block open |
-| 4 | n8n UI: MCP nodes and the `sorento-crm-db` credential | 15 min | yes, per node; each has its own rollback |
+| 4 | n8n UI: MCP nodes, the `sorento-crm-db` credential, `family-fetch`, `post-inject` | 15 min | yes, per node; each has its own rollback |
 | 5 | Checks: timing curl, one test-number chatbot turn | 10 min | no |
 | 6 | After 48 h with no rollback: delete the public 6432 / 8765 rules in Hostinger | 5 min | yes; rollback is re-adding two rules |
 
 Do steps 3 to 5 outside office hours. n8n restarts once in step 3.
 
-## Step 0. Pre-checks on the CRM box (read-only)
+## Step 0. Pre-checks (read-only on prod)
 
 The prod nginx config is hand-edited on the box and not in git (only the upstreams file is
 written by `scripts/blue_green_deploy.sh:84-94`, into `/etc/nginx/conf.d/sorento_upstreams.conf`).
@@ -73,6 +73,7 @@ sudo nginx -T 2>/dev/null | grep -nE '^\s*(server_name|listen|ssl_certificate)\b
   `listen <CRM_TS_IP>:443`: after a reboot nginx can start before tailscaled has that address, and
   nginx then refuses to start at all, taking the public site down with it.
 - Check the same for the `listen 8765` block (MCP). It should also have no address in front.
+- Rollback: nothing to roll back (read-only).
 
 ### 0.1b Anything in nginx keyed on n8n's public address?
 
@@ -85,16 +86,17 @@ sudo nginx -T 2>/dev/null | grep -nE '<N8N_HOST>|limit_req|geo '
 - Never add `100.64.0.0/10` (the tailnet range) to the backend's `TRUSTED_PROXIES`: nginx already
   passes the n8n box's real tailnet address on, and the backend's resolver
   (`sorento_crm_backend/app/services/client_ip.py`) handles it as it is.
+- Rollback: nothing to roll back (read-only).
 
 ### 0.2 Is the certificate publicly trusted?
 
 n8n will check the certificate itself now, with nobody in between, so it must be one that a
-normal client trusts:
+normal client trusts.
 
 Already known (crew, 15 Oct): a direct TLS handshake to the origin, around Cloudflare, showed
 `<CRM_DOMAIN>` and the two other Cloudflare-proxied hosts on the CRM box all serving a
 browser-trusted Let's Encrypt certificate (not a Cloudflare Origin CA one), expiring 14 Dec,
-5 Dec and 24 Nov. So this path is feasible; the check below confirms it on the day you run it.
+5 Dec and 24 Nov. So this path is feasible; the check below confirms it on the day you run it:
 
 ```bash
 # what nginx actually serves for <CRM_DOMAIN>, read off the wire
@@ -114,7 +116,11 @@ echo | openssl s_client -connect 127.0.0.1:443 -servername <CRM_DOMAIN> 2>/dev/n
 - Let's Encrypt renewal must keep working for as long as n8n uses this path. The tailnet vhost
   serves the same certificate files, so a renewal that stops (or a switch to Origin CA) breaks
   n8n's calls the day the old certificate expires, not before. After each renewal, rerun the
-  `s_client` check above and step 5.1; both must show the new `notAfter`.
+  `s_client` check above (it must show the new `notAfter`) and step 5.1 (it must still print
+  `status=401` or `403` with no certificate error). If certbot was set up with `certonly`, make
+  sure a deploy hook reloads nginx (`--deploy-hook 'systemctl reload nginx'`), or nginx keeps
+  serving the old file.
+- Rollback: nothing to roll back (read-only).
 - Later hardening warning: edge runbook "Later" plans Authenticated Origin Pulls
   (`ssl_verify_client on`). n8n sends no client certificate, so that would reject every n8n call
   on this path. When that lands, use `ssl_verify_client optional;` and refuse only requests that
@@ -144,7 +150,7 @@ On the n8n box (`<N8N_MAIN>` is the main n8n container, not a worker; list them 
 `docker ps --format '{{.Names}}\t{{.Image}}' | grep -i n8n`):
 
 ```bash
-D=~/n8n-export-$(date +%Y%m%d)                       # set once, reused below
+D=~/n8n-export-$(date +%Y%m%d-%H%M)                  # set once, reused below
 docker exec -u node <N8N_MAIN> sh -c 'rm -rf /tmp/wf && mkdir -p /tmp/wf && n8n export:workflow --all --separate --output=/tmp/wf/'
 docker cp <N8N_MAIN>:/tmp/wf "$D"
 docker exec -u node <N8N_MAIN> rm -rf /tmp/wf
@@ -156,15 +162,18 @@ The export holds no credential secrets, but nodes may carry literal header value
 data (customer messages, phone numbers), and it contains `<CRM_ORIGIN>`: treat the folder as
 secret. Do not run `export:credentials`. Keep the folder only on the n8n box (or in your password
 manager's file store), never on a laptop or in any git repo. Delete it once step 6 has held for
-48 hours with no rollback: `rm -rf ~/n8n-export-<date>`.
+48 hours with no rollback: `rm -rf ~/n8n-export-<date>-<time>`.
 
-Re-check (each line prints the workflow file, its `active` flag and the node name):
+Re-check, from inside that folder (each line prints the workflow name, its `active` flag and the
+node name):
 
 ```bash
-CRM_ORIGIN='<CRM_ORIGIN>' python3 - <<'PY'
+CRM_ORIGIN='<CRM_ORIGIN>' python3 -I - <<'PY'
 import glob, json, os
 ORIGIN = os.environ["CRM_ORIGIN"]
-for f in sorted(glob.glob("*.json")):
+assert not ORIGIN.startswith("<"), "put the real origin address in CRM_ORIGIN"
+files = sorted(glob.glob("*.json")); assert files, "run this inside ~/n8n-export-<date>-<time>"
+for f in files:
     wf = json.load(open(f))
     for n in wf.get("nodes", []):
         body = json.dumps(n)
@@ -193,7 +202,7 @@ PY
 
   No workflow names port 6432 or 5432 directly (the DB is reached only through the credential),
   and about 29 workflows call `<CRM_DOMAIN>`, which step 3 moves with no edit.
-- Any extra `names-origin`, `mcp-client`, `ignore-ssl` or `sorento-crm-db` line that the table
+- Any extra `names-origin`, `mcp-client`, `ignore-ssl`, `db-port` or `sorento-crm-db` line that the table
   does not have: add it to your step 4 list (same edit as its row), and tell crew on the PR
   (workflow and node name only, never the resolved URL).
   Test copies on credential `n8n_test-db` are not part of this runbook.
@@ -431,8 +440,10 @@ path, but after step 6 a fork still on the raw address stops working.
 
 - Check: step 5.2's chatbot turn; in **Executions**, that turn's `sub-get-results` run is green
   and `MCP Client1` shows output.
-- Rollback: set both endpoints back to `http://<CRM_ORIGIN>:8765/mcp` and save (or re-import the
-  step 0.4 copy).
+- Rollback: set both endpoints back to `http://<CRM_ORIGIN>:8765/mcp` and save. Only if that is
+  not possible, re-import the step 0.4 copy (step 0.4 rollback); the import comes back INACTIVE
+  and drops any edit since the export, so re-activate `sub-get-results` in the UI at once and
+  confirm its next execution is green.
 
 ### 4.2 The `sorento-crm-db` credential
 
@@ -470,15 +481,15 @@ goes through Cloudflare either.
   miss-suggest lane runs). In **Executions**, `sub-miss-suggest-live` is green and `family-fetch`
   shows output, and step 5.2's nginx `tail` shows the request arriving from `<N8N_TS_IP>` (if it
   is missing, step 3's `extra_hosts` line is missing for that container and the call went through
-  Cloudflare). A certificate error here means the tailnet vhost serves the wrong certificate or
-  SNI name: recheck step 2.
+  Cloudflare). A certificate error here means the origin certificate fails step 0.2 (issuer, SAN or
+  expiry): roll back 4.3, rerun step 0.2's `s_client` check, and tell crew.
 - Rollback: keep `https://<CRM_DOMAIN>` and Ignore SSL Issues OFF; rolling back step 3 sends the
   call through Cloudflare, which needs no URL change. Never turn Ignore SSL Issues back on.
 
 ### 4.4 `post-inject` in `live-poller`
 
 Its URL is an expression, so the grep cannot tell where it points. Open `live-poller`, open the
-latest green execution, click `post-inject` and read the resolved URL on its input side.
+latest green execution, click `post-inject` and read the URL field's resolved value.
 
 - `https://<CRM_DOMAIN>/...`: nothing to do; step 3 already moved it.
 - `<CRM_ORIGIN>` anywhere in it: change the part of the expression that supplies the host to
@@ -542,6 +553,7 @@ for (const p of [8765, 6432]) { const t0=Date.now();
 ```
 
 - Check: both lines print `ok` with `<CRM_TS_IP>`.
+- Rollback: nothing to roll back (read-only).
 
 ### 5.2 One chatbot turn on the test number
 
@@ -573,7 +585,7 @@ done
 
 - Check: no `src=<N8N_HOST>` line. (`100.x` lines are the tailnet; `127.0.0.1` and `172.x` are
   the box itself.) If `<N8N_HOST>` still shows, a node or credential still names `<CRM_ORIGIN>`;
-  find it with crew's grep below before going on.
+  rerun step 0.4 on a fresh export before going on.
 
 Then, in hPanel:
 
@@ -609,7 +621,7 @@ works while the public rules exist. So after step 6, a rollback of step 3 or 4 s
 6's rollback. Prefer fixing the tailnet (`tailscale status`, `tailscale ping`) over reopening
 6432 / 8765: reopening brings back the clear-text, login-less MCP port on the internet.
 
-Also, once `family-fetch` (below) no longer names `<CRM_ORIGIN>`, edge step 5.4 does not need its
+Also, once `family-fetch` (step 4.3) no longer names `<CRM_ORIGIN>`, edge step 5.4 does not need its
 "443 from `<N8N_HOST>`" rule either.
 
 ## Failover (Tier 1 standby box)
@@ -744,7 +756,7 @@ grep -rnE '"type": *"@n8n/n8n-nodes-langchain\.mcpClient(Tool)?"' --include='*.j
 # 3. Every node that uses the Postgres credential, by credential name.
 grep -rln '"sorento-crm-db"' --include='*.json' .
 # 4. Nodes that wave the certificate through. After step 3 they get a real certificate, so the
-#    flag can go; with the raw IP (family-fetch, n8n-changes.md:929-932) they need repointing to
+#    flag can go; with the raw IP (family-fetch, documentation/plans/chatbot/n8n-changes.md:929-932) they need repointing to
 #    https://<CRM_DOMAIN>/... first.
 grep -rln '"allowUnauthorizedCerts": *true' --include='*.json' .
 # 5. Count of API calls through the hostname (expect about 151 files): these need NO change.
