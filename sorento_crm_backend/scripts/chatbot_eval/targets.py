@@ -251,13 +251,16 @@ def _fact_ok(row: dict[str, Any], fact: Any) -> bool:
 
 def _oq(row: dict[str, Any]) -> tuple[Any, Any]:
     """(question before, question after): `memory.open_question` is {before, after} in real traces, the bare
-    after value in older rows (whose before value is the `state` event's). In a real trace a missing `before` is
-    unknown: the `state` record is written after the turn, so it never stands in for it."""
+    after value in older rows. A missing `before` is unknown: the `state` record is written after the turn, so it
+    never stands in for it."""
     mem = _kind(row, "memory").get("open_question")
-    state_q = _kind(row, "state").get("open_question")
     if isinstance(mem, dict) and ("before" in mem or "after" in mem):
         return mem.get("before"), mem.get("after")
-    return state_q, mem
+    # a hand-built row (its memory event has no focus before/after) records the question before in `state`; in a
+    # real trace the `state` event is written after the turn, so it never stands in for the unknown before
+    focus = _kind(row, "memory").get("focus")
+    hand_built = not (isinstance(focus, dict) and ("before" in focus or "after" in focus))
+    return (_kind(row, "state").get("open_question") if hand_built else None), mem
 
 
 HANDOVER_KINDS = frozenset({"team_pick", "member_offer", "company_pick"})  # turn/pending.py ESCALATION_OFFER_KINDS
@@ -457,14 +460,22 @@ def _followup(row, item):
     want = {_key(c) for c in gold.get("subject_after") or []}
     _mem_before = _codes_of(_mem_focus(row, "before").get("products"))
 
+    # a typed literal the resolver expanded (prefix family, picker options) counts only for an unresolved gold code
+    family = bool(gold.get("code_unresolved"))
+
+    def covered(a: str, w: set[str]) -> bool:
+        return _covered(a, w) if family else a in w
+
     def carried_old() -> bool:
-        return bool(want) and not all(_covered(a, want) for a in after_subject)
+        return bool(want) and not all(covered(a, want) for a in after_subject)
 
     def new_subject_ok() -> bool | None:
         if not want:
             return None
-        if all(any(_covered(a, {w}) for a in after_subject) for w in want):
+        if all(any(covered(a, {w}) for a in after_subject) for w in want):
             return True
+        if not family:
+            return False
         options = [_squash(o.get("code") or o.get("label")) for o in ((_oq(row)[1] or {}).get("options") or [])
                    if isinstance(o, dict)] if isinstance(_oq(row)[1], dict) else []
         return bool(options) and all(any(o.startswith(_squash(w)) for w in want) for o in options)
@@ -511,7 +522,7 @@ def _followup(row, item):
         if picked:  # the mode is not always recorded, so the option is checked only when it is
             want_option = _norm(gold.get("option"))
             num = re.fullmatch(r"(\d+)\.?", want_option)
-            if num and 0 < int(num.group(1)) <= len(options):  # a numeric gold is the 1-based position in the question
+            if want_option not in options and num and 0 < int(num.group(1)) <= len(options):  # a numeric gold is the 1-based position in the question
                 want_option = options[int(num.group(1)) - 1]
             checks.append(("option", want_option in picked, "The answer was not resolved to the chosen option."))
         return checks
@@ -521,7 +532,8 @@ def _followup(row, item):
         extra = _mem_focus(row, "after").get("extra") or {}
         values = {_val(e.get("spec_value")) for e in _entities(row) if e.get("spec_value") is not None}
         # a boolean spec value ("true") carries no words: the entity's own phrase is what the filter names
-        values |= {_val(e.get(k)) for e in _entities(row) if e.get("spec_value") is not None or e.get("spec_key")
+        values |= {_val(e.get(k)) for e in _entities(row) if (e.get("spec_key") or e.get("hint") == "specification")
+                   and (e.get("spec_value") is None or isinstance(e.get("spec_value"), bool))
                    for k in ("raw", "label") if e.get(k)}
         values |= {_val(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "brand"}
         values |= {_val(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
@@ -538,7 +550,7 @@ def _followup(row, item):
         # a typed literal that is no exact code but whose family the bot holds (it expanded to the held rows) is a
         # new subject and a change
         expanded = bool(gold.get("code_unresolved") and want and _mem_before and not want & _mem_before
-                        and all(any(_covered(a, {w}) for a in after_subject) for w in want))
+                        and all(any(covered(a, {w}) for a in after_subject) for w in want))
         return [
             ("old_dropped", not carried_old(), "The old subject was carried into the new ask."),
             ("new_subject", new_subject_ok(), "The new subject was not picked up."),
