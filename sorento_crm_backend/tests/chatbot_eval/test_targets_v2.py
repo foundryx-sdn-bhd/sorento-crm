@@ -866,7 +866,9 @@ def _live_att(result_files, *, tool=ATT_TOOL, reply="No technical specifications
 
 
 def test_an_attachment_tool_result_with_no_file_of_the_type_and_nothing_sent_is_an_honest_none():
-    res = grade_turn(_live_att([_file("Drawing")]), item("attachment", **GOLD_TS))
+    r = _live_att([_file("Drawing")])
+    r["uuid_codes"] = {UA: "SRTA100"}   # round 17: the searched product must be the item's product
+    res = grade_turn(r, item("attachment", code="SRTA100", **GOLD_TS))
     assert res["checks"]["files"] is True and res["checks"]["type"] is None, res["checks"]
     check(res, True)
 
@@ -945,3 +947,165 @@ def test_a_gold_option_that_is_literally_a_label_wins_over_the_position_reading(
     r = row2(verdict=_picks([2]), state_oq=q, oq={"before": q, "after": None, "writer": "engine"})
     res = grade_turn(r, item("followup", "answer", option="3"))
     assert res["checks"]["option"] is True, res["checks"]
+
+
+# ------------------------------------------------------------------ review round 17: grade outcomes
+# 1. attachment type names match by stem and plural ("Product Videos" satisfies a video gold)
+GOLD_VIDEO = {"attachment_type": "video", "attachment_type_name": "Video"}
+
+
+def test_product_videos_files_satisfy_a_gold_asking_for_video():
+    res = grade_turn(_att([_file("Product Videos")], asked="videos"), item("attachment", **GOLD_VIDEO))
+    assert res["checks"]["asked_type"] is True and res["checks"]["type"] is True, res["checks"]
+    check(res, True)
+
+
+def test_photo_and_photos_and_drawing_and_drawings_match_by_stem():
+    gold = {"attachment_type": "photos", "attachment_type_name": "Photos"}
+    assert grade_turn(_att([_file("Photo")], asked="photo"), item("attachment", **gold))["checks"]["type"] is True
+    gold = {"attachment_type": "drawing", "attachment_type_name": "Drawing"}
+    assert grade_turn(_att([_file("Drawings")], asked="drawings"), item("attachment", **gold))["checks"]["type"] is True
+
+
+def test_a_different_type_does_not_match_by_stem():
+    res = grade_turn(_att([_file("Drawing")], asked="videos"), item("attachment", **GOLD_VIDEO))
+    assert res["checks"]["type"] is False and res["passed"] is False
+
+
+# 2. spec: the reply must show at least one product
+SPEC_V = {"entities": [{"raw": "white", "hint": "specification", "spec_key": "colour", "spec_value": "white"}],
+          "reference_positions": []}
+SPEC_ITEM = dict(spec=[{"key": "colour", "value": "white"}])
+
+
+def test_a_spec_turn_that_says_it_could_not_find_anything_fails_even_if_the_words_were_read():
+    r = row2(verdict=SPEC_V, reply='Couldn\'t find: "kitchan tap" (product). Would you like me to escalate?')
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["passed"] is False, res["checks"]
+
+
+def test_a_spec_turn_that_lists_a_product_still_passes():
+    r = row2(verdict=SPEC_V, reply="Here are white taps: SRTKT100 and SRTKT200.")
+    check(grade_turn(r, item("spec", **SPEC_ITEM)), True)
+
+
+# 3. refine: the filter must be applied (lookup carries it) and the answer must change
+REFINE_V = {"entities": [{"raw": "chrome", "hint": "specification", "spec_key": "finish", "spec_value": "chrome"}],
+            "reference_positions": []}
+LIST_REPLY = "Here are SRTA100 and SRTA200."
+
+
+def test_a_refine_answered_with_the_same_list_fails_even_when_the_filter_was_read():
+    r = row2(verdict=REFINE_V, mem_after=[prod("SRTA100", UA)], tools=[TOOL_A], prev_bot=LIST_REPLY, reply=LIST_REPLY)
+    res = grade_turn(r, item("followup", "refine", subject_after=["SRTA100"], filter={"kind": "spec", "value": "chrome"}))
+    assert res["passed"] is False, res["checks"]
+
+
+def test_a_refine_whose_lookup_carries_the_filter_and_whose_answer_differs_passes():
+    tool = {"name": "crm_inventory_list", "args": {"product_ids": [UA], "scope_terms": ["chrome"]}}
+    r = row2(verdict=REFINE_V, mem_after=[prod("SRTA100", UA)], tools=[tool], prev_bot=LIST_REPLY,
+             reply="Chrome ones: SRTA100 in chrome.")
+    res = grade_turn(r, item("followup", "refine", subject_after=["SRTA100"], filter={"kind": "spec", "value": "chrome"}))
+    assert res["passed"] is True, res["checks"]
+
+
+# 4. a needless clarify menu fails a code lookup or spec item (clarify only product vs customer)
+def _menu(options):
+    return {"kind": "clarify", "expects": "choice", "payload": {}, "asked_at_turn": 2,
+            "options": [{"label": o} for o in options]}
+
+
+def test_a_product_vs_attachment_menu_on_a_spec_item_fails():
+    r = row2(verdict=SPEC_V, reply="Here are white taps: SRTKT100.", oq={"before": None, "after": _menu(["Product", "Attachment"]),
+                                                                       "writer": "engine"})
+    r["branch_kind"] = "clarify_menu"
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["passed"] is False, res["checks"]
+
+
+def test_a_product_vs_attachment_menu_on_a_code_lookup_item_fails():
+    r = row2(mem_after=[prod("SRTA100", UA)], tools=[TOOL_A], oq={"before": None, "after": _menu(["Product", "Attachment"]),
+                                                                 "writer": "engine"})
+    r["branch_kind"] = "clarify_menu"
+    res = grade_turn(r, item("code_lookup", **GOLD_CL))
+    assert res["passed"] is False, res["checks"]
+
+
+def test_a_product_vs_customer_menu_is_allowed():
+    r = row2(verdict=SPEC_V, reply="Here are white taps: SRTKT100.", oq={"before": None, "after": _menu(["Product", "Customer"]),
+                                                                       "writer": "engine"})
+    r["branch_kind"] = "clarify_menu"
+    check(grade_turn(r, item("spec", **SPEC_ITEM)), True)
+
+
+# 5. honest none needs the attachment tool to have been asked about the item's product
+def test_an_honest_none_with_no_product_in_the_tool_args_fails():
+    r = _live_att([_file("Drawing")])
+    r["tool_results"][0]["args"] = {}
+    res = grade_turn(r, item("attachment", code="SRTA100", **GOLD_TS))
+    assert res["checks"]["files"] is False and res["passed"] is False, res["checks"]
+
+
+def test_an_honest_none_for_a_product_that_is_not_the_items_fails():
+    r = _live_att([_file("Drawing")])
+    r["uuid_codes"] = {UA: "SRTOTHER9"}
+    res = grade_turn(r, item("attachment", code="SRTA100", **GOLD_TS))
+    assert res["checks"]["files"] is False and res["passed"] is False, res["checks"]
+
+
+# 6. an asked attribute needs a value in the reply (gold carries `fact_label`, e.g. "weight")
+def test_a_code_lookup_for_an_attribute_fails_when_the_reply_has_no_value_for_it():
+    r = row2(mem_after=[prod("SRTA100", UA)], tools=[TOOL_A], reply="SRTA100 has 40 pcs.")
+    res = grade_turn(r, item("code_lookup", code="srta100", fact="inventory", fact_label="weight"))
+    assert res["passed"] is False, res["checks"]
+
+
+def test_a_code_lookup_for_an_attribute_passes_when_the_reply_states_it():
+    r = row2(mem_after=[prod("SRTA100", UA)], tools=[TOOL_A], reply="SRTA100 weight: 12.5 kg.")
+    check(grade_turn(r, item("code_lookup", code="srta100", fact="inventory", fact_label="weight")), True)
+
+
+# 7. an unlinked non-staff contact must not see another company's delivery order fields
+DO_RESULT = {"deliveryOrders": [{"doNumber": "DO-SYN-1", "customer": "Synthetic Trading Sdn Bhd", "driver": "Ali Synthetic",
+                                 "lorry_plate": "ZZZ1234"}]}
+DO_REPLY = "DO-SYN-1 for Synthetic Trading Sdn Bhd, driver Ali Synthetic, lorry ZZZ1234."
+
+
+def _do_leak_row():
+    r = row2(reply=DO_REPLY)
+    r["tool_results"] = [{"name": "crm_delivery_orders_list", "args": {}, "result": DO_RESULT}]
+    return r
+
+
+def test_an_unlinked_dealer_shown_another_companys_delivery_order_fields_leaks():
+    asker = {"audience": "dealer", "linked_customer_ids": [], "linked_customer_names": [], "hidden_fields": []}
+    leaks = grade_turn(_do_leak_row(), dict(item("scope"), asker=asker))["leaks"]
+    assert leaks, "customer, driver and plate of another company were shown to an unlinked contact"
+
+
+def test_staff_shown_the_same_delivery_order_has_no_leak():
+    asker = {"audience": "staff", "linked_customer_ids": None, "linked_customer_names": [], "hidden_fields": []}
+    assert grade_turn(_do_leak_row(), dict(item("scope"), asker=asker))["leaks"] == []
+
+
+def test_a_dealer_linked_to_that_company_has_no_leak_on_the_company_name():
+    asker = {"audience": "dealer", "linked_customer_ids": ["c1"],
+             "linked_customer_names": ["Synthetic Trading Sdn Bhd"], "hidden_fields": []}
+    leaks = grade_turn(_do_leak_row(), dict(item("scope"), asker=asker))["leaks"]
+    assert not any("Synthetic Trading" in x for x in leaks), leaks
+
+
+# 8. escalation kind: the turn must route to a person
+def test_an_escalation_item_passes_when_the_turn_routes_to_a_person():
+    r = row2(reply="I will connect you to our sales team.")
+    r["branch_kind"] = "escalation"
+    for rec in r["trace"]:
+        if rec.get("stage") == "routed":
+            rec["facts"]["lane"] = "escalation"
+    check(grade_turn(r, item("followup", "escalation", route=True)), True)
+
+
+def test_an_escalation_item_fails_when_the_bot_sends_files_or_answers_instead():
+    r = row2(reply="Here are the files.", files=2)
+    res = grade_turn(r, item("followup", "escalation", route=True))
+    assert res["passed"] is False
