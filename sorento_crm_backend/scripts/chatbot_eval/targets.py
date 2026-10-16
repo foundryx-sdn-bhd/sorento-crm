@@ -237,6 +237,8 @@ def _followup(row, item):
             checks.append(("tool_target", any(code in _dump(t.get("args")).upper() for t in _tools(row)),
                            "The lookup did not target the chosen item."))
         return checks
+    if kind == "answer" and gold.get("idea_ref"):
+        return _ideas_answer(row, gold)
     if kind == "answer":
         before = _kind(row, "state").get("open_question")
         after_q = _kind(row, "memory").get("open_question")
@@ -268,6 +270,12 @@ def _followup(row, item):
             ("old_dropped", not carried_old(), "The old subject was carried into the new ask."),
             ("new_subject", after <= focus, "The new subject was not picked up."),
         ]
+    if kind == "and_x" and gold.get("variant") == "new_fact":
+        return [
+            ("decision", decision == "new_ask", "The bot did not treat the message as a new question."),
+            ("fact", gold.get("fact") in _domains(row), "The new fact asked was not looked up."),
+            ("subject", bool(after) and after <= focus, "The subject was dropped when a new fact was asked."),
+        ]
     if kind == "and_x":
         return [
             ("decision", decision == "new_ask", "The bot did not treat the message as a new item."),
@@ -276,6 +284,30 @@ def _followup(row, item):
             ("new_subject", after <= focus, "The new item was not picked up."),
         ]
     return [("known_kind", False, "Unknown follow-up kind.")]
+
+
+def _held_idea(row: dict[str, Any]) -> Any:
+    sv = (_stage(row, "received").get("raw") or {}).get("session_vars") or {}
+    idea = sv.get("ideation")
+    if idea is None and isinstance(sv.get("variables"), dict):
+        idea = sv["variables"].get("ideation")
+    return idea
+
+
+def _ideas_answer(row, gold):
+    ref = _norm(gold["idea_ref"])
+    held = _held_idea(row)
+    held_id = _norm(held.get("id") if isinstance(held, dict) else held)
+    patch = (_stage(row, "remembered").get("raw") or {}).get("session_patch") or {}
+    kept = held_id == ref
+    if kept and "ideation" in patch:
+        new = patch["ideation"]
+        kept = _norm(new.get("id") if isinstance(new, dict) else new) == ref
+    reply = reply_text(row).lower().replace("\u2019", "'")
+    return [
+        ("idea_kept", kept, "The bot dropped the idea it was holding."),
+        ("no_restart", "what's your idea" not in reply, "The bot restarted by asking for the idea again."),
+    ]
 
 
 def _spec(row, item):
@@ -323,6 +355,7 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
         "item_id": item.get("item_id"), "slice": item["slice"], "kind": item.get("kind"), "passed": passed,
         "reason": "The bot did what the message needed." if passed else failed,
         "checks": {name: ok for name, ok, _ in checks}, "leaks": leaks, "made_up": made_up,
+        **({"growth": True} if item.get("growth") else {}),
     }
 
 
@@ -339,16 +372,24 @@ def _stats(runs: list[list[dict[str, Any]]]) -> dict[str, Any]:
 
 
 def summarise(results: list[list[dict[str, Any]]], bars: dict[str, float]) -> dict[str, Any]:
-    slices: dict[str, Any] = {}
-    names = sorted({x["slice"] for run in results for x in run})
-    for name in names:
-        slices[name] = _stats([[x for x in run if x["slice"] == name] for run in results])
-        kinds = sorted({x["kind"] for run in results for x in run if x["slice"] == name and x.get("kind")})
-        if kinds:
-            slices[name]["kinds"] = {k: _stats([[x for x in run if x["slice"] == name and x.get("kind") == k] for run in results])
-                                     for k in kinds}
+    """Growth items are reported under `growth` and stay out of slice n/rate and `meets`; their leaks and
+    made-up facts still count, since those bars are zero-tolerance."""
+    core = [[x for x in run if not x.get("growth")] for run in results]
+    grow = [[x for x in run if x.get("growth")] for run in results]
+
+    def by_slice(runs: list[list[dict[str, Any]]]) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for name in sorted({x["slice"] for run in runs for x in run}):
+            out[name] = _stats([[x for x in run if x["slice"] == name] for run in runs])
+            kinds = sorted({x["kind"] for run in runs for x in run if x["slice"] == name and x.get("kind")})
+            if kinds:
+                out[name]["kinds"] = {k: _stats([[x for x in run if x["slice"] == name and x.get("kind") == k] for run in runs])
+                                      for k in kinds}
+        return out
+
+    slices, growth = by_slice(core), by_slice(grow)
     leaks_per_run = [sum(len(x["leaks"]) for x in run) for run in results]
     made_per_run = [sum(len(x["made_up"]) for x in run) for run in results]
     meets = (all(n == 0 for n in leaks_per_run) and all(n == 0 for n in made_per_run)
              and all(name in slices and slices[name]["rate"] >= bar for name, bar in bars.items()))
-    return {"slices": slices, "leaks": sum(leaks_per_run), "made_up": sum(made_per_run), "meets": meets}
+    return {"slices": slices, "growth": growth, "leaks": sum(leaks_per_run), "made_up": sum(made_per_run), "meets": meets}
