@@ -171,7 +171,8 @@ def test_the_same_axis_scoped_ranks_within_the_rows_printed(console) -> None:
 def test_global_is_a_fresh_ask_and_carries_nothing(console) -> None:
     _turn1(console)
     text, calls = console.say(_drill(ranking_drill="global"), "top 10 customers overall")
-    assert calls == [] and text.strip() == PERIOD_Q, text
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert calls == [] and text.strip().startswith(f"1. {PERIOD_Q}\n"), text
 
 
 def test_unsure_asks_one_question_and_runs_nothing(console) -> None:
@@ -212,13 +213,15 @@ def test_scoped_with_no_ranking_held_is_said_and_nothing_runs(console) -> None:
 def test_unsure_with_no_ranking_held_is_the_fresh_ask(console) -> None:
     """Review S3: with nothing to scope to, the global reading is the only one."""
     text, calls = console.say(_drill(ranking_drill="unsure"), "top 10 customers")
-    assert calls == [] and text.strip() == PERIOD_Q, text
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert calls == [] and text.strip().startswith(f"1. {PERIOD_Q}\n"), text
 
 
 def test_unsure_after_a_month_list_is_the_fresh_ask(console) -> None:
     _turn1(console, group_by="month")
     text, calls = console.say(_drill(ranking_drill="unsure"), "top 10 customers")
-    assert calls == [] and text.strip() == PERIOD_Q, text
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert calls == [] and text.strip().startswith(f"1. {PERIOD_Q}\n"), text
 
 
 @pytest.mark.parametrize(
@@ -390,7 +393,8 @@ def test_the_scope_reply_global_is_the_fresh_ask(console) -> None:
     _turn1(console)
     console.say(_drill(ranking_drill="unsure"), "top 10 customers")
     text, calls = console.say(_scope_reply("global", group_by="customer"), "across all customers")
-    assert calls == [] and text.strip() == PERIOD_Q, text
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert calls == [] and text.strip().startswith(f"1. {PERIOD_Q}\n"), text
     _text, calls = console.say(_reply(**SEP), "september")
     _text, calls = console.say(_reply(measure="amount"), "by amount") if not calls else (_text, calls)
     _text, calls = console.say(_reply(basis="delivered"), "delivered") if not calls else (_text, calls)

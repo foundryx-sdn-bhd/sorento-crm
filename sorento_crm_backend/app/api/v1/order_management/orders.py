@@ -1795,6 +1795,13 @@ async def get_sales_report(
         None,
         description="Canonical customer UUIDs (csv/JSON/repeated) - the chatbot's resolved customer entity.",
     ),
+    brand_ids: Optional[list[str]] = Query(
+        None,
+        description=(
+            "Canonical brand UUIDs (csv/JSON/repeated, max 50) - narrows the figures to "
+            "those brands' own products (Product.brand_id). A filter, not a subject."
+        ),
+    ),
     channel: Optional[str] = Query(
         None,
         description=(
@@ -1975,9 +1982,12 @@ async def get_sales_report(
     if _no_subject and not scoped_customer_ids:
         raise _needs_subject()
     resolved_warehouse_codes = _normalize_entities(warehouse_codes)
+    # Chat fix PR-B S5 (AC-B7): a brand narrows the figures, never silently dropped.
+    resolved_brand_ids = parse_uuid_list(brand_ids, param_name="brand_ids")
     for values, name in (
         (resolved_customer_ids, "customer_ids"),
         (resolved_warehouse_codes, "warehouse_codes"),
+        (resolved_brand_ids, "brand_ids"),
     ):
         if values is not None and len(values) > 50:
             raise AppException(
@@ -2002,6 +2012,7 @@ async def get_sales_report(
         product_code=product_code,
         customer_query=None if scoped_customer_ids is not None else customer_query,
         customer_ids=resolved_customer_ids,
+        brand_ids=resolved_brand_ids,
         channel=channel_norm,
         warehouse_codes=resolved_warehouse_codes,
         location_token=location_token,

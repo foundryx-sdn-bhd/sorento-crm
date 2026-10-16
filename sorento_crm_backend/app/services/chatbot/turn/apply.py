@@ -47,6 +47,7 @@ from app.services.chatbot.turn.narrow import decide as narrow_decide
 from app.services.chatbot.turn.pending import (
     ESCALATION_OFFER_KINDS,
     OFFER_KINDS,
+    SALES_ANALYSIS_COMPANY_KIND,
     Pending,
     ask as pending_ask,
     is_roster,
@@ -730,6 +731,13 @@ def _answer_pending(state: State, decision: Decision, trace: Trace, verdict: dic
     if pending is None:
         return focus, None, None, False
 
+    if pending.kind == SALES_ANALYSIS_COMPANY_KIND and (decision.answers or decision.positions):
+        # Chat fix PR-B S7 (review): ONE company is the answer, taken at the engine seam
+        # before this runs; "both" or any other pick asks the same question again, never
+        # the generic roster path (a company name is no entity to fetch with).
+        trace.rules_fired.append("sales_analysis_company_reask")
+        return state.focus, pending, Plan(domains=[], fetch=[], ask=pending, denied=[], trace=trace), False
+
     if pending.kind in OUTSTANDING_KINDS:
         # BEFORE the generic roster path: these options are a SCOPE, not an entity to
         # fetch with, and building one into an entity sent "Both" to the resolver as an
@@ -1273,11 +1281,13 @@ TOP_SELLING_ONE_SHOT = ("detail_code",)
 #: and the parser key that answers each. The how-many question is not here: its answer
 #: is a bare count, which never names the ranking, so a message that does name it is a
 #: new ask (reviewer B2 (b), PR #1273).
-TOP_SELLING_CLARIFY_AXES = {
+TOP_SELLING_CLARIFY_AXES: dict[str, str | tuple[str, ...]] = {
     "group": "rank_group",
     "metric": "rank_by",
     "basis": "basis",
     "category": "category_words",
+    # Chat fix PR-B S1b: one numbered reply asked the metric and the basis; either answers it.
+    "metric_basis": ("rank_by", "basis"),
 }
 
 
@@ -1340,7 +1350,8 @@ def _top_selling_waiting(asked: Any, own: dict[str, Any]) -> bool:
     that restates the ranking while answering the clarify ("top 5 by amount" under "By
     quantity or by amount?") completes the asked ask."""
     axis = TOP_SELLING_CLARIFY_AXES.get(asked) if isinstance(asked, str) else None
-    return axis is not None and own.get(axis) not in (None, "unclear")
+    axes = axis if isinstance(axis, tuple) else (axis,)
+    return axis is not None and any(own.get(a) not in (None, "unclear") for a in axes)
 
 
 def record_top_selling_asked(focus: Focus, envelopes: list[dict[str, Any]]) -> None:

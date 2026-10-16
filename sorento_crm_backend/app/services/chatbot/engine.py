@@ -2627,6 +2627,41 @@ def _top_selling_question_answer(text: str, verdict: dict[str, Any], asked: Any)
     return None
 
 
+#: The parser keys that answer each open top selling question (`focus.top_selling.asked`), and
+#: the values each takes: the metric off `rank_by`, or the sales ranking's `measure` key.
+_TOP_SELLING_FILLS = {"metric": ("rank_by",), "basis": ("basis",), "metric_basis": ("rank_by", "basis")}
+_MEASURE_TO_RANK_BY = {"qty": "quantity", "amount": "amount"}
+
+
+def _fills_open_top_selling_question(focus: Any, verdict: dict[str, Any]) -> dict[str, Any]:
+    """Chat fix PR-B S2b: the top selling keys a NON top selling parse fills for the metric or
+    basis question the last reply asked, or {} when it fills none or names something of its own
+    (then it is a new ask): an entity (or a sales ranking's own words, `report_ask_words`).
+    Parser fields only, never the words."""
+    slot = focus.top_selling if isinstance(focus.top_selling, dict) else None
+    asked = slot.get("asked") if slot else None
+    if focus.status != "top_selling" or asked not in _TOP_SELLING_FILLS:
+        return {}
+    if jsc.js_string(verdict.get("order_status") or "").strip() == "top_selling":
+        return {}  # the ranking's own reading: `turn/apply._top_selling_rules` reads it
+    if any(
+        isinstance(e, dict) and e.get("current_message") is not False and jsc.js_string(e.get("hint") or "").strip()
+        for e in verdict.get("entities") or []
+    ):
+        return {}
+    words = verdict.get("report_ask_words")
+    if isinstance(words, dict) and any(jsc.array(v) for v in words.values()):
+        return {}
+    # The parse's `group_by` is not read: on an answering turn it is noise (12 of 14 live
+    # turns, PR-B replay 16 Oct), and the open question's axis wins (review S2b).
+    reading = {
+        "rank_by": verdict.get("rank_by") if verdict.get("rank_by") in ("quantity", "amount")
+        else _MEASURE_TO_RANK_BY.get(verdict.get("measure")),
+        "basis": verdict.get("basis") if verdict.get("basis") in ("delivered", "ordered") else None,
+    }
+    return {key: reading[key] for key in _TOP_SELLING_FILLS[asked] if reading[key]}
+
+
 def _as_ranking_answer(verdict: dict[str, Any], **keys: Any) -> dict[str, Any]:
     """`verdict` re-read as a refinement of the ranking on screen: the top selling ask,
     no ask of its own, only its category and brand words kept."""
@@ -2891,6 +2926,11 @@ def _top_selling_verdict(
     the ranking whatever the parser's status; an echoed word from an earlier turn is
     dropped; basis words switch the basis; a period alone re-runs the ranking for it.
     """
+    filled = _fills_open_top_selling_question(state.focus, verdict)
+    if filled:
+        # Chat fix PR-B S2b (R12, R17): a parse that fills the field the open question asked,
+        # naming nothing of its own, is its answer whatever report type the parser put on it.
+        return _as_ranking_answer(verdict, group_by=None, **filled), state, "top_selling_question_filled"
     if jsc.js_string(verdict.get("order_status") or "").strip() == "sales_ranking":
         # A new ask the parser named (owner held-state rule: a new intent always wins): never
         # captured by an open top selling question.
@@ -4833,6 +4873,10 @@ def _run_stages_body(  # noqa: PLR0915
             turn_trace.add("required_ask", {"verdict_rule": required_rule, "ask": (open_ask or {}).get("ask")})
         if required_rule == "required_ask_answer":
             state_in = dataclasses_replace(state_in, pending=None)
+        else:
+            # Chat fix PR-B S3: a refine of the report on screen re-runs it, whatever report
+            # type the parser named (`report_ask.as_held_refine`).
+            verdict = report_ask.as_held_refine(verdict, state_in.focus.sales_ranking_frame)
         # MULTI-ASK-PLAN round 6 (G1): the reply to the scope question re-runs the asked
         # multi-ask turn's own verdict from HERE, with the scope the parser read settled, so
         # it continues exactly as if the scope had been said.
@@ -4840,6 +4884,13 @@ def _run_stages_body(  # noqa: PLR0915
         if scope_verdict is not None:
             turn_trace.add("sub_asks", {"scope_answered": scope_verdict.get("family")})
             verdict = scope_verdict
+            state_in = dataclasses_replace(state_in, pending=None)
+        # Chat fix PR-B S7: the reply to the sales analysis's company question re-runs the
+        # asked analysis for the company it picked, the same way.
+        company_verdict = business.sales_analysis_company_reply(verdict, state_in.pending)
+        if company_verdict is not None:
+            turn_trace.add("sales_analysis", {"company_answered": company_verdict.get("sales_company")})
+            verdict = company_verdict
             state_in = dataclasses_replace(state_in, pending=None)
         # What the scope question stores to re-run, taken at the same point.
         scope_replay = copy.deepcopy(verdict)
@@ -6159,6 +6210,9 @@ def _run_stages_body(  # noqa: PLR0915
                 turn_trace.add("sub_asks", sub_result.trace)
                 answer = turn_compose.Answer(text=pack_parts(sub_result.text), question=sub_result.question)
                 bridge_answered = True
+                # Chat fix PR-B S3: the report the runner ran is the one on screen, so the next
+                # refine re-runs it; a turn that ran none holds none.
+                state_out.focus.sales_ranking_frame = sub_result.report_frame
                 if turn_sub_asks.resumes(verdict, state_in.pending):
                     # The runner's own question is answered, or a new multi-ask moved on
                     # from it (G4b): closed here, whatever form the parser's reply took
@@ -7124,9 +7178,17 @@ def _run_stages_body(  # noqa: PLR0915
                 ask = turn_runtime.stamp_customer_ask(
                     db, ask, ctx=ctx, payload=resolver_payload, space_id=space_id_for_turn
                 )
-            answer = turn_compose.compose_question(
-                ask, subject_state, _ask_localizer(ask, db, item, dry_run=dry_run)
-            )
+            same_stamp = turn_runtime.same_stamp_answer(ask, verdict)
+            if same_stamp is not None:
+                # Chat fix PR-B S9: a DO ask where every account reads "no DO": that is the
+                # answer and nothing is asked (no roster is armed).
+                stage[0] = "replied"
+                answer = turn_compose.Answer(text=same_stamp)
+                state_out = dataclasses_replace(state_out, pending=None)
+            else:
+                answer = turn_compose.compose_question(
+                    ask, subject_state, _ask_localizer(ask, db, item, dry_run=dry_run)
+                )
 
         # -- the REFUSAL: a denied stock check is an answer, not silence ------- #
         # `stock_denied` is one of the three business branch kinds, so it is outside

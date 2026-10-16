@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app.models.inventory import Warehouse
 from app.models.order import Customer
 from app.services.error_handler import handle_not_found
-from app.services.outstanding_report_service import _customer_echo
+from app.services.outstanding_report_service import _brand_echo, _customer_echo
 from app.services.sales_report_service import (
     _LIKE_ESCAPE,
     _escape_like,
@@ -243,11 +243,13 @@ def delivered_sales_report(
     group_by: Optional[str] = None,
     policy: Any = None,
     capped_by_policy: bool = False,
+    brand_ids: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """The route's body. `channel` is `dealer` / `project` / None, `group_by` one of
     `GROUP_BYS` or None (both validated by the route). `capped_by_policy` says a contact
     asked: `policy` is then that contact's stock visibility policy, and None (nobody
-    resolved) answers nothing (fail closed)."""
+    resolved) answers nothing (fail closed). `brand_ids` narrows to those brands'
+    products (chat fix PR-B S5); None is no brand filter."""
     token = (location_token or "").strip() or None
     named_codes = [str(c).strip() for c in (warehouse_codes or []) if str(c).strip()]
 
@@ -275,6 +277,9 @@ def delivered_sales_report(
         "customer_count": len(scoped_ids) if scoped_ids is not None else 0,
         "product_code": code.upper() if code else None,
         "product_codes": sorted(p.product_code for p in products),
+        # Chat fix PR-B S5b (AC-B7): the brand filter applied, so the reply names it (the
+        # outstanding report's own echo); None when no brand was named.
+        "brand_name": _brand_echo(db, list(brand_ids or [])),
         "channel": None,
         "channel_shown": False,
         "location_token": token,
@@ -327,6 +332,10 @@ def delivered_sales_report(
         params["customer"] = scoped_ids
     if product_ids:
         params["product"] = product_ids
+    if brand_ids is not None:
+        if not brand_ids:
+            return body  # never handed to the engine as [] ("no filter")
+        params["brand"] = list(brand_ids)
     if location_ids is not None:
         params["location"] = location_ids
     if channel_used:

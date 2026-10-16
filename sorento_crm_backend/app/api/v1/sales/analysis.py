@@ -289,7 +289,9 @@ def _prepare(
 
         names = [companies[c][0] for c in sorted(grants, key=lambda c: (c != DEFAULT_COMPANY_ID,
                                                                         companies[c][0]))]
-        return {"status": "clarify", "message": _company_question(names)}
+        # Chat fix PR-B S7: the names ride as data too, so the bot registers the question
+        # with them as its options and reads the next reply as its answer.
+        return {"status": "clarify", "message": _company_question(names), "options": names}
     else:
         return {"status": "error", "message": "Could not run the sales report right now."}
 

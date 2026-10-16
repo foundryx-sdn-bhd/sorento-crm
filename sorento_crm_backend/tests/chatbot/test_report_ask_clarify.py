@@ -67,6 +67,10 @@ BASIS_Q = "Delivered, ordered or outstanding?"
 TOP_SELLING = "crm_top_selling_report"
 SENTINEL_METRIC = "SENTINEL SHARED METRIC LINE"
 SENTINEL_BASIS = "SENTINEL SHARED BASIS LINE"
+#: Owner ruling 16 Oct 2026 (chat fix PR-B S1, S1b): the metric and the basis both open are one
+#: numbered reply.
+BOTH_Q = f"1. {METRIC_Q}\n2. {BASIS_Q}"
+TS_BOTH_Q = f"1. {TS_METRIC_Q}\n2. {TS_BASIS_Q}"
 
 
 # --------------------------------------------------------------------------- #
@@ -118,7 +122,8 @@ def _assert_no_top_selling(log: list[tuple[str, dict[str, Any]]], text: str) -> 
 def test_a_no_metric_and_no_basis_asks_the_metric_and_runs_nothing(console) -> None:
     _seed_wt(console)
     text, calls = console.say(_sorento_wc(), OWNER_MESSAGE)
-    assert text.strip() == METRIC_Q, text
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert text.strip() == BOTH_Q, text
     assert calls == [], calls
 
 
@@ -234,11 +239,12 @@ def test_the_questions_come_period_then_how_many_then_metric_then_basis(console)
         _fresh(_hit("sorento", "brand"), top_n=None, date_filter_start=None, date_filter_end=None),
         "top salesman for sorento",
     )
-    assert text.strip() == PERIOD_Q and calls == [], text
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert text.strip() == f"1. {PERIOD_Q}\n2. {TOPN_Q}\n3. {METRIC_Q}\n4. {BASIS_Q}" and calls == [], text
     text, calls = console.say(_reply(**SEP), "last month")
-    assert text.strip() == TOPN_Q and calls == [], text
+    assert text.strip() == f"1. {TOPN_Q}\n2. {METRIC_Q}\n3. {BASIS_Q}" and calls == [], text
     text, calls = console.say(_reply(top_n=5), "5")
-    assert text.strip() == METRIC_Q and calls == [], text
+    assert text.strip() == BOTH_Q and calls == [], text
     text, calls = console.say(_answer_keys(rank_by="amount"), "amount")
     assert text.strip() == BASIS_Q and calls == [], text
     _text, calls = console.say(_answer_keys(basis="ordered"), "ordered")
@@ -252,7 +258,8 @@ def test_the_metric_is_never_asked_before_the_period(console) -> None:
     text, calls = console.say(
         _fresh(_hit("sorento", "brand"), date_filter_start=None, date_filter_end=None), "top 3 salesman for sorento"
     )
-    assert text.strip() == PERIOD_Q and calls == [], text
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert text.strip() == f"1. {PERIOD_Q}\n2. {METRIC_Q}\n3. {BASIS_Q}" and calls == [], text
 
 
 # --------------------------------------------------------------------------- #
@@ -363,7 +370,8 @@ def test_h_the_default_top_10_is_not_what_a_metric_miss_falls_back_to(console) -
 
 def test_i_a_dealer_is_asked_the_same_questions(dealer) -> None:
     text, calls = dealer.say(_fresh(_e("Sorento", "brand"), group_by="product"), "top 3 products for Sorento")
-    assert text.strip() == METRIC_Q and calls == [], (text, calls)
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert text.strip() == BOTH_Q and calls == [], (text, calls)
     text, calls = dealer.say(_answer_keys(rank_by="quantity"), "qty")
     assert text.strip() == BASIS_Q and calls == [], (text, calls)
     _text, calls = dealer.say(_answer_keys(basis="delivered"), "delivered")
@@ -393,7 +401,8 @@ def test_j_a_null_null_verdict_settles_to_the_metric_question_with_no_default_in
 
     outcome, line = report_ask.settle(None, _fresh(), [])
     assert line is None and outcome is not None
-    assert not outcome.done and outcome.reply == METRIC_Q, outcome
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert not outcome.done and outcome.reply == BOTH_Q, outcome
     args = (outcome.extras or {}).get("args") or {}
     assert args.get("measure") != "amount" and args.get("basis") != "delivered", args
     assert "measure" not in args and "basis" not in args, args
@@ -442,7 +451,8 @@ def test_k_an_unclear_basis_asks_the_basis_too(session_factory, monkeypatch, rou
 def test_l_both_null_asks_the_metric_first_then_the_basis(session_factory, monkeypatch, route) -> None:
     _seed_contact(session_factory, variables={})
     reply, captured = _top_selling(session_factory, monkeypatch, _ts(rank_by=None, basis=None, top_n=10), "top 10 selling sorento")
-    assert reply.strip() == TS_METRIC_Q and ts_calls(captured) == [], reply
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert reply.strip() == TS_BOTH_Q and ts_calls(captured) == [], reply
     reply, captured = _top_selling(session_factory, monkeypatch, _answer_keys(rank_by="quantity"), "qty")
     assert reply.strip() == TS_BASIS_Q and ts_calls(captured) == [], reply
     _reply, captured = _top_selling(session_factory, monkeypatch, _answer_keys(basis="ordered"), "ordered")
@@ -516,7 +526,8 @@ def test_top_selling_question_order_is_group_metric_then_basis() -> None:
 
     axis, _line = _top_selling_question({"rank_group": "unclear", "rank_by": None, "basis": None})
     assert axis == "group"
-    assert _top_selling_question({"rank_by": None, "basis": None}) == ("metric", TS_METRIC_Q)
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert _top_selling_question({"rank_by": None, "basis": None}) == ("metric_basis", TS_BOTH_Q)
     assert _top_selling_question({"rank_by": "amount", "basis": None}) == ("basis", TS_BASIS_Q)
     assert _top_selling_question({"rank_by": "amount", "basis": "unclear"}) == ("basis", TS_BASIS_Q)
     assert _top_selling_question({"rank_by": "amount", "basis": "ordered"}) is None
@@ -568,7 +579,8 @@ def test_kill_the_ranking_lane_asks_through_the_shared_function(console, monkeyp
 
     monkeypatch.setattr(ranking_ask, "next_question", _sentinel)
     text, calls = console.say(_fresh(_hit("sorento", "brand")), "top 3 salesman for sorento this year")
-    assert text.strip() == SENTINEL_METRIC and calls == [], (text, calls)
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert text.strip() == f"1. {SENTINEL_METRIC}\n2. {SENTINEL_BASIS}" and calls == [], (text, calls)
 
 
 def test_kill_the_ranking_lanes_basis_line_comes_from_the_shared_function(console, monkeypatch) -> None:
@@ -585,7 +597,8 @@ def test_kill_top_selling_asks_through_the_shared_function(session_factory, monk
     monkeypatch.setattr(ranking_ask, "next_question", _sentinel)
     _seed_contact(session_factory, variables={})
     reply, captured = _top_selling(session_factory, monkeypatch, _ts(rank_by=None, basis=None, top_n=10), "top 10 selling sorento")
-    assert reply.strip() == SENTINEL_METRIC and ts_calls(captured) == [], reply
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert reply.strip() == f"1. {SENTINEL_METRIC}\n2. {SENTINEL_BASIS}" and ts_calls(captured) == [], reply
 
 
 def test_kill_top_sellings_basis_line_comes_from_the_shared_function(session_factory, monkeypatch, route) -> None:

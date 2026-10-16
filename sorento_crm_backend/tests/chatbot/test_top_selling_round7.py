@@ -304,6 +304,9 @@ def _year_as_order(year: int) -> dict[str, Any]:
 
 #: The top selling basis question (`lanes/business.TOP_SELLING_ASK_BASIS`).
 ASK_BASIS_LINE = "Delivered (transferred to DO) or ordered?"
+#: Owner ruling 16 Oct 2026 (chat fix PR-B S1b): the metric and the basis both open are one
+#: numbered reply.
+ASK_BOTH = f"1. {ASK_METRIC}\n2. {ASK_BASIS_LINE}"
 
 
 def _william_as_order() -> dict[str, Any]:
@@ -525,7 +528,8 @@ class TestR2RankingWords:
         _clean(text, "top 10 ...")
         assert captured == [], captured
         assert "William" not in c.asked_tokens(), c.tokens
-        assert text == "I don't know 'William' as a sales agent.\n\n" + ASK_METRIC, text
+        # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+        assert text == "I don't know 'William' as a sales agent.\n\n" + ASK_BOTH, text
         assert c.slot.get("top_n") == 10 and "rank_direction" not in c.slot, c.slot
         text, captured = c.say(_answer(rank_by="quantity"), "quantity")
         _clean(text, "quantity")
@@ -552,7 +556,8 @@ class TestR2RankingWords:
         )
         text, captured = c.say(qf, body)
         assert captured == [], captured
-        assert text == ASK_METRIC, text
+        # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+        assert text == ASK_BOTH, text
         assert c.slot.get("top_n") == top_n, c.slot
         assert c.slot.get("rank_direction") == direction, c.slot
 
@@ -704,7 +709,8 @@ class TestR4Aliases:
         c = console_factory(wt_alias="William")
         _bottom_water_closet(c)
         text, captured = c.say(_william_as_order(), "top 10 hot selling item by william in q1 2026")
-        assert text == ASK_METRIC, text
+        # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+        assert text == ASK_BOTH, text
         text, captured = c.say(_answer(rank_by="quantity"), "quantity")
         assert captured == [] and text == ASK_BASIS_LINE, (text, captured)
         text, captured = c.say(_answer(basis="ordered"), "ordered")
@@ -796,7 +802,8 @@ class TestOwnerTranscript:
         text, captured = c.say(_william_as_order(), "top 10 hot selling item by william in q1 2026")
         _clean(text, "top 10 ...")
         assert captured == [], captured
-        assert text.endswith(ASK_METRIC), text
+        # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+        assert text.endswith(ASK_BOTH), text
         assert ("I don't know 'William' as a sales agent." in text) == (alias is None), text
 
         text, captured = c.say(_so_document(), "based on sales order")

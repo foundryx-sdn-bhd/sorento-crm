@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import false, or_, text
+from sqlalchemy import false, func, or_, text
 from sqlalchemy.orm import Session
 
 from app.api.v1.order_management._contact_scope import (
@@ -165,11 +165,13 @@ def _echo(
     elif product_code:
         out.append(("product", [product_code.upper()]))
     if brands:
-        out.append(("brand", _lookup(db, Brand, Brand.brand_name, brands, grants, "Brand")))
+        # Chat fix PR-B S6 (AC-B8): each name once (a brand per company is one brand).
+        out.append(("brand", sorted(set(_lookup(db, Brand, Brand.brand_name, brands, grants, "Brand")))))
     if categories:
-        out.append(
-            ("category", _lookup(db, ProductCategory, ProductCategory.category_name, categories, grants, "Category"))
-        )
+        # Chat fix PR-B S6: a category by its readable class label ("Water Closet"), never the
+        # code its live name copies ("SRT-WC"); a category with no label keeps its name.
+        label = func.coalesce(ProductCategory.class_label, ProductCategory.category_name)
+        out.append(("category", sorted(set(_lookup(db, ProductCategory, label, categories, grants, "Category")))))
     for key, values in (("sales_agent", agents), ("customer_agent", card_agents)):
         if values:
             ids = [v for v in values if v != ask.NO_AGENT_KEY]

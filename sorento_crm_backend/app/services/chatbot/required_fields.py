@@ -10,7 +10,8 @@ The rule, per field, in the order the ask type lists them:
 1. given in the message and valid -> taken, nothing asked;
 2. "all" (the message said "all categories", or the reply is "all") -> settled as `ALL`,
    where the field allows it;
-3. otherwise -> asked, ONE field per reply, with the field's own question.
+3. otherwise -> asked, ONE field per reply, with the field's own question (an ask that opts
+   in with `ask_all` asks every open field in one numbered reply instead).
 
 Changing what an ask requires is config: add or remove a `FieldSpec` on its `AskType`.
 
@@ -137,6 +138,11 @@ class AskType:
     #: put the answer's own words in them (CA-3: a period or a count named in "top 5 for
     #: September"). Empty keeps the original capture.
     answer_keys: tuple[str, ...] = ()
+    #: Opt-in (chat fix PR-B S1, owner ruling 16 Oct 2026, "ask all that is needed at once"):
+    #: with more than one required field open, ONE reply asks every one, numbered, each with
+    #: its own question. The slot still names the first as `asking`; the ask's own lane reads
+    #: an answer that settles any of them. False keeps one field per reply.
+    ask_all: bool = False
 
 
 #: Every registered ask type, by name (`register`). The engine seam reads the open slot's
@@ -191,6 +197,33 @@ def _pick_line(spec: FieldSpec, options: list[list[Any]]) -> str:
         f"Which {spec.noun} do you mean? Reply with a number" + (' or "all":' if takes_all else ":")
     )
     return "\n".join([head, *[f"{i}. {label}" for i, (_value, label) in enumerate(options, start=1)]])
+
+
+def _named(given: dict[str, Any] | None, name: str) -> bool:
+    word = (given or {}).get(name)
+    return isinstance(word, Resolved) or (isinstance(word, str) and bool(word.strip()))
+
+
+def _others_open(ask: AskType, spec: FieldSpec, values: dict, given: dict[str, Any] | None) -> list[FieldSpec]:
+    """An `ask_all` ask: every OTHER required field still open (not settled, no word given),
+    in the ask's order. Empty for any other ask."""
+    if not ask.ask_all:
+        return []
+    return [
+        _live(s) for s in ask.fields
+        if s.required and s.name != spec.name and s.name not in values and not _named(given, s.name)
+    ]
+
+
+def _numbered(specs: list[FieldSpec]) -> str:
+    return "\n".join(f"{i}. {s.question}" for i, s in enumerate(specs, start=1))
+
+
+def _question(ask: AskType, spec: FieldSpec, values: dict, given: dict[str, Any] | None) -> str:
+    """The open field's question, or, for an `ask_all` ask with others open, every open
+    field's question in one numbered reply."""
+    others = _others_open(ask, spec, values, given)
+    return _numbered([spec, *others]) if others else spec.question
 
 
 def _slot(ask: AskType, values: dict, extras: dict, *, asking: str, options=None, misses: int = 0) -> dict:
@@ -281,7 +314,13 @@ def collect(
                 # A reply the caller could read nothing from is asked again, plainly (a
                 # numbered pick shows its list again).
                 again = _pick_line(spec, options) if options else spec.question
-                return Outcome(values=values, reply=_miss_line(word, spec, got.note) if word else again,
+                reply_line = _miss_line(word, spec, got.note) if word else again
+                if not options and _others_open(ask, spec, values, given):
+                    # `ask_all` with several open: the reply may have meant any of them, so
+                    # it is not named as one field's miss; every open field is asked again.
+                    asked = _question(ask, spec, values, given)
+                    reply_line = f"{got.note}\n\n{asked}" if got.note else asked
+                return Outcome(values=values, reply=reply_line,
                                slot=_slot(ask, values, carried, asking=spec.name, options=options, misses=misses),
                                extras=carried)
 
@@ -314,7 +353,7 @@ def collect(
                            slot=_slot(ask, values, carried, asking=spec.name), extras=carried)
         if not spec.required:
             continue
-        return Outcome(values=values, reply=spec.question,
+        return Outcome(values=values, reply=_question(ask, spec, values, given),
                        slot=_slot(ask, values, carried, asking=spec.name), extras=carried)
     return Outcome(values=values, extras=carried)
 

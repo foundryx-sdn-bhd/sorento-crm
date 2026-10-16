@@ -24,6 +24,11 @@ PENDING_KINDS: tuple[str, ...] = (
     "top_selling_pick",
 )
 
+#: The sales analysis's company question ("Sorento or Mocha?", chat fix PR-B S7): armed by the
+#: lane (`lanes/business/fetch._sales_analysis_company_ask`), answered by ONE pick at the engine
+#: seam (`lanes.business.sales_analysis_company_reply`); any other pick re-asks it (`apply`).
+SALES_ANALYSIS_COMPANY_KIND = "sales_analysis_company"
+
 # Stay alive, tracked by `answered_positions`, after their own pick.
 #
 # `tier_pick` (hand pass 9, D3, owner ruling 20 Sep 2026): main's fresh-typed picker

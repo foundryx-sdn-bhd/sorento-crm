@@ -93,6 +93,9 @@ TOP_SELLING_ASK_GROUP = (
     "Do you want the top items inside one category, or the categories ranked against each other?"
 )
 TOP_SELLING_ASK_BASIS = ranking_ask.TOP_SELLING_BASIS_LINE
+#: What a reply asking the metric AND the basis in one numbered reply records as asked
+#: (`turn/apply.TOP_SELLING_CLARIFY_AXES`, chat fix PR-B S1b).
+TOP_SELLING_ASKED_BOTH = "metric_basis"
 #: The sales ranking's own basis question (`report_ask`), three bases.
 SALES_RANKING_ASK_BASIS = ranking_ask.RANKING_BASIS_LINE
 TOP_SELLING_REFUSED_OTHER_CUSTOMER = "Sorry, I can only share sales figures for your own account."
@@ -521,11 +524,19 @@ def _top_selling_question(slot: dict[str, Any]) -> tuple[str, str] | None:
         return None
     if slot.get("rank_group") == "unclear":
         return "group", TOP_SELLING_ASK_GROUP
-    return ranking_ask.next_question(
+    basis_settled = slot.get("basis") in ("delivered", "ordered")
+    asked = ranking_ask.next_question(
         metric_settled=slot.get("rank_by") in ("quantity", "amount"),
-        basis_settled=slot.get("basis") in ("delivered", "ordered"),
+        basis_settled=basis_settled,
         basis_line=TOP_SELLING_ASK_BASIS,
     )
+    if asked is not None and asked[0] == "metric" and not basis_settled:
+        # Chat fix PR-B S1b (owner, 16 Oct 2026): both open are asked in ONE numbered reply,
+        # recorded as asking both, so an answer settling either or both is read.
+        basis = ranking_ask.next_question(metric_settled=True, basis_settled=False, basis_line=TOP_SELLING_ASK_BASIS)
+        if basis is not None:
+            return TOP_SELLING_ASKED_BOTH, f"1. {asked[1]}\n2. {basis[1]}"
+    return asked
 
 
 def _top_selling_category_ids(
@@ -723,6 +734,71 @@ def _which_customer_ask() -> dict[str, Any]:
         "delegate_payload": {"fetch": item},
         "fetch": item,
     }
+
+
+def sales_analysis_company_reply(verdict: Any, pending: Any) -> dict[str, Any] | None:
+    """Engine seam, chat fix PR-B S7 (AC-B9): the reply to the sales analysis's company
+    question ("Sorento or Mocha?") re-runs the asked analysis for the company it picked. The
+    pick is the PARSER's: its `open_question_answer` (one position, or one item naming a
+    position or an option) or one `reference_positions`; nothing else answers it, so a new
+    ask is read as itself. None when the turn is not that reply."""
+    if getattr(pending, "kind", None) != fetch_mod.SALES_ANALYSIS_COMPANY_KIND or not isinstance(verdict, dict):
+        return None
+    options = {
+        o["position"]: jsc.js_string(o.get("label") or "").strip()
+        for o in getattr(pending, "options", None) or []
+        if isinstance(o, dict) and isinstance(o.get("position"), int)
+    }
+    position: Any = None
+    reply = verdict.get("open_question_answer")
+    if isinstance(reply, dict) and reply.get("mode") not in (None, "cancel", "no"):
+        picked = [p for p in jsc.array(reply.get("picked")) if isinstance(p, int) and not isinstance(p, bool)]
+        items = [i for i in jsc.array(reply.get("items")) if isinstance(i, dict)]
+        if len(picked) == 1:
+            position = picked[0]
+        elif len(items) == 1:
+            item = items[0]
+            named = jsc.js_string(item.get("code") or item.get("label") or "").strip().casefold()
+            position = item.get("position") if item.get("position") in options else next(
+                (p for p, label in options.items() if named and label.casefold() == named), None
+            )
+    if position is None:
+        positions = [p for p in jsc.array(verdict.get("reference_positions")) if isinstance(p, int) and not isinstance(p, bool)]
+        position = positions[0] if len(positions) == 1 else None
+    if not options.get(position):
+        return None
+    payload = dict(getattr(pending, "payload", None) or {})
+    held = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
+    return {
+        **verdict,
+        **{key: held.get(key) for key in fetch_mod.SALES_ANALYSIS_HELD_KEYS},
+        "message_type": "business_query",
+        "domain_hint": payload.get("domain") or "sales",
+        "intent_hint": "check_order",
+        "order_status": "sales_analysis",
+        "sales_company": options[position],
+        "status": None,
+        "document": None,
+        "entities": [],
+        "reference_positions": [],
+        "open_question_answer": None,
+        "is_affirmative": None,
+        "topic_reset": False,
+    }
+
+
+def _office_staff(db: Any, contact_respond_id: Any, space_id: Any) -> bool:
+    """Is the turn's contact office staff (an active office access type,
+    `contact_customer_scope.is_office_staff`)? False when it resolves to no one (fail closed)."""
+    from app.services.contact_customer_scope import is_office_staff
+    from app.services.field_access import resolve_contact_with_null_workspace_fallback
+
+    if db is None or not contact_respond_id or not str(contact_respond_id).strip():
+        return False
+    contact_id = resolve_contact_with_null_workspace_fallback(
+        db, contact_id=str(contact_respond_id).strip(), space_id=(str(space_id).strip() or None) if space_id else None
+    )
+    return bool(contact_id) and is_office_staff(db, str(contact_id))
 
 
 def _sales_analysis_axis_unsupported(group_by: str) -> dict[str, Any]:
@@ -1959,6 +2035,21 @@ def run_fetch(
         or bool(carried_customer_ids)
     )
     if (
+        order_status_raw == "sales_report"
+        and domain in contracts.ORDER_OR_SALES_DOMAINS
+        and not has_own_accounts
+        and not (has_product or has_customer or carried_subject)
+        and (has_brand or typed_brand_words(parse_output))
+        and _office_staff(db, contact_id, space_id)
+    ):
+        # Chat fix PR-B S10 (review): a staff sales total naming only a brand has no subject
+        # for `crm_sales_report` (422, "could not fetch"); the report engine totals a brand's
+        # sales (`crm_report_ask`, no axis), so it is that ask, with its words and questions.
+        parse_output = report_ask.take_words(
+            {**parse_output, "order_status": report_ask.ASK_NAME, "group_by": None}, ""
+        )
+        order_status_raw = report_ask.ASK_NAME
+    if (
         domain == "order"
         and not (has_product or has_customer or has_brand or carried_subject)
         and carried_customer_unusable
@@ -2019,7 +2110,18 @@ def run_fetch(
             so_refused = order_status_raw != "outstanding"
         semantic_input["outstanding_scope"] = scope
         semantic_input["outstanding_so_refused"] = so_refused
-    elif order_status_raw == "sales_analysis" and not has_own_accounts:
+    elif (order_status_raw == "sales_analysis" and not has_own_accounts) or (
+        # Chat fix PR-B S10 (AC-B16, R03/R23): a staff sales report naming no product, no
+        # customer and no brand has no subject for `crm_sales_report` (422
+        # `subject_required`, "I could not fetch sales"): it is the company's sales for
+        # the period, the sales analysis. A customer-scoped contact keeps its links, and
+        # only an OFFICE STAFF contact is rerouted (security review: never on "no links").
+        order_status_raw == "sales_report"
+        and domain in contracts.ORDER_OR_SALES_DOMAINS
+        and not has_own_accounts
+        and not (has_product or has_customer or has_brand or carried_subject or typed_brand_words(parse_output))
+        and _office_staff(db, contact_id, space_id)
+    ):
         # PLAN-retail-sales-reports-26sep S1: a sales ANALYSIS (a company's sales by
         # month, by year, by channel) is the reports kernel's own query, answered as the
         # whole table in text and the same query as an Excel (Owner ruling 26 Sep 07:16
@@ -2185,7 +2287,8 @@ def run_fetch(
         # totalled by one dimension, `crm_report_ask`. The grant was checked above for
         # every sales figure status; every other gate (audience, company, location) is
         # the route's, from `contact_id`. Nothing runs until the period, and how many for
-        # a ranking, are settled (`required_fields`, asked one per reply).
+        # a ranking, are settled (`required_fields`; every missing one in one numbered
+        # reply, chat fix PR-B S1).
         tool_name = report_ask.TOOL
         tool_item = {"name": tool_name, "_tool_pick": {"source": "sales_ranking_override"}}
         # 1b fix round F1: a customer-scoped (dealer) turn is refused a staff breakdown

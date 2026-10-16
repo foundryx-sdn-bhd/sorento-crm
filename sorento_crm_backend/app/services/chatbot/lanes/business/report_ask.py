@@ -60,6 +60,10 @@ GROUP_BY = {
     "month": "month",
 }
 
+#: The parser's other report types (`order_status`): one that fills no open field of the sales
+#: ranking question is a new ask, not its answer (chat fix PR-B S2c, `names_its_own_ask`).
+OTHER_REPORTS = frozenset({"top_selling", "sales_report", "sales_analysis"})
+
 #: The entity hints `take_words` moves, and the noun each is said with when it names nothing.
 WORD_HINTS = {"brand": "brand", "sales_agent": "sales agent", "category": "category"}
 
@@ -239,7 +243,12 @@ SALES_RANKING_ASK = rf.register(rf.AskType(
     },
     cancelled=CANCELLED,
     give_up=GIVE_UP,
-    answer_drops=("sales_channel", "report_ask_words"),
+    # Chat fix PR-B S2: an answer holds the report type. A "delivered" / "ordered" answer the
+    # parser also read as a document status fills the basis; its `status` / `document` never
+    # re-route the turn to the order list (`turn_runtime._DOCUMENT_STATUS_TO_ORDER_STATUS`).
+    answer_drops=("sales_channel", "report_ask_words", "status", "document"),
+    # Chat fix PR-B S1 (owner, 16 Oct 2026): every missing detail in ONE numbered reply.
+    ask_all=True,
 ))
 
 
@@ -296,18 +305,40 @@ def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None 
     """Engine seam before `required_fields.reply_verdict`: a `sales_ranking` verdict that is not a
     refine is a NEW ask, so an open period / how many question is dropped, not answered by it, when
     it names a current-message filter entity or a `group_by` DIFFERENT from the one the open slot
-    holds (the same axis echoed is an answer). Parser fields only."""
-    if jsc.js_string(verdict.get("order_status") or "").strip() != ASK_NAME or verdict.get("ranking_refine") is True:
-        return False
-    if any(
+    holds (the same axis echoed is an answer). Parser fields only.
+
+    Chat fix PR-B S2c: a verdict of ANOTHER report type (`OTHER_REPORTS`) is a new ask too when it
+    fills none of the slot's open fields and names something of its own (an axis, a current
+    entity, or the ask itself): "i want to see the top customer" under the basis question is
+    never read as a failed basis answer. And a parse that FILLS an open field is the answer: its
+    `group_by` is not the slot's axis changing (the parser's axis on an answering turn was noise
+    12 of 14 live turns, PR-B replay 16 Oct: "top 5" read as sales_agent under a customer ask)."""
+    status = jsc.js_string(verdict.get("order_status") or "").strip()
+    named = any(
         isinstance(e, dict) and e.get("current_message") is not False and jsc.js_string(e.get("hint") or "").strip()
         for e in jsc.array(verdict.get("entities"))
-    ):
+    )
+    slot = _dict(open_slot)
+    extras = _dict(slot.get("extras"))
+    held = {**_given_choices(_dict(extras.get("args"))), **_given_top_n(_dict(extras.get("args")), extras.get("top_n"))}
+    filled = _reply_fills(verdict, _dict(slot.get("values")), held)
+    fills = bool(filled)
+    if status in OTHER_REPORTS:
+        # Review M3: a named entity, or a period as all it fills, is a new ask; filling the
+        # count, metric or basis is the answer; filling nothing, a new ask if it names its own.
+        if named or set(filled) == {"period"}:
+            return True
+        own = bool(verdict.get("group_by")) or verdict.get("domain_in_message") is True
+        return own and not filled
+    if status != ASK_NAME or verdict.get("ranking_refine") is True:
+        return False
+    if named:
         return True
     raw_group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
-    if not raw_group:
+    # A reply filling only the period and naming another axis is a new ask (review round 8);
+    # one filling the count, metric or basis is the answer (16 Oct: its axis is parser noise).
+    if not raw_group or set(filled) - {"period"}:
         return False
-    extras = _dict(_dict(open_slot).get("extras"))
     scope = _dict(extras.get("scope"))
     if scope:
         # The scope question names two axes ("customers of the sales agents above"): a reply
@@ -315,6 +346,21 @@ def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None 
         return GROUP_BY.get(raw_group, raw_group) not in (scope.get("source"), _dict(scope.get("scoped")).get("args", {}).get("group_by"))
     held = _dict(extras.get("args")).get("group_by")
     return GROUP_BY.get(raw_group, raw_group) != held
+
+
+def as_held_refine(verdict: dict[str, Any], frame: Any) -> dict[str, Any]:
+    """Engine seam, chat fix PR-B S3: with a report held (`Focus.sales_ranking_frame`: a ranking or
+    a total that ran, from a single ask or a multi-ask), the parser's refine (`ranking_refine`)
+    re-runs THAT report whatever report type it named: the verdict goes to this ask, and its
+    document status is dropped (it never turns the refine into an order list). The lane applies
+    only the keys the parser changed (`_refine`)."""
+    status = jsc.js_string(verdict.get("order_status") or "").strip()
+    if verdict.get("ranking_refine") is not True or not isinstance(frame, dict) or not frame or status == ASK_NAME:
+        return verdict
+    return {
+        **{k: v for k, v in verdict.items() if k not in ("status", "document")},
+        **SALES_RANKING_ASK.reroute,
+    }
 
 
 def dealer_location_words(parse_output: dict[str, Any]) -> dict[str, Any]:
@@ -549,16 +595,29 @@ def _given_choices(args: dict[str, Any]) -> dict[str, Any]:
     return given
 
 
-def _reply_choices(args: dict[str, Any], parse_output: dict[str, Any]) -> dict[str, Any]:
-    """An answering turn that carries the OTHER choice too ("qty delivered"): taken from the
-    parser's keys when the first message left it open. The asked field is read by the helper."""
-    given: dict[str, Any] = {}
-    metric, basis = metric_from(parse_output), basis_from(parse_output)
-    if metric and args.get("group_by") not in (None, "month") and not args.get("measure"):
-        given["metric"] = rf.Resolved("ok", value=metric, label=metric)
-    if basis and not args.get("basis"):
-        given["basis"] = rf.Resolved("ok", value=basis, label=basis)
-    return given
+def _choice(value: str | None) -> rf.Resolved | None:
+    return rf.Resolved("ok", value=value, label=value) if value else None
+
+
+def _reply_fills(
+    parse_output: dict[str, Any], values: dict[str, Any], held: dict[str, Any]
+) -> dict[str, rf.Resolved]:
+    """Chat fix PR-B S1 (owner, 16 Oct 2026): every OPEN field an answering turn's parse
+    settles, off the parser's own fields (dates, `top_n`, `measure` / `rank_by`, `basis`),
+    never the reply's words ("2026, top 10, by quantity delivered" settles all four). A field
+    the slot already holds, or the first message settled (`held`), is not open."""
+
+    def is_open(name: str) -> bool:
+        got = held.get(name)
+        return name not in values and not (isinstance(got, rf.Resolved) and got.status == "ok")
+
+    reading = {
+        "period": period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end")),
+        "top_n": top_n_from(parse_output.get("top_n")),
+        "metric": _choice(metric_from(parse_output)),
+        "basis": _choice(basis_from(parse_output)),
+    }
+    return {name: got for name, got in reading.items() if got is not None and got.status == "ok" and is_open(name)}
 
 
 def settle(
@@ -569,20 +628,31 @@ def settle(
     `(None, line)` for a word or a dimension the ask cannot run with.
 
     The slot's extras carry the first message's args and its number (`top_n`), so an
-    answering turn runs the first message's ask; the period question is asked first."""
+    answering turn runs the first message's ask; every field still missing is asked in one
+    numbered reply (chat fix PR-B S1), and an answer settling any of them is read whole."""
     slot = parse_output.get("required_ask")
     if isinstance(slot, dict) and slot.get("ask") == ASK_NAME and slot.get("asking") == "scope":
         return _scope_answer(db, parse_output, slot), None
     if isinstance(slot, dict) and slot.get("ask") == ASK_NAME:
         extras = _dict(slot.get("extras"))
         args = _dict(extras.get("args"))
+        held = {**_given_choices(args), **_given_top_n(args, extras.get("top_n"))}
+        filled = _reply_fills(parse_output, _dict(slot.get("values")), held)
+        if filled:
+            # A partial answer is not a miss: what it settled is kept, and only what is
+            # still open is asked again (in one reply), or the ask runs.
+            values = {
+                **_dict(slot.get("values")),
+                **{name: {"value": got.value, "label": got.label} for name, got in filled.items()},
+            }
+            return rf.collect(db, SALES_RANKING_ASK, slot={**slot, "values": values}, given=held), None
         reply_dates = {"start": parse_output.get("date_filter_start"), "end": parse_output.get("date_filter_end")}
         outcome = rf.collect(
             db,
             SALES_RANKING_ASK,
             slot=slot,
             reply=jsc.js_string(parse_output.get("required_ask_reply") or ""),
-            given={**_given_choices(args), **_given_top_n(args, extras.get("top_n")), **_reply_choices(args, parse_output)},
+            given=held,
             extras={
                 "reply_dates": reply_dates,
                 "reply_top_n": parse_output.get("top_n"),
@@ -613,13 +683,24 @@ def settle(
         if drilled is not None:
             return drilled
         # Unsure with nothing above to narrow by: the global reading is the only one left.
+    held_period: rf.Resolved | None = None
+    held_product: dict[str, Any] = {}
     if new_axis and parse_output.get("ranking_refine") is True:
         # Not a refine (it names another axis): the fresh ask reads it whole, its dates included.
+        # Chat fix PR-B S4 (AC-B6): the new axis is still asked (8 Oct rule), but the held period
+        # and product stay, never asked again; the message's own period or product wins.
+        axis = GROUP_BY.get(raw_group, raw_group)
+        held_period = period_from(frame.get("date_from"), frame.get("date_to"))
+        held_product = {
+            k: frame[k] for k in ("product_code", "product_ids") if frame.get(k) and k not in _AXIS_FILTERS.get(axis, ())
+        }
         parse_output = {**parse_output, "ranking_refine": False}
 
     args, line = _fresh_args(db, parse_output, entities, dealer=dealer)
     if args is None:
         return None, line
+    if held_product and not (args.get("product_code") or args.get("product_ids")):
+        args.update(held_product)
     if (
         parse_output.get("ranking_refine") is not True
         and not dealer  # the route forces a dealer's links, so a plain total can never widen
@@ -630,7 +711,7 @@ def settle(
         return None, CATALOGUE_LINE
     top_n = parse_output.get("top_n")
     given = {**_given_choices(args), **_given_top_n(args, top_n)}
-    period = period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end"))
+    period = period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end")) or held_period
     if period is not None and parse_output.get("ranking_refine") is not True:
         # A refine with no ranking held has nothing to refine: it is a fresh ask, and a
         # period alone never runs a total (it asks).
