@@ -77,3 +77,20 @@ def test_dates_print_as_the_paper_writes_them():
     html = _cells(build_html(DETAIL))
     assert "10/10/2026" in html
     assert "2026-10-10" not in html
+
+
+def _goods_line(html: str) -> str:
+    start = html.index("Goods Taken From:")
+    return html[start : html.index("</p>", start)]
+
+
+def test_either_ticks_no_goods_box():
+    goods = _goods_line(_cells(build_html(DETAIL)))
+    assert "[x]" not in goods and "Either" not in goods
+    ticked = _goods_line(_cells(build_html({**DETAIL, "goods_from": "demo"})))
+    assert "[x] Demo Sets" in ticked
+
+
+def test_free_text_that_looks_like_a_date_is_printed_as_typed():
+    html = _cells(build_html({**DETAIL, "purpose": "2026-10-10"}))
+    assert "<b>Purpose:</b> 2026-10-10" in html

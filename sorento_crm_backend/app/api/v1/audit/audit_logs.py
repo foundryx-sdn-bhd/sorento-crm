@@ -6,7 +6,7 @@ from typing import Optional
 from app.database import get_db
 from app.dependencies import get_current_user_or_api_key
 from app.services.audit_actor_label import actor_label as _actor_label
-from app.services.audit_service import list_audit_logs
+from app.services.audit_service import _is_uuid, list_audit_logs
 from app.schemas.audit import AuditLogResponse
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.models.user import User
@@ -141,7 +141,9 @@ def _status_labels(db: Session, items) -> dict[str, str]:
     for it in items:
         for values in (it.old_values or {}, it.new_values or {}):
             value = values.get("status_id")
-            if value:
+            # Only real ids reach the query: one legacy or hand-written value must not turn
+            # the whole trail into a 500.
+            if value and _is_uuid(str(value)):
                 ids.add(str(value))
     if not ids:
         return {}
@@ -157,10 +159,13 @@ def _derive_description(it, status_labels: Optional[dict[str, str]] = None) -> O
     old = it.old_values or {}
     new = it.new_values or {}
     if status_labels and new.get("status_id") and new.get("status_id") != old.get("status_id"):
-        frm = status_labels.get(str(old.get("status_id"))) if old.get("status_id") else None
         to = status_labels.get(str(new.get("status_id")))
         if to:
-            return f"Status: {frm if frm else '∅'} → {to}"
+            if not old.get("status_id"):
+                return f"Status: ∅ → {to}"
+            frm = status_labels.get(str(old.get("status_id")))
+            # An old status that no longer exists is not "no status".
+            return f"Status: {frm} → {to}" if frm else f"Status changed to {to}"
     # Attachment upload activity: surface the filename + what happened.
     if it.entity_type == "attachment":
         fname = new.get("original_filename") or old.get("original_filename")

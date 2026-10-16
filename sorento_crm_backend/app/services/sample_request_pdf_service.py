@@ -28,13 +28,18 @@ def _fmt(value: Any) -> str:
         return "-"
     if isinstance(value, (datetime, date)):
         return value.strftime("%d/%m/%Y")
-    # The detail dict carries dates as ISO strings; the paper writes dd/mm/yyyy.
-    if isinstance(value, str) and len(value) == 10 and value[4] == "-" and value[7] == "-":
+    return escape(str(value))
+
+
+def _date(value: Any) -> str:
+    """A date field: the detail dict carries ISO strings, the paper writes dd/mm/yyyy. Only
+    the date fields come through here, so free text that looks like a date prints as typed."""
+    if isinstance(value, str):
         try:
             return date.fromisoformat(value).strftime("%d/%m/%Y")
         except ValueError:
             pass
-    return escape(str(value))
+    return _fmt(value)
 
 
 def _row(label: str, value: Any) -> str:
@@ -54,7 +59,9 @@ def build_html(d: Dict[str, Any]) -> str:
         if d.get("customer_code")
         else f"{escape(str(customer))} (No debtor code)"
     )
-    delivery = "Immediate arrangement" if d.get("deliver_immediately") else d.get("delivery_date")
+    delivery = (
+        "Immediate arrangement" if d.get("deliver_immediately") else _date(d.get("delivery_date"))
+    )
     ship_to = " ".join(x for x in (d.get("ship_to_name"), d.get("ship_to_address")) if x) or None
     site = " ".join(
         x for x in (d.get("site_contact_name"), d.get("site_contact_phone"), d.get("site_contact_note")) if x
@@ -63,7 +70,7 @@ def build_html(d: Dict[str, Any]) -> str:
     header = "".join(
         [
             _row("Sales Person", d.get("salesperson_name")),
-            _row("Date", d.get("request_date")),
+            f"<tr><th>Date</th><td>{_date(d.get('request_date'))}</td></tr>",
             f"<tr><th>Customer Name</th><td>{customer}</td></tr>",
             _row("Project", d.get("project_name")),
             _row("For", d.get("scope_note")),
