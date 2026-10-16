@@ -18,8 +18,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
-import { Label } from '@/components/ui/label';
 import { numberFieldError } from '@/lib/number-field';
+import { Label } from '@/components/ui/label';
 import { FileDropzone } from '@/components/common/FileDropzone';
 import { Trash2, Plus, Upload } from 'lucide-react';
 import { useBulkDeleteOrderLines, useCreateOrderLine } from '../hooks/useOrders';
@@ -34,6 +34,11 @@ interface OrderLinesCardProps {
   lines: OrderLine[];
   /** AutoCount-owned DO: its lines come only from AutoCount, so no add / delete. */
   readOnly?: boolean;
+}
+
+/** An optional money figure: blank is "not given", but a typed one must be a readable number of 0 or more. */
+function optionalFigureError(raw: string): string | undefined {
+  return numberFieldError(raw, { min: 0, optional: true });
 }
 
 export default function OrderLinesCard({ orderId, lines, readOnly = false }: OrderLinesCardProps) {
@@ -67,7 +72,7 @@ export default function OrderLinesCard({ orderId, lines, readOnly = false }: Ord
       return;
     }
     // A line without a quantity is not a line: checked here, never dropped silently.
-    if (quantityError) {
+    if (quantityError || [formUnitPrice, formDiscount, formTotal, formTax, formTotalExcl, formTotalIncl].some(optionalFigureError)) {
       setShowErrors(true);
       return;
     }
@@ -358,31 +363,31 @@ export default function OrderLinesCard({ orderId, lines, readOnly = false }: Ord
               </div>
               <div className="grid gap-2">
                 <Label>Unit price</Label>
-                <NumberInput value={formUnitPrice} onChange={(e) => setFormUnitPrice(e.target.value)} />
+                <NumberInput value={formUnitPrice} error={showErrors ? optionalFigureError(formUnitPrice) : undefined} onChange={(e) => setFormUnitPrice(e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="grid gap-2">
                 <Label>Discount</Label>
-                <NumberInput value={formDiscount} onChange={(e) => setFormDiscount(e.target.value)} />
+                <NumberInput value={formDiscount} error={showErrors ? optionalFigureError(formDiscount) : undefined} onChange={(e) => setFormDiscount(e.target.value)} />
               </div>
               <div className="grid gap-2">
                 <Label>Total</Label>
-                <NumberInput value={formTotal} onChange={(e) => setFormTotal(e.target.value)} />
+                <NumberInput value={formTotal} error={showErrors ? optionalFigureError(formTotal) : undefined} onChange={(e) => setFormTotal(e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
               <div className="grid gap-2">
                 <Label>Tax</Label>
-                <NumberInput value={formTax} onChange={(e) => setFormTax(e.target.value)} />
+                <NumberInput value={formTax} error={showErrors ? optionalFigureError(formTax) : undefined} onChange={(e) => setFormTax(e.target.value)} />
               </div>
               <div className="grid gap-2">
                 <Label>Total (excl)</Label>
-                <NumberInput value={formTotalExcl} onChange={(e) => setFormTotalExcl(e.target.value)} />
+                <NumberInput value={formTotalExcl} error={showErrors ? optionalFigureError(formTotalExcl) : undefined} onChange={(e) => setFormTotalExcl(e.target.value)} />
               </div>
               <div className="grid gap-2">
                 <Label>Total (incl)</Label>
-                <NumberInput value={formTotalIncl} onChange={(e) => setFormTotalIncl(e.target.value)} />
+                <NumberInput value={formTotalIncl} error={showErrors ? optionalFigureError(formTotalIncl) : undefined} onChange={(e) => setFormTotalIncl(e.target.value)} />
               </div>
             </div>
           </div>
