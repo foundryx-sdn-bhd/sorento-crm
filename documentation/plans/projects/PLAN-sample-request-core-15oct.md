@@ -1,7 +1,8 @@
 # PLAN: SR-CORE - Sample Request (consignment requisition) in project management
 
-Status: Build (form rebuild) - owner OK on form mock v3 with three removals (16 Oct), recorded as
-`mockups/sample-request-form-v4.html`; red-first rebuild of the staff + portal create/edit forms under way. Track: full.
+Status: Hand test (form rebuild) - owner OK on form mock v3 with three removals (16 Oct), built as
+`mockups/sample-request-form-v4.html`; reviewer PASS, browser pass on 85d42f75 (one portal bug fixed red-first after it),
+waiting on the owner's hand test (`laneboard/scripts/1718.md`). Track: full.
 Slice 1 of 3 (SR-STOCK, SR-RETURN follow).
 
 Discovery: `state/reports/SAMPLE-REQUEST-DISCOVERY-15oct.md` (crew), owner rulings 16 Oct 00:10.
@@ -293,3 +294,16 @@ immediate arrangement ticker. And the rest should be fine, go".
 Migration `sr_0001_sample_requests` is not merged, so it is edited in place (the three columns dropped from its DDL).
 The shared dev DB already holds them from the earlier crew-migration; they are harmless there, and a cleanup statement
 is offered separately (destructive, held for the owner).
+
+## Form rebuild review (16 Oct, reviewer PASS + browser pass on 85d42f75)
+
+1. **Portal customer picker (browser pass bug, fixed).** The picker read the unscoped `/public/portal/lookups/debtors`
+   while submit accepts only the contact's debtors-for-agent, so a picked debtor came back 422. Now the picker reads
+   `GET /public/portal/sample-request/customers?q=` (sample_request grant), built from `portal_customers()`, the same
+   set `assert_portal_customer_allowed` checks. The price tag `debtors-for-agent` route is not reused because it needs
+   the price tag grant.
+2. **Goods Taken From: both ticks = neither (kept).** Per the paper rule, `either` is the blank, so ticking both boxes
+   and ticking neither save the same `either`, and a reload shows the blank, which matches the PDF.
+3. **Not in this lane:** portal list cards print dates in the phone's locale (the shared `PortalLanding`, every portal
+   kind), so a US-locale browser shows "Oct 16, 2026". The owner's ruling covered the form's Created date. Changing
+   the shared landing is a separate, cross-kind change.
