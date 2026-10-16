@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TurnAttachments } from '@/components/chatbot/TurnAttachments';
+import { WhatsAppText } from '@/components/chatbot/WhatsAppText';
 import AttachmentPreviewModal, {
   type AttachmentPreviewItem,
 } from '@/components/common/AttachmentPreviewModal';
@@ -14,6 +15,7 @@ import MessageBubbleActions from '@/components/common/conversation/MessageBubble
 import QuotedContextBlock from '@/components/common/conversation/QuotedContextBlock';
 import { formatDateTimeInMalaysia } from '@/lib/helpers';
 import { splitQuotedPrefix } from '@/lib/respondIoChatRender';
+import { stripWhatsAppMarkup } from '@/lib/whatsappText';
 import type { ChatMessageRow } from '../types/chatHistory.types';
 import type { ChatbotTurn, ChatbotTurnMedia } from '../types/chatbotTurn.types';
 import { isMediaDenied, mediaReadCount, turnAttachments } from '../turnPresentation';
@@ -40,26 +42,6 @@ function latencyVariant(seconds: number): string {
 
 function fmtLatency(seconds: number): string {
   return seconds < 1 ? `${Math.round(seconds * 1000)}ms` : `${seconds.toFixed(1)}s`;
-}
-
-/** Split a message into segments, marking the ones that match `term` (case-insensitive). */
-function highlight(text: string, term: string): { text: string; hit: boolean }[] {
-  if (!term) return [{ text, hit: false }];
-  const lower = text.toLowerCase();
-  const q = term.toLowerCase();
-  const out: { text: string; hit: boolean }[] = [];
-  let i = 0;
-  while (i < text.length) {
-    const found = lower.indexOf(q, i);
-    if (found === -1) {
-      out.push({ text: text.slice(i), hit: false });
-      break;
-    }
-    if (found > i) out.push({ text: text.slice(i, found), hit: false });
-    out.push({ text: text.slice(found, found + q.length), hit: true });
-    i = found + q.length;
-  }
-  return out;
 }
 
 export function ChatTranscript({
@@ -117,10 +99,14 @@ export function ChatTranscript({
   const matchRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // Message ids that contain the term, in transcript order - the navigable match set.
+  // Matched against the text as RENDERED (WhatsApp markers stripped), so a counted hit
+  // always has a mark on screen and a search for `*` does not hit the hidden markup.
   const matches = useMemo(() => {
     const q = term.trim().toLowerCase();
     if (!q) return [] as number[];
-    return visible.filter((m) => m.message.toLowerCase().includes(q)).map((m) => m.id);
+    return visible
+      .filter((m) => stripWhatsAppMarkup(m.message).toLowerCase().includes(q))
+      .map((m) => m.id);
   }, [visible, term]);
 
   useEffect(() => {
@@ -279,16 +265,10 @@ export function ChatTranscript({
                     />
                   )}
                   {media && <MediaBlock media={media} onOpenImage={setPreviewItem} />}
+                  {/* WhatsApp markup rendered as the handset shows it: bold labels,
+                      clickable links (CHAT-HISTORY-FORMAT). */}
                   <p className="whitespace-pre-wrap break-words">
-                    {highlight(bubbleText, term.trim()).map((seg, i) =>
-                      seg.hit ? (
-                        <mark key={i} className="bg-amber-200 text-inherit rounded-sm">
-                          {seg.text}
-                        </mark>
-                      ) : (
-                        <span key={i}>{seg.text}</span>
-                      ),
-                    )}
+                    <WhatsAppText text={bubbleText} term={term.trim()} />
                   </p>
                   {m.delivery_status && (
                     <span className="text-[11px] text-muted-foreground">{m.delivery_status}</span>
