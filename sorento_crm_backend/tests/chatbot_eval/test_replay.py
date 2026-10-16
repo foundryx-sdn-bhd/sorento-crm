@@ -167,3 +167,12 @@ def test_ac2_1_diff_cli_grounded_diff_exits_1_unless_intended(tmp_path):
     q = _cli_diff(b, h, "--intended", str(intended))
     assert q.returncode == 0, q.stdout + q.stderr
     assert "c9 t9 grounded" in q.stdout.splitlines()
+
+
+def test_grounding_tier_returns_only_the_grounded_stage_equal_to_the_whole_turn(session_factory, recorded):
+    whole = replay_mod.replay_rows([recorded], session_factory=session_factory)[0]
+    tier = replay_mod.replay_rows([recorded], session_factory=session_factory, stage="grounding")[0]
+    assert set(tier["stages"]) == {"grounded"}
+    assert "tools" not in tier["stages"] and "reply" not in tier["stages"]
+    assert tier["stages"]["grounded"] == whole["stages"]["grounded"]
+    assert tier["case_id"] == whole["case_id"] and tier["turn_id"] == whole["turn_id"]
