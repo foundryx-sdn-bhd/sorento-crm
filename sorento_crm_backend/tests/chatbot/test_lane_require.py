@@ -1567,9 +1567,9 @@ def test_unknown_term_clarifies_with_nearest_names():
         )
 
         ctx = _cert_ctx(
-            "which water tap has cert",
+            "which zorbex gizmo has cert",
             [
-                {"raw": "water tap", "hint": "product"},
+                {"raw": "zorbex gizmo", "hint": "product"},
                 {"raw": "cert", "hint": "attachment_type"},
             ],
         )
@@ -1581,10 +1581,12 @@ def test_unknown_term_clarifies_with_nearest_names():
         msg = not_found_error_message({}, parser=parser, resolved=resolved, gate=gate)
         text = (msg.get("escalate_message") or "").strip()
 
+    # Probe word changed by chat fix PR-A: "water tap" now names the Tap class (class words are
+    # registry data), so an unknown two-word phrase carries the same protection.
     # Amended to fix round 10 on PR #833 (owner, 28 Sep 2026: "for #833 yeah exact only"):
     # no product types are offered as lines either (the nearest and the most common labels
     # are retired); the word is the "Couldn't find" line of the one reply structure.
-    assert text.startswith("Here's what you want: water tap\n\nCouldn't find: \"water tap\"."), text
+    assert text.startswith("Here's what you want: zorbex gizmo\n\nCouldn't find: \"zorbex gizmo\"."), text
     assert "•" not in text, text
     assert "Did you mean" not in text and "I don't know" not in text, text
 
