@@ -16,6 +16,7 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -373,12 +374,13 @@ export default function SupplierForm({ supplierId, onSuccess }: SupplierFormProp
                     <FormItem>
                       <FormLabel>Payment Terms (Days) *</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           placeholder="30"
-                          {...field}
-                          onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
                           value={field.value}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormDescription>
