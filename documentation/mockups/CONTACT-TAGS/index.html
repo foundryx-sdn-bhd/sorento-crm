@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact tags mock v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--background:#fff;--foreground:#09090b;--card:#fff;--primary:#3b82f6;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--destructive:#dc2626;--radius:.5rem;--add:#f0fdf4;--rem:#fef2f2}
+*{box-sizing:border-box}
+body{margin:0;background:#e4e4e7;color:var(--foreground);font:14px/1.5 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.mocknav{position:sticky;top:0;z-index:80;background:#18181b;display:flex;gap:4px;padding:8px 16px;overflow-x:auto;font-size:13px;align-items:center}
+.mocknav span{color:#71717a;padding:6px 8px 6px 0;white-space:nowrap}
+.mocknav button{background:transparent;border:0;color:#a1a1aa;font:inherit;padding:6px 10px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.mocknav button.on{background:#3f3f46;color:#fff}
+.mocknav .w{margin-left:auto;display:flex;gap:4px}
+.stage{padding:16px;display:flex;justify-content:center}
+.frame{position:relative;background:#fafafa;width:1280px;max-width:100%;min-height:760px;overflow:hidden;border:1px solid #d4d4d8;border-radius:8px}
+.view{display:none}.view.on{display:block}
+.container{padding:20px 16px 80px}
+.crumb{font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-fg)}
+.hdr{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:4px 0 16px}
+h1{font-size:20px;font-weight:600;margin:0}
+.card{border:1px solid var(--border);border-radius:12px;background:var(--card);box-shadow:0 1px 2px rgba(0,0,0,.05);margin-bottom:16px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#fcfcfd}
+.input{height:32px;border:1px solid var(--input);border-radius:var(--radius);padding:0 10px;font:inherit;font-size:13px;background:#fff;min-width:0;max-width:100%}
+.sel{display:inline-flex;align-items:center;gap:6px;height:32px;border:1px solid var(--input);border-radius:var(--radius);padding:0 8px 0 10px;font-size:13px;background:#fff;white-space:nowrap}
+.sel.set{border-color:#93c5fd;background:#eff6ff;color:#1d4ed8}.sel .k{color:var(--muted-fg)}.sel.set .k{color:#1d4ed8;opacity:.75}.sel .clr{opacity:.55}
+.chk{display:inline-flex;gap:6px;align-items:center;font-size:13px;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:var(--radius);border:1px solid var(--input);background:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted-fg)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.bulkbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 16px;background:#eff6ff;border-bottom:1px solid #bfdbfe;font-size:13px;position:relative}
+.menu{position:absolute;left:100px;top:40px;z-index:30;min-width:220px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.15);padding:4px}
+.menu div{padding:6px 10px;border-radius:6px;font-size:13px;white-space:nowrap}.menu div:hover{background:var(--muted)}
+.menu .new{color:#1d4ed8}.menu .sep{height:1px;padding:0;margin:4px 0;background:var(--border)}.menu .dest{color:var(--destructive)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:13px}
+th{font-weight:500;color:var(--muted-fg);text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);background:#fafafa;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+tr.sel-row td{background:#f8fbff}
+.pill{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:500;background:var(--muted);margin-right:4px;white-space:nowrap}
+.pill.ok{background:#dcfce7;color:#166534}.pill.no{background:var(--muted);color:var(--muted-fg)}.pill.warn{background:#fef3c7;color:#92400e}.pill.info{background:#e0f2fe;color:#075985}.pill.err{background:#fee2e2;color:#991b1b}
+.dash{color:var(--muted-fg)}
+.foot{display:flex;justify-content:space-between;padding:10px 16px;font-size:13px;color:var(--muted-fg)}
+.meta{display:flex;flex-wrap:wrap;gap:6px 24px;font-size:13px;margin:-8px 0 16px;color:var(--muted-fg)}.meta b{color:var(--foreground);font-weight:500}
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--border);margin-bottom:16px;font-size:14px;overflow-x:auto}
+.tabs span{padding:8px 0;color:var(--muted-fg);white-space:nowrap}.tabs .on{color:var(--foreground);border-bottom:2px solid var(--primary);font-weight:500}
+.sec{padding:14px 16px}.sec h3{margin:0 0 8px;font-size:15px;font-weight:600}
+.grp{font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-fg);margin:14px 0 4px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;flex-wrap:wrap}
+.row:last-child{border-bottom:0}
+.seg{display:inline-flex;border:1px solid var(--input);border-radius:var(--radius);overflow:hidden}
+.seg span{padding:4px 10px;font-size:12.5px;background:#fff;border-right:1px solid var(--input);white-space:nowrap}.seg span:last-child{border-right:0}
+.seg span.on{background:#18181b;color:#fff}
+.empty{text-align:center;padding:36px 16px}.empty b{display:block;font-size:15px}.empty span{color:var(--muted-fg);font-size:13px}
+.overlay{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:32px 12px;z-index:40;overflow:auto}
+.dialog{background:#fff;border-radius:12px;width:100%;max-width:700px;box-shadow:0 20px 40px rgba(0,0,0,.2)}
+.dh{padding:18px 20px 6px}.dh h2{margin:0;font-size:17px;font-weight:600}
+.db{padding:12px 20px}.df{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px 18px;flex-wrap:wrap}
+.lbl{font-size:13px;font-weight:500;margin:0 0 6px}
+.counts{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px}
+.target{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px}
+.target .th{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;flex-wrap:wrap}.target .th .n{font-weight:500}
+.target .tb{border-top:1px solid var(--border);padding:6px 12px 8px}
+.chg{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px;padding:4px 0;font-size:13px}.chg .f{color:var(--muted-fg)}
+.add{background:var(--add);color:#166534;border-radius:4px;padding:0 4px}.rem{background:var(--rem);color:#991b1b;border-radius:4px;padding:0 4px;text-decoration:line-through}
+.scroll{max-height:340px;overflow:auto}
+.pick{border:1px solid var(--input);border-radius:var(--radius);padding:6px 8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.opts{border:1px solid var(--border);border-radius:var(--radius);margin-top:6px;padding:4px}.opts div{padding:5px 8px;font-size:13px;display:flex;gap:8px}
+.legend{max-width:1280px;margin:0 auto 40px;padding:0 16px;font-size:13px}
+.legend table{table-layout:auto;background:#fff}.legend td,.legend th{white-space:normal;vertical-align:top}
+code{overflow-wrap:anywhere;font-size:12px;background:var(--muted);padding:1px 4px;border-radius:4px}
+.w375 .chg{grid-template-columns:1fr}.w375 .hdr .btn{width:100%;justify-content:center}.w375 .container{padding:16px}
+.card{position:relative}
+.sw{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted-fg)}.sw i{width:30px;height:18px;border-radius:99px;background:#d4d4d8;position:relative;display:inline-block}.sw i:after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff}.sw.on{color:var(--foreground)}.sw.on i{background:var(--primary)}.sw.on i:after{left:14px}
+.secrow{border-top:1px solid var(--border);padding:10px 0}.secrow:first-of-type{border-top:0}.secrow .top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.secrow .nm{font-weight:500;font-size:14px}.secrow.mut .nm{color:var(--muted-fg);font-weight:400}
+.nsv{margin-left:8px;color:#92400e;font-size:12px;font-weight:500}
+.grey{opacity:.6}.grey .row span:last-child{color:var(--muted-fg);font-size:12.5px}
+.pop{position:absolute;left:330px;top:56px;z-index:30;width:288px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.15);padding:10px;display:none}
+.pop .sel{display:flex;width:100%;justify-content:space-between;margin-bottom:6px}.pop label.chk{display:flex;margin:6px 0}
+.rmenu{position:absolute;right:24px;top:292px;z-index:30;min-width:200px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.15);padding:4px;display:none}.rmenu div{padding:6px 10px;border-radius:6px;font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px;border-bottom:1px solid var(--border);background:#fcfcfd}
+.chip{display:inline-flex;gap:6px;align-items:center;height:26px;padding:0 10px;border-radius:99px;background:#eff6ff;color:#1d4ed8;font-size:12.5px}
+.badgecnt{background:var(--primary);color:#fff;border-radius:99px;font-size:11px;padding:0 6px}
+.w375 .pop{left:16px;right:16px;width:auto}
+</style>
+</head>
+<body>
+<nav class="mocknav">
+  <span>Contact tags v2</span>
+  <button data-v="a" class="on">A Contacts list</button>
+  <button data-v="a2">A Actions open</button>
+  <button data-v="a3">A Filters open</button>
+  <button data-v="a4">A Row menu</button>
+  <button data-v="a5">A Differs only</button>
+  <button data-v="b">B Tag list</button>
+  <button data-v="c">C Tag detail</button>
+  <button data-v="c2">C Edit settings</button>
+  <button data-v="d">D Apply preview</button>
+  <button data-v="e1">E1 Add tag: pick</button>
+  <button data-v="e2">E2 Add tag: preview</button>
+  <button data-v="f">F Empty states</button>
+  <button data-v="g">G Contact: Tags</button>
+  <div class="w"><button data-w="375">375</button><button data-w="1280" class="on">1280</button></div>
+</nav>
+<div class="stage"><div class="frame" id="frame">
+
+<!-- A -->
+<div class="view on" id="v-a"><div class="container">
+  <div class="crumb">Users &amp; Access</div>
+  <div class="hdr"><h1>Internal Users</h1><button class="btn primary">+ Add contact</button></div>
+  <div class="card">
+    <div class="toolbar"><input class="input" style="width:220px" placeholder="Search contacts...">
+      <span class="sel"><span class="k">Tag:</span> Any <span class="clr">&#9662;</span></span>
+      <span class="sel" id="tsel"><span class="k">Tag settings:</span> <span id="tval">Any</span> <span class="clr">&#9662;</span></span>
+      <button class="btn" id="fbtn">Filters</button><span style="flex:1"></span><button class="btn ghost">Columns</button></div>
+    <div class="chips" id="chips" style="display:none"><span class="chip">Region: West <b>x</b></span></div>
+    <div class="pop" id="pop"><span class="sel"><span class="k">Access type</span><span class="clr">&#9662;</span></span><span class="sel"><span class="k">Tier</span><span class="clr">&#9662;</span></span><span class="sel"><span class="k">Cost</span><span class="clr">&#9662;</span></span><span class="sel"><span class="k">AI replies</span><span class="clr">&#9662;</span></span><span class="sel"><span class="k">Escalation</span><span class="clr">&#9662;</span></span><span class="sel"><span class="k">Packing list</span><span class="clr">&#9662;</span></span><span class="sel"><span class="k">Stock checks</span><span class="clr">&#9662;</span></span><span class="sel" id="rsel"><span class="k">Region</span><span class="clr">&#9662;</span></span><span class="sel"><span class="k">Customer</span><span class="clr">&#9662;</span></span><span class="sel"><span class="k">Access differs from</span><span class="clr">&#9662;</span></span>
+      <label class="chk"><input type="checkbox"> No customers linked</label><label class="chk"><input type="checkbox"> No tags</label>
+      <button class="btn ghost">Clear filters</button></div>
+    <div class="rmenu" id="rmenu"><div>Open</div><div class="new" style="color:#1d4ed8">Apply tag settings</div><div style="color:var(--destructive)">Delete</div></div>
+    <div class="bulkbar"><b>3 selected</b><button class="btn">Actions &#9662;</button>
+      <div class="menu amenu" style="display:none">
+        <div>Export</div><div>Link customers (3)</div><div>Enable messaging (3)</div><div>Sync from Respond (3)</div><div>Copy access from contact (3)</div>
+        <div class="sep"></div><div class="new">Add tag (3)</div><div class="new">Remove tag (3)</div><div class="new">Apply tag settings (3)</div>
+        <div class="sep"></div><div class="dest">Disable messaging (3)</div><div class="dest">Delete (3)</div>
+      </div></div>
+    <div class="tablewrap"><table style="min-width:1180px">
+      <colgroup><col style="width:40px"><col style="width:150px"><col style="width:130px"><col style="width:190px"><col style="width:200px"><col style="width:190px"><col style="width:100px"><col style="width:120px"><col style="width:110px"><col style="width:40px"></colgroup>
+      <thead><tr><th><input type="checkbox"></th><th>Name</th><th>Phone</th><th>Tags</th><th>Customers</th><th>Access types</th><th>Segment</th><th>Tag settings</th><th>Staff user</th><th></th><td>&hellip;</td></tr></thead>
+      <tbody>
+      <tr class="sel-row"><td><input type="checkbox" checked></td><td>Jayson</td><td>+60 xxx xxx 328</td><td><span class="pill">Dealer</span><span class="pill">Internal staff</span></td><td title="HANLIM TRADING SDN BHD [A/C I] +4">HANLIM TRADING SDN BHD [A/C I] <span class="pill">+4</span></td><td><span class="pill">Sorento Dealer</span></td><td>Retail</td><td><span class="pill ok">Matches</span></td><td>Linked</td><td>&hellip;</td></tr>
+      <tr><td><input type="checkbox"></td><td>Akmal</td><td>+60 xxx xxx 880</td><td><span class="pill">Dealer</span></td><td class="dash">-</td><td class="dash">-</td><td>Retail</td><td><span class="pill ok">Matches</span></td><td class="dash">-</td><td>&hellip;</td></tr>
+      <tr class="sel-row" data-d="1"><td><input type="checkbox" checked></td><td>Mohamad Aiman</td><td>+60 xxx xxx 548</td><td><span class="pill">Retail salesperson</span><span class="pill">+1</span></td><td class="dash">-</td><td><span class="pill">Sorento Dealer</span><span class="pill">Mocha Office</span><span class="pill" title="5 more access types">+5</span></td><td>Project, Retail</td><td><span class="pill warn" title="Purchase request form: On (tags say Off); Price tag request form: Off (tag says On)">Differs: 2</span></td><td class="dash">-</td><td>&hellip;</td></tr>
+      <tr class="sel-row" data-d="1"><td><input type="checkbox" checked></td><td>Ahmad Shakir Irfan</td><td>+60 xxx xxx 797</td><td><span class="pill">Internal staff</span></td><td class="dash">-</td><td class="dash">-</td><td class="dash">-</td><td><span class="pill warn" title="Sales opportunity form: Off (tag says On)">Differs: 1</span></td><td>Linked</td><td>&hellip;</td></tr>
+      <tr><td><input type="checkbox"></td><td>BASER</td><td>+60 xxx xxx 678</td><td><span class="pill">Project salesperson</span></td><td class="dash">-</td><td class="dash">-</td><td>Project</td><td><span class="pill ok">Matches</span></td><td class="dash">-</td><td>&hellip;</td></tr>
+      <tr><td><input type="checkbox"></td><td>Li Hua Lam</td><td>+60 xxx xxx 178</td><td><span class="pill">Dealer</span></td><td class="dash">-</td><td><span class="pill">Sorento Dealer</span><span class="pill">Mocha Office</span><span class="pill">+5</span></td><td class="dash">-</td><td><span class="pill ok">Matches</span></td><td class="dash">-</td><td>&hellip;</td></tr>
+      <tr><td><input type="checkbox"></td><td>Carmen Hoe</td><td>+60 xxx xxx 179</td><td><span class="pill">Dealer</span></td><td class="dash">-</td><td><span class="pill">Sorento Dealer</span><span class="pill">Mocha Office</span><span class="pill">+5</span></td><td class="dash">-</td><td><span class="pill ok">Matches</span></td><td class="dash">-</td><td>&hellip;</td></tr>
+      <tr><td><input type="checkbox"></td><td>Contact 1788624217951</td><td>+60 xxx xxx 007</td><td class="dash">-</td><td class="dash">-</td><td class="dash">-</td><td class="dash">-</td><td class="dash">-</td><td class="dash">-</td><td>&hellip;</td></tr>
+      </tbody></table></div>
+    <div class="foot"><span id="fcount">8 contacts</span><span>Page 1 of 1</span></div>
+  </div>
+</div></div>
+
+<!-- B -->
+<div class="view" id="v-b"><div class="container">
+  <div class="crumb">Users &amp; Access</div>
+  <div class="hdr"><h1>Contact tags</h1><button class="btn primary">Add tag</button></div>
+  <div class="card">
+    <div class="toolbar"><input class="input" style="width:240px" placeholder="Search tags..."><span style="flex:1"></span><button class="btn ghost">Columns</button></div>
+    <div class="tablewrap"><table style="min-width:640px">
+      <colgroup><col style="width:220px"><col style="width:110px"><col style="width:130px"><col style="width:110px"><col style="width:90px"></colgroup>
+      <thead><tr><th>Tag</th><th>Contacts</th><th>Settings</th><th>Differs</th><th>Active</th></tr></thead>
+      <tbody>
+      <tr><td>Dealer</td><td>4</td><td>2 settings</td><td class="dash">-</td><td><span class="pill ok">Active</span></td></tr>
+      <tr><td>Retail salesperson</td><td>1</td><td>2 settings</td><td><a href="#" style="color:#1d4ed8">1</a></td><td><span class="pill ok">Active</span></td></tr>
+      <tr><td>Project salesperson</td><td>2</td><td>1 setting</td><td><a href="#" style="color:#1d4ed8">1</a></td><td><span class="pill ok">Active</span></td></tr>
+      <tr><td>Internal staff</td><td>2</td><td>1 setting</td><td><a href="#" style="color:#1d4ed8">1</a></td><td><span class="pill ok">Active</span></td></tr>
+      </tbody></table></div>
+    <div class="foot"><span>4 tags</span><span>Page 1 of 1</span></div>
+  </div>
+</div></div>
+
+<!-- C and C2 -->
+<div class="view" id="v-c"><div class="container" id="cbody"></div></div>
+<div class="view" id="v-c2"><div class="container" id="cbody2"></div></div>
+
+<!-- D -->
+<div class="view" id="v-d"><div class="container"><div class="crumb">Users &amp; Access</div><div class="hdr"><h1>Internal Users</h1></div>
+<div class="overlay"><div class="dialog">
+  <div class="dh"><h2>Apply tag settings to 3 contacts</h2></div>
+  <div class="db">
+    <div class="counts"><span class="pill info">2 change</span><span class="pill no">1 already match</span><span class="pill warn">1 conflict</span></div>
+    <div class="scroll">
+      <div class="target"><div class="th"><span class="n">Mohamad Aiman</span><span><span class="pill info">Will change</span> <span class="dash" style="font-size:12px">2 changes</span></span></div><div class="tb">
+        <div class="chg"><span class="f">Purchase request form</span><span><span class="rem">On</span> <span class="add">Off</span> <span class="dash">(Retail salesperson, most restrictive)</span></span></div>
+        \1
+        <div class="chg"><span class="f">Skip period questions</span><span><span class="pill warn" style="height:auto;padding:2px 8px;white-space:normal">Conflict: Retail salesperson On, Project salesperson Off, not applied</span></span></div></div></div>
+      <div class="target"><div class="th"><span class="n">Ahmad Shakir Irfan</span><span><span class="pill info">Will change</span> <span class="dash" style="font-size:12px">1 change</span></span></div><div class="tb">
+        <div class="chg"><span class="f">Sales opportunity form</span><span><span class="rem">Off</span> <span class="add">On</span></span></div></div></div>
+      <div class="target"><div class="th"><span class="n">Jayson</span><span><span class="pill no">No change</span></span></div></div>
+    </div>
+  </div>
+  <div class="df"><button class="btn">Cancel</button><button class="btn primary">Apply to 2 contacts</button></div>
+</div></div></div></div>
+
+<!-- E1 -->
+<div class="view" id="v-e1"><div class="container"><div class="crumb">Users &amp; Access</div><div class="hdr"><h1>Internal Users</h1></div>
+<div class="overlay"><div class="dialog">
+  <div class="dh"><h2>Add tag to 2 contacts</h2></div>
+  <div class="db"><div class="lbl">Tag</div>
+    <div class="pick"><span class="pill">Dealer <span class="dash">x</span></span><span class="dash">Search tags...</span><span style="margin-left:auto" class="dash">x &#9662;</span></div>
+    <div class="opts"><div><input type="checkbox" checked> Dealer</div><div><input type="checkbox"> Retail salesperson</div><div><input type="checkbox"> Project salesperson</div><div><input type="checkbox"> Internal staff</div></div>
+  </div>
+  <div class="df"><button class="btn">Cancel</button><button class="btn primary">Next</button></div>
+</div></div></div></div>
+
+<!-- E2 -->
+<div class="view" id="v-e2"><div class="container"><div class="crumb">Users &amp; Access</div><div class="hdr"><h1>Internal Users</h1></div>
+<div class="overlay"><div class="dialog">
+  <div class="dh"><h2>Add tag Dealer to 2 contacts</h2></div>
+  <div class="db">
+    <label class="chk" style="margin-bottom:4px"><input type="radio" name="ap" checked> Apply tag settings now</label><br><label class="chk" style="margin-bottom:10px"><input type="radio" name="ap"> Don't apply now</label>
+    <div class="counts"><span class="pill info">2 change</span></div>
+    <div class="scroll">
+      <div class="target"><div class="th"><span class="n">BASER</span><span><span class="pill info">Will change</span> <span class="dash" style="font-size:12px">2 changes</span></span></div><div class="tb">
+        <div class="chg"><span class="f">Purchase request form</span><span><span class="rem">On</span> <span class="add">Off</span></span></div>
+        <div class="chg"><span class="f">Stock inquiry form</span><span><span class="rem">On</span> <span class="add">Off</span></span></div></div></div>
+      <div class="target"><div class="th"><span class="n">Contact 1788624217951</span><span><span class="pill info">Will change</span> <span class="dash" style="font-size:12px">2 changes</span></span></div><div class="tb">
+        <div class="chg"><span class="f">Purchase request form</span><span><span class="rem">On</span> <span class="add">Off</span></span></div>
+        <div class="chg"><span class="f">Stock inquiry form</span><span><span class="rem">On</span> <span class="add">Off</span></span></div></div></div>
+    </div>
+  </div>
+  <div class="df"><button class="btn">Back</button><button class="btn">Cancel</button><button class="btn primary">Add tag to 2 contacts</button></div>
+</div></div></div></div>
+
+<div class="view" id="v-g"><div class="container">
+  <div class="crumb">Users &amp; Access / Contacts</div>
+  <div class="hdr"><h1>Mohamad Aiman</h1></div>
+  <div class="meta"><span>Phone: <b>+60 xxx xxx 548</b></span><span>Segments: <b>Project, Retail</b></span></div>
+  <div class="tabs"><span>Details</span><span class="on">Tags</span><span>Access</span></div>
+  <div class="card"><div class="sec"><div class="hdr" style="margin:0 0 8px"><h3 style="margin:0">Tags</h3><button class="btn primary">Apply tag settings</button></div>
+    <div style="margin-bottom:10px"><span class="pill">Retail salesperson</span><span class="pill">Project salesperson</span></div>
+    <div class="tablewrap"><table style="min-width:560px"><colgroup><col style="width:190px"><col style="width:90px"><col style="width:90px"><col style="width:190px"></colgroup>
+    <thead><tr><th>Setting</th><th>Current</th><th>Expected</th><th>Deciding tag</th></tr></thead><tbody>
+    <tr><td>Purchase request form</td><td><span class="pill ok">On</span></td><td><span class="pill no">Off</span></td><td>Retail salesperson</td></tr>
+    <tr><td>Price tag request form</td><td><span class="pill no">Off</span></td><td><span class="pill ok">On</span></td><td>Retail salesperson</td></tr>
+    </tbody></table></div></div></div>
+</div></div>
+
+<!-- F -->
+<div class="view" id="v-f"><div class="container">
+  <div class="crumb">Users &amp; Access</div>
+  <div class="hdr"><h1>Contact tags</h1><button class="btn primary">Add tag</button></div>
+  <div class="card"><div class="empty"><b>No tags yet</b><span>Tags you add appear here.</span></div></div>
+  <div class="crumb" style="margin-top:24px">Users &amp; Access / Contact tags</div>
+  <div class="hdr"><h1>New tag</h1><button class="btn primary" disabled>Apply to 0 contacts</button></div>
+  <div class="card"><div class="sec"><h3>Access settings</h3><div class="empty"><b>No access settings</b><span>Edit this tag to set the ones it controls.</span></div></div></div>
+</div></div>
+
+</div></div>
+
+<div class="legend card" style="padding:12px 16px">
+  <b>Element -> existing component</b> (paths under <code>sorento_crm_frontend/</code>, all verified to exist)
+  <table>
+    <tr><th>Element</th><th>Reuses (under sorento_crm_frontend/)</th><th>Merge rule</th></tr>
+    <tr><td>Tags column, +N overflow</td><td><code>components/common/PillOverflow.tsx</code></td><td></td></tr>
+    <tr><td>Tag / Tag settings primary selects</td><td><code>components/common/SearchableMultiSelect.tsx, SearchableSelect.tsx</code></td><td></td></tr>
+    <tr><td>Filters button, popover, chips</td><td><code>components/ui/data-grid-list-toolbar.tsx (filters kind custom, :83-110, :509-524, :617-644); example app/(protected)/project-sales/stock-debt/components/StockDebtClient.tsx:501-541; existing controls app/(protected)/user-management/contacts/components/ContactAccessFilters.tsx</code></td><td></td></tr>
+    <tr><td>Matches / Differs / Active pills</td><td><code>components/ui/badge.tsx</code></td><td></td></tr>
+    <tr><td>Grid, pagination, search</td><td><code>components/ui/data-grid.tsx, data-grid-table.tsx, data-grid-pagination.tsx, components/common/ListSearchInput.tsx</code></td><td></td></tr>
+    <tr><td>Bulk Actions dropdown</td><td><code>app/(protected)/scm/components/BulkActionsMenu.tsx:21-60; item list from PR #1732 contacts/lib/contactBulkActions.ts (not on this branch yet); toolbar components/ui/data-grid-list-toolbar.tsx; menu components/ui/dropdown-menu.tsx</code></td><td></td></tr>
+    <tr><td>Row "..." menu</td><td><code>components/common/recordActions.tsx</code></td><td></td></tr>
+    <tr><td>Apply / Add tag preview dialogs</td><td><code>app/(protected)/user-management/contacts/components/BulkCopyAccessDialog.tsx; components/ui/dialog.tsx, checkbox.tsx</code></td><td></td></tr>
+    <tr><td>Tag admin list</td><td><code>app/(protected)/user-management/contact-access-types/components/ContactAccessTypesAdmin.tsx</code></td><td></td></tr>
+    <tr><td>Detail header, prev/next, tabs</td><td><code>components/common/PageHeader.tsx, RecordNavigation.tsx, components/ui/tabs.tsx</code></td><td></td></tr>
+    <tr><td>Not set / On / Off control</td><td><code>components/ui/toggle-group.tsx (see components/stock-visibility/StockVisibilitySection.tsx)</code></td><td></td></tr>
+    <tr><td>Contact page Tags section</td><td><code>app/(protected)/user-management/contacts/[id]/ (new section beside the files below)</code></td><td></td></tr>
+    <tr><td>Access types, Companies, Requires registered project</td><td><code>app/(protected)/user-management/contacts/[id]/components/ContactEditDialog.tsx</code></td><td>Access types, Companies: intersection; Requires registered project: On wins</td></tr>
+    <tr><td>Brands</td><td><code>components/contacts/ContactBrandScopeSection.tsx</code></td><td>set or All; intersection</td></tr>
+    <tr><td>Market segments</td><td><code>app/(protected)/user-management/contacts/[id]/components/ContactMarketSegmentSection.tsx</code></td><td>intersection</td></tr>
+    <tr><td>Regions, Chatbot switches, Memory level, Tier</td><td><code>app/(protected)/user-management/contacts/[id]/components/ContactChatbotSection.tsx</code></td><td>Regions: intersection, empty = conflict; Notify salesman and other switches: Off wins; ETA buffer: On wins; Skip period, Files as links: no stricter value, conflict; Memory level: lowest wins; Tier: Office loses to Dealer/End user, Dealer vs End user = conflict</td></tr>
+    <tr><td>Portal forms</td><td><code>app/(protected)/user-management/contacts/[id]/components/ContactPortalFormsSection.tsx</code></td><td>Off wins</td></tr>
+    <tr><td>Field reveals, Cost visible</td><td><code>app/(protected)/user-management/contacts/[id]/components/ContactFieldRevealsSection.tsx</code></td><td>Hidden wins</td></tr>
+    <tr><td>Chatbot agents</td><td><code>app/(protected)/user-management/contacts/[id]/components/ContactAccessAgentsTable.tsx</code></td><td>Deny wins</td></tr>
+    <tr><td>Agent field access</td><td><code>app/(protected)/user-management/access-agents/components/ContactFieldAccessDialog.tsx</code></td><td>Deny wins</td></tr>
+    <tr><td>Image + Voice note access</td><td><code>app/(protected)/user-management/contacts/[id]/components/ContactMediaAccessSection.tsx</code></td><td>Off wins; monthly limit and clip length: lowest; languages: intersection</td></tr>
+    <tr><td>Attachment types</td><td><code>app/(protected)/user-management/contacts/[id]/components/ContactAttachmentTypesSection.tsx</code></td><td>intersection</td></tr>
+    <tr><td>Stock visibility</td><td><code>components/stock-visibility/StockVisibilitySection.tsx</code></td><td>mode most restrictive; warehouses intersection; hide zero: On wins</td></tr>
+    <tr><td>Spec visibility</td><td><code>components/spec-visibility/SpecVisibilitySection.tsx</code></td><td>show: intersection; hide: union</td></tr>
+    <tr><td>Messaging (outbound)</td><td><code>components/contacts/ContactOutboundCell.tsx</code></td><td>Off wins</td></tr>
+  </table>
+  <p class="dash">Sample rows are the real dev contacts with masked phones. Tag list is the owner's seed, final list is the owner's call.</p>
+</div>
+
+<script>
+const SECS=['Access types','Brands','Companies','Market segments','Regions','Chatbot','Portal forms','Field reveals','Chatbot agents','Agent field access','Media access','Attachment types','Stock visibility','Spec visibility','Messaging (outbound)'];
+const FORMS=['Complaint','Stock inquiry','Purchase request','Sponsorship form','Price tag request','Sales opportunity','Conversation','Customer asks','Requires registered project'];
+const NOTON=[['Linked customers','who they buy as'],['Linked staff user','one person, one login'],['Linked sales agent','the person behind a code'],['CS routing','pins one named CS person'],['Memory facts and language','personal, learned in chat'],['Default ledgers','tied to their own customers'],['Agent grant dates','per person'],['Media usage counters','per person']];
+function seg(v){return `<span class="seg">${['Not set','On','Off'].map(o=>`<span class="${o===v?'on':''}">${o}</span>`).join('')}</span>`;}
+function formsBody(edit){return FORMS.map(n=>{const v=(n==='Stock inquiry'||n==='Purchase request')?'Off':'Not set';return `<div class="row"><span>${n}</span>`+(edit?seg(v):(v==='Not set'?'<span class="dash">Not set</span>':'<span class="pill no">Off</span>'))+'</div>';}).join('');}
+function secs(edit){return SECS.map(n=>{
+  const on=n==='Portal forms'||(edit&&n==='Access types');
+  const body=n==='Portal forms'?formsBody(edit):(n==='Access types'?`<div class="row"><label class="chk"><input type="checkbox"> End User</label></div><div class="row"><label class="chk"><input type="checkbox" checked> Sorento Dealer</label></div><div class="row"><label class="chk"><input type="checkbox"> Sorento Office</label></div><div class="row"><label class="chk"><input type="checkbox" checked> Mocha Dealer</label></div><div class="row"><label class="chk"><input type="checkbox"> Mocha Office</label></div><div class="row"><label class="chk"><input type="checkbox" checked> Cabana Dealer</label></div><div class="row"><label class="chk"><input type="checkbox"> Cabana Office</label></div><div class="row"><label class="chk"><input type="checkbox"> NL Dealer</label></div>`:'');
+  return `<div class="secrow ${on?'':'mut'}"><div class="top"><span class="nm">${n}${edit&&n==='Access types'?'<span class="nsv">Not saved</span>':''}</span>`+
+   (edit?`<span class="sw ${on?'on':''}"><i></i>Set on this tag</span>`:(on?'':'<span class="dash">Not set</span>'))+`</div>${on?body:''}</div>`;}).join('');}
+function detail(edit){return `<div class="crumb">Users &amp; Access / Contact tags</div>
+<div class="hdr"><h1>Dealer</h1><span>${edit?'<button class="btn">Cancel</button> <button class="btn primary">Save</button>':'<button class="btn primary">Apply to 4 contacts</button>'}</span></div>
+<div class="meta"><span>Contacts: <b>4</b></span><span>Last applied: <b>Never</b></span><span style="margin-left:auto"><button class="btn ghost">&lsaquo; Prev</button><button class="btn ghost">Next &rsaquo;</button></span></div>
+<div class="tabs"><span class="on">Access settings</span><span>Contacts</span></div>
+<div class="card"><div class="sec"><h3>Access settings</h3>${secs(edit)}
+<div class="grp" style="margin-top:18px">Not on a tag</div><div class="grey">${NOTON.map(([n,r])=>`<div class="row"><span>${n}</span><span>${r}</span></div>`).join('')}</div></div></div>
+<div class="card"><div class="sec"><h3>Contacts</h3><div class="tablewrap"><table style="min-width:420px"><colgroup><col style="width:200px"><col style="width:140px"><col style="width:120px"></colgroup>
+<thead><tr><th>Contact</th><th>Phone</th><th>Tag settings</th></tr></thead><tbody>
+<tr><td>Jayson</td><td>+60 xxx xxx 328</td><td><span class="pill ok">Matches</span></td></tr>
+<tr><td>Akmal</td><td>+60 xxx xxx 880</td><td><span class="pill ok">Matches</span></td></tr>
+<tr><td>Li Hua Lam</td><td>+60 xxx xxx 178</td><td><span class="pill ok">Matches</span></td></tr>
+<tr><td>Carmen Hoe</td><td>+60 xxx xxx 179</td><td><span class="pill ok">Matches</span></td></tr></tbody></table></div></div></div>`;}
+document.getElementById('cbody').innerHTML=detail(false);
+document.getElementById('cbody2').innerHTML=detail(true);
+const fr=document.getElementById('frame');
+function show(v){
+  const id=({a2:'a',a3:'a',a4:'a',a5:'a'})[v]||v;
+  document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.id==='v-'+id));
+  document.querySelectorAll('.amenu').forEach(m=>m.style.display=v==='a2'?'block':'none');
+  document.getElementById('pop').style.display=v==='a3'?'block':'none';
+  document.getElementById('rmenu').style.display=v==='a4'?'block':'none';
+  const f3=v==='a3';
+  document.getElementById('fbtn').innerHTML=f3?'Filters <span class="badgecnt">1</span>':'Filters';
+  document.getElementById('chips').style.display=f3?'flex':'none';
+  const rs=document.getElementById('rsel');rs.classList.toggle('set',f3);rs.innerHTML=f3?'<span class="k">Region:</span> West <span class="clr">x</span>':'<span class="k">Region</span><span class="clr">&#9662;</span>';
+  const d=v==='a5',ts=document.getElementById('tsel');ts.classList.toggle('set',d);document.getElementById('tval').textContent=d?'Differs':'Any';
+  document.querySelectorAll('#v-a tbody tr').forEach(t=>t.style.display=(d&&!t.dataset.d)?'none':'');
+  document.getElementById('fcount').textContent=d?'2 contacts':'8 contacts';
+  document.querySelectorAll('.mocknav button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+}
+document.querySelectorAll('.mocknav button[data-v]').forEach(b=>b.onclick=()=>show(b.dataset.v));
+document.querySelectorAll('.mocknav button[data-w]').forEach(b=>b.onclick=()=>{
+  fr.style.width=b.dataset.w+'px';fr.classList.toggle('w375',b.dataset.w==='375');
+  document.querySelectorAll('.mocknav button[data-w]').forEach(x=>x.classList.toggle('on',x===b));});
+</script>
+</body>
+</html>

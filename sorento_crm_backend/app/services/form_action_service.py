@@ -485,7 +485,12 @@ class FormActionService:
         )
         try:
             with company_scope(self.db, scope):
-                result = action.execute(self.db, _handler_payload(row.payload_json))
+                # The requester rides along so a handler can re-check the gates of its own action
+                # (a deferred delete runs after the request, with no user on the session).
+                result = action.execute(
+                    self.db,
+                    {**_handler_payload(row.payload_json), "requested_by_id": row.requested_by_id},
+                )
         except Exception as exc:
             self.db.rollback()
             # Never `str(exc)`: this string is shown to the user (see

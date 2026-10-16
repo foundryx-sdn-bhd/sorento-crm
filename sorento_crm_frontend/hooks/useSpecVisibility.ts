@@ -1,3 +1,4 @@
+import { invalidateContactTagSettings } from '@/app/(protected)/user-management/contacts/[id]/hooks/useContactTagSettings';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 
@@ -39,6 +40,7 @@ export function useSpecVisibilityMutations(scope: SpecVisibilityScope) {
     onSuccess: (data) => {
       queryClient.setQueryData(key, data);
       queryClient.invalidateQueries({ queryKey: ['spec-visibility'] });
+      if (scope.kind === 'contact') invalidateContactTagSettings(queryClient, scope.contactId);
       toast.success('Spec visibility saved');
     },
     onError: (error) => toast.error(error.message || 'Failed to save spec visibility'),
@@ -51,6 +53,7 @@ export function useSpecVisibilityMutations(scope: SpecVisibilityScope) {
     onSuccess: (data) => {
       queryClient.setQueryData(key, data);
       queryClient.invalidateQueries({ queryKey: ['spec-visibility'] });
+      if (scope.kind === 'contact') invalidateContactTagSettings(queryClient, scope.contactId);
     },
   });
 
