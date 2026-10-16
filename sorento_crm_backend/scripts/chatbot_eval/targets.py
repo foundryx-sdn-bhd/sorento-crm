@@ -543,9 +543,8 @@ def _picker_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tu
     def codes(q: Any) -> set[str]:
         return {_key(o.get("code") or o.get("label")) for o in (q.get("options") or []) if isinstance(o, dict)} if isinstance(q, dict) else set()
 
-    listed = len(set(CODE_RE.findall(reply_text(row)))) >= 2          # the answer itself shows the products
     same_list = isinstance(before, dict) and before.get("kind") == "product_pick" and codes(before) == codes(after)
-    return ("no_picker", listed or same_list, "The bot left a list of products open to pick from instead of answering.")
+    return ("no_picker", same_list, "The bot left a list of products open to pick from instead of answering.")
 
 
 def _needless(row: dict[str, Any], gold: dict[str, Any], menu: bool = True,
