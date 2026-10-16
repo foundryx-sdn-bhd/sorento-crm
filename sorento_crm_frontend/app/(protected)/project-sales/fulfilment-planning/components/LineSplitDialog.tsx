@@ -125,6 +125,10 @@ const splitCollision: CollisionDetection = (args) => {
 /** Cells are re-measured during a drag: the dialog scrolls (autoscroll) under it. */
 const SPLIT_MEASURING = { droppable: { strategy: MeasuringStrategy.Always } };
 
+/** Autoscroll only from a thin edge band, and slowly, so a drop near the edge lands where
+ * it was aimed instead of the grid still scrolling under it (browser pass). */
+const SPLIT_AUTOSCROLL = { threshold: { x: 0.08, y: 0.08 }, acceleration: 4 };
+
 /** Focus a card by split id; true once it holds the focus. */
 function focusCardNow(splitId: string): boolean {
   const card = document.querySelector<HTMLElement>(
@@ -832,6 +836,7 @@ export function LineSplitDialog({
                 sensors={sensors}
                 collisionDetection={splitCollision}
                 measuring={SPLIT_MEASURING}
+                autoScroll={SPLIT_AUTOSCROLL}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
                 onDragCancel={() => {
