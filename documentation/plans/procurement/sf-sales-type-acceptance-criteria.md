@@ -6,8 +6,10 @@ Plan: `PLAN-sf-sales-type-16oct.md`.
   or Cash sales fills Cash Sales. The value stays editable and is saved on the SF.
 - ST2 Staff edit SF: same field, same fill on a new pick; saving keeps the chosen value. Changing the customer's
   debtor type later does NOT change a saved SF (frozen, like PR).
+  Opening and saving an EXISTING SF that has no sales type keeps it blank (the new-form default never applies on edit).
 - ST3 Portal SF: same field (Sales type), same fill on pick, saved with the draft and the submission.
-- ST4 Sales type is NOT required on an SF (an SF with free-text customer saves with it blank). PR stays required.
+- ST4 Sales type is NOT required on an SF (an SF with free-text customer saves with it blank; the SF select is clearable).
+  PR stays required. A NEW SF starts at the lookup default (Project), like a new PR (crew ruling (a), 16 Oct).
 - ST5 SF list shows a Sales Type column; SF detail, Excel and PDF show Sales Type after Sponsor Subject;
   the SF revision viewer shows it with its label.
 - ST6 CS routing code unchanged.

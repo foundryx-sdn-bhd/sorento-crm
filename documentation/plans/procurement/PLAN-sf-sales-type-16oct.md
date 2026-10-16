@@ -1,6 +1,6 @@
 # PLAN: Sponsorship forms keep a sales type, like purchase requests (SF-SALES-TYPE)
 
-Status: in progress (Build). Track: small fix (S): no migration, no auth/RBAC change, no new ingest surface.
+Status: in progress (Review: fix round 1 on PR #1728). Track: small fix (S): no migration, no auth/RBAC change, no new ingest surface.
 UAC: `sf-sales-type-acceptance-criteria.md` (alongside).
 
 ## Journey
@@ -40,6 +40,9 @@ customer's debtor type, exactly like a Purchase Request (PR). Owner: "yeah i wan
    Sponsor Subject (the SF's "purpose" slot, same as the list column's position); picking a customer fills
    it on SF too; payload sends it for SF.
 2. Portal: SF gets the same `sales_type` lookup-select (not required) after Sponsor Subject; pick fills it.
+   New forms (staff and portal) start at the binding default (Project) exactly like a PR (crew ruling (a),
+   16 Oct); editing an EXISTING SF never applies that default (`applyDefault` off on the SF edit card), so
+   old SFs stay blank until someone picks a value or the backfill runs. The optional SF select is clearable.
 3. Display for SF: list column (drop the PR-only gate), detail (after Sponsor Subject), Excel
    (`Sales Type:` row after `Sponsor Subject:`), PDF (same row, same position), SF revision snapshot
    form fields + lookup label.
