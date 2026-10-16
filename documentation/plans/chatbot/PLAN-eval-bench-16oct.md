@@ -78,3 +78,25 @@ One lane = one branch = one PR (CLAUDE.md lane rule); deliverables land as separ
 
 Every subagent brief: never edit env files, never create or copy databases (the lead creates the throwaway DB),
 pytest at most `-n 2`, only touched tests.
+
+## S2 contract (D3 error bars + D1 scorer refusal)
+
+Repo, `scripts/chatbot_eval/stats.py` (pure, stdlib only, no numpy):
+
+- `paired_compare(base, head, *, n_boot=10000, seed=0, min_reps=3, weights=None)`; `base`/`head` map
+  `item_id -> list[bool]` (one bool per rep). Returns a dict: `n_items`, `excluded` (ids in one arm only),
+  `reps` (min reps per arm), `base_mean`, `base_ci`, `head_mean`, `head_ci`, `delta`, `delta_ci` (each CI a
+  `(lo, hi)` tuple, 95%, percentile bootstrap over items, reps averaged per item first), `verdict` in
+  {`better`, `worse`, `within noise`} or `refused` with `reason` `"<n> reps < 3"`. Means are fractions 0..1.
+  `weights` (optional) maps `item_id -> stratum weight`; when given, means and deltas are weighted means
+  (used by S5; tests may leave it None).
+- `format_compare(result) -> str`: one short block; `verdict refused: <n> reps < 3` when refused.
+
+Crew tooling wiring (tests under `crew/state/eval/tooling/tests/`, synthetic files in tmp dirs):
+
+- `parser-gold/tooling/score.py --compare BASE_GLOB HEAD_GLOB` reads run files, refuses rows lacking any of
+  `prompt_sha256, prompt_version, model, reasoning_effort, code_sha` (exit 2, names the file) unless `--legacy`
+  (then the first output line is `LEGACY: not a gate verdict`), refuses files of one arm whose provenance differs
+  (exit 2, names the field), grades each row with the existing grade logic, then prints `format_compare`.
+- `tooling/compare.py --reps RUN... --ref-reps REF...` does the same over E2E run dirs (pass = label in
+  {correct, good_clarify}; provenance from `report.json.provenance`).
