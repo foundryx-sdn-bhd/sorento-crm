@@ -14,7 +14,8 @@ export interface LineSplitOpener {
   open: (contribution: BoardContribution) => void;
 }
 
-export const LineSplitOpenerContext = React.createContext<LineSplitOpener | null>(null);
+export const LineSplitOpenerContext =
+  React.createContext<LineSplitOpener | null>(null);
 
 export function useLineSplitOpener(): LineSplitOpener | null {
   return React.useContext(LineSplitOpenerContext);

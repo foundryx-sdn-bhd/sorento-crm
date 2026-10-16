@@ -3,7 +3,11 @@
 import * as React from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { Badge } from '@/components/ui/badge';
-import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import { cn } from '@/lib/utils';
 import { OrderInquiryVerbPill } from '../../_shared/components/OrderInquiryVerbPill';
 import {
@@ -61,7 +65,9 @@ export function placedOf(group: SplitGroup): Placed[] {
         : split.sitsOnLineId && ids.has(split.sitsOnLineId)
           ? split.sitsOnLineId
           : NEW_LINE_ROW;
-      const col = split.isCancel ? CANCEL_COL : (split.deliveryDate ?? NEW_DATE_COL);
+      const col = split.isCancel
+        ? CANCEL_COL
+        : (split.deliveryDate ?? NEW_DATE_COL);
       out.push({ split, origin, row, col });
     }
   }
@@ -102,7 +108,10 @@ export function SplitCardBody({
     >
       <div className="text-sm font-semibold tabular-nums">{split.qty}</div>
       {origin.lineId !== row ? (
-        <div className="truncate text-muted-foreground" title={`from ${lineLabel(origin)}`}>
+        <div
+          className="truncate text-muted-foreground"
+          title={`from ${lineLabel(origin)}`}
+        >
           {`from ${lineShort(origin)}`}
         </div>
       ) : null}
@@ -138,8 +147,17 @@ function SplitCard({
   onPick: (placed: Placed) => void;
 }) {
   const { split, origin, row, col } = placed;
-  const data: CardData = { lineId: origin.lineId, splitId: split.id, groupKey, row, col };
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: split.id, data });
+  const data: CardData = {
+    lineId: origin.lineId,
+    splitId: split.id,
+    groupKey,
+    row,
+    col,
+  };
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: split.id,
+    data,
+  });
   const word = changeOf(split, origin);
   const label = `${split.qty} ${word === 'CANCEL' ? 'CANCEL BALANCE' : word}${
     split.deliveryDate ? ` on ${formatSplitDate(split.deliveryDate)}` : ''
@@ -204,7 +222,8 @@ function DropCell({
   const { setNodeRef, isOver } = useDroppable({
     id: `${groupKey}::${row}::${col}`,
     data,
-    disabled: disabled || (activeGroupKey !== null && activeGroupKey !== groupKey),
+    disabled:
+      disabled || (activeGroupKey !== null && activeGroupKey !== groupKey),
   });
   return (
     <div
@@ -243,11 +262,14 @@ function RowHeader({
     origin.lineId === line.lineId
       ? []
       : splitsOf(origin)
-          .filter((split) => !split.isCancel && split.sitsOnLineId === line.lineId)
+          .filter(
+            (split) => !split.isCancel && split.sitsOnLineId === line.lineId,
+          )
           .map((split) => ({ split, origin })),
   );
   const left = leftOf(lines, line.lineId);
-  const byId = (id: string | null) => lines.find((candidate) => candidate.lineId === id);
+  const byId = (id: string | null) =>
+    lines.find((candidate) => candidate.lineId === id);
   return (
     <div
       role="button"
@@ -265,7 +287,9 @@ function RowHeader({
         selected && 'bg-primary/5 shadow-[inset_3px_0_0_var(--color-primary)]',
       )}
     >
-      <div className="font-semibold tabular-nums whitespace-nowrap">{lineLabel(line)}</div>
+      <div className="font-semibold tabular-nums whitespace-nowrap">
+        {lineLabel(line)}
+      </div>
       <div className="flex flex-wrap items-center gap-1">
         {isSplit(line) ? (
           <Badge variant="secondary" appearance="light" size="sm">
@@ -290,7 +314,9 @@ function RowHeader({
           ) : (
             <span title={`CANCEL BALANCE ${-left}`}>
               <OrderInquiryVerbPill verb="CANCEL_BALANCE" />
-              <span className="ms-1 text-2xs font-medium tabular-nums">{-left}</span>
+              <span className="ms-1 text-2xs font-medium tabular-nums">
+                {-left}
+              </span>
             </span>
           )
         ) : null}
@@ -298,7 +324,10 @@ function RowHeader({
       {movedOut.length > 0 ? (
         <div className="truncate text-2xs text-muted-foreground">
           {`→ ${movedOut
-            .map((split) => `${split.qty} to ${split.sitsOnLineId ? lineShort(byId(split.sitsOnLineId)) : 'new line'}`)
+            .map(
+              (split) =>
+                `${split.qty} to ${split.sitsOnLineId ? lineShort(byId(split.sitsOnLineId)) : 'new line'}`,
+            )
             .join(', ')}`}
         </div>
       ) : null}
@@ -336,7 +365,11 @@ export function LineSplitGrid({
   /** The group of the card being dragged: other groups are not drop targets. */
   activeGroupKey: string | null;
   actionsFor: (placed: Placed) => SplitActions;
-  onKey: (event: React.KeyboardEvent<HTMLDivElement>, placed: Placed, group: SplitGroup) => void;
+  onKey: (
+    event: React.KeyboardEvent<HTMLDivElement>,
+    placed: Placed,
+    group: SplitGroup,
+  ) => void;
   onPick: (placed: Placed) => void;
   onZoom: (lineId: string) => void;
 }) {
@@ -373,7 +406,11 @@ export function LineSplitGrid({
                     col === CANCEL_COL && 'text-destructive',
                   )}
                 >
-                  {col === NEW_DATE_COL ? 'New date' : col === CANCEL_COL ? 'Cancel' : formatSplitDate(col)}
+                  {col === NEW_DATE_COL
+                    ? 'New date'
+                    : col === CANCEL_COL
+                      ? 'Cancel'
+                      : formatSplitDate(col)}
                 </div>
               ))}
               {rows.map((row) => {
@@ -392,8 +429,12 @@ export function LineSplitGrid({
                         data-testid={`line-split-new-line-${group.key}`}
                         className="flex flex-col justify-center border-r border-b border-border px-2 py-1.5 text-xs"
                       >
-                        <span className="font-medium text-muted-foreground italic">New line</span>
-                        <span className="text-2xs text-muted-foreground">not in AutoCount yet</span>
+                        <span className="font-medium text-muted-foreground italic">
+                          New line
+                        </span>
+                        <span className="text-2xs text-muted-foreground">
+                          not in AutoCount yet
+                        </span>
                       </div>
                     )}
                     {cols.map((col) => (
@@ -406,7 +447,9 @@ export function LineSplitGrid({
                         original={Boolean(rowLine && rowLine.baseDate === col)}
                       >
                         {placed
-                          .filter((entry) => entry.row === row && entry.col === col)
+                          .filter(
+                            (entry) => entry.row === row && entry.col === col,
+                          )
                           .map((entry) => (
                             <SplitCard
                               key={entry.split.id}
@@ -416,7 +459,9 @@ export function LineSplitGrid({
                               rowLine={rowLine}
                               selected={selectedSplitId === entry.split.id}
                               actions={actionsFor(entry)}
-                              onKey={(event, target) => onKey(event, target, group)}
+                              onKey={(event, target) =>
+                                onKey(event, target, group)
+                              }
                               onPick={onPick}
                             />
                           ))}

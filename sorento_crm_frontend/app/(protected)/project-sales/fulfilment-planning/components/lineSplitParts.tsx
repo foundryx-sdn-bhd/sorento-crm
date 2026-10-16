@@ -23,7 +23,10 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from '@/components/common/SearchableSelect';
 import { OrderInquiryVerbPill } from '../../_shared/components/OrderInquiryVerbPill';
 import {
   lineLabel,
@@ -38,7 +41,9 @@ export const SITS_ON_CANCEL = '__cancel__';
 
 /** The change pill, in the verb colours the OI screens already use (UAC A9). */
 export function ChangePill({ word }: { word: ChangeWord }) {
-  return <OrderInquiryVerbPill verb={word === 'CANCEL' ? 'CANCEL_BALANCE' : word} />;
+  return (
+    <OrderInquiryVerbPill verb={word === 'CANCEL' ? 'CANCEL_BALANCE' : word} />
+  );
 }
 
 /** What a split card / zoom row / phone card can be asked to do (UAC A7, A8). */
@@ -56,7 +61,10 @@ export function sitsOnValue(split: SplitDraft): string {
 }
 
 /** The lines a split of `origin` may sit on: its group, a new line, or Cancel. */
-export function sitsOnOptions(origin: SplitLine, groupLines: SplitLine[]): SearchableSelectOption[] {
+export function sitsOnOptions(
+  origin: SplitLine,
+  groupLines: SplitLine[],
+): SearchableSelectOption[] {
   return [
     ...groupLines.map((line) => ({
       value: line.lineId,
@@ -109,11 +117,15 @@ export function SplitMenuItems({
   actions: SplitActions;
 }) {
   const Item = kind === 'context' ? ContextMenuItem : DropdownMenuItem;
-  const Shortcut = kind === 'context' ? ContextMenuShortcut : DropdownMenuShortcut;
-  const Separator = kind === 'context' ? ContextMenuSeparator : DropdownMenuSeparator;
+  const Shortcut =
+    kind === 'context' ? ContextMenuShortcut : DropdownMenuShortcut;
+  const Separator =
+    kind === 'context' ? ContextMenuSeparator : DropdownMenuSeparator;
   const Label = kind === 'context' ? ContextMenuLabel : DropdownMenuLabel;
-  const RadioGroup = kind === 'context' ? ContextMenuRadioGroup : DropdownMenuRadioGroup;
-  const Radio = kind === 'context' ? ContextMenuRadioItem : DropdownMenuRadioItem;
+  const RadioGroup =
+    kind === 'context' ? ContextMenuRadioGroup : DropdownMenuRadioGroup;
+  const Radio =
+    kind === 'context' ? ContextMenuRadioItem : DropdownMenuRadioItem;
   return (
     <>
       <Item onSelect={actions.splitInTwo} disabled={split.qty < 2}>
@@ -134,7 +146,10 @@ export function SplitMenuItems({
       </Item>
       <Separator />
       <Label>Sits on</Label>
-      <RadioGroup value={split.isCancel ? '' : sitsOnValue(split)} onValueChange={actions.sitsOn}>
+      <RadioGroup
+        value={split.isCancel ? '' : sitsOnValue(split)}
+        onValueChange={actions.sitsOn}
+      >
         {groupLines.map((line) => (
           <Radio key={line.lineId} value={line.lineId}>
             {`${line.lineId === origin.lineId ? 'Own line, ' : ''}${lineLabel(line)}`}
@@ -156,7 +171,13 @@ export function SplitMenuButton(props: {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="ghost" mode="icon" size="sm" aria-label="More actions">
+        <Button
+          type="button"
+          variant="ghost"
+          mode="icon"
+          size="sm"
+          aria-label="More actions"
+        >
           <MoreHorizontal aria-hidden />
         </Button>
       </DropdownMenuTrigger>

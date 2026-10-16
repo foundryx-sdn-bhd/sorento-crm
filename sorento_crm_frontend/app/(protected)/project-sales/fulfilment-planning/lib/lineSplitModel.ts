@@ -89,7 +89,10 @@ export function isSplit(line: SplitLine): boolean {
 
 /** Base minus the sum of the splits: positive is a gap, negative is over. */
 export function gapOf(line: SplitLine): number {
-  return line.baseQty - splitsOf(line).reduce((sum, split) => sum + (split.qty || 0), 0);
+  return (
+    line.baseQty -
+    splitsOf(line).reduce((sum, split) => sum + (split.qty || 0), 0)
+  );
 }
 
 /** What is planned ON a line: every non-cancel split of any line that sits on it. */
@@ -97,7 +100,8 @@ export function planOf(lines: SplitLine[], lineId: string): number {
   let total = 0;
   for (const line of lines) {
     for (const split of splitsOf(line)) {
-      if (!split.isCancel && split.sitsOnLineId === lineId) total += split.qty || 0;
+      if (!split.isCancel && split.sitsOnLineId === lineId)
+        total += split.qty || 0;
     }
   }
   return total;
@@ -112,7 +116,12 @@ export function leftOf(lines: SplitLine[], lineId: string): number {
 /** A split's change word against its own line's base date (UAC A9). */
 export function changeOf(split: SplitDraft, line: SplitLine): ChangeWord {
   if (split.isCancel) return 'CANCEL';
-  if (!split.deliveryDate || !line.baseDate || split.deliveryDate === line.baseDate) return 'REMAIN';
+  if (
+    !split.deliveryDate ||
+    !line.baseDate ||
+    split.deliveryDate === line.baseDate
+  )
+    return 'REMAIN';
   return split.deliveryDate > line.baseDate ? 'DELAY' : 'ADVANCE';
 }
 
@@ -162,7 +171,9 @@ export function moveSplit(
     if (moving >= split.qty) {
       if (existing) {
         existing.qty += split.qty;
-        existing.remark = [existing.remark, split.remark].filter(Boolean).join('; ');
+        existing.remark = [existing.remark, split.remark]
+          .filter(Boolean)
+          .join('; ');
         return splits.filter((candidate) => candidate !== split);
       }
       split.deliveryDate = date;
@@ -186,7 +197,11 @@ export function moveSplit(
 }
 
 /** Halve a split in place, the first half rounded up. */
-export function splitInTwo(lines: SplitLine[], lineId: string, splitId: string): SplitLine[] {
+export function splitInTwo(
+  lines: SplitLine[],
+  lineId: string,
+  splitId: string,
+): SplitLine[] {
   return editLine(lines, lineId, (splits) => {
     const index = splits.findIndex((candidate) => candidate.id === splitId);
     if (index < 0 || splits[index].qty < 2) return null;
@@ -194,19 +209,33 @@ export function splitInTwo(lines: SplitLine[], lineId: string, splitId: string):
     const first = Math.ceil(split.qty / 2);
     const second = split.qty - first;
     split.qty = first;
-    splits.splice(index + 1, 0, { ...split, id: newSplitId(), qty: second, remark: '' });
+    splits.splice(index + 1, 0, {
+      ...split,
+      id: newSplitId(),
+      qty: second,
+      remark: '',
+    });
     return splits;
   });
 }
 
 /** A split back on its own line and original date, merging with what is there. */
-export function backToOwn(lines: SplitLine[], lineId: string, splitId: string): SplitLine[] {
+export function backToOwn(
+  lines: SplitLine[],
+  lineId: string,
+  splitId: string,
+): SplitLine[] {
   const line = lines.find((candidate) => candidate.lineId === lineId);
-  const split = line ? splitsOf(line).find((candidate) => candidate.id === splitId) : undefined;
+  const split = line
+    ? splitsOf(line).find((candidate) => candidate.id === splitId)
+    : undefined;
   if (!line || !split) return lines;
   const date = line.baseDate ?? split.deliveryDate;
   if (!date) return lines;
-  return moveSplit(lines, lineId, splitId, split.qty, { date, sitsOnLineId: lineId });
+  return moveSplit(lines, lineId, splitId, split.qty, {
+    date,
+    sitsOnLineId: lineId,
+  });
 }
 
 /** A typed qty (a zero split stays until `dropEmpty`). */
@@ -300,7 +329,10 @@ export function setPair(
 }
 
 /** A new empty split on the line's own line and base date (UAC A8 "+ Add split"). */
-export function addSplit(lines: SplitLine[], lineId: string): { lines: SplitLine[]; id: string } {
+export function addSplit(
+  lines: SplitLine[],
+  lineId: string,
+): { lines: SplitLine[]; id: string } {
   const id = newSplitId();
   return {
     id,
@@ -319,12 +351,18 @@ export function addSplit(lines: SplitLine[], lineId: string): { lines: SplitLine
 }
 
 /** Zero-qty splits removed (UAC B1, on blur and on Save). `null` when there were none. */
-export function dropEmpty(lines: SplitLine[], lineId: string): SplitLine[] | null {
+export function dropEmpty(
+  lines: SplitLine[],
+  lineId: string,
+): SplitLine[] | null {
   const line = lines.find((candidate) => candidate.lineId === lineId);
   if (!line || !line.splits.some((split) => !split.qty)) return null;
   return lines.map((candidate) =>
     candidate.lineId === lineId
-      ? { ...candidate, splits: candidate.splits.filter((split) => split.qty > 0) }
+      ? {
+          ...candidate,
+          splits: candidate.splits.filter((split) => split.qty > 0),
+        }
       : candidate,
   );
 }
@@ -333,7 +371,10 @@ export function dropEmpty(lines: SplitLine[], lineId: string): SplitLine[] | nul
 export function toPayload(lines: SplitLine[]): LineSplitsSaveBody {
   return {
     lines: lines.map((line) => {
-      const clean = { ...line, splits: line.splits.filter((split) => split.qty > 0) };
+      const clean = {
+        ...line,
+        splits: line.splits.filter((split) => split.qty > 0),
+      };
       return {
         line_id: line.lineId,
         splits: isSplit(clean)
@@ -341,7 +382,9 @@ export function toPayload(lines: SplitLine[]): LineSplitsSaveBody {
               qty: split.qty,
               delivery_date: split.isCancel ? null : split.deliveryDate,
               is_cancel: split.isCancel,
-              sits_on_line_id: split.isCancel ? line.lineId : split.sitsOnLineId,
+              sits_on_line_id: split.isCancel
+                ? line.lineId
+                : split.sitsOnLineId,
               remark: split.remark,
             }))
           : [],
@@ -387,7 +430,12 @@ export function groupsOf(lines: SplitLine[]): SplitGroup[] {
     const key = `${line.itemCode}|${line.location}`;
     let group = groups.find((candidate) => candidate.key === key);
     if (!group) {
-      group = { key, itemCode: line.itemCode, location: line.location, lines: [] };
+      group = {
+        key,
+        itemCode: line.itemCode,
+        location: line.location,
+        lines: [],
+      };
       groups.push(group);
     }
     group.lines.push(line);
@@ -400,7 +448,8 @@ export function datesOf(group: SplitGroup): string[] {
   const dates = new Set<string>();
   for (const line of group.lines) {
     if (line.baseDate) dates.add(line.baseDate);
-    for (const split of splitsOf(line)) if (!split.isCancel && split.deliveryDate) dates.add(split.deliveryDate);
+    for (const split of splitsOf(line))
+      if (!split.isCancel && split.deliveryDate) dates.add(split.deliveryDate);
   }
   return [...dates].sort();
 }
@@ -420,5 +469,7 @@ export function lineLabel(line: SplitLine): string {
 /** `line 20`, or `the 417 line` when AutoCount gave no number. */
 export function lineShort(line: SplitLine | undefined): string {
   if (!line) return 'new line';
-  return line.lineNo != null ? `line ${line.lineNo}` : `the ${line.baseQty} line`;
+  return line.lineNo != null
+    ? `line ${line.lineNo}`
+    : `the ${line.baseQty} line`;
 }

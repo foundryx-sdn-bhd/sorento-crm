@@ -3,7 +3,11 @@
 import * as React from 'react';
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import {
@@ -62,20 +66,34 @@ export function SplitBar({
   const total = splits.reduce((sum, split) => sum + (split.qty || 0), 0);
   const scale = Math.max(line.baseQty, total) || 1;
   let cumulative = 0;
-  const dividers: { left: number; first: SplitDraft; second: SplitDraft }[] = [];
+  const dividers: { left: number; first: SplitDraft; second: SplitDraft }[] =
+    [];
   splits.forEach((split, index) => {
     cumulative += ((split.qty || 0) / scale) * 100;
-    if (index < splits.length - 1) dividers.push({ left: cumulative, first: split, second: splits[index + 1] });
+    if (index < splits.length - 1)
+      dividers.push({
+        left: cumulative,
+        first: split,
+        second: splits[index + 1],
+      });
   });
 
-  const startDrag = (event: React.PointerEvent, first: SplitDraft, second: SplitDraft) => {
+  const startDrag = (
+    event: React.PointerEvent,
+    first: SplitDraft,
+    second: SplitDraft,
+  ) => {
     event.preventDefault();
     const width = barRef.current?.getBoundingClientRect().width || 1;
     const x0 = event.clientX;
     const firstQty = first.qty;
     onPairStart();
     const move = (moveEvent: PointerEvent) => {
-      onPair(first.id, second.id, firstQty + Math.round(((moveEvent.clientX - x0) / width) * scale));
+      onPair(
+        first.id,
+        second.id,
+        firstQty + Math.round(((moveEvent.clientX - x0) / width) * scale),
+      );
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -87,7 +105,10 @@ export function SplitBar({
   };
 
   return (
-    <div ref={barRef} className="relative my-1.5 flex h-8.5 touch-none rounded-md bg-muted select-none">
+    <div
+      ref={barRef}
+      className="relative my-1.5 flex h-8.5 touch-none rounded-md bg-muted select-none"
+    >
       {splits.map((split) => {
         const width = ((split.qty || 0) / scale) * 100;
         const word = changeOf(split, line);
@@ -131,7 +152,8 @@ export function SplitBar({
           onKeyDown={(event) => {
             if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
             event.preventDefault();
-            const step = (event.shiftKey ? 10 : 1) * (event.key === 'ArrowLeft' ? -1 : 1);
+            const step =
+              (event.shiftKey ? 10 : 1) * (event.key === 'ArrowLeft' ? -1 : 1);
             onPairStart();
             onPair(first.id, second.id, first.qty + step);
             onPairEnd();
@@ -148,7 +170,10 @@ export function SplitBar({
 
 export function SplitSum({ line }: { line: SplitLine }) {
   const gap = gapOf(line);
-  const total = splitsOf(line).reduce((sum, split) => sum + (split.qty || 0), 0);
+  const total = splitsOf(line).reduce(
+    (sum, split) => sum + (split.qty || 0),
+    0,
+  );
   return (
     <div className="mb-2 flex flex-wrap gap-3 text-xs">
       <span className="text-muted-foreground">
@@ -160,7 +185,9 @@ export function SplitSum({ line }: { line: SplitLine }) {
       {gap === 0 ? (
         <span className="font-medium text-emerald-700">Adds up</span>
       ) : (
-        <span className="font-semibold text-destructive">{gap > 0 ? `Gap ${gap}` : `Over ${-gap}`}</span>
+        <span className="font-semibold text-destructive">
+          {gap > 0 ? `Gap ${gap}` : `Over ${-gap}`}
+        </span>
       )}
     </div>
   );
@@ -174,7 +201,12 @@ export interface SplitRowHandlers {
   onRemark: (line: SplitLine, split: SplitDraft, remark: string) => void;
   onAdd: (line: SplitLine) => void;
   onPairStart: () => void;
-  onPair: (line: SplitLine, firstId: string, secondId: string, firstQty: number) => void;
+  onPair: (
+    line: SplitLine,
+    firstId: string,
+    secondId: string,
+    firstQty: number,
+  ) => void;
   onPairEnd: (line: SplitLine) => void;
 }
 
@@ -203,22 +235,49 @@ export function LineSplitZoom({
     <div data-testid="line-split-zoom" className="space-y-1">
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-sm font-semibold tabular-nums">{lineLabel(line)}</div>
+          <div className="text-sm font-semibold tabular-nums">
+            {lineLabel(line)}
+          </div>
           <div className="truncate text-xs text-muted-foreground">
             {`${line.itemCode} · ${line.location}${
-              line.pendingChange ? ` · AutoCount now ${line.nowQty} on ${formatSplitDate(line.nowDate)}` : ''
+              line.pendingChange
+                ? ` · AutoCount now ${line.nowQty} on ${formatSplitDate(line.nowDate)}`
+                : ''
             }`}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
-          <Button type="button" variant="ghost" mode="icon" size="sm" aria-label="Previous line" disabled={position <= 1} onClick={onPrev}>
+          <Button
+            type="button"
+            variant="ghost"
+            mode="icon"
+            size="sm"
+            aria-label="Previous line"
+            disabled={position <= 1}
+            onClick={onPrev}
+          >
             <ChevronLeft aria-hidden />
           </Button>
           <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">{`${position} of ${count}`}</span>
-          <Button type="button" variant="ghost" mode="icon" size="sm" aria-label="Next line" disabled={position >= count} onClick={onNext}>
+          <Button
+            type="button"
+            variant="ghost"
+            mode="icon"
+            size="sm"
+            aria-label="Next line"
+            disabled={position >= count}
+            onClick={onNext}
+          >
             <ChevronRight aria-hidden />
           </Button>
-          <Button type="button" variant="ghost" mode="icon" size="sm" aria-label="Close zoom" onClick={onClose}>
+          <Button
+            type="button"
+            variant="ghost"
+            mode="icon"
+            size="sm"
+            aria-label="Close zoom"
+            onClick={onClose}
+          >
             <X aria-hidden />
           </Button>
         </div>
@@ -226,7 +285,9 @@ export function LineSplitZoom({
       <SplitBar
         line={line}
         onPairStart={handlers.onPairStart}
-        onPair={(first, second, qty) => handlers.onPair(line, first, second, qty)}
+        onPair={(first, second, qty) =>
+          handlers.onPair(line, first, second, qty)
+        }
         onPairEnd={() => handlers.onPairEnd(line)}
       />
       <SplitSum line={line} />
@@ -238,9 +299,15 @@ export function LineSplitZoom({
         </colgroup>
         <thead>
           <tr className="text-left text-muted-foreground">
-            <th className="border-b border-border px-1 py-1.5 text-right font-medium">Qty</th>
-            <th className="border-b border-border px-1 py-1.5 font-medium">Date</th>
-            <th className="border-b border-border px-1 py-1.5 font-medium">Sits on / remark</th>
+            <th className="border-b border-border px-1 py-1.5 text-right font-medium">
+              Qty
+            </th>
+            <th className="border-b border-border px-1 py-1.5 font-medium">
+              Date
+            </th>
+            <th className="border-b border-border px-1 py-1.5 font-medium">
+              Sits on / remark
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -271,7 +338,9 @@ export function LineSplitZoom({
                             variant="sm"
                             aria-label="Date"
                             value={split.deliveryDate ?? ''}
-                            onChange={(event) => handlers.onDate(line, split, event.target.value)}
+                            onChange={(event) =>
+                              handlers.onDate(line, split, event.target.value)
+                            }
                           />
                           <div className="mt-1">
                             <ChangePill word={changeOf(split, line)} />
@@ -287,7 +356,12 @@ export function LineSplitZoom({
                           groupLines={groupLines}
                           onChange={actions.sitsOn}
                         />
-                        <SplitMenuButton split={split} origin={line} groupLines={groupLines} actions={actions} />
+                        <SplitMenuButton
+                          split={split}
+                          origin={line}
+                          groupLines={groupLines}
+                          actions={actions}
+                        />
                       </div>
                       <Input
                         variant="sm"
@@ -295,7 +369,9 @@ export function LineSplitZoom({
                         aria-label="Remark"
                         placeholder="Remark"
                         value={split.remark}
-                        onChange={(event) => handlers.onRemark(line, split, event.target.value)}
+                        onChange={(event) =>
+                          handlers.onRemark(line, split, event.target.value)
+                        }
                       />
                     </td>
                   </tr>
@@ -315,7 +391,12 @@ export function LineSplitZoom({
         </tbody>
       </table>
       <div className="pt-2">
-        <Button type="button" variant="outline" size="sm" onClick={() => handlers.onAdd(line)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => handlers.onAdd(line)}
+        >
           <Plus aria-hidden />
           Add split
         </Button>

@@ -5,9 +5,25 @@ import { Minus, Plus, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { changeOf, gapOf, lineLabel, splitsOf, type SplitLine } from '../lib/lineSplitModel';
-import { ChangePill, QtyInput, SitsOnSelect, SplitMenuButton } from './lineSplitParts';
-import { SplitBar, SplitSum, byDate, type SplitRowHandlers } from './LineSplitZoom';
+import {
+  changeOf,
+  gapOf,
+  lineLabel,
+  splitsOf,
+  type SplitLine,
+} from '../lib/lineSplitModel';
+import {
+  ChangePill,
+  QtyInput,
+  SitsOnSelect,
+  SplitMenuButton,
+} from './lineSplitParts';
+import {
+  SplitBar,
+  SplitSum,
+  byDate,
+  type SplitRowHandlers,
+} from './LineSplitZoom';
 
 const CARD_BORDER: Record<string, string> = {
   REMAIN: 'border-l-muted-foreground/50',
@@ -44,17 +60,23 @@ export function LineSplitPhone({
             onClick={() => onPick(candidate.lineId)}
           >
             {`${candidate.itemCode} ${candidate.baseQty}`}
-            {gapOf(candidate) !== 0 ? <TriangleAlert aria-label="Does not add up" /> : null}
+            {gapOf(candidate) !== 0 ? (
+              <TriangleAlert aria-label="Does not add up" />
+            ) : null}
           </Button>
         ))}
       </div>
       <div>
-        <div className="text-sm font-semibold tabular-nums">{lineLabel(line)}</div>
+        <div className="text-sm font-semibold tabular-nums">
+          {lineLabel(line)}
+        </div>
         <SplitBar
           line={line}
           compact
           onPairStart={handlers.onPairStart}
-          onPair={(first, second, qty) => handlers.onPair(line, first, second, qty)}
+          onPair={(first, second, qty) =>
+            handlers.onPair(line, first, second, qty)
+          }
           onPairEnd={() => handlers.onPairEnd(line)}
         />
         <SplitSum line={line} />
@@ -65,7 +87,10 @@ export function LineSplitPhone({
         return (
           <div
             key={split.id}
-            className={cn('space-y-2 rounded-lg border border-l-[3px] border-border p-2.5', CARD_BORDER[word])}
+            className={cn(
+              'space-y-2 rounded-lg border border-l-[3px] border-border p-2.5',
+              CARD_BORDER[word],
+            )}
           >
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center overflow-hidden rounded-md border border-input">
@@ -74,7 +99,9 @@ export function LineSplitPhone({
                   variant="ghost"
                   mode="icon"
                   aria-label="Less"
-                  onClick={() => handlers.onQty(line, split, Math.max(0, split.qty - 1))}
+                  onClick={() =>
+                    handlers.onQty(line, split, Math.max(0, split.qty - 1))
+                  }
                 >
                   <Minus aria-hidden />
                 </Button>
@@ -96,27 +123,46 @@ export function LineSplitPhone({
                 </Button>
               </div>
               <ChangePill word={word} />
-              <SplitMenuButton split={split} origin={line} groupLines={groupLines} actions={actions} />
+              <SplitMenuButton
+                split={split}
+                origin={line}
+                groupLines={groupLines}
+                actions={actions}
+              />
             </div>
             {split.isCancel ? null : (
               <Input
                 type="date"
                 aria-label="Date"
                 value={split.deliveryDate ?? ''}
-                onChange={(event) => handlers.onDate(line, split, event.target.value)}
+                onChange={(event) =>
+                  handlers.onDate(line, split, event.target.value)
+                }
               />
             )}
-            <SitsOnSelect split={split} origin={line} groupLines={groupLines} onChange={actions.sitsOn} />
+            <SitsOnSelect
+              split={split}
+              origin={line}
+              groupLines={groupLines}
+              onChange={actions.sitsOn}
+            />
             <Input
               aria-label="Remark"
               placeholder="Remark"
               value={split.remark}
-              onChange={(event) => handlers.onRemark(line, split, event.target.value)}
+              onChange={(event) =>
+                handlers.onRemark(line, split, event.target.value)
+              }
             />
           </div>
         );
       })}
-      <Button type="button" variant="outline" className="w-full" onClick={() => handlers.onAdd(line)}>
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full"
+        onClick={() => handlers.onAdd(line)}
+      >
         <Plus aria-hidden />
         Add split
       </Button>
