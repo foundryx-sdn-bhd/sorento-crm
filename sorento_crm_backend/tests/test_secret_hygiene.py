@@ -285,7 +285,10 @@ def test_gitleaks_install_verifies_release_sha256():
     assert "releases/download" in run, "no step downloads the gitleaks release"
     assert "set -euo pipefail" in run
     assert "gitleaks_${GITLEAKS_VERSION}_checksums.txt" in run
-    assert "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" in run
+    # The tarball follows the runner: linux_x64 on GitHub-hosted, linux_arm64 on the Mac mini (#1644).
+    assert "gitleaks_${GITLEAKS_VERSION}_${arch}.tar.gz" in run
+    for arch in ("linux_x64", "linux_arm64"):
+        assert f"arch={arch}" in run, f"no {arch} tarball"
     assert re.search(r"\|\s*sha256sum -c -", run), "tarball sha256 is not checked"
 
 

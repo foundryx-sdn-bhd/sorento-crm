@@ -134,6 +134,7 @@ from app.services.scm.planning_predicate import (
     OUTSIDE_FULFILMENT_PLANNING,
     fulfilment_planning_predicate,
     outside_fulfilment_planning,
+    planned_at_own_bin,
 )
 from app.services.scm.front_planning_engine import (
     BORROW,
@@ -510,6 +511,9 @@ def plan_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
     `_open_of` keeps its own readers, all of which genuinely mean "what is still owed": the
     hold cap (S1), `project_line_draft_service`'s saved snapshot and `sales_order_service
     .is_stale`.
+
+    CONSIGN-PLAN Q3: a consignment line's `qty_returned` (0 on every sales order line) is
+    not planned either.
     """
     if core is None or (core.line_status or "open") == "cancelled":
         return _ZERO
@@ -517,7 +521,12 @@ def plan_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
     # AC-CANCEL-CRM (owner, 13 Oct): what AutoCount Cancel SO documents cancelled is not
     # planned. A partial cancel lowers the plan; a full one cancels the line (above).
     base = _dec(core.qty_ordered if required is None else required)
-    return max(base - _dec(getattr(core, "qty_cancelled", None)), _ZERO)
+    return max(
+        base
+        - _dec(getattr(core, "qty_cancelled", None))
+        - _dec(getattr(core, "qty_returned", None)),
+        _ZERO,
+    )
 
 
 def delivered_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
@@ -791,6 +800,9 @@ class _LineFacts:
     #: reconciled AutoCount line). Set, the line is read out with no components and no
     #: donors; it is never carried and cannot be named to a confirmation.
     unplannable_reason: Optional[str] = None
+    #: The order's doc type (CONSIGN-PLAN): a doc type in `PLANNED_AT_OWN_BIN_DOC_TYPES` owes
+    #: nothing back for goods taken from its own bin.
+    doc_type: Optional[str] = None
     #: Ladder v2 (`PLAN-demo-followups-19aug-ladder-v2.md` section E, section 8). The
     #: OWNERSHIP GROUP this line's own location belongs to - the suffix after the hyphen
     #: (`BRW-BB` -> `BB`) - or `None` for a location that carries no group (a bare pool
@@ -1873,6 +1885,23 @@ class ProjectSupplyService:
         for key, fact, unit_key in entries:
             if fact.unplannable_reason:
                 out[key] = ((), None, {}, None, (), {}, {}, {}, {})
+                continue
+            if planned_at_own_bin(fact.warehouse, fact.doc_type) and fact.open_qty > _ZERO:
+                # CONSIGN-PLAN (owner Q1): the goods are already at the own bin, so the
+                # proposal is a plain Borrow of the whole plan quantity from it - never a
+                # Buy, nothing to purchasing - and it draws on no shared pile.
+                own = fact.own_code
+                out[key] = (
+                    (
+                        Component(
+                            kind=BORROW,
+                            qty=fact.open_qty,
+                            reason=f"Consignment: the goods are at {own}",
+                            source_location=own,
+                        ),
+                    ),
+                    None, {}, None, (), {}, {}, {}, {},
+                )
                 continue
             if unit_key not in units:
                 units[unit_key] = []
@@ -4834,6 +4863,7 @@ class ProjectSupplyService:
                 group_code=sales_agent_service.group_of_warehouse_code(
                     warehouse.warehouse_code if warehouse else None
                 ),
+                doc_type=row.get("so_doc_type"),
             )
             self._apply_group_nets(facts[str(row["key"])])
         return facts
@@ -8220,6 +8250,12 @@ class ProjectSupplyService:
                     continue
                 if getattr(item, "supply_key", None):
                     continue
+                if planned_at_own_bin(fact.warehouse, fact.doc_type) and str(
+                    item.warehouse_id
+                ) == str(fact.warehouse.id):
+                    # CONSIGN-PLAN: the goods ARE the consignment's own bin; nothing was
+                    # lent, so nothing is owed back and purchasing hears nothing.
+                    continue
                 if unnamed_order_borrows_only and (
                     not getattr(item, "donor_core_line_id", None)
                     or self._names_its_order(item)
@@ -9312,7 +9348,10 @@ class ProjectSupplyService:
                     # board itself no longer shows.
                     else OUTSIDE_FULFILMENT_PLANNING
                     if (
-                        outside_fulfilment_planning(warehouse)
+                        outside_fulfilment_planning(
+                            warehouse,
+                            getattr(core_orders.get(str(core.sales_order_id)), "doc_type", None),
+                        )
                         and str(core.id) not in decided_anywhere
                     )
                     else None
@@ -9320,6 +9359,9 @@ class ProjectSupplyService:
                 group_code=sales_agent_service.group_of_warehouse_code(
                     warehouse.warehouse_code if warehouse else None
                 ),
+                doc_type=getattr(core_orders.get(str(core.sales_order_id)), "doc_type", None)
+                if core
+                else None,
             )
             self._apply_group_nets(facts[str(line.id)])
         return facts

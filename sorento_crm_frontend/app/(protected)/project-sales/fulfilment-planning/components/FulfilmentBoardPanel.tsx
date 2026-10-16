@@ -2820,7 +2820,7 @@ export function FulfilmentBoardPanel({
                   No lines to plan on these sales orders
                 </h3>
                 <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                  Every line is cancelled or marked no purchase needed.
+                  Every line is cancelled, fully returned or marked no purchase needed.
                 </p>
               </>
             )}

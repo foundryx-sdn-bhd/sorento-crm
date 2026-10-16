@@ -86,7 +86,7 @@ API-key variant, the same rule the export route follows (`app/api/v1/projects/st
   (409 otherwise). The worker renders today's workbook (`_render_workbook`,
   `stock_debt_service.py:2677`) from the STORED rows, axis and totals, never a live read, with
   three columns appended: Decision, From, Note. Filename `stock-debt-snapshot-<ddmmyyyy of
-  created_at>.xlsx`.
+  created_at in Malaysia time>.xlsx` (stored naive UTC, so 17:30 UTC on 15 Oct names 16102026).
 
 ## Scope and security
 

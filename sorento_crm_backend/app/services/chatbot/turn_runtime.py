@@ -3893,6 +3893,13 @@ def make_tool_runner(
             if spec.filters.get("tier")
             else resolver_tier_gate
         )
+        if domain == "promotion" and tier_gate_value is None:
+            # SEC-PROMO-ACCESS (security review B2): no resolver tier gate (an entity-less
+            # ask routed as a business query never enters `access_check`). Without one the
+            # fetch sends the PARSER's levels - what the customer claimed - so the gate is
+            # computed here off what the contact actually holds. A read that fails leaves
+            # None, which `promotion_access_closed` refuses.
+            tier_gate_value = _entitlement_tier_gate(db, lane_ctx, space_id)
         payload = {"gate": gate, "tier_gate": tier_gate_value, "ctx": lane_ctx}
         # Security B1, FAIL CLOSED: a tier-filtered fetch whose recomposed access
         # levels came out EMPTY must never reach the tool. Downstream an empty list
@@ -4021,11 +4028,24 @@ def make_tool_runner(
             or (page_predicate is not None and not page_ids)
             or would_be_unfiltered
             or no_subject_gate is not None
+            or promotion_access_closed(domain, tier_gate_value)
         ):
             fragment = {
                 "fetch": {"has_result": False, "response": business_fetch.NO_RESULT_INTRO},
                 "outcome": "not_found",
             }
+            # SEC-PROMO-ACCESS: a closed brand gate is a refusal, not a miss. Its words are
+            # the gate's own brand notice ("You don't have access to <brand> promotions.",
+            # `gate.py`), which the miss composer here would never print. Only that notice:
+            # a stated-tier one ends "Here's what you do have:" and there is nothing to show.
+            access_notice = jsc.js_string(gate.get("access_notice") or "").strip()
+            if (
+                promotion_access_closed(domain, tier_gate_value)
+                and gate.get("brand_gate_empty") is True
+                and not gate.get("access_denied_levels")
+                and access_notice
+            ):
+                fragment = business._fixed_reply(access_notice, refused=True)
             if no_subject_gate is not None:
                 # The refusal's OWN reason, for `answer_bridge.answer_for`'s miss
                 # composer - which otherwise reads the RESOLVER's gate, and the
@@ -4545,6 +4565,58 @@ def page_the_set(
     next_key = {**key, "total": total, "shown": min(offset + len(page_ids), total) if page_ids else offset}
     predicate["next_carry"] = {"set_key": next_key} if total else None
     return predicate, page_ids
+
+
+def _entitlement_tier_gate(db: Any, lane_ctx: dict[str, Any], space_id: str | None) -> dict[str, Any] | None:
+    """The tier gate `resolve_gate.run`'s `access_check` step would have produced: the
+    contact's own access levels through `tier_gate.tier_gate`, read against this fetch's
+    parse output. None when the entitlement cannot be read."""
+    from app.services.chatbot.lanes.business import fetch as business_fetch
+    from app.services.chatbot.lanes.business import resolve_gate as resolve_gate_mod
+    from app.services.chatbot.lanes.business import services as business_services
+    from app.services.chatbot.lanes.business.tier_gate import tier_gate as run_tier_gate
+
+    try:
+        rows = business_services.production_services(db).access_types(
+            contact_id=jsc.nullish_str(jsc.get(jsc.get(lane_ctx, "contact"), "id")).strip(),
+            # The same workspace the fetch itself sends (`fetch._fetch_semantic_input`).
+            space_id=business_fetch.space_id_or_default(space_id),
+        )
+        parser = jsc.get(jsc.get(lane_ctx, "parse"), "output")
+        return run_tier_gate(
+            resolve_gate_mod.aggregate_names(rows),
+            parser=parser if isinstance(parser, dict) else {},
+            item=None,
+        )
+    except Exception:  # noqa: BLE001 - an unreadable entitlement is no entitlement: fail closed
+        logger.warning("chatbot: promotion entitlement could not be read", exc_info=True)
+        return None
+
+
+def promotion_access_closed(domain: str, tier_gate: Any) -> bool:
+    """SEC-PROMO-ACCESS: a promotion fetch the contact's own entitlement leaves EMPTY.
+
+    Security B1 above covers a tier-FILTERED fetch only. The forced fetch for a single
+    entitled tier (`engine.py`, `tier_proceed`) carries no tier filter, so a closed brand
+    gate ("Any promo for Cabana WC?" from a Sorento-only dealer: `brand_gate_empty`, an
+    empty `access_levels_recomposed`) reached the tool with `access_levels: []` - which the
+    MCP server drops from the query, and the route reads as "no access filter". An empty
+    recomposed list is also a contact holding no access type at all. Either way nothing
+    may be read; the caller answers the turn as a miss, and the gate's own
+    `access_notice` ("You don't have access to <brand> promotions.") leads that reply.
+
+    No tier gate at all (the resolver raised, or never ran the access check) is closed
+    too: `lanes/business._fetch_semantic_input` would fall back to the PARSER's
+    `access_levels`, which is what the customer claimed, not what they hold.
+    """
+    if domain != "promotion":
+        return False
+    if not isinstance(tier_gate, dict):
+        return True
+    if tier_gate.get("brand_gate_empty") is True:
+        return True
+    # The tier-ask arm reads its own per-tier probe plan, not the recomposed list.
+    return tier_gate.get("tier_ask") is not True and not tier_gate.get("access_levels_recomposed")
 
 
 def _tier_gate(
