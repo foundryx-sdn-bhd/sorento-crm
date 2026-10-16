@@ -27,7 +27,7 @@ axis (entities with that hint; `sales_channel`; `date_mode` / `date_filter_start
 |---|---|---|---|
 | `keep` | the message continues the subject as it is | null | null |
 | `keep` / `skip` / `clear` / `unclear` | the State holds a customer or a period: say what this message does with it (rules below) | `customer` or `period` | null |
-| `new_subject` | the message is a full ask with its own subject and measure; the held customer (see the held-slot rules), the access tier and the brand carry, nothing else | null | null |
+| `new_subject` | the message is a full ask with its own subject and measure; the held customer, the held period (see the held-slot rules), the access tier and the brand carry, nothing else | null | null |
 | `set` | the message adds or replaces ONE part of the subject; one `set` per value the message states, a stated value without its `set` is not used | the entity's own kind (its hint), or one of: customer, warehouse, brand, tier, channel, period, status, document, sort, quantity | null |
 | `clear` | the message removes one part of the subject | one of the same names | null |
 | `pick` | the message points at an item of the `last list` (its number, its position, or its name as listed); one `pick` per picked position ("1 and 3" is two picks); only product rows of the `last list` can be picked | null | the item's number |
@@ -42,7 +42,7 @@ Business rules:
 - A quantity said for the held item is `set quantity`.
 - A customer named first stays for later asks; do not clear it when a product follows.
 - A new ask that states its own measure or basis (a ranking, a report) is `new_subject`: nothing of the old measure,
-  basis, channel or period carries.
+  basis or channel carries; the held period carries unless you say `skip period` or `clear period`.
 - When the `open question` is open and the message is not an answer to it, add `close_question`.
 - Small talk, thanks and greetings change nothing: `[{"op": "keep", "axis": null, "position": null}]`.
 - When you cannot tell whether the message continues the subject or starts a new one, output `[]`.
@@ -53,7 +53,7 @@ Held-slot rules (customer and period):
   `skip` (it does not apply to this ask and stays held), `clear` (drop it), or `unclear` (you cannot tell). A slot you
   say nothing about applies as before.
 - Period: a follow-up keeps the held period (no op needed, or `keep period`); a period this message states replaces it
-  (`set period`); for a brand-new topic the held period may not belong to, judge it: `skip period` or `clear period`.
+  (`set period`); the held period also carries across a change of domain, unless you say `skip period` or `clear period`; for a brand-new topic the held period may not belong to, judge it: `skip period` or `clear period`.
 - Held customer: a delivery or "when will it arrive" ask with a held customer is delivery to that customer
   (`keep customer`, delivery/order domain); a clearly ETA or incoming stock ask is product-level (`skip customer`). An
   ETA ask is about incoming stock by meaning, not by a word. Say `unclear customer` only when you cannot tell; the

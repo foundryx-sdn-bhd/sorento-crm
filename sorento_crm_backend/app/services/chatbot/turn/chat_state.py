@@ -54,7 +54,6 @@ SLOT_OPS: tuple[str, ...] = ("keep", "skip", "clear", "unclear")
 PERIOD_ASK = "period_ask"
 CUSTOMER_ASK = "held_customer_ask"
 _SLOT_ASKS = (PERIOD_ASK, CUSTOMER_ASK)
-HAND_OVER_TEXT = "I am not sure which period you mean. Would you like me to hand this to our team?"
 
 
 def unclear_slot_default() -> str:
@@ -62,7 +61,7 @@ def unclear_slot_default() -> str:
 
 #: Axes tied to the domain they were asked in; a domain switch drops them.
 _DOMAIN_BOUND = (
-    "status", "document", "sort", "date_window", "sales_channel", "top_selling", "sales_ranking_frame", "low_stock", "set_page",
+    "status", "document", "sort", "sales_channel", "top_selling", "sales_ranking_frame", "low_stock", "set_page",
 )
 
 #: Keys that are machine identity, never printed.
@@ -71,7 +70,6 @@ _HIDDEN_KEYS = frozenset({"uuid", "uuids", "id", "key", "payload"})
 #: Verdict scalars per axis, nulled when the axis is not named by a `set`.
 _SCALARS: dict[str, dict[str, Any]] = {
     "channel": {"sales_channel": None},
-    "period": {"date_mode": None, "date_filter_start": None, "date_filter_end": None},
     "sort": {"sort_by": None, "sort_dir": None},
     "status": {"status": None, "order_status": None},
     "document": {"document": []},
@@ -388,10 +386,10 @@ def _write_set(focus: Focus, axis: str, verdict: dict[str, Any]) -> None:
             focus.tier = [t for t in verdict["access_levels"] if isinstance(t, str)]
 
 
-def _drop_domain_bound(focus: Focus, *, keep_period: bool = False) -> None:
+def _drop_domain_bound(focus: Focus) -> None:
+    # The held period is not domain bound (R16): it carries across a switch unless the parser
+    # says `skip` / `clear` period.
     for name in _DOMAIN_BOUND:
-        if name == "date_window" and keep_period:
-            continue
         setattr(focus, name, [] if name == "document" else None)
 
 
@@ -485,7 +483,7 @@ def _hand_over(state: State) -> Any:
     }
     return pending_ask(
         "team_pick", [option], team="customer_service", expects="yes_no", asked_at_turn=state.turn_no,
-        payload={"agent": None, "brand_code": None, "filters": {"offer_text": HAND_OVER_TEXT}},
+        payload={"agent": None, "brand_code": None},
     )
 
 
@@ -587,10 +585,23 @@ def apply_changes(
     set_axes: list[str] = []
     slots: dict[str, str] = {}
     picks: list[int] = []
+    ignored_ops = 0
+    # A set the parse backs with a value wins over a slot op on the same axis; a period the
+    # message states replaces the held one with or without a `set` (R16).
+    declared_sets = {
+        c.get("axis") for c in changes
+        if isinstance(c, dict) and c.get("op") == "set" and c.get("axis") in axes and _has_field(verdict, c["axis"])
+    }
+    states_period = _has_field(verdict, "period")
     for change in changes:
         op = change.get("op") if isinstance(change, dict) else None
         axis, position = (change.get("axis"), change.get("position")) if isinstance(change, dict) else (None, None)
-        if op not in OPS and op not in SLOT_OPS:
+        if op in ("keep", "skip", "unclear") and axis in SLOT_AXES and (
+            axis in declared_sets or (axis == "period" and states_period and op != "skip")
+        ):
+            ignored.append({"axis": axis, "reason": f"{op} {axis} dropped: the message states its own"})
+            ignored_ops += 1
+        elif op not in OPS and op not in SLOT_OPS:
             fail(op, "unknown op")
         elif op in ("set", "clear") or (op in SLOT_OPS and axis is not None) or op == "skip" or op == "unclear":
             if op in ("skip", "unclear", "keep") and axis not in SLOT_AXES:
@@ -600,13 +611,15 @@ def apply_changes(
             elif axis in seen_axes:
                 fail(op, f"axis {axis} repeated")
             elif op == "clear" and not _held(focus, axis):
-                fail(op, f"nothing held for {axis}")
+                ignored.append({"axis": axis, "reason": f"nothing held for {axis}"})
+                ignored_ops += 1
             else:
                 seen_axes.add(axis)
                 if op == "set":
                     if not _has_field(verdict, axis):
                         # A set the parse carries no value for changes nothing; the rest applies.
                         ignored.append({"axis": axis, "reason": f"no value for {axis} in the parse"})
+                        ignored_ops += 1
                     else:
                         set_axes.append(axis)
                 elif axis in SLOT_AXES:
@@ -627,8 +640,8 @@ def apply_changes(
             if not target or any(d not in domains for d in target):
                 fail(op, "no known domain in the parse")
 
-    if ignored and all(c.get("op") == "set" for c in changes if isinstance(c, dict)) and not set_axes:
-        # Nothing but sets the parse gives no value for: there is no change to apply.
+    if ignored_ops and ignored_ops == len(changes):
+        # Every part was a no-op: there is no change to apply.
         for item in ignored:
             fail("set", item["reason"])
 
@@ -658,7 +671,20 @@ def apply_changes(
 
     # ---- carry, on the copy, keyed off the ops ----
     pending = state.pending
+    asked_before = getattr(state.pending, "kind", None) in _SLOT_ASKS
     out = {k: v for k, v in verdict.items() if k != "state_changes"}
+    if states_period and "period" not in set_axes and slots.get("period") not in ("skip", "clear"):
+        set_axes.append("period")
+    slot_pick = None
+    if asked_before and roster_picks:
+        slot_pick, roster_picks = roster_picks[0], []
+    if slots.get("customer") == "unclear":
+        # R15: the held entity's registry kind settles it, before any switch is computed; a
+        # customer means delivery, and this wins over the parse's own domain and asks.
+        mapped = [KIND_DOMAIN.get(str(row.get("hint"))) for row in focus.customers if isinstance(row, dict)]
+        if mapped and all(mapped):
+            out["domain_hint"] = mapped[0]
+            out["asks"] = []
     new_subject = "new_subject" in ops
     if new_subject:
         window = focus.date_window if NEW_SUBJECT_KEEPS_PERIOD else None
@@ -667,10 +693,10 @@ def apply_changes(
             tasks=focus.tasks, last_list=focus.last_list, date_window=window,
         )
         pending = None
-    switch_to = _message_domains(verdict)
+    switch_to = _message_domains(out)
     held = list(focus.domains or [])
     if "switch_domain" in ops or (held and switch_to and not any(d in held for d in switch_to)):
-        _drop_domain_bound(focus, keep_period=slots.get("period") in ("keep", "skip", "unclear"))
+        _drop_domain_bound(focus)
         if switch_to:
             focus.domains = list(switch_to)
     for change in changes:
@@ -679,16 +705,20 @@ def apply_changes(
             _clear_axis(focus, axis)
         elif change["op"] == "set" and axis in set_axes:
             _write_set(focus, axis, verdict)
+    if "period" in set_axes and "period" not in declared_sets:
+        _write_set(focus, "period", verdict)
 
     slot_ask = None
     period_answer = (
-        "answer" in ops and pending is not None and getattr(pending, "kind", None) in _SLOT_ASKS
+        ("answer" in ops or slot_pick is not None) and pending is not None and asked_before
     )
     answering = ("answer" in ops or bool(roster_picks)) and not period_answer
     if period_answer:
         # The answer fills only the period slot; nothing else of the state moves.
         declared = verdict.get(question_mod.ANSWER_KEY) or {}
-        chosen = (declared.get("picked") or verdict.get(question_mod.POSITIONS_KEY) or [None])[0]
+        chosen = slot_pick if slot_pick is not None else (
+            declared.get("picked") or verdict.get(question_mod.POSITIONS_KEY) or [None]
+        )[0]
         option = next((o for o in pending.options if o.get("position") == chosen), None)
         if option is not None and pending.kind == PERIOD_ASK:
             focus.date_window = (option.get("payload") or {}).get("window")
@@ -721,19 +751,16 @@ def apply_changes(
             focus.top_selling = {k: v for k, v in focus.top_selling.items() if k != "asked"}
         if isinstance(focus.set_page, dict) and "other_brands" in focus.set_page:
             focus.set_page = {k: v for k, v in focus.set_page.items() if k != "other_brands"}
-    if slots.get("customer") == "unclear":
-        # R15: the held entity's registry kind settles it; a customer means delivery.
+    if slots.get("customer") == "unclear" and focus.customers and unclear_slot_default() == "ask":
         mapped = [KIND_DOMAIN.get(str(row.get("hint"))) for row in focus.customers if isinstance(row, dict)]
-        if mapped and all(mapped):
-            out["domain_hint"] = mapped[0]
-        elif focus.customers and unclear_slot_default() == "ask":
-            # The type cannot settle it (R11): ask once, real names.
-            if pending is not None and getattr(pending, "kind", None) in _SLOT_ASKS:
+        if not (mapped and all(mapped)):
+            # The type cannot settle it (R11): ask once, real names; a second one hands over.
+            if asked_before:
                 slot_ask, pending = _hand_over(state), None
             else:
                 slot_ask = _customer_ask(state, focus.customers, (switch_to or focus.domains or [None])[0])
     if slots.get("period") == "unclear" and focus.date_window and unclear_slot_default() == "ask":
-        if pending is not None and getattr(pending, "kind", None) in _SLOT_ASKS:
+        if asked_before:
             slot_ask, pending = _hand_over(state), None
         else:
             slot_ask = _period_ask(state, focus.date_window, (switch_to or focus.domains or [None])[0])

@@ -4711,9 +4711,17 @@ def _run_stages_body(  # noqa: PLR0915
     # writing the change into those two makes the re-entries idempotent). On when the
     # prompt in use asks for the key or the emission is a dry-run mock; off, the turn is
     # today's turn untouched.
-    state_path = bool(parser_config.state_block or parser_bypassed)
+    # A dry-run mock emission opts in by carrying the key (null counts as present).
+    state_path = bool(parser_config.state_block or (parser_bypassed and "state_changes" in verdict))
     if state_path:
         state_in = dataclasses_replace(state_in, state_path=True)
+        if not contact_scope:
+            # No company scope left: a stored customer key is not trusted, the customer is
+            # resolved fresh from its code under whatever scope the contact now has.
+            state_in = dataclasses_replace(
+                state_in,
+                focus=dataclasses_replace(state_in.focus, customers=[_without_keys(r) for r in state_in.focus.customers]),
+            )
         shown_view = chat_state.view(state_in, open_question)
         state_log: dict[str, Any] = {
             "shown": chat_state.render(shown_view),
@@ -8435,6 +8443,10 @@ def _stock_check_denied(db: Session, envelope: Envelope, verdict: dict[str, Any]
 def _demand_qty_missing(verdict: dict[str, Any]) -> bool:
     """Contract 62: a denied stock check with no quantity asks for one first."""
     return jsc.is_empty(verdict.get("demand_qty")) or verdict.get("demand_qty") == 0
+
+
+def _without_keys(row: Any) -> Any:
+    return {k: v for k, v in row.items() if k not in ("uuid", "uuids")} if isinstance(row, dict) else row
 
 
 def _state_log(before: dict[str, Any], state: Any, answer: Any) -> dict[str, Any]:
