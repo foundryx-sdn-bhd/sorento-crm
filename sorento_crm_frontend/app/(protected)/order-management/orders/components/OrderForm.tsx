@@ -917,7 +917,7 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                             <NumberInput
                               {...field}
                               value={field.value ?? ''}
-                              onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                              onChange={(e) => field.onChange(e.target.value === '' ? undefined : e.target.value)}
                             />
                           </FormControl>
                           <FormMessage />
