@@ -163,4 +163,26 @@ describe('LeadWizardDialog bad number input (R6)', () => {
     ).toBeInTheDocument();
     expect(createLead).not.toHaveBeenCalled();
   });
+
+  it('S4: no sentence while typing, Next stays enabled, a refused press shows it and stays, a valid value clears it', async () => {
+    renderWizard();
+    fireEvent.change(screen.getByLabelText(/What is it/), {
+      target: { value: 'Tower behind the showroom' },
+    });
+    next();
+    next();
+    const box = await screen.findByLabelText(/Rough value/);
+    typeBadInput(box);
+    // Typing alone says nothing and does not lock the button (owner Q1 / Q4).
+    expect(screen.queryByText(/Enter a number/)).not.toBeInTheDocument();
+    const nextButton = screen.getByRole('button', { name: /^Next$/ });
+    expect(nextButton).not.toBeDisabled();
+    // The press is refused: the sentence shows and the walk does not advance.
+    fireEvent.click(nextButton);
+    expect(await screen.findByText(/Enter a number/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Rough value/)).toBeInTheDocument();
+    // From then on it is live: a valid value clears it.
+    fireEvent.change(screen.getByLabelText(/Rough value/), { target: { value: '1500.50' } });
+    expect(screen.queryByText(/Enter a number/)).not.toBeInTheDocument();
+  });
 });

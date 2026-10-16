@@ -116,8 +116,13 @@ describe('BoardLineDecisionPanel bad number input (S8)', () => {
       const { onDecide } = renderPanel();
       typeBadInput(screen.getByLabelText(label));
       expect(screen.getByText(/Enter a number/)).toBeInTheDocument();
+      // A reason is typed so Save is NOT disabled for a missing reason: only the bad-quantity gate can stop it.
+      fireEvent.change(screen.getByPlaceholderText('In your own words'), {
+        target: { value: 'Customer asked for a split' },
+      });
       const save = screen.queryByRole('button', { name: /Save decision|Amend/ });
-      if (save && !(save as HTMLButtonElement).disabled) fireEvent.click(save);
+      expect(save).toBeTruthy();
+      if (!(save as HTMLButtonElement).disabled) fireEvent.click(save as HTMLElement);
       expect(onDecide).not.toHaveBeenCalled();
     },
   );
