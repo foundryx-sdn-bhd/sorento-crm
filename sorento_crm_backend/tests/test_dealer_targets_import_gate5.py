@@ -154,3 +154,95 @@ def test_a_threshold_written_twice_with_different_rates_still_fails():
     row = _repeat("A/C I- 7%").rows[0]
     assert row.status == "not_representable"
     assert "repeats in one period" in row.reason
+
+
+# --- reviewer re-check of the gate-5 round --------------------------------------------------
+
+
+def _dry_run_rows(client, db, rows):
+    def fill(ws):
+        ws["A1"], ws["B1"], ws["C1"] = "DEALER NAME", "ACCOUNT", "Q1"
+        for i, (name, account, tier) in enumerate(rows, start=2):
+            ws[f"A{i}"], ws[f"B{i}"], ws[f"C{i}"] = name, account, tier
+
+    files = {"file": ("t.xlsx", _bytes(fill), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    db.autoflush = False
+    try:
+        return client.post(f"{BASE}/import", params={"dry_run": "true", "year": 2026}, files=files).json()["rows"]
+    finally:
+        db.autoflush = True
+
+
+def test_two_spellings_in_one_file_each_get_their_own_ledger(api):
+    """Review B1: the match cache keyed on the punctuation-free name served row 2 row 1's ledger."""
+    client, db, company_id = api
+    dotted = _customer(db, company_id, "TIP TOP TRADING SDN. BHD. [A/C I]", 1)
+    hyphen = _customer(db, company_id, "TIP-TOP TRADING SDN BHD [A/C I]", 1)
+    first, second = _dry_run_rows(client, db, [
+        ("Tip-Top Trading Sdn Bhd", "A/C I", "100,000 - 1%"),
+        ("Tip Top Trading Sdn. Bhd.", "A/C I", "200,000 - 2%"),
+    ])
+    assert first["match"] == "auto" and first["customer"] == hyphen.customer_name
+    assert second["match"] == "auto" and second["customer"] == dotted.customer_name, second
+
+
+def test_a_spelling_tie_never_lands_on_a_ledger_naming_another_account(api):
+    """Review B2: two ledgers name A/C I, a [CERAMIC] one answers only through a level."""
+    client, db, company_id = api
+    _customer(db, company_id, "TIP TOP SDN. BHD. [A/C I]", 1)
+    _customer(db, company_id, "TIP-TOP SDN BHD [A/C I]", 1)
+    ceramic = _customer(db, company_id, "TIP TOP SDN BHD [CERAMIC]", 1)
+    row = _dry_run(client, db, "TIP TOP SDN BHD", "A/C I")
+    assert row["customer"] != ceramic.customer_name
+    assert row["status"] == "needs_pick"
+
+
+def test_a_file_with_no_account_against_several_ledgers_says_so(api):
+    """Review S1: not "no customer has this name"."""
+    client, db, company_id = api
+    a = _customer(db, company_id, "MIKE TILES SDN BHD [A/C I]", 1)
+    b = _customer(db, company_id, "MIKE TILES SDN BHD [CERAMIC]", None)
+    row = _dry_run(client, db, "MIKE TILES SDN BHD")
+    assert row["status"] == "needs_pick"
+    assert row["reason"].startswith("this name has several ledgers and the file names no account"), row["reason"]
+    assert {s["name"] for s in row["suggestions"]} == {a.customer_name, b.customer_name}
+
+
+def test_an_account_from_a_bracket_marker_is_quoted(api):
+    """Review S2: the reason quoted an empty account."""
+    client, db, company_id = api
+    _mocha_trio(db, company_id)
+    row = _dry_run(client, db, "MIKE TILES SDN BHD [DELUXE]")
+    assert row["reason"].startswith('no ledger of this name has the account "DELUXE"'), row["reason"]
+
+
+def test_a_branch_starting_with_l_is_not_an_account_marker():
+    """Review S3: "(LABUAN)" read as an account marker vanished from both tie-breaks."""
+    from app.services.sales.dealer_target_import import branch_key, literal_name
+
+    assert literal_name("ABC (LABUAN) SDN BHD") == "ABC (LABUAN) SDN BHD"
+    assert "LABUAN" in branch_key("ABC (LABUAN) SDN BHD")
+    assert literal_name("ABC SDN BHD (A/C II)") == "ABC SDN BHD"
+    assert "JB" in branch_key("ABC (JB) [A/C I]") and branch_key("ABC (A/C I)") == "ABC"
+
+
+def test_a_monthly_repeat_warns_once_per_row():
+    """Review nit: one warning per row, not one per repeated month."""
+    from app.services.sales.dealer_target_import import parse_workbook
+
+    def fill(ws):
+        ws["A1"], ws["B1"] = "DEALER NAME", "Monthly"
+        ws.merge_cells("B1:I1")
+        ws["B2"], ws["F2"] = "JAN", "FEB"
+        ws.merge_cells("B2:E2")
+        ws.merge_cells("F2:I2")
+        ws["A4"] = "X A/C I"
+        for start in ("BCDE", "FGHI"):
+            for col, text in zip(start, ("Tier 1", "Tier 1 Incentive", "Tier 2", "Tier 2 Incentive")):
+                ws[f"{col}3"] = text
+            for col, value in zip(start, (30000, "A/C I- 2%", 30000, "A/C I- 2%")):
+                ws[f"{col}4"] = value
+
+    row = parse_workbook(_bytes(fill), year=2026).rows[0]
+    assert row.status == "mapped", row.reason
+    assert sum("written twice" in w for w in row.warnings) == 1, row.warnings
