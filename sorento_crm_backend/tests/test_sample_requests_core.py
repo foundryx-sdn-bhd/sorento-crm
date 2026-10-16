@@ -1152,6 +1152,18 @@ def test_review_r12_customer_name_sort_uses_the_debtor_name_too(world):
     assert order == [ids["a"], ids["m"], ids["z"]]
 
 
+def test_review_submitted_at_sort_orders_by_submission(world):
+    """List "Submitted" column: sort=submitted_at orders by the submission stamp."""
+    first = _submitted(world)
+    second = _submitted(world)
+    res = world.api.as_(world.coord).get(
+        SR, params={"sort": "submitted_at", "dir": "desc", "limit": 200}
+    )
+    assert res.status_code == 200, res.text
+    order = [r["id"] for r in res.json()["data"] if r["id"] in (first, second)]
+    assert order == [second, first]
+
+
 def test_review_s1_migration_copies_only_create_to_edit_holders():
     """S1: view and process go to the admin roles; only `.create` is copied."""
     import importlib.util

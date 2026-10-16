@@ -626,6 +626,7 @@ LIST_SORTS = {
     "request_no": SampleRequest.request_no,
     "request_date": SampleRequest.request_date,
     "delivery_date": SampleRequest.delivery_date,
+    "submitted_at": SampleRequest.submitted_at,
     # The debtor's name when there is one, else the typed name (set in `list_for`).
     "customer_name": None,
     "ship_to_name": SampleRequest.ship_to_name,

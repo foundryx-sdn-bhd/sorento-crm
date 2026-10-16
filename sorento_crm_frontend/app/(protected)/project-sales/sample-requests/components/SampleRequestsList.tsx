@@ -157,7 +157,6 @@ export default function SampleRequestsList() {
         accessorKey: 'submitted_at',
         header: ({ column }) => <DataGridColumnHeader title="Submitted" column={column} />,
         size: 120,
-        enableSorting: false,
         // A naive UTC stamp: shown as the Malaysia calendar day, like every other form.
         cell: ({ row }) =>
           row.original.submitted_at ? formatDateInMalaysia(row.original.submitted_at) : '-',
