@@ -9003,6 +9003,17 @@ def _run_escalation_arm(
                 ),
                 None,
             ),
+            # The lane's own customer message, for the same reason: the tail composes no
+            # text on this arm, and the persisted reply must not be blank while the
+            # action carries the handover (owner rule, never a blank reply).
+            "lane_text": next(
+                (
+                    a["text"]
+                    for a in all_actions
+                    if a.get("kind") == "send_message" and jsc.truthy(a.get("text"))
+                ),
+                None,
+            ),
         },
         session_factory=session_factory,
         # An accepted offer was CONSUMED by APPLY, so this carries nothing; a clarify
@@ -9947,6 +9958,7 @@ def run_tail(
     turn_trace: trace_mod.TurnTrace,
     write_session: bool = True,
     lane_quick_replies: Any = None,
+    lane_text: Any = None,
     state: Any = None,
     question: Any = None,
     remembered_before: Mapping[str, Any] | None = None,
@@ -10035,6 +10047,13 @@ def run_tail(
     composed = reply_ladder.compose_reply(outcome)
     if question is None:
         question = _question_offered(ctx, values, outcome, composed)
+    if isinstance(lane_text, str) and lane_text.strip() and not jsc.truthy(composed.get("text")):
+        # Owner rule, never a blank reply (crew eval, 12 Oct 2026): the `out_of_scope` arm
+        # composes no text here (`escalate-catalog`'s `includeResponse: false`), but its
+        # lane already built the one message the customer is sent. Without this the turn's
+        # reply, which the console, the next turn's `Previous response:` and the
+        # chat-history link read, is null while the action carries the handover.
+        composed = {**composed, "text": lane_text}
     # QUICK-REPLY-NAMES: the one seam every tail-composed set leaves through - at most
     # three buttons, none over 20 characters, no duplicates. Guarded BEFORE the lane
     # fallback is chosen, so a set the guard drops falls back the same way an absent one
@@ -10673,6 +10692,8 @@ def complete_turn(  # noqa: PLR0915 - one linear pipeline, and the order IS the 
                 # from, and this is one value the tail could not have composed for itself
                 # - what the lane already decided the customer can tap.
                 lane_quick_replies=fragments.get("lane_quick_replies"),
+                # Same reason: the text of the message the lane already built.
+                lane_text=fragments.get("lane_text"),
                 # ESCALATION-CONTROL (security review S1): n8n's `/complete` hands over no
                 # APPLY state, so the contact's own profile is read here, or a blocked
                 # contact would be offered the team and the CS roster on this path.
