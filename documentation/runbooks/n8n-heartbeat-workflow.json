@@ -51,7 +51,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"crm_master_products_list\",\"arguments\":{\"limit\":1}}}",
+        "jsonBody": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"crm_forms_management_forms_list\",\"arguments\":{\"limit\":1}}}",
         "options": {
           "response": {
             "response": {

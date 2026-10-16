@@ -68,6 +68,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 export CRM_BASE_URL=http://localhost:8000
 export EXTERNAL_API_KEY=...
+export MCP_AUTH_TOKEN=...   # 32+ chars, same value as the backend's MCP_AUTH_TOKEN
 python -m sorento_crm_mcp
 pytest
 pytest tests/test_catalog_compile.py -q
