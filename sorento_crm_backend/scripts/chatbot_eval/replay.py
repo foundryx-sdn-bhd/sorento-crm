@@ -114,6 +114,54 @@ def _rolled_back(session_factory: Callable[[], Any]) -> Iterator[Callable[[], An
             conn.close()
 
 
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0", ""}
+
+
+class NetworkBlocked(OSError):
+    pass
+
+
+def _is_local(host: Any) -> bool:
+    if host is None or isinstance(host, (bytes, bytearray)):
+        host = host.decode() if host else ""
+    return host in _LOCAL_HOSTS or str(host).startswith("127.")
+
+
+def _guard_network(stack: contextlib.ExitStack, misses: list[dict[str, Any]]) -> None:
+    """Refuse every non-local connect and name lookup; localhost, ::1 and unix sockets (the DB) stay open."""
+    import socket
+    from unittest import mock
+
+    real_connect, real_connect_ex, real_gai = socket.socket.connect, socket.socket.connect_ex, socket.getaddrinfo
+
+    def refuse(host: Any) -> NetworkBlocked:
+        misses.append({"network_blocked": str(host)})
+        return NetworkBlocked(f"network_blocked: {host}")
+
+    def check(sock: Any, addr: Any) -> None:
+        if getattr(sock, "family", None) == getattr(socket, "AF_UNIX", None) or not isinstance(addr, tuple):
+            return
+        if not _is_local(addr[0]):
+            raise refuse(addr[0])
+
+    def connect(self: Any, addr: Any) -> Any:
+        check(self, addr)
+        return real_connect(self, addr)
+
+    def connect_ex(self: Any, addr: Any) -> Any:
+        check(self, addr)
+        return real_connect_ex(self, addr)
+
+    def getaddrinfo(host: Any, *a: Any, **k: Any) -> Any:
+        if not _is_local(host):
+            raise refuse(host)
+        return real_gai(host, *a, **k)
+
+    stack.enter_context(mock.patch.object(socket.socket, "connect", connect))
+    stack.enter_context(mock.patch.object(socket.socket, "connect_ex", connect_ex))
+    stack.enter_context(mock.patch.object(socket, "getaddrinfo", getaddrinfo))
+
+
 @contextlib.contextmanager
 def _patched(recorded: dict[tuple[str, str], Any], misses: list[dict[str, Any]]) -> Iterator[None]:
     from unittest import mock
@@ -139,6 +187,7 @@ def _patched(recorded: dict[tuple[str, str], Any], misses: list[dict[str, Any]])
 
     with contextlib.ExitStack() as stack:
         stack.enter_context(mock.patch.object(MCPRuntimeClient, "call_tool", call_tool))
+        _guard_network(stack, misses)
         stack.enter_context(mock.patch.object(llm_call, "chat", blocked("llm_call.chat")))
         stack.enter_context(mock.patch.object(ideate, "call_ideation_tool", blocked("ideate")))
         stack.enter_context(mock.patch.object(embedding_worker, "_embed_text_chunks", blocked("embedding")))
