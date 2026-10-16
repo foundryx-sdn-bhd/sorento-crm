@@ -4802,7 +4802,13 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
             continue
         restated.append(e)
         if _int(e.get("quantity")) is not None:
-            kept.extend({**e, "uuid": row["uuid"]} for row in rows)
+            # The settled row as placed (its uuid and catalogue code, never the parser's
+            # spelling), with the stated quantity on the FIRST copy only:
+            # `_spec_quantities` sums per code and gives that total to every row of it.
+            kept.extend(
+                {**e, **row, "current_message": False, "quantity": e["quantity"] if i == 0 else None}
+                for i, row in enumerate(rows)
+            )
     if not restated:
         return verdict
     # CARRY-ATTACH (prod, 13 Oct 2026): the kinds the echoes restated ride on the verdict,

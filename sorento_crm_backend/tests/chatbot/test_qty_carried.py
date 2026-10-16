@@ -144,4 +144,30 @@ def test_a_code_settled_on_two_rows_keeps_both_with_the_quantity():
     state = ht.state(Focus(products=[rows[0], second]), availability_only=True, turn_no=1)
     out = turn_runtime.without_restated_rows(_bare_count(10), state.focus)
     assert [e["uuid"] for e in out["entities"]] == [rows[0]["uuid"], second["uuid"]]
-    assert all(e["quantity"] == 10 for e in out["entities"])
+    assert [e["quantity"] for e in out["entities"]] == [10, None]
+
+
+def test_a_code_settled_on_two_rows_asks_the_stock_tool_for_the_stated_quantity():
+    """Reviewer blocker: `_spec_quantities` sums quantities per code, so the stated 10
+    rides on ONE echo; both settled rows are still asked for 10, never 20."""
+    rows = ht.product_rows(CODE)
+    second = {**rows[0], "uuid": ht.uuid_of(CODE + "-other-company")}
+    state = ht.state(
+        Focus(products=[rows[0], second], domains=["product_attachment"]), availability_only=True, turn_no=1
+    )
+    text, quantities = _turn(state, _bare_count(10))
+    assert quantities == {rows[0]["uuid"]: 10, second["uuid"]: 10}
+    assert "How many units" not in text
+
+
+def test_the_kept_echo_keeps_the_settled_rows_own_code():
+    """Reviewer should-fix: an echo the parser spelled by its typed raw keeps the settled
+    row's catalogue code; it never overwrites it with the parser's spelling."""
+    state = _after_picture()
+    echo = {**_carried(10), "raw": "srtwt5880", "canonical_code": None}
+    settled = state.focus.products[0]
+    state = replace(state, focus=replace(state.focus, products=[{**settled, "raw": "srtwt5880"}]))
+    out = turn_runtime.without_restated_rows(_bare_count(10) | {"entities": [echo]}, state.focus)
+    (entity,) = out["entities"]
+    assert entity["canonical_code"] == CODE
+    assert entity["quantity"] == 10
