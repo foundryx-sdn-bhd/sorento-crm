@@ -144,22 +144,26 @@ On the n8n box (`<N8N_MAIN>` is the main n8n container, not a worker; list them 
 `docker ps --format '{{.Names}}\t{{.Image}}' | grep -i n8n`):
 
 ```bash
+D=~/n8n-export-$(date +%Y%m%d)                       # set once, reused below
 docker exec -u node <N8N_MAIN> sh -c 'rm -rf /tmp/wf && mkdir -p /tmp/wf && n8n export:workflow --all --separate --output=/tmp/wf/'
-docker cp <N8N_MAIN>:/tmp/wf ~/n8n-export-$(date +%Y%m%d)
+docker cp <N8N_MAIN>:/tmp/wf "$D"
 docker exec -u node <N8N_MAIN> rm -rf /tmp/wf
-cd ~/n8n-export-$(date +%Y%m%d) && ls | wc -l       # one file per workflow
+chmod -R go-rwx "$D"
+cd "$D" && ls | wc -l       # one file per workflow
 ```
 
-The workflow export holds credential names and ids, never their secrets. Do not run
-`export:credentials`. Keep this folder on the n8n box or in your password manager's file store,
-not in any git repo: it contains `<CRM_ORIGIN>`.
+The export holds no credential secrets, but nodes may carry literal header values and pinned
+data (customer messages, phone numbers), and it contains `<CRM_ORIGIN>`: treat the folder as
+secret. Do not run `export:credentials`. Keep the folder only on the n8n box (or in your password
+manager's file store), never on a laptop or in any git repo. Delete it once step 6 has held for
+48 hours with no rollback: `rm -rf ~/n8n-export-<date>`.
 
 Re-check (each line prints the workflow file, its `active` flag and the node name):
 
 ```bash
-python3 - <<'PY'
-import glob, json
-ORIGIN = "<CRM_ORIGIN>"
+CRM_ORIGIN='<CRM_ORIGIN>' python3 - <<'PY'
+import glob, json, os
+ORIGIN = os.environ["CRM_ORIGIN"]
 for f in sorted(glob.glob("*.json")):
     wf = json.load(open(f))
     for n in wf.get("nodes", []):
@@ -190,11 +194,16 @@ PY
   No workflow names port 6432 or 5432 directly (the DB is reached only through the credential),
   and about 29 workflows call `<CRM_DOMAIN>`, which step 3 moves with no edit.
 - Any extra `names-origin`, `mcp-client`, `ignore-ssl` or `sorento-crm-db` line that the table
-  does not have: add it to your step 4 list (same edit as its row), and tell crew on the PR.
+  does not have: add it to your step 4 list (same edit as its row), and tell crew on the PR
+  (workflow and node name only, never the resolved URL).
   Test copies on credential `n8n_test-db` are not part of this runbook.
-- Rollback: nothing to roll back. To undo a step 4 edit from this copy:
-  `docker cp <file> <N8N_MAIN>:/tmp/ && docker exec -u node <N8N_MAIN> n8n import:workflow --input=/tmp/<file>`
-  (then re-activate the workflow in the UI if it was active).
+- Rollback: nothing to roll back. Prefer the field rollbacks in 4.1 to 4.4. As a last resort only,
+  undo a step 4 edit from this copy, one file at a time, never the folder:
+  `docker cp <file> <N8N_MAIN>:/tmp/ && docker exec -u node <N8N_MAIN> n8n import:workflow --input=/tmp/<file>`.
+  The import replaces the whole workflow, so it also reverts any other edit made to it since the
+  export, and it may leave the workflow inactive: re-activate it in the UI only if the step 0.4
+  check printed `active=True` for it. After the import, re-apply the 4.3 / 4.4 URL and Ignore SSL
+  Issues OFF (the copy predates them).
 
 ## Step 1. Tailscale on both boxes, behind a policy
 
@@ -459,9 +468,12 @@ goes through Cloudflare either.
 
 - Check: ask the test number for a product the bot does not stock under that exact name (so the
   miss-suggest lane runs). In **Executions**, `sub-miss-suggest-live` is green and `family-fetch`
-  shows output. A certificate error here means step 3's `extra_hosts` line is missing for that
-  container.
-- Rollback: put the old URL back and turn **Ignore SSL Issues** on again.
+  shows output, and step 5.2's nginx `tail` shows the request arriving from `<N8N_TS_IP>` (if it
+  is missing, step 3's `extra_hosts` line is missing for that container and the call went through
+  Cloudflare). A certificate error here means the tailnet vhost serves the wrong certificate or
+  SNI name: recheck step 2.
+- Rollback: keep `https://<CRM_DOMAIN>` and Ignore SSL Issues OFF; rolling back step 3 sends the
+  call through Cloudflare, which needs no URL change. Never turn Ignore SSL Issues back on.
 
 ### 4.4 `post-inject` in `live-poller`
 
@@ -471,11 +483,12 @@ latest green execution, click `post-inject` and read the resolved URL on its inp
 - `https://<CRM_DOMAIN>/...`: nothing to do; step 3 already moved it.
 - `<CRM_ORIGIN>` anywhere in it: change the part of the expression that supplies the host to
   `<CRM_DOMAIN>` (HTTPS) and turn **Ignore SSL Issues** OFF if it is on, as in 4.3. Tell crew on
-  the PR.
+  the PR (workflow and node name only, not the resolved URL).
 - Anything else (another service): out of scope; leave it.
 
 - Check: the next `live-poller` execution is green.
-- Rollback: restore the old expression (or re-import the step 0.4 copy).
+- Rollback: if the host was `<CRM_DOMAIN>` already, nothing to undo. If you changed it, keep
+  `<CRM_DOMAIN>` with Ignore SSL Issues OFF, as in 4.3; never restore a raw-origin host.
 
 ## Step 5. Checks
 
