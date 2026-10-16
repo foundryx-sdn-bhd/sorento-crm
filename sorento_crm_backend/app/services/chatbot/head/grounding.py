@@ -816,6 +816,7 @@ def ground(
                 and message
                 and len(unheard) == 1
                 and any(_same(unheard[0], t) for t in _words(message))
+                and not [t for i, t in enumerate(tokens) if i not in used and i not in keep and t not in _STOPWORDS]
                 and not any(g.key == bound.key for g in grounded)
                 and not _in_message(bound, entry, message)
             ):
