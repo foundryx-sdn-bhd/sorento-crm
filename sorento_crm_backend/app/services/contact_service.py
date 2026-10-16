@@ -185,6 +185,10 @@ class ContactService:
 
         brands_map = brand_refs_by_contact(self.db, [str(c.id) for c in contacts])
 
+        from app.services.contact_tag_service import tags_by_contact
+
+        tags_map = tags_by_contact(self.db, [str(c.id) for c in contacts])
+
         # Validate and convert contacts to response models
         # Explicitly convert UUID to string to ensure Pydantic validation works
         contact_responses = []
@@ -196,6 +200,7 @@ class ContactService:
                 data["linked_user_name"] = linked["name"] if linked else None
                 data["customer_codes"] = codes_map.get(str(contact.id), [])
                 data["brands"] = brands_map.get(str(contact.id), [])
+                data["tags"] = tags_map.get(str(contact.id), [])
                 data["cost_visible"] = str(contact.id) in cost_ids
                 contact_responses.append(RespondContactResponse.model_validate(data))
             except Exception as e:
@@ -270,6 +275,19 @@ class ContactService:
                 q = q.filter(column.is_(value))
         if f.get("region") in ("west", "east"):
             q = q.filter(RespondContact.regions.contains([f["region"]]))
+        if f.get("tag_ids"):
+            from app.models.access import respond_contact_tags as tag_pivot
+
+            q = q.filter(
+                exists().where(
+                    tag_pivot.c.contact_id == RespondContact.id,
+                    tag_pivot.c.tag_id.in_(f["tag_ids"]),
+                )
+            )
+        if f.get("no_tags"):
+            from app.models.access import respond_contact_tags as tag_pivot
+
+            q = q.filter(~exists().where(tag_pivot.c.contact_id == RespondContact.id))
         if f.get("customer_id"):
             from app.models.base import get_company_scope
             from app.services.company_scope import build_company_predicate
@@ -768,10 +786,14 @@ class ContactService:
         access_types = list(getattr(contact, "access_types", []) or [])
         chatbot_profile = dict(getattr(contact, "chatbot_profile", None) or {})
         brands: list = []
+        tags: list = []
         if db is not None:
             from app.services.contact_brand_scope import brand_refs_by_contact
 
             brands = brand_refs_by_contact(db, [str(contact.id)]).get(str(contact.id), [])
+            from app.services.contact_tag_service import tags_by_contact
+
+            tags = tags_by_contact(db, [str(contact.id)]).get(str(contact.id), [])
             # AC-MEM041: both dict builders carry facts, the live CRM ones (never
             # stored) merged in the same way the memory GET does. Skipped entirely
             # when there is nothing to add - a contact with no stored facts and no
@@ -833,6 +855,7 @@ class ContactService:
             # CONTACT-BRAND-SCOPE: listed by hand like every field above. The list endpoint
             # fills it for a whole page in one query; here, one contact when a session is given.
             "brands": brands,
+            "tags": tags,
             "created_at": contact.created_at,
             "updated_at": contact.updated_at,
             "created_by": contact.created_by,

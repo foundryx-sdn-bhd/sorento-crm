@@ -52,6 +52,8 @@ class RespondContactResponse(RespondContactBase):
     access_types: List[RespondContactAccessTypeRef] = []
     # Linked customer codes, sorted; filled by the list endpoint (one query per page).
     customer_codes: List[str] = []
+    # CONTACT-TAGS: `[{id, name}]` ordered by tag sort_order then name.
+    tags: List[dict] = []
     # CONTACT-BRAND-SCOPE: the brands the contact may see, `[{id, brand_name}]`; empty = all.
     brands: List[dict] = []
     workspace_name: Optional[str] = None

@@ -39,6 +39,10 @@ import ContactCreateDialog from './ContactCreateDialog';
 import ContactDeleteDialog from './ContactDeleteDialog';
 import ContactBulkDeleteDialog from './ContactBulkDeleteDialog';
 import BulkCopyAccessDialog from './BulkCopyAccessDialog';
+import BulkTagDialog from './BulkTagDialog';
+import ContactTagFilters from './ContactTagFilters';
+import ContactTagsCell from './ContactTagsCell';
+import { contactTagBulkActions } from '../lib/contactTagBulkActions';
 import { regionLabel } from '@/lib/packing-list-regions';
 import ContactAccessFilters from './ContactAccessFilters';
 import PortalLinkButton from '@/components/contacts/PortalLinkButton';
@@ -51,6 +55,7 @@ import { useRespondContactOutboundMutations } from '@/hooks/useRespondContactOut
 import { buildDetailSearch } from '@/lib/listNavQuery';
 import {
   contactAccessFiltersFromUrl,
+  contactTagFiltersFromUrl,
   contactsListFilters,
   contactsListQueryKey,
   fetchContactsPage,
@@ -112,6 +117,9 @@ export default function ContactsList() {
   const [customersNone, setCustomersNone] = useState(false);
   // CONTACT-BULK-ACCESS (UAC A2.3): tier / cost / escalation / ... filters.
   const [accessFilters, setAccessFilters] = useState<AccessFilters>({});
+  // CONTACT-TAGS (UAC T4.2): the Tag filter (any-of) and the "No tags" checkbox.
+  const [tagIds, setTagIds] = useState<string[]>([]);
+  const [noTags, setNoTags] = useState(false);
 
   // Back hands the list its own query string back, and the pager keeps
   // rewriting it, so the list reads it (S3-01). One hook, every list.
@@ -122,16 +130,21 @@ export default function ContactsList() {
     setChatbotMemoryLevel(state.filters.chatbot_memory_level ?? null);
     setCustomersNone(state.filters.customers === 'none');
     setAccessFilters(contactAccessFiltersFromUrl(state.filters));
+    const tagState = contactTagFiltersFromUrl(state.filters);
+    setTagIds(tagState.tagIds);
+    setNoTags(tagState.noTags);
   });
 
   // Page one when a filter CHANGES, never on mount - the mount run used to stamp
   // page 1 over the page `useListStateFromUrl` had just restored from the URL.
   const accessFiltersKey = JSON.stringify(accessFilters);
+  const tagFiltersKey = JSON.stringify([tagIds, noTags]);
   useResetPageOnFilterChange(setPagination, [
     searchQuery,
     chatbotMemoryLevel,
     customersNone,
     accessFiltersKey,
+    tagFiltersKey,
   ]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -140,6 +153,7 @@ export default function ContactsList() {
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkCopyDialogOpen, setBulkCopyDialogOpen] = useState(false);
   const [bulkLinkOpen, setBulkLinkOpen] = useState(false);
+  const [bulkTagMode, setBulkTagMode] = useState<'add' | 'remove' | null>(null);
   const [impersonateTarget, setImpersonateTarget] = useState<RespondContact | null>(null);
   const [bulkDisableOutboundOpen, setBulkDisableOutboundOpen] = useState(false);
 
@@ -151,9 +165,15 @@ export default function ContactsList() {
       pageSize: pagination.pageSize,
       sorting,
       searchQuery,
-      filters: contactsListFilters({ chatbotMemoryLevel, customersNone, access: accessFilters }),
+      filters: contactsListFilters({
+        chatbotMemoryLevel,
+        customersNone,
+        access: accessFilters,
+        tagIds,
+        noTags,
+      }),
     }),
-    [pagination, sorting, searchQuery, chatbotMemoryLevel, customersNone, accessFilters],
+    [pagination, sorting, searchQuery, chatbotMemoryLevel, customersNone, accessFilters, tagIds, noTags],
   );
 
   // UAC A2.3: a filter change is written to the URL (same query string a row click
@@ -368,6 +388,15 @@ export default function ContactsList() {
         meta: { headerTitle: 'Access types', skeleton: <Skeleton className="h-4 w-32" /> },
       },
       {
+        id: 'tags',
+        accessorFn: (row) => (row.tags ?? []).map((t) => t.name).join(', '),
+        header: ({ column }) => <DataGridColumnHeader title="Tags" column={column} />,
+        size: 200,
+        enableSorting: false,
+        cell: ({ row }) => <ContactTagsCell contact={row.original} />,
+        meta: { headerTitle: 'Tags', skeleton: <Skeleton className="h-4 w-28" /> },
+      },
+      {
         id: 'brands',
         accessorFn: (row) => (row.brands ?? []).map((b) => b.brand_name).join(', '),
         header: ({ column }) => <DataGridColumnHeader title="Brands" column={column} />,
@@ -556,6 +585,7 @@ export default function ContactsList() {
     chatbotMemoryLevel,
     customersNone,
     accessFiltersKey,
+    tagFiltersKey,
     pagination.pageIndex,
     pagination.pageSize,
     sorting,
@@ -620,6 +650,12 @@ export default function ContactsList() {
                 <Label htmlFor="contacts-no-customers" className="text-sm font-normal">
                   No customers linked
                 </Label>
+                <ContactTagFilters
+                  tagIds={tagIds}
+                  noTags={noTags}
+                  onTagIdsChange={setTagIds}
+                  onNoTagsChange={setNoTags}
+                />
                 <ContactAccessFilters value={accessFilters} onChange={setAccessFilters} />
               </div>
             }
@@ -666,6 +702,12 @@ export default function ContactsList() {
                     },
                   ]
                 : []),
+              ...contactTagBulkActions({
+                count: selectedContactIds.length,
+                canEdit: canEditContacts,
+                onAdd: () => setBulkTagMode('add'),
+                onRemove: () => setBulkTagMode('remove'),
+              }),
               {
                 key: 'delete',
                 label: `Delete (${selectedContactIds.length})`,
@@ -733,6 +775,16 @@ export default function ContactsList() {
         targetContacts={selectedContacts}
         onCheckDiffers={(source) => setAccessFilters({ accessDiffersFrom: source.id })}
       />
+
+      {bulkTagMode ? (
+        <BulkTagDialog
+          open
+          onOpenChange={(open) => !open && setBulkTagMode(null)}
+          mode={bulkTagMode}
+          targetContacts={selectedContacts}
+          onApplied={clearSelection}
+        />
+      ) : null}
 
       <ContactImpersonateDialog
         contact={impersonateTarget}

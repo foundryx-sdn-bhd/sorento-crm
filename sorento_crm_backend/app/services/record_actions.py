@@ -1159,6 +1159,12 @@ def _delete_market_segment(db: Session, payload: dict):
     return MarketSegmentService(db).delete_segment(_entity_id(payload))
 
 
+def _delete_contact_tag(db: Session, payload: dict):
+    from app.services.contact_tag_service import ContactTagService
+
+    return ContactTagService(db).delete_tag(_entity_id(payload))
+
+
 def _delete_onboarding_request(db: Session, payload: dict):
     from app.services import onboarding_service
 
@@ -1469,6 +1475,17 @@ register(
         # at all (issue #402).
         permission="user_management.reference_data.manage",
         label="Delete market segment",
+    )
+)
+
+register(
+    FormAction(
+        key="contact_tag.delete",
+        entity_types=("contact_tag",),
+        execute=_delete_contact_tag,
+        window=WINDOW_DESTRUCTIVE,
+        permission="user_management.contacts.edit",
+        label="Delete contact tag",
     )
 )
 

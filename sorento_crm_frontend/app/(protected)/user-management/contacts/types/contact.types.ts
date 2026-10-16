@@ -40,6 +40,8 @@ export interface RespondContact {
   chatbot_stock_allowed?: boolean;
   /** Linked customer codes, sorted (list rows). */
   customer_codes?: string[];
+  /** CONTACT-TAGS: the tags the contact holds, ordered by tag sort order then name. */
+  tags?: { id: string; name: string }[];
   /** CONTACT-BRAND-SCOPE: the brands this contact may see; empty = every brand (list rows). */
   brands?: { id: string; brand_name: string }[];
   /** CONTACT-BULK-ACCESS: `chatbot_profile.tier`, flattened for the list (list rows). */

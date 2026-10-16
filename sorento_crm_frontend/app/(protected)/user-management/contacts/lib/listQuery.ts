@@ -57,19 +57,40 @@ export function contactAccessFiltersFromUrl(filters: Record<string, string>): Co
   return out;
 }
 
+/**
+ * CONTACT-TAGS: the Tag filter and the "No tags" checkbox. The filters ride the URL as a
+ * string map, so the tag ids are one comma-joined `tag` value here; `getContacts` sends them
+ * as repeated `tag=` params. `tags=none` lists the contacts holding no tag.
+ */
+export function contactTagFiltersFromUrl(filters: Record<string, string>): {
+  tagIds: string[];
+  noTags: boolean;
+} {
+  return {
+    tagIds: filters.tag ? filters.tag.split(',').filter(Boolean) : [],
+    noTags: filters.tags === 'none',
+  };
+}
+
 export function contactsListFilters({
   chatbotMemoryLevel,
   customersNone = false,
   access = {},
+  tagIds = [],
+  noTags = false,
 }: {
   chatbotMemoryLevel: string | null;
   customersNone?: boolean;
   access?: ContactAccessFilters;
+  tagIds?: string[];
+  noTags?: boolean;
 }): Record<string, string> {
   const filters: Record<string, string> = {};
   if (chatbotMemoryLevel) filters.chatbot_memory_level = chatbotMemoryLevel;
   // `customers=none`: the contacts with no linked customer (bulk Link customers worklist).
   if (customersNone) filters.customers = 'none';
+  if (tagIds.length) filters.tag = tagIds.join(',');
+  if (noTags) filters.tags = 'none';
   for (const [field, param] of Object.entries(CONTACT_ACCESS_FILTER_PARAMS)) {
     const value = access[field as keyof ContactAccessFilters];
     if (value) filters[param] = value;
