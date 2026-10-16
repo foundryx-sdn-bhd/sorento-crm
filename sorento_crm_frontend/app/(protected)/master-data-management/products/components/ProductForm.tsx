@@ -170,13 +170,13 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
       is_searchable: product.is_searchable ?? true,
       exclude_from_planning: product.exclude_from_planning ?? false,
       list_price: product.list_price,
-      cost_price: product.cost_price || null,
-      invoice_price: product.invoice_price || null,
-      weight: product.weight || null,
-      dimensions_length: product.dimensions_length || null,
-      dimensions_width: product.dimensions_width || null,
-      dimensions_height: product.dimensions_height || null,
-      warranty_months: product.warranty_months || null,
+      cost_price: product.cost_price ?? null,
+      invoice_price: product.invoice_price ?? null,
+      weight: product.weight ?? null,
+      dimensions_length: product.dimensions_length ?? null,
+      dimensions_width: product.dimensions_width ?? null,
+      dimensions_height: product.dimensions_height ?? null,
+      warranty_months: product.warranty_months ?? null,
       has_serial_tracking: product.has_serial_tracking,
       has_batch_tracking: product.has_batch_tracking,
       reorder_level: product.reorder_level,
@@ -620,9 +620,11 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                         <NumberInput
                           step="0.01"
                           placeholder="0.00"
-                          {...field}
-                          value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value ?? null}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormDescription>
@@ -643,9 +645,11 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                         <NumberInput
                           step="0.01"
                           placeholder="0.00"
-                          {...field}
-                          value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value ?? null}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormDescription>
@@ -727,9 +731,11 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                         <NumberInput
                           step="0.01"
                           placeholder="0.00"
-                          {...field}
-                          value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value ?? null}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormMessage />
@@ -748,9 +754,11 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                           <NumberInput
                             step="0.01"
                             placeholder="0.00"
-                            {...field}
-                            value={field.value || ''}
-                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                            name={field.name}
+                            ref={field.ref}
+                            onBlur={field.onBlur}
+                            value={field.value ?? null}
+                            onValueChange={field.onChange}
                           />
                         </FormControl>
                         <FormMessage />
@@ -768,9 +776,11 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                           <NumberInput
                             step="0.01"
                             placeholder="0.00"
-                            {...field}
-                            value={field.value || ''}
-                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                            name={field.name}
+                            ref={field.ref}
+                            onBlur={field.onBlur}
+                            value={field.value ?? null}
+                            onValueChange={field.onChange}
                           />
                         </FormControl>
                         <FormMessage />
@@ -788,9 +798,11 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                           <NumberInput
                             step="0.01"
                             placeholder="0.00"
-                            {...field}
-                            value={field.value || ''}
-                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                            name={field.name}
+                            ref={field.ref}
+                            onBlur={field.onBlur}
+                            value={field.value ?? null}
+                            onValueChange={field.onChange}
                           />
                         </FormControl>
                         <FormMessage />
@@ -808,9 +820,11 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                       <FormControl>
                         <NumberInput
                           placeholder="0"
-                          {...field}
-                          value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : null)}
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value ?? null}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormMessage />
@@ -917,11 +931,11 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                                   : undefined
                               }
                               disabled={!canEditChatbotLimits}
-                              {...field}
-                              value={field.value ?? ''}
-                              onChange={(e) =>
-                                field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)
-                              }
+                              name={field.name}
+                              ref={field.ref}
+                              onBlur={field.onBlur}
+                              value={field.value ?? null}
+                              onValueChange={field.onChange}
                             />
                           </FormControl>
                           <FormMessage />
@@ -944,11 +958,11 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                                   : undefined
                               }
                               disabled={!canEditChatbotLimits}
-                              {...field}
-                              value={field.value ?? ''}
-                              onChange={(e) =>
-                                field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)
-                              }
+                              name={field.name}
+                              ref={field.ref}
+                              onBlur={field.onBlur}
+                              value={field.value ?? null}
+                              onValueChange={field.onChange}
                             />
                           </FormControl>
                           <FormMessage />

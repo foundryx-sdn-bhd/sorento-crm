@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { getProductSuppliersByProductId, createProductSupplier, updateProductSupplier } from '../../../procurement-management/product-suppliers/services/productSupplierService';
 import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
@@ -32,7 +33,8 @@ export default function ProductSuppliersSection({
 }: ProductSuppliersSectionProps) {
   const queryClient = useQueryClient();
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
-  const [leadTimeDays, setLeadTimeDays] = useState<string>('');
+  const [leadTimeDays, setLeadTimeDays] = useState<number | null>(null);
+  const [leadTimeChecked, setLeadTimeChecked] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
 
   // Only currencies we hold a rate for are offered. A price in a currency with no rate
@@ -81,7 +83,8 @@ export default function ProductSuppliersSection({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['product-suppliers', productId] });
       setSelectedSupplierId('');
-      setLeadTimeDays('');
+      setLeadTimeDays(null);
+      setLeadTimeChecked(false);
       toast.success('Supplier added successfully');
     },
     onError: (error: Error) => {
@@ -115,17 +118,17 @@ export default function ProductSuppliersSection({
     invalidateKeys: [['product-suppliers', productId]],
   });
 
+  const leadTimeError = (value: number | null) => numberFieldError(value, { min: 0, integer: true });
+
   const handleAddSupplier = () => {
     if (!selectedSupplierId) {
       toast.error('Please select a supplier');
       return;
     }
 
-    const leadTime = parseInt(leadTimeDays, 10);
-    if (isNaN(leadTime) || leadTime < 0) {
-      toast.error('Please enter a valid lead time (number of days)');
-      return;
-    }
+    setLeadTimeChecked(true);
+    if (leadTimeError(leadTimeDays)) return;
+    const leadTime = parseNumberDraft(leadTimeDays) as number;
 
     // Check if supplier is already added
     const alreadyAdded = productSuppliers?.some(
@@ -191,19 +194,19 @@ export default function ProductSuppliersSection({
             </div>
             <div className="space-y-2">
               <Label>Lead Time (Days) *</Label>
-              <Input
-                type="number"
+              <NumberInput
                 placeholder="e.g., 7"
                 value={leadTimeDays}
-                onChange={(e) => setLeadTimeDays(e.target.value)}
+                onValueChange={setLeadTimeDays}
                 min="0"
+                error={leadTimeChecked ? leadTimeError(leadTimeDays) : undefined}
               />
             </div>
           </div>
           <Button
             type="button"
             onClick={handleAddSupplier}
-            disabled={!selectedSupplierId || !leadTimeDays || createMutation.isPending}
+            disabled={!selectedSupplierId || createMutation.isPending}
           >
             {createMutation.isPending ? (
               <LoaderCircleIcon className="size-4 animate-spin" />

@@ -11,6 +11,7 @@ import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -25,6 +26,7 @@ import { ShipmentLinePhotosCell } from './ShipmentLinePhotosCell';
 import { deriveLineCells, fmtDp, fmtStated, toNum } from './packingListLineMath';
 import {
   usePackingListRecord,
+  lineNumberError,
   type DraftLine,
 } from '../[id]/components/packing-list-context';
 import type { InboundShipmentLine } from '../types/packingList.types';
@@ -143,15 +145,17 @@ function LineNumberInput({
   step?: string;
   onChange: (key: string, name: keyof DraftLine, value: string) => void;
 }) {
+  const { numbersChecked } = usePackingListRecord();
   return (
-    <Input
-      type="number"
+    <NumberInput
       min={0}
       step={step}
       className="h-8 w-20 text-end tabular-nums"
       value={(line[name] as string) ?? ''}
       onChange={(e) => onChange(line.key, name, e.target.value)}
       aria-label={`${label} for ${line.product_code || 'the new line'}`}
+      error={numbersChecked ? lineNumberError(line, name) : undefined}
+      errorClassName="w-24 whitespace-normal text-start"
     />
   );
 }

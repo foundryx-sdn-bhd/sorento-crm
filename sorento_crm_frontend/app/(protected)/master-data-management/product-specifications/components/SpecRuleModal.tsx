@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { readable, readableValue } from '@/lib/spec-readable';
@@ -348,11 +350,13 @@ export function SpecRuleModal({
   const existing = existingRule?.builder ?? null;
   const [draft, setDraft] = useState<RuleDraft>(() => draftFromBuilder(existing));
   const [trySource, setTrySource] = useState<TryItSource | null>(null);
+  const [savedOnce, setSavedOnce] = useState(false);
 
   useEffect(() => {
     if (open) {
       setDraft(draftFromBuilder(existing));
       setTrySource(null);
+      setSavedOnce(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingIndex]);
@@ -482,9 +486,26 @@ export function SpecRuleModal({
   const hideWhereToLook = draft.kind === 'code' || draft.kind === 'product';
   const hideValueItSets = draft.kind === 'number' || draft.kind === 'size' || draft.kind === 'product';
 
+  // Numbers are checked when Save is pressed; afterwards the messages follow the fields.
+  const ignoreBelowError =
+    savedOnce && draft.kind === 'number'
+      ? numberFieldError(draft.ignore_below, { optional: true })
+      : undefined;
+  const valueError =
+    savedOnce && !hideValueItSets && spec.data_type === 'numeric'
+      ? numberFieldError(draft.value)
+      : undefined;
+
   const save = () => {
     // The button is already disabled for these - a defensive stop, not the primary guard.
     if (hasWordsListError || gapProblem) return;
+    setSavedOnce(true);
+    if (
+      (draft.kind === 'number' && numberFieldError(draft.ignore_below, { optional: true })) ||
+      (!hideValueItSets && spec.data_type === 'numeric' && numberFieldError(draft.value))
+    ) {
+      return;
+    }
     const problem = builder ? builderProblem(builder, ruleChoices(spec)) : emptyListProblem(draft.kind);
     if (!builder || problem) {
       toast.error(ruleMessage(problem ?? 'fill in what this rule reads.', ruleNumber));
@@ -589,12 +610,12 @@ export function SpecRuleModal({
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label>Ignore numbers below</Label>
-                <Input
-                  type="number"
+                <NumberInput
                   className="w-40"
                   value={draft.ignore_below}
                   onChange={(e) => setDraft((d) => ({ ...d, ignore_below: e.target.value }))}
                   placeholder="no floor"
+                  error={ignoreBelowError}
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -654,11 +675,11 @@ export function SpecRuleModal({
               {spec.data_type === 'boolean' ? (
                 <Input value="Yes" disabled className="w-40" />
               ) : spec.data_type === 'numeric' ? (
-                <Input
-                  type="number"
+                <NumberInput
                   className="w-40"
                   value={draft.value}
                   onChange={(e) => setDraft((d) => ({ ...d, value: e.target.value }))}
+                  error={valueError}
                 />
               ) : (
                 <SearchableSelect

@@ -5,6 +5,8 @@ import { Check, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { readable } from '@/lib/spec-readable';
 import { cn } from '@/lib/utils';
@@ -97,6 +99,17 @@ export function ProposalValueEditor({
   const [touched, setTouched] = useState(false);
   const options = allowedValues ?? [];
   const parsed = fromDraft(draft, dataType);
+  // A measurement is checked when Save is pressed, then the message follows the box.
+  const [checked, setChecked] = useState(false);
+  const numeric = dataType === 'numeric';
+  const numberError = numeric && checked ? numberFieldError(draft) : undefined;
+  const submit = () => {
+    if (numeric) {
+      setChecked(true);
+      if (numberFieldError(draft)) return;
+    }
+    onSave();
+  };
 
   return (
     <div
@@ -127,22 +140,41 @@ export function ProposalValueEditor({
           />
         ) : (
           <div className="relative">
-            <Input
-              value={draft}
-              onChange={(event) => {
-                setTouched(true);
-                onDraftChange(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && parsed !== null) onSave();
-                if (event.key === 'Escape') onCancel();
-              }}
-              disabled={busy}
-              type={dataType === 'numeric' ? 'number' : 'text'}
-              aria-label={label}
-              autoFocus={!touched}
-              className={cn('h-8 text-sm', unit && 'pe-10')}
-            />
+            {numeric ? (
+              <NumberInput
+                value={draft}
+                onChange={(event) => {
+                  setTouched(true);
+                  onDraftChange(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') submit();
+                  if (event.key === 'Escape') onCancel();
+                }}
+                disabled={busy}
+                aria-label={label}
+                autoFocus={!touched}
+                className={cn('h-8 text-sm', unit && 'pe-10')}
+                error={numberError}
+              />
+            ) : (
+              <Input
+                value={draft}
+                onChange={(event) => {
+                  setTouched(true);
+                  onDraftChange(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && parsed !== null) onSave();
+                  if (event.key === 'Escape') onCancel();
+                }}
+                disabled={busy}
+                type="text"
+                aria-label={label}
+                autoFocus={!touched}
+                className={cn('h-8 text-sm', unit && 'pe-10')}
+              />
+            )}
             {/* The unit is the registry's and is never typed: "770mm" into a
                 measurement stores a string the ranker cannot compare. */}
             {unit && (
@@ -158,8 +190,8 @@ export function ProposalValueEditor({
         variant="ghost"
         className="size-8 shrink-0"
         aria-label={`Save ${label}`}
-        disabled={busy || parsed === null}
-        onClick={onSave}
+        disabled={busy || (!numeric && parsed === null)}
+        onClick={submit}
       >
         <Check className="size-4" />
       </Button>

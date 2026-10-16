@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -112,6 +114,8 @@ export default function ProductCategoryDetailPage({
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
+  // Numbers are checked when Save is pressed; afterwards the messages follow the fields.
+  const [checked, setChecked] = useState(false);
 
   const header = (
     <PageHeader
@@ -178,10 +182,24 @@ export default function ProductCategoryDetailPage({
   const cancelEdit = () => {
     setEditing(false);
     setDraft(null);
+    setChecked(false);
   };
+
+  const numberErrors = (d: Draft) => ({
+    display_order: numberFieldError(d.display_order, { min: 0, integer: true }),
+    chatbot_max_qty: numberFieldError(d.chatbot_max_qty, { min: 0, integer: true, optional: true }),
+    chatbot_eta_offset_days: numberFieldError(d.chatbot_eta_offset_days, {
+      min: 0,
+      integer: true,
+      optional: true,
+    }),
+  });
+  const fieldErrors = checked && draft ? numberErrors(draft) : null;
 
   const handleSave = async () => {
     if (!draft) return;
+    setChecked(true);
+    if (Object.values(numberErrors(draft)).some(Boolean)) return;
     await update.mutateAsync({
       id,
       data: {
@@ -190,11 +208,9 @@ export default function ProductCategoryDetailPage({
         description: draft.description.trim() || undefined,
         is_active: draft.is_active,
         is_searchable: draft.is_searchable,
-        display_order: Number(draft.display_order) || 0,
-        chatbot_max_qty: draft.chatbot_max_qty.trim() ? Number(draft.chatbot_max_qty) : null,
-        chatbot_eta_offset_days: draft.chatbot_eta_offset_days.trim()
-          ? Number(draft.chatbot_eta_offset_days)
-          : null,
+        display_order: parseNumberDraft(draft.display_order) as number,
+        chatbot_max_qty: parseNumberDraft(draft.chatbot_max_qty),
+        chatbot_eta_offset_days: parseNumberDraft(draft.chatbot_eta_offset_days),
       },
     });
     cancelEdit();
@@ -315,12 +331,12 @@ export default function ProductCategoryDetailPage({
 
                 <Field label="Display order" htmlFor="category-order">
                   {editing && draft ? (
-                    <Input
+                    <NumberInput
                       id="category-order"
-                      type="number"
                       min={0}
                       value={draft.display_order}
                       onChange={(e) => setDraft({ ...draft, display_order: e.target.value })}
+                      error={fieldErrors?.display_order}
                     />
                   ) : (
                     (category.display_order ?? 0)
@@ -331,13 +347,13 @@ export default function ProductCategoryDetailPage({
                   <>
                     <Field label="Max quantity (assistant)" htmlFor="category-chatbot-max-qty">
                       {editing && draft ? (
-                        <Input
+                        <NumberInput
                           id="category-chatbot-max-qty"
-                          type="number"
                           min={0}
                           disabled={!canEditChatbotLimits}
                           value={draft.chatbot_max_qty}
                           onChange={(e) => setDraft({ ...draft, chatbot_max_qty: e.target.value })}
+                          error={fieldErrors?.chatbot_max_qty}
                         />
                       ) : category.chatbot_max_qty != null ? (
                         category.chatbot_max_qty
@@ -348,15 +364,15 @@ export default function ProductCategoryDetailPage({
 
                     <Field label="ETA offset (days)" htmlFor="category-chatbot-eta-offset">
                       {editing && draft ? (
-                        <Input
+                        <NumberInput
                           id="category-chatbot-eta-offset"
-                          type="number"
                           min={0}
                           disabled={!canEditChatbotLimits}
                           value={draft.chatbot_eta_offset_days}
                           onChange={(e) =>
                             setDraft({ ...draft, chatbot_eta_offset_days: e.target.value })
                           }
+                          error={fieldErrors?.chatbot_eta_offset_days}
                         />
                       ) : category.chatbot_eta_offset_days != null ? (
                         category.chatbot_eta_offset_days

@@ -32,6 +32,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/common/SearchableSelect";
 import { searchProjectsForLink } from "../services/purchaseRequestService";
@@ -228,18 +229,18 @@ export default function PurchaseRequestForm({
             render={({ field: f }) => (
               <FormItem>
                 <FormControl>
-                  <Input
-                    type="number"
+                  <NumberInput
                     step="any"
                     placeholder="0"
-                    {...f}
-                    value={f.value ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value ? parseFloat(e.target.value) : null;
+                    name={f.name}
+                    ref={f.ref}
+                    onBlur={f.onBlur}
+                    value={f.value ?? null}
+                    onValueChange={(v) => {
                       f.onChange(v);
                       if (isSponsorship) {
                         const up = form.getValues(`products.${row.index}.unit_price`);
-                        if (up != null && up !== "") {
+                        if (v !== null && up != null && up !== "") {
                           form.setValue(`products.${row.index}.total`, (v ?? 0) * Number(up));
                         }
                       }
@@ -275,17 +276,17 @@ export default function PurchaseRequestForm({
                   render={({ field: f }) => (
                     <FormItem>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="any"
                           placeholder="0"
-                          {...f}
-                          value={f.value ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value ? parseFloat(e.target.value) : null;
+                          name={f.name}
+                          ref={f.ref}
+                          onBlur={f.onBlur}
+                          value={f.value ?? null}
+                          onValueChange={(v) => {
                             f.onChange(v);
                             const qty = form.getValues(`products.${row.index}.quantity`);
-                            if (qty != null && qty !== "") {
+                            if (v !== null && qty != null && qty !== "") {
                               form.setValue(`products.${row.index}.total`, (v ?? 0) * Number(qty));
                             }
                           }}
@@ -310,14 +311,14 @@ export default function PurchaseRequestForm({
                   render={({ field: f }) => (
                     <FormItem>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="any"
                           placeholder="0"
-                          {...f}
-                          value={f.value ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value ? parseFloat(e.target.value) : null;
+                          name={f.name}
+                          ref={f.ref}
+                          onBlur={f.onBlur}
+                          value={f.value ?? null}
+                          onValueChange={(v) => {
                             f.onChange(v);
                           }}
                           className="h-8 w-28"
@@ -736,8 +737,7 @@ export default function PurchaseRequestForm({
                         <FormItem>
                           <FormLabel>Total Project Value</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
+                            <NumberInput
                               inputMode="decimal"
                               step="0.01"
                               placeholder="e.g. 1234.00"

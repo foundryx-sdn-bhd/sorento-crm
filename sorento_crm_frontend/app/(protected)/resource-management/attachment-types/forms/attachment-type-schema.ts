@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { requiredNumber } from '@/lib/number-field-schema';
 
 export const AttachmentTypeSchema = z.object({
   type_name: z
@@ -14,10 +15,7 @@ export const AttachmentTypeSchema = z.object({
     .string()
     .min(1, { message: 'Allowed extensions are required.' })
     .max(255, { message: 'Allowed extensions must not exceed 255 characters.' }),
-  max_file_size_mb: z
-    .number()
-    .min(1, { message: 'Max file size must be at least 1 MB.' })
-    .max(10000, { message: 'Max file size must not exceed 10000 MB.' }),
+  max_file_size_mb: requiredNumber({ min: 1, max: 10000 }),
   // Blank = unlimited. Enforced per entity row by the portal upload quota check.
   max_count_per_entity: z
     .number()
