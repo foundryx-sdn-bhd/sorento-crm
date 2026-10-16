@@ -597,7 +597,7 @@ def customer_scope(db: Session, contact_respond_id: Any, space_id: str | None) -
     customer, else `{"ids", "names", "linked": [[id, name, code]], "staff", "enforced"}`.
     `enforced` is the top selling rule (linked and no active office access type); a
     linked staff contact keeps `linked` for a "my" ask only. `staff` is the document
-    staff bit of `customer_scope_and_staff` (a linked salesperson is enforced AND staff).
+    staff bit of `customer_scope_and_staff` (a linked staff user is enforced AND staff).
     Read through the ONE core function `contact_customer_scope` (as a module attribute:
     the tests spy on it)."""
     return customer_scope_and_staff(db, contact_respond_id, space_id)[0]
@@ -608,12 +608,13 @@ def customer_scope_and_staff(
 ) -> tuple[dict[str, Any] | None, bool]:
     """`customer_scope`, plus whether the contact is staff for document scope, from the same
     one read: the staff bit is wanted for an unlinked contact too, whose scope is None
-    (V1-DOC-SCOPE). Staff here is an ACTIVE office access type OR a salesperson
-    (`contact_asker.is_salesperson_user`: an ACTIVE, not trashed CRM user holding the role
-    `salesperson`; a sales agent link grants nothing. V1-DOC-SCOPE-SALES crew rulings
-    14 Oct 2026): a salesperson sees any customer's documents by number, and a linked one
-    is not held to its links on the in-process number lookups (owner rule 11 Oct: a
-    customer link does not make a salesperson a dealer). `enforced` stays the core flag, so the customer-word gate, the
+    (V1-DOC-SCOPE). Staff here is an ACTIVE office access type OR a staff CRM user
+    (`contact_asker.is_staff_user`: an ACTIVE, not trashed CRM user linked to the contact
+    holding a staff role, any role but portal_user / guest; owner ruling 16 Oct 2026). A
+    dealer's portal login or a sales agent link grants nothing. Such a contact sees any
+    customer's documents by number, and a linked one is not held to its links on the
+    in-process number lookups (owner rule 11 Oct: a customer link does not make a staff
+    member a dealer). `enforced` stays the core flag, so the customer-word gate, the
     lists and the order routes keep a linked salesperson on its links as main does
     (crew ruling (a); tests/chatbot/test_chat_report_scope_leak.py)."""
     from app.services import contact_asker
@@ -630,7 +631,7 @@ def customer_scope_and_staff(
     if not contact_id:
         return None, False
     scope = scope_mod.contact_customer_scope(db, contact_id)
-    staff = scope.staff or contact_asker.is_salesperson_user(db, str(contact_id))
+    staff = scope.staff or contact_asker.is_staff_user(db, str(contact_id))
     if not scope.linked:
         return None, staff
     return {

@@ -2062,8 +2062,8 @@ def _reference_scope(
     no scope applies. Enforced dealers and any non-staff contact are held to their links (an
     unlinked dealer has none, so another customer's sales order is never offered).
     V1-DOC-SCOPE: for an SO / DO number staff is the tier OR the contact's `doc_staff` (an
-    active office access type or a salesperson, read with the scope by
-    `services.customer_scope_and_staff`). A linked salesperson is enforced yet `doc_staff`,
+    active office access type or a staff CRM user, read with the scope by
+    `services.customer_scope_and_staff`). A linked staff user is enforced yet `doc_staff`,
     and is not held to its links here; the tier alone never lifts an enforced scope. Called
     without `doc_staff` this is the tier rule (`ref_staff`), which a customer PO ref keeps
     (V1-DOC-SCOPE-SALES crew ruling, 14 Oct)."""
@@ -2121,7 +2121,7 @@ def _customer_scope_gate(
     selling (its own block, `_top_selling_dealer_scope`) are untouched.
 
     V1-DOC-SCOPE slice 3 (owner rule: unlinked != customer): an unlinked contact that is not
-    document staff (`unlinked_held`: not the tier, no office access type, not a salesperson)
+    document staff (`unlinked_held`: not the tier, no office access type, no staff CRM user)
     owns no customer, so a customer word it typed THIS message names another customer and
     refuses the turn the same way, with the no-link line, top selling included; any other
     unlinked contact is untouched. Before the resolver, so its customer picker never lists
@@ -5228,8 +5228,8 @@ def _run_stages_body(  # noqa: PLR0915
         # `customer_scope` on a domain a customer scope matters to (the order domain owns
         # every customer-scoped tool; purchase_order is screened for customer words) or on
         # one saying "my". Document staff is the operator-set tier OR `doc_staff` (an active
-        # office access type, or a salesperson: V1-DOC-SCOPE-SALES). Everyone else is held
-        # to its links for documents (a linked salesperson too, but for the in-process
+        # office access type, or a staff CRM user: V1-DOC-SCOPE-SALES). Everyone else is held
+        # to its links for documents (a linked staff user too, but for the in-process
         # number lookups), and a contact with none sees no customer document (owner rule:
         # unlinked != customer). A customer PO ref keeps the tier rule.
         doc_scope, doc_staff = business_services.customer_scope_and_staff(

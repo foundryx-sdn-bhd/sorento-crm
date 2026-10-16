@@ -2442,7 +2442,7 @@ def _without_foreign_sales_orders(
     V1-DOC-SCOPE: a delivery order (`customer_order`, an `orders` row) is held to the same
     rule, so an unlinked non-staff contact (`linked == []`) is offered no DO at all.
     V1-DOC-SCOPE-SALES: a customer PO ref match is held to `po_ref_linked` (the tier rule,
-    `ref_staff`; `linked` unless given), so a salesperson, document staff for SO / DO
+    `ref_staff`; `linked` unless given), so a staff CRM user, document staff for SO / DO
     numbers, never learns which SO another customer's PO ref is. None is no scope."""
     from app.models.order import Order, SalesOrder
     from app.services.chatbot import so_status
@@ -3805,7 +3805,7 @@ def make_tool_runner(
         # Both ALWAYS written, never only when true: `lane_out` starts as the parser's own
         # verdict, so a key the model emitted must not survive as a grant (V1-DOC-SCOPE).
         # `doc_staff`: may see any customer's DO / SO (the tier, an office access type or a
-        # salesperson, V1-DOC-SCOPE-SALES). `ref_staff` stays the tier alone (crew ruling 14 Oct).
+        # staff CRM user, V1-DOC-SCOPE-SALES). `ref_staff` stays the tier alone (crew ruling 14 Oct).
         ref_staff = is_staff_profile(profile)
         lane_out = {**lane_out, "ref_staff": ref_staff, "doc_staff": bool(ref_staff or doc_staff)}
         if po_words:
