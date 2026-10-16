@@ -28,8 +28,12 @@ asked by product code. "Breakdown line" = any line starting "• " that counts p
 - SSR-6. More than 50 qualifying products on another leg (incoming, product ask): no breakdown
   line; the first 50 products' rows are listed under the same header form.
 - SSR-7. A set ask with a word the set reader cannot use (misspelt or unknown value, e.g.
-  "sorento undrmount basin" with stock): no breakdown line; the set without that word is answered
-  as SSR-1 to SSR-5, and the reply ends (above the footer) with `Couldn't find: "undrmount".`
+  "sorento undrmount basin" with stock): no breakdown line; the reply keeps today's miss shape:
+  what was asked ("Here's what you want: Sorento undrmount wash basins"), then
+  `Couldn't find: "undrmount".` and the existing escalate offer where one applies. No rows: a
+  word nobody understood is never answered with a different set (captain ruling 16 Oct on the
+  coder's conflict report: listing the set without the word would answer 276 basins nobody
+  asked for and drop the escalate offer; the misspelt word itself is CHAT-GROUNDING-TYPO's fix).
 - SSR-8. "Nothing matched" replies (nothing qualifies, or no described product) keep today's text
   (out of scope, Q2 (c) not chosen).
 
