@@ -153,6 +153,7 @@ export function LineSplitPhone({
               onChange={(event) =>
                 handlers.onRemark(line, split, event.target.value)
               }
+              onBlur={handlers.onFieldBlur}
             />
           </div>
         );

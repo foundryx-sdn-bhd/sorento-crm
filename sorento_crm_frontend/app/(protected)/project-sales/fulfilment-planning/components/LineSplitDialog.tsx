@@ -218,15 +218,27 @@ export function LineSplitDialog({
   }, [open, undo]);
 
   /** One change, one Undo step; `message` toasts with an Undo action. */
+  const typingRef = React.useRef<string | null>(null);
   const apply = React.useCallback(
-    (edit: (lines: SplitLine[]) => SplitLine[], message?: string) => {
+    (
+      edit: (lines: SplitLine[]) => SplitLine[],
+      message?: string,
+      typingKey?: string,
+    ) => {
       const current = draftRef.current;
       if (!current) return false;
       const next = edit(current.lines);
       if (next === current.lines) return false;
+      // Typing in one field is ONE Undo step until it loses focus (UAC A7): the first
+      // keystroke records the step, the rest of the edit rides on it.
+      const sameEdit =
+        typingKey !== undefined && typingRef.current === typingKey;
+      typingRef.current = typingKey ?? null;
       commit({
         lines: next,
-        history: [...current.history, current.lines].slice(-HISTORY_LIMIT),
+        history: sameEdit
+          ? current.history
+          : [...current.history, current.lines].slice(-HISTORY_LIMIT),
       });
       if (message)
         toast(message, { action: { label: 'Undo', onClick: () => undo() } });
@@ -460,12 +472,26 @@ export function LineSplitDialog({
   const handlers: SplitRowHandlers = {
     actionsFor,
     onQty: (line, split, qty) =>
-      apply((current) => setQty(current, line.lineId, split.id, qty)),
-    onQtyBlur: removeEmpty,
+      apply(
+        (current) => setQty(current, line.lineId, split.id, qty),
+        undefined,
+        `qty:${split.id}`,
+      ),
+    onQtyBlur: (line) => {
+      typingRef.current = null;
+      removeEmpty(line);
+    },
+    onFieldBlur: () => {
+      typingRef.current = null;
+    },
     onDate: (line, split, date) =>
       apply((current) => setDate(current, line.lineId, split.id, date)),
     onRemark: (line, split, remark) =>
-      apply((current) => setRemark(current, line.lineId, split.id, remark)),
+      apply(
+        (current) => setRemark(current, line.lineId, split.id, remark),
+        undefined,
+        `remark:${split.id}`,
+      ),
     onAdd: (line) => {
       let id = '';
       apply((current) => {

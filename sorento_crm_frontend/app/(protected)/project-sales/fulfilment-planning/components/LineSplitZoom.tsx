@@ -197,6 +197,8 @@ export interface SplitRowHandlers {
   actionsFor: (line: SplitLine, split: SplitDraft) => SplitActions;
   onQty: (line: SplitLine, split: SplitDraft, qty: number) => void;
   onQtyBlur: (line: SplitLine) => void;
+  /** A typed field lost focus: the next keystroke starts a new Undo step. */
+  onFieldBlur: () => void;
   onDate: (line: SplitLine, split: SplitDraft, date: string) => void;
   onRemark: (line: SplitLine, split: SplitDraft, remark: string) => void;
   onAdd: (line: SplitLine) => void;
@@ -291,105 +293,103 @@ export function LineSplitZoom({
         onPairEnd={() => handlers.onPairEnd(line)}
       />
       <SplitSum line={line} />
-      <table className="w-full table-fixed border-collapse text-xs">
-        <colgroup>
-          <col style={{ width: 64 }} />
-          <col style={{ width: 128 }} />
-          <col />
-        </colgroup>
-        <thead>
-          <tr className="text-left text-muted-foreground">
-            <th className="border-b border-border px-1 py-1.5 text-right font-medium">
-              Qty
-            </th>
-            <th className="border-b border-border px-1 py-1.5 font-medium">
-              Date
-            </th>
-            <th className="border-b border-border px-1 py-1.5 font-medium">
-              Sits on / remark
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {splits.map((split) => {
-            const actions = handlers.actionsFor(line, split);
-            return (
-              <ContextMenu key={split.id}>
-                <ContextMenuTrigger asChild>
-                  <tr className="align-top hover:bg-muted/30">
-                    <td className="border-b border-border px-1 py-1.5">
-                      <QtyInput
-                        splitId={split.id}
-                        value={split.qty}
-                        onValue={(qty) => handlers.onQty(line, split, qty)}
-                        onBlur={() => handlers.onQtyBlur(line)}
-                        className="text-right tabular-nums"
-                      />
-                    </td>
-                    <td className="border-b border-border px-1 py-1.5">
-                      {split.isCancel ? (
-                        <div className="flex h-7 items-center">
-                          <ChangePill word="CANCEL" />
-                        </div>
-                      ) : (
-                        <>
-                          <Input
-                            type="date"
-                            variant="sm"
-                            aria-label="Date"
-                            value={split.deliveryDate ?? ''}
-                            onChange={(event) =>
-                              handlers.onDate(line, split, event.target.value)
-                            }
-                          />
-                          <div className="mt-1">
-                            <ChangePill word={changeOf(split, line)} />
-                          </div>
-                        </>
-                      )}
-                    </td>
-                    <td className="border-b border-border px-1 py-1.5">
-                      <div className="flex min-w-0 items-center gap-1">
-                        <SitsOnSelect
-                          split={split}
-                          origin={line}
-                          groupLines={groupLines}
-                          onChange={actions.sitsOn}
-                        />
-                        <SplitMenuButton
-                          split={split}
-                          origin={line}
-                          groupLines={groupLines}
-                          actions={actions}
-                        />
+      {/* A CSS grid, not a table: three fixed tracks (Qty, Date, Sits on / remark) that
+          fit the 350px pane and the phone without a horizontal scroller. */}
+      <div
+        className="grid grid-cols-[4rem_8rem_minmax(0,1fr)] text-xs"
+        role="list"
+      >
+        <div className="border-b border-border px-1 py-1.5 text-right font-medium text-muted-foreground">
+          Qty
+        </div>
+        <div className="border-b border-border px-1 py-1.5 font-medium text-muted-foreground">
+          Date
+        </div>
+        <div className="border-b border-border px-1 py-1.5 font-medium text-muted-foreground">
+          Sits on / remark
+        </div>
+        {splits.map((split) => {
+          const actions = handlers.actionsFor(line, split);
+          return (
+            <ContextMenu key={split.id}>
+              <ContextMenuTrigger asChild>
+                <div
+                  role="listitem"
+                  className="col-span-3 grid grid-cols-subgrid items-start hover:bg-muted/30"
+                >
+                  <div className="border-b border-border px-1 py-1.5">
+                    <QtyInput
+                      splitId={split.id}
+                      value={split.qty}
+                      onValue={(qty) => handlers.onQty(line, split, qty)}
+                      onBlur={() => handlers.onQtyBlur(line)}
+                      className="text-right tabular-nums"
+                    />
+                  </div>
+                  <div className="border-b border-border px-1 py-1.5">
+                    {split.isCancel ? (
+                      <div className="flex h-7 items-center">
+                        <ChangePill word="CANCEL" />
                       </div>
-                      <Input
-                        variant="sm"
-                        className="mt-1"
-                        aria-label="Remark"
-                        placeholder="Remark"
-                        value={split.remark}
-                        onChange={(event) =>
-                          handlers.onRemark(line, split, event.target.value)
-                        }
+                    ) : (
+                      <>
+                        <Input
+                          type="date"
+                          variant="sm"
+                          aria-label="Date"
+                          value={split.deliveryDate ?? ''}
+                          onChange={(event) =>
+                            handlers.onDate(line, split, event.target.value)
+                          }
+                        />
+                        <div className="mt-1">
+                          <ChangePill word={changeOf(split, line)} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div className="min-w-0 border-b border-border px-1 py-1.5">
+                    <div className="flex min-w-0 items-center gap-1">
+                      <SitsOnSelect
+                        split={split}
+                        origin={line}
+                        groupLines={groupLines}
+                        onChange={actions.sitsOn}
                       />
-                    </td>
-                  </tr>
-                </ContextMenuTrigger>
-                <ContextMenuContent className="min-w-60">
-                  <SplitMenuItems
-                    kind="context"
-                    split={split}
-                    origin={line}
-                    groupLines={groupLines}
-                    actions={actions}
-                  />
-                </ContextMenuContent>
-              </ContextMenu>
-            );
-          })}
-        </tbody>
-      </table>
+                      <SplitMenuButton
+                        split={split}
+                        origin={line}
+                        groupLines={groupLines}
+                        actions={actions}
+                      />
+                    </div>
+                    <Input
+                      variant="sm"
+                      className="mt-1"
+                      aria-label="Remark"
+                      placeholder="Remark"
+                      value={split.remark}
+                      onChange={(event) =>
+                        handlers.onRemark(line, split, event.target.value)
+                      }
+                      onBlur={handlers.onFieldBlur}
+                    />
+                  </div>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent className="min-w-60">
+                <SplitMenuItems
+                  kind="context"
+                  split={split}
+                  origin={line}
+                  groupLines={groupLines}
+                  actions={actions}
+                />
+              </ContextMenuContent>
+            </ContextMenu>
+          );
+        })}
+      </div>
       <div className="pt-2">
         <Button
           type="button"
