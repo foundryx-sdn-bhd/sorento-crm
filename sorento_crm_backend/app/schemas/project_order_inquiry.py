@@ -12,9 +12,16 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from app.services.uuid_path_param import UUID_PATTERN
 
@@ -1605,6 +1612,65 @@ class ParkedSendOut(BaseModel):
     emails_sent: int
     items_sent: int
     unresolved: List[ParkedUnresolvedOut] = []
+
+
+class HandoverResendIn(BaseModel):
+    """OI-RESEND-PURCHASING: the order inquiries to send to purchasing again."""
+
+    inquiry_ids: List[Annotated[str, StringConstraints(pattern=UUID_PATTERN)]] = Field(
+        ..., min_length=1, max_length=50
+    )
+    #: The ticked lines of ONE order inquiry; omitted means every open line.
+    row_ids: Optional[List[Annotated[str, StringConstraints(pattern=UUID_PATTERN)]]] = Field(
+        None, max_length=500
+    )
+
+
+class HandoverResendLineOut(BaseModel):
+    row_id: str
+    item_code: Optional[str] = None
+    qty: str
+    location: Optional[str] = None
+    delivery_date: Optional[date] = None
+    selected: bool
+    #: The newest earlier handover email of this OI that names the line's item code.
+    sent_at: Optional[datetime] = None
+
+
+class HandoverLastSentOut(BaseModel):
+    at: datetime
+    kind: Literal["automatic", "resent"]
+    by: Optional[str] = None
+
+
+class HandoverResendEmailOut(ParkedEmailOut):
+    inquiry_id: str
+    inquiry_no: Optional[str] = None
+    last_sent: Optional[HandoverLastSentOut] = None
+    #: The OI Excel the send attaches (names only; a preview stores nothing).
+    attachments: List[str] = []
+    #: Single-OI preview only: every open line, for the per-line ticks.
+    lines: List[HandoverResendLineOut] = []
+
+
+class HandoverResendSkipOut(BaseModel):
+    inquiry_id: str
+    inquiry_no: Optional[str] = None
+    reason: Literal["nothing_open", "no_recipient", "failed"]
+
+
+class HandoverResendPreviewOut(BaseModel):
+    emails: List[HandoverResendEmailOut] = []
+    inquiry_total: int = 0
+    unresolved: List[ParkedUnresolvedOut] = []
+    skipped: List[HandoverResendSkipOut] = []
+    automation_enabled: bool
+
+
+class HandoverResendSendOut(BaseModel):
+    emails_sent: int
+    items_sent: int
+    skipped: List[HandoverResendSkipOut] = []
 
 
 class ReserveStatusSummaryOut(BaseModel):
