@@ -110,12 +110,17 @@ function NumericValueCell({
   onCancel: () => void;
 }) {
   const [error, setError] = useState<string | undefined>(undefined);
+  // Once a sentence has been shown it follows the typing in both directions.
+  const [follow, setFollow] = useState(false);
   return (
     <NumberInput
       autoFocus
       defaultValue={initial}
       error={error}
-      onChange={() => setError(undefined)}
+      // A shown sentence follows the typing and goes only when the figure is usable.
+      onChange={(e) => {
+        if (follow) setError(numberFieldError(e.target.value));
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') onCancel();
       }}
@@ -123,6 +128,7 @@ function NumericValueCell({
         const message = numberFieldError(e.target.value);
         if (message) {
           setError(message);
+          setFollow(true);
           return;
         }
         onCommit(parseNumberDraft(e.target.value) as number);

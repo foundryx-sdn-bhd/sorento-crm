@@ -26,7 +26,7 @@
  * designer, one click away through the same primary CTA.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -603,9 +603,17 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
   // A typed price that is not usable is not saved and not rewritten: the box keeps it and says why.
   const [manualPriceError, setManualPriceError] = useState<Record<string, string | undefined>>({});
 
+  const manualPriceFollowRef = useRef<Record<string, boolean>>({});
+
   const setManualLinePrice = useCallback((lineId: string, value: string) => {
     setManualPriceDraft((prev) => ({ ...prev, [lineId]: value }));
-    setManualPriceError((prev) => (prev[lineId] ? { ...prev, [lineId]: undefined } : prev));
+    // Once a sentence has been shown it follows the typing in both directions.
+    if (manualPriceFollowRef.current[lineId]) {
+      setManualPriceError((prev) => ({
+        ...prev,
+        [lineId]: numberFieldError(value, { min: 0.01, optional: true }),
+      }));
+    }
   }, []);
 
   const commitManualLinePrice = useCallback(
@@ -614,6 +622,7 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
       // Blank clears the override (no manual price); anything else must be a price.
       const message = numberFieldError(draft, { min: 0.01, optional: true });
       if (message) {
+        manualPriceFollowRef.current[lineId] = true;
         setManualPriceError((prev) => ({ ...prev, [lineId]: message }));
         return;
       }
