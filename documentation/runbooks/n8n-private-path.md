@@ -169,8 +169,16 @@ manager's file store), never on a laptop or in any git repo. Delete it once step
 Re-check, from inside that folder (each line prints the workflow name, its `active` flag and the
 node name):
 
+First run this line on its own, then paste `<CRM_ORIGIN>` and press Enter (it stays off the
+screen and out of shell history):
+
 ```bash
-read -r CRM_ORIGIN && export CRM_ORIGIN    # paste <CRM_ORIGIN>, Enter (keeps it out of shell history)
+read -rs CRM_ORIGIN && export CRM_ORIGIN
+```
+
+Then paste the check:
+
+```bash
 python3 -I - <<'PY'
 import glob, json, os
 ORIGIN = os.environ["CRM_ORIGIN"]
@@ -206,7 +214,8 @@ PY
   No workflow names port 6432 or 5432 directly (the DB is reached only through the credential),
   and about 29 workflows call `<CRM_DOMAIN>`, which step 3 moves with no edit.
 - Any extra `names-origin`, `mcp-client`, `ignore-ssl`, `db-port` or `sorento-crm-db` line that
-  the table does not have: add it to your step 4 list (same edit as its row), and tell crew on the PR
+  the table does not have: add it to your step 4 list (same edit as its row), and tell crew on the
+  PR
   (workflow and node name only, never the resolved URL).
   Test copies on credential `n8n_test-db` are not part of this runbook.
 - Rollback: nothing to roll back. Prefer the field rollbacks in 4.1 to 4.4. As a last resort only,
@@ -624,7 +633,8 @@ Then tidy the two leftovers that named the n8n box's public address:
 **Rollback order once step 6 is done.** Step 3 and steps 4.1 / 4.2 roll back to `<CRM_ORIGIN>`
 (4.3 and 4.4 never do), which only works while the public rules exist. So after step 6, a
 rollback of step 3, 4.1 or 4.2 starts with step 6's rollback. Prefer fixing the tailnet
-(`tailscale status`, `tailscale ping`) over reopening 6432 / 8765: reopening brings back the clear-text, login-less MCP port on the internet.
+(`tailscale status`, `tailscale ping`) over reopening 6432 / 8765: reopening brings back the
+clear-text, login-less MCP port on the internet.
 
 Also, once `family-fetch` (step 4.3) no longer names `<CRM_ORIGIN>`, edge step 5.4 does not need its
 "443 from `<N8N_HOST>`" rule either.
