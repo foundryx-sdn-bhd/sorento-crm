@@ -72,7 +72,6 @@ export function LineSplitPhone({
         </div>
         <SplitBar
           line={line}
-          compact
           onPairStart={handlers.onPairStart}
           onPair={(first, second, qty) =>
             handlers.onPair(line, first, second, qty)

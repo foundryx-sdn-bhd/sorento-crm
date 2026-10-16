@@ -42,25 +42,47 @@ export function byDate(a: SplitDraft, b: SplitDraft): number {
   return x < y ? -1 : x > y ? 1 : 0;
 }
 
+/** The rendered width of an element, kept current by a ResizeObserver; 0 until measured. */
+function useWidth(ref: React.RefObject<HTMLElement | null>): number {
+  const [width, setWidth] = React.useState(0);
+  React.useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return undefined;
+    setWidth(element.getBoundingClientRect().width);
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const next = entries[0]?.contentRect.width ?? 0;
+      setWidth((current) => (Math.abs(current - next) < 1 ? current : next));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
+}
+
+/** The pixels a bar label needs at `text-2xs` (about 6.5px a character, plus padding). */
+function labelPx(text: string): number {
+  return text.length * 6.5 + 8;
+}
+
 /**
  * One segment per split (by date) and a gap segment while the splits fall short; the dark
  * dividers between two splits move qty between them (pointer, touch, or Left/Right, Shift 10).
  */
 export function SplitBar({
   line,
-  compact = false,
   onPairStart,
   onPair,
   onPairEnd,
 }: {
   line: SplitLine;
-  compact?: boolean;
   /** A divider drag begins (one Undo step for the whole drag). */
   onPairStart: () => void;
   onPair: (firstId: string, secondId: string, firstQty: number) => void;
   onPairEnd: () => void;
 }) {
   const barRef = React.useRef<HTMLDivElement>(null);
+  const barWidth = useWidth(barRef);
   const splits = splitsOf(line).slice().sort(byDate);
   const gap = gapOf(line);
   const total = splits.reduce((sum, split) => sum + (split.qty || 0), 0);
@@ -112,29 +134,31 @@ export function SplitBar({
       {splits.map((split) => {
         const width = ((split.qty || 0) / scale) * 100;
         const word = changeOf(split, line);
-        const text =
-          width > (compact ? 16 : 11)
-            ? `${split.qty}${width > (compact ? 32 : 24) && split.deliveryDate ? ` · ${formatSplitDate(split.deliveryDate)}` : ''}`
-            : width > 4
-              ? String(split.qty)
-              : '';
+        const qty = String(split.qty);
+        const withDate = split.deliveryDate
+          ? `${qty} · ${formatSplitDate(split.deliveryDate)}`
+          : qty;
+        // The date only when the segment's real width holds it; the qty always leads, so a
+        // narrow segment cuts its tail, never its qty (review round 1: "67 · 20/11/2029").
+        const px = (width / 100) * barWidth;
+        const text = px >= labelPx(withDate) ? withDate : qty;
         return (
           <div
             key={split.id}
             className={cn(
-              'flex h-full items-center justify-center overflow-hidden border-r-2 border-background text-2xs font-medium whitespace-nowrap first:rounded-l-md last:rounded-r-md last:border-r-0',
+              'flex h-full min-w-0 items-center justify-start overflow-hidden border-r-2 border-background px-1 text-2xs font-medium whitespace-nowrap first:rounded-l-md last:rounded-r-md last:border-r-0',
               SEGMENT[word],
             )}
             style={{ width: `${width}%` }}
             title={`${split.qty} ${word === 'CANCEL' ? 'CANCEL BALANCE' : word} ${formatSplitDate(split.deliveryDate)}`}
           >
-            {text}
+            <span className="truncate">{text}</span>
           </div>
         );
       })}
       {gap > 0 ? (
         <div
-          className="flex h-full items-center justify-center overflow-hidden rounded-r-md border border-dashed border-destructive/40 bg-destructive/10 text-2xs font-medium text-destructive"
+          className="flex h-full min-w-0 items-center justify-start overflow-hidden rounded-r-md border border-dashed border-destructive/40 bg-destructive/10 px-1 text-2xs font-medium whitespace-nowrap text-destructive"
           style={{ width: `${(gap / scale) * 100}%` }}
         >
           {`Gap ${gap}`}
