@@ -497,6 +497,8 @@ class LineSplitService:
                 old_values={"lines": before},
                 new_values={"lines": after},
                 user_id=actor_user_id,
+                # The order's company, so only its own admins list the row.
+                company_id=str(order.company_id) if order.company_id else None,
                 root_entity_type="project_sales_orders",
                 root_entity_id=str(order.id),
             )
