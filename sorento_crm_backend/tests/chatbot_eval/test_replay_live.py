@@ -162,3 +162,22 @@ def test_cli_live_writes_the_file_and_prints_no_message_text(tmp_path, session_f
     assert len(rows) == 2 and all("turn" in r for r in rows)
     shown = (cap.out + cap.err).lower()
     assert VARIANT not in shown and "price of the white" not in shown
+
+
+def test_output_row_carries_every_tool_call_with_its_full_result_and_restores_the_client(session_factory, recorded, live_env, monkeypatch):
+    big = json.dumps({"ok": True, "items": [{"code": "SRTWC8517", "note": "x" * 9000, "qty": 123456}]})
+    calls = []
+
+    def big_tool(self, name, arguments):
+        calls.append((name, dict(arguments)))
+        return big
+
+    monkeypatch.setattr(MCPRuntimeClient, "call_tool", big_tool)
+    out = go(session_factory, recorded)[0]
+    assert calls, "the test-level MCP stub never saw a call (the capture must be pass-through)"
+    results = out["tool_results"]
+    assert [r["name"] for r in results] == [c[0] for c in calls]
+    assert [r["args"] for r in results] == [c[1] for c in calls]
+    text = results[0]["result"] if isinstance(results[0]["result"], str) else json.dumps(results[0]["result"])
+    assert len(text) > 8192 and "123456" in text and text.count("x") >= 9000, "the result was capped"
+    assert MCPRuntimeClient.call_tool is big_tool, "the capture wrapper was left installed"

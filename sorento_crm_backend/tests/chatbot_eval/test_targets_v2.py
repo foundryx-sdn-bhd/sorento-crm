@@ -189,3 +189,21 @@ def test_a_missing_apply_payload_falls_back_without_crashing():
     r = row2(apply_omitted=True, mem_after=[prod("SRT-A100", UA)], tools=[TOOL_A])
     check(grade_turn(r, item("code_lookup", **GOLD_CL)), True)
     assert made_up_facts(r) == []
+
+
+def test_a_number_only_in_tool_results_is_neither_made_up_nor_unverifiable():
+    import json
+
+    r = row2(reply="SRTA100 has 4321 pcs.", tools=[TOOL_A], truncated=True)
+    assert made_up_facts(r) and all(f.startswith("unverifiable:") for f in made_up_facts(r))   # control: no full result
+    r["tool_results"] = [{"name": "crm_inventory_list", "args": {"product_ids": [UA]},
+                          "result": json.dumps({"ok": True, "items": [{"code": "SRTA100", "qty": 4321}]})}]
+    assert made_up_facts(r) == []
+
+
+def test_a_number_missing_from_tool_results_is_still_made_up():
+    import json
+
+    r = row2(reply="SRTA100 has 9999 pcs.", tools=[TOOL_A], truncated=True)
+    r["tool_results"] = [{"name": "crm_inventory_list", "args": {}, "result": json.dumps({"qty": 4321})}]
+    assert any("9999" in f for f in made_up_facts(r))
