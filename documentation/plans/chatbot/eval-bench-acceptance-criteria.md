@@ -28,8 +28,9 @@ synthetic rows only.
   recorded parses through both worktrees and prints one line per diff: `case_id turn_id stage` (no message or reply
   text), then counts per stage; exit 0 when every diff is listed in `--intended`, 1 otherwise.
 - AC2.2 Base and head = the same worktree gives 0 diffs (determinism).
-- AC2.3 The F4 pair (base = main before #1737, head = #1737 head) reports grounding diffs on cand-0174, cand-0108,
-  cand-0127.
+- AC2.3 The F4 pair (base = main before #1737 `bb93cb626`, head = merged #1737 `48fbe8f3d`) reports grounding diffs
+  on cand-0174 and cand-0127, the merged revision's diffs in the scratch replay (`f4b-rep2`); the scratch cand-0108
+  diff came from an intermediate F4 revision (`f4rep3`) and must not appear.
 - AC2.4 The DB the replay reads is unchanged afterwards (`chatbot.turns` count and max `created_at` equal before and
   after).
 - AC2.5 A full replay of both arms finishes in under 5 minutes on the Mac mini with at most 2 worker processes.
