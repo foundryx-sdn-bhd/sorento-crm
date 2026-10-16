@@ -60,4 +60,8 @@ asked by product code. "Breakdown line" = any line starting "• " that counts p
 
 - SSR-13. No UUID or internal id in any reply; no " · " separator.
 - SSR-14. The header count equals the number of distinct product codes the rows show (or the
-  total when SSR-5 applies, with "showing 1 to N" equal to the codes shown).
+  total when SSR-5 applies, with "showing 1 to N" equal to the codes shown). Every continuation
+  page ("more", a named count after a partial list) says "(<total>, showing X to Y)", the last
+  page included; a bare "(<total>)" only when the whole set is on one page. Pages step by
+  product CODE: a code listed for two companies (SSR-11) is one step, so no code repeats or is
+  skipped across pages (reviewer blocker, 16 Oct).
