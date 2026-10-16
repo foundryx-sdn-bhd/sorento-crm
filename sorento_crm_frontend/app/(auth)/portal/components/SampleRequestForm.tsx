@@ -62,6 +62,7 @@ import {
   submitSampleRequest,
   updateSampleRequest,
 } from '../lib/sample-request-service';
+import { formatDateInMalaysia } from '@/lib/helpers';
 import { AsyncCombobox } from './AsyncCombobox';
 
 function Segmented<T extends string>({
@@ -360,7 +361,7 @@ export default function SampleRequestForm({
           </div>
           {r.created_at && (
             <p className="text-xs text-muted-foreground">
-              Created {new Date(r.created_at).toLocaleDateString()}
+              Created {formatDateInMalaysia(r.created_at)}
             </p>
           )}
         </div>

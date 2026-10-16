@@ -7,7 +7,7 @@
  */
 import React, { Suspense } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 
 const replace = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -45,13 +45,15 @@ describe('impersonated /portal (no slug) reaches the sample request form', () =>
     const id = '3f1c2a9e-0b7d-4c55-9a1e-2d6f8b0c4e11';
     expect(portalDetailPath('sample_request', id, null)).toBe(`/portal/sample_request/${id}`);
     const { default: DetailPage } = await import('./[id]/page');
-    render(
-      <Suspense fallback={null}>
-        <DetailPage params={Promise.resolve({ id: `${id}.` })} />
-      </Suspense>,
-    );
-    expect((await screen.findByTestId('sample-request-form')).textContent).toContain(
-      `edit:${id}`,
+    await act(async () => {
+      render(
+        <Suspense fallback={null}>
+          <DetailPage params={Promise.resolve({ id: `${id}.` })} />
+        </Suspense>,
+      );
+    });
+    expect((await screen.findByTestId('sample-request-form')).textContent).toBe(
+      `edit:${id}|slug:`,
     );
   });
 
