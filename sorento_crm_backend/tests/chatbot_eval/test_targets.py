@@ -234,3 +234,52 @@ def test_summarise_meets_only_when_every_run_is_clean():
     s2 = summarise(dirty, bars)
     assert s2["meets"] is False
     assert s2["leaks"] == 1
+
+
+# ------------------------------------------------------------------ ideas follow-up (G1) and growth items
+def idea_row(*, before, patch, nested=False, reply="Noted, anything else on that?"):
+    sv = {"variables": {"ideation": before}} if nested else {"ideation": before}
+    r = row(reply=reply, decision="answer", domains=("ideate",))
+    r["branch_kind"] = "ideate"
+    r["trace"].insert(0, {"stage": "received", "status": "ok", "facts": {}, "raw": {"session_vars": sv}})
+    r["trace"].append({"stage": "remembered", "status": "ok", "facts": {}, "raw": {"session_patch": patch}})
+    return r
+
+
+HELD = {"id": "IDEA-SYN-1", "title": "synthetic towel rail idea"}
+
+
+def test_ideas_followup_pass_when_the_held_idea_is_untouched_or_reset_to_itself():
+    it = item("followup", "answer", idea_ref="IDEA-SYN-1")
+    check(grade_turn(idea_row(before=HELD, patch={}), it), True)
+    check(grade_turn(idea_row(before=HELD, patch={"ideation": HELD}), it), True)
+    check(grade_turn(idea_row(before=HELD, patch={}, nested=True), it), True)
+
+
+def test_ideas_followup_fails_when_the_patch_clears_the_held_idea():
+    it = item("followup", "answer", idea_ref="IDEA-SYN-1")
+    check(grade_turn(idea_row(before=HELD, patch={"ideation": None}), it), False, "idea")
+    r = grade_turn(idea_row(before=HELD, patch={"ideation": None}), it)
+    assert "drop" in r["reason"].lower()
+
+
+def test_ideas_followup_fails_when_the_patch_replaces_the_idea():
+    other = {"id": "IDEA-SYN-2", "title": "synthetic other idea"}
+    r = grade_turn(idea_row(before=HELD, patch={"ideation": other}), item("followup", "answer", idea_ref="IDEA-SYN-1"))
+    check(r, False)
+    assert "drop" in r["reason"].lower()
+
+
+def test_growth_items_are_reported_apart_and_never_count_toward_meets():
+    bars = {"followup": 0.9}
+    runs = []
+    for _ in range(3):
+        run = [_res("followup", "answer", True) for _ in range(10)]
+        growth = _res("followup", "answer", False)
+        growth["growth"] = True
+        runs.append(run + [growth])
+    s = summarise(runs, bars)
+    assert s["meets"] is True
+    assert s["slices"]["followup"]["n"] == 10 and s["slices"]["followup"]["rate"] == 1.0
+    g = s["growth"]["followup"]
+    assert g["n"] == 1 and g["rate"] == 0.0
