@@ -321,7 +321,13 @@ class OrderLineBase(BaseModel):
 
 
 class OrderLineCreate(OrderLineBase):
-    pass
+    @field_validator("quantity")
+    @classmethod
+    def _quantity_not_null(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        # order_lines.quantity is NOT NULL: an explicit null can only become 0 or a 500.
+        if v is None:
+            raise ValueError("Quantity cannot be blank.")
+        return v
 
 
 class OrderLineUpdate(BaseModel):
@@ -332,6 +338,13 @@ class OrderLineUpdate(BaseModel):
     tax: Optional[Decimal] = None
     total_excluding_tax: Optional[Decimal] = None
     total_including_tax: Optional[Decimal] = None
+
+    @field_validator("quantity")
+    @classmethod
+    def _quantity_not_null(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is None:
+            raise ValueError("Quantity cannot be blank.")
+        return v
 
 
 class ProductSimpleRef(BaseModel):
