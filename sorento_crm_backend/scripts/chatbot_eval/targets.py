@@ -147,9 +147,28 @@ def _lookup_subjects(row: dict[str, Any]) -> set[str]:
     return out
 
 
+def _tool_subjects(row: dict[str, Any]) -> set[str]:
+    """Items the named tools were called for: product ids mapped through uuid_codes / the state lists, plus literal
+    code-like args (scope_terms, product_code(s)); other args (dates, space ids) are not subjects."""
+    ids = _uuid_map(row)
+    out: set[str] = set()
+    for t in _tools(row):
+        args = t.get("args") or {}
+        for name in ("product_ids", "product_id", "scope_terms", "product_code", "product_codes"):
+            for text in _strings(args.get(name)):
+                if text.lower() in ids:
+                    out.add(ids[text.lower()])
+                elif re.search(r"\d", text) and not UUID_RE.fullmatch(text):
+                    out.add(_key(text))
+    return out
+
+
 def _subject_after(row: dict[str, Any]) -> set[str]:
     codes = _codes_of(_mem_focus(row, "after").get("products"))
-    return codes or _codes_of((_kind(row, "state").get("focus") or {}).get("products")) or _lookup_subjects(row)
+    # the first source that names anything wins; the tool args are the last resort (a lookup that answered with
+    # entities of its own outranks the literal terms the tool was called with)
+    return (codes or _codes_of((_kind(row, "state").get("focus") or {}).get("products"))
+            or _lookup_subjects(row) or _tool_subjects(row))
 
 
 def _looked_up_envelopes(row: dict[str, Any]) -> list[dict[str, Any]]:
