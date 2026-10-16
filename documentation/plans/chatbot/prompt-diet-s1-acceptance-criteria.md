@@ -12,6 +12,13 @@ but the model emits `reference_target` anyway (107 "dym" verdicts in `tests/chat
 missing commas; AC8 pins the exact new sentence; AC13 becomes "at least 5.5% shorter". v110 is voided; v111 is the
 stage 1 text.
 
+**Re-scope 3 (crew, 16 Oct, after the v111 hand test):** v111 read the Malay "belum DO" (no DO yet) as `outstanding`
+instead of `so_outstanding` because #1574 cut C19a removed v94:819 ("belum DO", "belum keluar DO", "还没出DO",
+"未出DO" -> "so_outstanding"). Stage 1 now leaves out every #1574 cut that removes a non-English word deciding between
+neighbouring delivery-state values (outstanding / so_outstanding / do_outstanding / delivered, and the ranking basis
+delivered / ordered / outstanding): C15b, C15c, C19a, C19b, C19c, C33c, C33d, C41e. AC3a below. v112 is the stage 1
+text.
+
 Plan: `PLAN-prompt-diet-audit-16oct.md` (Stage 1 section). Base text: dev v94 (= prod v63 text), stored verbatim
 as `sorento_crm_backend/alembic/data/chatbot_semantic_parser.v94.txt` and never edited. Output:
 `sorento_crm_backend/alembic/data/chatbot_semantic_parser.diet-s1-20261016.txt`, built by
@@ -26,6 +33,10 @@ as `sorento_crm_backend/alembic/data/chatbot_semantic_parser.v94.txt` and never 
   longer match (C05 C23 C25 C34 C39a C39b C42a C42b C43a C43c C43d C44 C45 C47c C47d C53a C53b C57). A
   non-skipped cut that fails to match raises; a skipped cut that starts matching raises too (drift is loud).
   The cut list is imported, not copied.
+- AC3a Restored on purpose: `RESTORED_ABLATION_IDS` is exactly {C15b, C15c, C19a, C19b, C19c, C33c, C33d, C41e}. None of
+  them is applied; each one's `old` text from v94 is present in the output unchanged (for example v94:819
+  `"no DO yet", "belum DO", "belum keluar DO", "还没出DO", "未出DO" -> "so_outstanding"`). A restored id that no longer
+  matches v94 exactly once raises (drift is loud). The other 92 cuts (100 minus 8) still apply.
 
 ## Text (the built output)
 
@@ -62,7 +73,7 @@ as `sorento_crm_backend/alembic/data/chatbot_semantic_parser.v94.txt` and never 
   (`app/services/chatbot/head/parser.py`) that v94 quotes as `"key"` is still quoted in the output. (Amended 16 Oct:
   10 required keys, e.g. sort_by, sub_asks, find, are never quoted in v94; they reach the model only through the
   JSON schema, so they are out of scope here.)
-- AC13 The output is at least 5.5% shorter than v94 in characters (scope amended twice, 16 Oct).
+- AC13 The output is at least 5% shorter than v94 in characters (scope amended three times, 16 Oct).
 - AC14 No em-dash or en-dash is added by any stage-1 edit's `new` text.
 
 ## Publish
