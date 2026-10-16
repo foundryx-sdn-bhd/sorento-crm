@@ -1,6 +1,11 @@
 # PLAN: PROMPT-DIET audit of the production parser prompt (16 Oct 2026)
 
-Status: Deliverable 1 in progress (scout only, no code, no LLM spend). Track: docs only (no product code).
+Status: Deliverable 1 DONE, filed for owner annotation (`PROMPT-DIET-16oct.html`); stages wait on the owner's
+annotations. Track: docs only (no product code, no LLM spend).
+
+Result: 91 sections, 35,585 tokens today, about 20,435 after the proposed five stages (-43%). Two text bugs
+(v94:891-893 vs :900; missing comma v94:765), one dead section (REFERENCE TARGET), two stored-only keys
+(`contains_flyer`, `correction`), policy block drifted from the DB (`has_massage`, `purchase_order`).
 
 Lane: PROMPT-DIET (16 Oct), branch `crew/prompt-diet-16oct` off origin/main, its own draft PR. Brief:
 `crew/state/briefs/PROMPT-DIET.md`. The older branch `crew/prompt-diet` (draft PR #1568, the 10-11 Oct

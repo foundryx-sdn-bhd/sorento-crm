@@ -1,0 +1,1590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parser prompt diet</title>
+<style>
+:root{--bg:#ffffff;--fg:#18181b;--muted:#f4f4f5;--muted-fg:#71717a;--border:#e4e4e7;
+--primary:#1b84ff;--primary-soft:#eef5ff;--warn:#b07d00;--warn-soft:#fff8dd;--code:#f4f4f5;
+--keep:#17803d;--keep-soft:#e7f7ec;--shrink:#b07d00;--shrink-soft:#fff8dd;--dyn:#1b84ff;--dyn-soft:#eef5ff;
+--ctx:#7c3aed;--ctx-soft:#f3edff;--del:#c0262d;--del-soft:#fdecec}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0b0d;--fg:#f4f4f5;--muted:#18181b;
+--muted-fg:#a1a1aa;--border:#2e2e33;--primary:#4c9dff;--primary-soft:#0f2742;--warn:#f6b100;--warn-soft:#332600;--code:#18181b;
+--keep:#4ade80;--keep-soft:#0f2a18;--shrink:#f6b100;--shrink-soft:#332600;--dyn:#4c9dff;--dyn-soft:#0f2742;
+--ctx:#b794ff;--ctx-soft:#251a3d;--del:#ff6b6b;--del-soft:#3a1214}}
+:root[data-theme="dark"]{--bg:#0b0b0d;--fg:#f4f4f5;--muted:#18181b;--muted-fg:#a1a1aa;--border:#2e2e33;
+--primary:#4c9dff;--primary-soft:#0f2742;--warn:#f6b100;--warn-soft:#332600;--code:#18181b;
+--keep:#4ade80;--keep-soft:#0f2a18;--shrink:#f6b100;--shrink-soft:#332600;--dyn:#4c9dff;--dyn-soft:#0f2742;
+--ctx:#b794ff;--ctx-soft:#251a3d;--del:#ff6b6b;--del-soft:#3a1214}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{display:grid;grid-template-columns:220px minmax(0,1fr);max-width:1600px;margin:0 auto}
+nav{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding:28px 16px;border-right:1px solid var(--border);font-size:13px}
+nav b{display:block;margin-bottom:8px;color:var(--muted-fg);font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:11px}
+nav ol{margin:0;padding-left:0;list-style:none}nav li{margin:4px 0}nav a{color:var(--fg);text-decoration:none}nav a:hover{color:var(--primary)}
+main{padding:28px 32px 80px;min-width:0}
+h1{font-size:26px;line-height:1.25;margin:0 0 12px}
+h2{font-size:20px;margin:44px 0 10px;padding-top:12px;border-top:1px solid var(--border)}
+h3{font-size:16px;margin:26px 0 8px}
+p,li{max-width:86ch}
+code{font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:1px 4px;border-radius:4px;overflow-wrap:anywhere}
+.tw{overflow-x:auto;margin:12px 0;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;font-size:13px;min-width:100%}
+th,td{border:1px solid var(--border);padding:6px 8px;text-align:left;vertical-align:top}
+th{background:var(--muted);font-weight:600;position:sticky;top:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.inv{table-layout:fixed;width:1960px;min-width:1960px}
+.inv td.rd{font-size:12px}
+.inv td.rd code{white-space:nowrap;font-size:11.5px}
+.inv td.rd div{margin:2px 0}
+tr.bn td{background:var(--muted)}
+.m{color:var(--muted-fg);font-size:12px}
+.note{margin-top:4px;font-size:12px;color:var(--muted-fg)}
+.q{margin-top:4px;font-size:12px;font-style:italic;color:var(--muted-fg)}
+.risk{margin-top:4px;font-size:12px;color:var(--muted-fg)}
+.ids{font:11.5px/1.5 ui-monospace,Menlo,monospace;word-break:break-word}
+details summary{cursor:pointer;color:var(--primary)}
+.tag{display:inline-block;font-size:10.5px;font-weight:600;padding:0 5px;border-radius:4px;border:1px solid var(--border);white-space:nowrap}
+.tag.dr{color:var(--keep);background:var(--keep-soft);border-color:transparent}
+.tag.wk{color:var(--shrink);background:var(--shrink-soft);border-color:transparent}
+.tag.pt{color:var(--del);background:var(--del-soft);border-color:transparent}
+.v{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:5px;white-space:nowrap}
+.v.keep{color:var(--keep);background:var(--keep-soft)}
+.v.shrink{color:var(--shrink);background:var(--shrink-soft)}
+.v.dyn{color:var(--dyn);background:var(--dyn-soft)}
+.v.ctx{color:var(--ctx);background:var(--ctx-soft)}
+.v.del{color:var(--del);background:var(--del-soft)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0;max-width:900px}
+.kpi{border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.kpi .k{font-size:12px;color:var(--muted-fg)}
+.kpi .n{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.call{border-left:3px solid var(--warn);background:var(--warn-soft);padding:10px 14px;border-radius:6px;margin:14px 0;max-width:86ch}
+@media (max-width:820px){.wrap{grid-template-columns:minmax(0,1fr)}nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--border);padding:16px}main{padding:20px 16px 60px}}
+@media print{nav{display:none}.wrap{display:block}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav><b>Contents</b><ol>
+<li><a href="#short">1. The short version</a></li>
+<li><a href="#doubts">2. Your doubts, answered</a></li>
+<li><a href="#state">3. What the engine already knows</a></li>
+<li><a href="#lists">4. Lists that live in the DB</a></li>
+<li><a href="#inventory">5. Section inventory (91)</a></li>
+<li><a href="#stages">6. Staged plan and cost</a></li>
+<li><a href="#questions">7. Questions for you</a></li>
+<li><a href="#lessons">8. What 11 Oct taught us</a></li>
+<li><a href="#method">9. Method and caveats</a></li>
+</ol></nav>
+<main>
+<h1>PROMPT-DIET: the production parser prompt, section by section (16 Oct 2026)</h1>
+<p>Status: audit only. No code, no prompt version published, no LLM calls. Lane PROMPT-DIET, branch
+<code>crew/prompt-diet-16oct</code>, draft PR #1739. Code cited at <code>origin/main</code> a16c9533b;
+paths under <code>chatbot/</code> mean <code>sorento_crm_backend/app/services/chatbot/</code>.</p>
+<p>Text audited: dev <code>sorento_cagent_stack</code> parser version 94. Version 94 is dev version 91
+(recorded on dev as "PROD v52 plain") plus one line, <code>{{find_filters}}</code> at v94:1847, which is what
+prod v63 is. Crew lanes never read prod or the prod copy, so the prod row itself was not opened. 1,849 lines,
+140,897 characters, <b>35,585 tokens</b> (o200k_base, before the two variables render).</p>
+
+<h2 id="short">1. The short version</h2>
+<div class="kpis">
+<div class="kpi"><div class="k">Tokens today</div><div class="n">35,585</div></div>
+<div class="kpi"><div class="k">After the proposed diet</div><div class="n">20,435</div></div>
+<div class="kpi"><div class="k">Cut</div><div class="n">15,150 (43%)</div></div>
+<div class="kpi"><div class="k">Sections conditional on the last turn</div><div class="n">32 / 91</div></div>
+<div class="kpi"><div class="k">Sections with 0 TRAIN items</div><div class="n">19</div></div>
+</div>
+<ul>
+<li><b>You are right that it is bloated, but mostly by repetition, not by dead rules.</b> Every output key has a
+code reader except two that are only stored (<code>contains_flyer</code>, <code>correction</code>). The bulk comes from
+the same rule told 3 to 5 times: escalation replies (sections 4, 31, 49, 90), the order report kinds (32, 41, 42, 55,
+57, 67, 78, each with its own "order_status X, domain order, dates, narrowing" block), quantity (24, 61, 62, 73, 74),
+broaden (12, 21, 23, 37, 86), never-an-entity (18, 19, 20), and 10 banner sections that do little more than announce the next one.</li>
+<li><b>Two bugs in the text.</b> Section 43 says a typed option code gives "reference_positions AND the code in
+entities" (v94:891-893), then "Never emit BOTH" (v94:900). The OUTPUT block is missing a comma after
+<code>requested_attributes</code> (v94:765).</li>
+<li><b>One dead section.</b> REFERENCE TARGET (29) only applies when a "[N did-you-mean suggestions active]" marker is
+present; no code prints that marker (it survives only in the old in-code prompt constant,
+<code>chatbot_parser_prompt.py:684</code>).</li>
+<li><b>Lists already exist as variables.</b> The 3.6k-token policy block is a snapshot pasted in at publish time
+(<code>chatbot_parser_prompt.py:1220</code>), and has already drifted (the <code>has_massage</code> spec created 16 Oct is
+missing; the domain list in section 6 lacks <code>purchase_order</code>). <code>wording_layer()</code> already swaps it
+for <code>{{domains_detail}}</code>, <code>{{entity_kinds_detail}}</code>, <code>{{specs}}</code>
+(<code>chatbot_prompt_vars.py:684-693</code>); access levels, teams, agents and domains have variables too
+(<code>chatbot_prompt_vars.py:312-394</code>).</li>
+<li><b>Expect quality and upkeep, not money.</b> The 11 Oct measurements (#1568) found the static prompt is ~96%
+served from the prompt cache, so a 43% cut moves cost per turn only a little. What it buys is fewer contradictions
+for the model to weigh, fewer places to patch, and (to be measured) p95.</li>
+</ul>
+<div class="tw"><table>
+<tr><th>Verdict</th><th class=num>Sections</th><th class=num>Tokens today</th><th class=num>After</th><th class=num>Cut</th></tr>
+<tr><td><span class='v shrink'>SHRINK</span></td><td class=num>47</td><td class=num>23,557</td><td class=num>11,191</td><td class=num>12,366</td></tr><tr><td><span class='v ctx'>MOVE TO CONTEXT</span></td><td class=num>4</td><td class=num>1,497</td><td class=num>330</td><td class=num>1,167</td></tr><tr><td><span class='v del'>DELETE</span></td><td class=num>15</td><td class=num>1,071</td><td class=num>0</td><td class=num>1,071</td></tr><tr><td><span class='v dyn'>MAKE DYNAMIC</span></td><td class=num>5</td><td class=num>4,817</td><td class=num>4,228</td><td class=num>589</td></tr><tr><td><span class='v keep'>KEEP</span></td><td class=num>20</td><td class=num>4,643</td><td class=num>4,686</td><td class=num>-43</td></tr>
+</table></div>
+
+<h2 id="doubts">2. Your doubts, answered</h2>
+<div class="tw"><table>
+<tr><th>You said</th><th>What the code and the text show</th><th>Proposal</th></tr>
+<tr><td>Affirmation: "a lot of teaching like if previous offered an escalation then bla bla"</td>
+<td>The yes / no / null rule is 3 lines. The rest is the escalation offer, told in 4 places: 4 (escalate word),
+31 (company name reply, 780 tokens), 49 (a new question is never a yes), 90 (one semantic verdict, 1,268 tokens).
+The engine already prints the pending offer and its options as an <code>Open question:</code> object and picks the
+company in code (<code>chatbot/turn_runtime.py:1541</code>).</td>
+<td>One escalation section, about 700 tokens. <a href="#s90">s90</a></td></tr>
+<tr><td>Domain in message "feels like a stretch... thought the parser can already tell me that"</td>
+<td>It IS the parser telling you. <code>domain_hint</code> can be carried from the last turn, so on its own it cannot say
+whether this message named the domain. <code>domain_in_message</code> drives carry versus fresh
+(<code>chatbot/turn/decide.py:286-290</code>), the find lane (<code>chatbot/lanes/business/find.py:127</code>) and
+<code>chatbot/engine.py:829</code>. The section's word lists repeat section 8 and the policy block.</td>
+<td>SHRINK 324 to about 150: keep the definition, drop the word lists. <a href="#s7">s7</a></td></tr>
+<tr><td>Bare entity continuation "abit middle"</td>
+<td>The engine already prints a <code>Current subject:</code> line (<code>chatbot/head/parser.py:815-853</code>).</td>
+<td>One sentence: a bare code continues the Current subject. <a href="#s9">s9</a></td></tr>
+<tr><td>Ideation continuation "quite teaching"</td>
+<td>The engine knows an idea draft is open (<code>state.ideation</code>, rule at <code>chatbot/turn/apply.py:1905</code>)
+but never prints it; the parser has to infer it from the last reply.</td>
+<td>Print one "Open draft: idea" line (small code PR), then one sentence. <a href="#s10">s10</a></td></tr>
+<tr><td>Requested attributes "not sure if they should live in the prompt"</td>
+<td>Used: decides which fields are fetched (<code>chatbot/lanes/business/fetch.py:1111</code>). The 20 field keys must
+be listed somewhere for the parser to emit valid ones; no registry variable exists for them today (UNVERIFIED that a
+registry table exists).</td>
+<td>SHRINK 1,228 to about 700 (examples, fold in 51). <a href="#s11">s11</a></td></tr>
+<tr><td>Scope intent "to handle like all"</td>
+<td>One narrow reader: <code>broaden</code> on a casual turn with no domain goes to clarification
+(<code>chatbot/turn/apply.py:2132</code>).</td>
+<td>SHRINK to about 60. <a href="#s12">s12</a></td></tr>
+<tr><td>Message type "not sure if it is used behind"</td>
+<td>Used on every turn: it picks the lane (<code>chatbot/turn/apply.py:2076</code>, <code>chatbot/engine.py:2689</code>,
+<code>chatbot/lanes/business/answer.py:549</code>). Rule 2 (intent and domain both set means business_query) is
+derivable.</td>
+<td>SHRINK 781 to about 250. CHAT-ADVISOR-SPIKE is testing a cut of this paragraph (dev v108), so this stage waits
+for that result. <a href="#s13">s13</a></td></tr>
+<tr><td>User goal "not used behind right?"</td>
+<td>Used, as fallback text: certificate detection (<code>chatbot/lanes/business/predicate.py:289</code>), the
+escalation goal, the casual reply and the clarify wording. 69 tokens.</td>
+<td>KEEP. <a href="#s14">s14</a></td></tr>
+<tr><td>Attachment type "should be dynamic"</td>
+<td>Agreed in principle, but the prompt's 6 kinds (photo, video, technical drawing, 3D model, certificate,
+installation guide) are a different vocabulary from the 17-row <code>attachment_types</code> table, and the text is
+inconsistent (installation_guide vs "installation guide"; video has no code).</td>
+<td>Needs your call, Q2. <a href="#s15">s15</a></td></tr>
+<tr><td>Flyer flag "quite a stretch"</td>
+<td><code>contains_flyer</code> is only stored (<code>chatbot/session_state.py:23</code>) and read once as an idle-chat
+disqualifier (<code>chatbot/turn/apply.py:2001</code>). No flyer behaviour exists. 0 TRAIN items.</td>
+<td>DELETE the section; the key stays, default false. <a href="#s16">s16</a></td></tr>
+<tr><td>Access levels "our system got the list"</td>
+<td><code>{{access_levels}}</code> exists (<code>chatbot_prompt_vars.py:394</code>). The field is empty in 249 of 249
+captures (comment at <code>chatbot/turn_runtime.py:4279</code>); entitlement comes from the resolver. Live reads:
+the promotion "no access" notice (<code>chatbot/lanes/business/gate.py:1814</code>) and the tier pick
+(<code>chatbot/engine.py:931</code>).</td>
+<td>MAKE DYNAMIC now; deleting the field is Q3. <a href="#s17">s17</a></td></tr>
+<tr><td>Never an entity / always is, pronouns "why need teaching?"</td>
+<td>Every <code>entities[].raw</code> goes to the resolver, so a filler word becomes a lookup and a clarify. The rule is
+needed, but told in 3 sections (18, 19, 20).</td>
+<td>Merge into 18: 1,287 to about 780. <a href="#s19">s19</a></td></tr>
+<tr><td>Broaden axis "seems repetitive"</td>
+<td>Yes: restated in 12, 21, 37 and 86. No TRAIN item exercises it.</td>
+<td>One definition, 886 to about 400; measured on held-out only. <a href="#s23">s23</a></td></tr>
+<tr><td>Positional reference "what if the user answers the code instead of 1, 2, 3"</td>
+<td>It already works when the parser reports it. The <code>Open question:</code> object carries
+<code>{position, code, label}</code> per option (<code>chatbot/turn/question.py:63-77</code>) and
+<code>_option_position</code> maps a typed code or label to its position (<code>chatbot/turn/apply.py:2915-2926</code>).
+Gap: the engine's own label match (<code>decide._positions_by_label</code>) compares label and aliases only, so a
+customer list (label = name, code = account code) still depends on the parser. And section 43 contradicts itself on
+this exact case.</td>
+<td>Fix the contradiction (stage 1); add <code>option.code</code> to the engine's match (stage 5), then the prompt rule
+can go. <a href="#s43">s43</a></td></tr>
+<tr><td>Specification "super long"</td>
+<td>The spec region is about 3.9k tokens: 50 "Specification ..." lines (about 2.9k) frozen at publish, plus 47, 51, 71
+and 72 defining spec_key / spec_value twice. <code>{{specs}}</code> exists (<code>chatbot_prompt_vars.py:369</code>);
+dev v104 (CHAT-ADVISOR-SPIKE) already uses it.</td>
+<td>MAKE DYNAMIC + merge 47, 51, 71 into 72. <a href="#s72">s72</a></td></tr>
+</table></div>
+
+<h2 id="state">3. What the engine already knows (teaching that could be context)</h2>
+<p>Many sections teach "if the previous reply did X, read this message as Y". Where the engine already holds X as a
+fact, it can print it (or decide in code after a semantic verdict) and the rule shrinks to one line.</p>
+<div class="tw"><table>
+<tr><th>Situation</th><th>Engine holds it</th><th>Shown to the parser today</th><th>Sections</th></tr>
+<tr><td>Escalation / company offer open</td><td>yes, pending offer; company pick in code (<code>chatbot/turn_runtime.py:1541</code>)</td>
+<td>yes: pending kind + <code>Open question:</code> object. The "Companies OFFERED" line the prompt cites is printed by no code.</td><td>4, 31, 49, 90</td></tr>
+<tr><td>Numbered list / did-you-mean shown</td><td>yes, with option codes (<code>chatbot/turn/question.py:63-77</code>)</td>
+<td>yes, <code>Open question:</code> with codes. The did-you-mean marker is never printed.</td><td>28, 29, 43</td></tr>
+<tr><td>Open question with options</td><td>yes (<code>chatbot/turn/apply.py:2937</code>)</td><td>yes</td><td>65</td></tr>
+<tr><td>Stock task open / last answered</td><td>yes (<code>chatbot/turn/task.py:417</code>)</td><td>yes: <code>Open task:</code>, <code>Last answered:</code></td><td>63, 64</td></tr>
+<tr><td>Bare entity continuing the subject</td><td>yes</td><td>yes: <code>Current subject:</code> (<code>chatbot/head/parser.py:815</code>)</td><td>9</td></tr>
+<tr><td>Top-selling question asked ("customer or sales agent?")</td><td>yes, <code>focus.top_selling.asked</code> (<code>chatbot/engine.py:2594</code>)</td>
+<td><b>no</b>: only the previous reply's text</td><td>83, 84, 86</td></tr>
+<tr><td>Idea draft open</td><td>yes, <code>state.ideation</code> (<code>chatbot/turn/apply.py:1905</code>)</td>
+<td><b>no</b>: only "Current subject: domain ideate" once the draft keeps the lane</td><td>10</td></tr>
+</table></div>
+<p class="m">This keeps the owner rule: the parser still decides meaning (is this message the answer to that open
+question?). What moves is the fact that the question is open, which code knows for certain.</p>
+
+<h2 id="lists">4. Lists in the prompt that live in the DB</h2>
+<div class="tw"><table>
+<tr><th>List</th><th>Prompt</th><th>DB / registry (dev)</th><th>Variable today</th><th>Drift today</th></tr>
+<tr><td>Policy block: domains, entity kinds, specs, product types</td><td>v94:1766-1848, frozen at publish</td><td><code>chatbot_domains</code> 16, <code>chatbot_entity_kinds</code> 18, <code>product_spec_registry</code> 53</td>
+<td><code>{{domains_detail}}</code> <code>{{entity_kinds_detail}}</code> <code>{{specs}}</code> (swap ready: <code>wording_layer()</code>)</td><td>spec <code>has_massage</code> missing; domains <code>sales</code>, <code>chat_analytics</code> missing; product types match (44)</td></tr>
+<tr><td>domain_hint list</td><td>section 6 (v94:82)</td><td><code>chatbot_domains</code> 16</td><td><code>{{domains}}</code> (:312)</td><td>missing <code>purchase_order</code>, <code>sales</code>, <code>chat_analytics</code></td></tr>
+<tr><td>Access levels</td><td>section 17</td><td>contact access levels, 7</td><td><code>{{access_levels}}</code> (:394)</td><td>same 7, order differs</td></tr>
+<tr><td>Teams / agents</td><td>section 26 + OUTPUT</td><td>8 teams, 5 agents</td><td><code>{{teams}}</code> (:386), <code>{{agents}}</code> (:390)</td><td>none</td></tr>
+<tr><td>Order status / report kinds</td><td>32, 41, 42, 55, 57, 67, 78</td><td><code>chatbot_status_words</code></td><td><code>{{order_status_values}}</code> (:347)</td><td><code>sales_ranking</code> has no row (code still reads it)</td></tr>
+<tr><td>Known brands</td><td>76</td><td><code>brands</code>, company-scoped</td><td>already live per turn (<code>chatbot/turn/context.py:101-116</code>)</td><td>none; but Sorento / Mocha / Cabana are hard-coded in 31, 54, 86, 90</td></tr>
+<tr><td>Attachment types</td><td>15</td><td><code>attachment_types</code> 17 rows</td><td>none</td><td>different vocabulary (6 kinds vs 17 rows), Q2</td></tr>
+</table></div>
+<p class="m">Variables render the same text until the data changes, so they keep the prompt cache as long as they sit
+where the snapshot sits today (the end of the prompt). Counts are from dev <code>sorento_cagent_stack</code>, read-only.</p>
+
+<h2 id="inventory">5. Section inventory</h2>
+<p>One row per section, in prompt order. Reader tags: <span class="tag dr">DRIVES</span> changes routing, tools,
+filters or the reply; <span class="tag wk">weak</span> a narrow or fallback read; <span class="tag pt">PASSTHROUGH</span>
+only stored or logged. TRAIN items are parser-gold <code>items_TRAIN_lane.jsonl</code> ids (TRAIN slice only; mapped by
+the section's trigger, not by gold labels). "Conditional on last turn" is flagged by the reading, with the fact it
+depends on. Grey rows are banners.</p>
+<div class="tw"><table class="inv">
+<colgroup><col style="width:40px"><col style="width:180px"><col style="width:64px"><col style="width:290px"><col style="width:330px"><col style="width:210px"><col style="width:150px"><col style="width:160px"><col style="width:96px"><col style="width:120px"><col style="width:60px"><col style="width:260px"></colgroup>
+<tr><th class=num>#</th><th>Section</th><th class=num>Tokens</th><th>What it tells the model</th><th>Fields, and who reads them</th><th>Conditional on last turn?</th><th>Hard-coded lists</th><th>Repeats</th><th>TRAIN</th><th>Verdict</th><th class=num>After</th><th>Why, risk</th></tr>
+<tr id="s1" class="">
+<td class=num>1</td>
+<td><b>PREAMBLE</b><div class=m>v94:1-9</div></td>
+<td class=num>102</td>
+<td>Defines the parser role, its three inputs and that it returns one JSON object; keep entity raw phrases exact.<div class=note>Opening sentence &#x27;Always interpret the current message in the context of the previous turn&#x27; seeds the carry-over habit that later sections fight.</div></td>
+<td class=rd><div><code>entities[].raw</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td><span class=m>-</span></td>
+<td><span class=m>all 118 (always-on)</span></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>102</td>
+<td>Role + inputs. Says previous_conversation_state is given; true.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s2" class="bn">
+<td class=num>2</td>
+<td><b>CURRENT DATE</b> <span class=m>(banner)</span><div class=m>v94:10-17</div></td>
+<td class=num>55</td>
+<td>Gives the current date and tells the model to convert relative dates to absolute.<div class=note>Mentions &#x27;before calling the MCP tool&#x27;, stale: parser calls no tool.</div></td>
+<td class=rd><div><code>date_filter_start</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>date_filter_end</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>27: relative-to-absolute dates restated</td>
+<td><span class=m>all 118 (always-on)</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 1</div></td>
+<td class=num>30</td>
+<td>Drop &#x27;convert them before calling the MCP tool&#x27;: the parser calls no tool.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s3" class="">
+<td class=num>3</td>
+<td><b>PRICE TERMINOLOGY (Sorento-specific, decisive)</b><div class=m>v94:18-22</div></td>
+<td class=num>156</td>
+<td>Price words: list/normal/RRP/bare price means master_products; selling/promo/discount price means promotion; price term overrides previous domain.<div class=note>Fully duplicated by DECISIVE DOMAIN TERMS (sec 8); decisive-wins is stated 3+ times.</div></td>
+<td class=rd><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div></td>
+<td><b>yes</b>: previous domain was promotion<div class=q>&ldquo;if the current message asks for &quot;list price&quot;, set master_products even if the previous turn was about promotions&rdquo;</div></td>
+<td>price terms: ~4 list-price words, ~4 promo words</td>
+<td>8: price terms restated under master_products and promotion; 11: price attribute restated; 53: list price near cost</td>
+<td><details><summary>4 items</summary><span class=ids>G058 G102 G112 G121</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>156</td>
+<td>Owner OK. Decisive price words -&gt; domain.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s4" class="">
+<td class=num>4</td>
+<td><b>AFFIRMATION</b><div class=m>v94:23-32</div></td>
+<td class=num>205</td>
+<td>Bare yes/agreement sets is_affirmative true, bare decline false, else null; the escalate word after an escalation offer counts as yes.<div class=note>Escalation handling split across 4, 13, 31, 49, 90 (+ output key escalation). Prime consolidation target.</div></td>
+<td class=rd><div><code>is_affirmative</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:630</code> <code>chatbot/turn/apply.py:205</code></div></td>
+<td><b>yes</b>: previous assistant turn offered escalation<div class=q>&ldquo;when the previous response OFFERED an escalation ... and the current message is the escalate word itself&rdquo;</div></td>
+<td>escalate word forms: ~7 languages/variants</td>
+<td>13: escalate also request_for_help; 31: escalation offer reply; 49: yes vs new question; 90: escalation confirmation verdict</td>
+<td><details><summary>8 items</summary><span class=ids>G019 G028 G035 G037 G047 G072 G114 G115</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>90</td>
+<td>Keep the 3-line yes / no / null rule. The ESCALATE-WORD paragraph moves into one merged escalation section (with 31, 49, 90).<div class=risk>Risk: low; 8 TRAIN items</div></td>
+</tr>
+<tr id="s5" class="">
+<td class=num>5</td>
+<td><b>READING THE CURRENT MESSAGE IN CONTEXT</b><div class=m>v94:33-66</div></td>
+<td class=num>536</td>
+<td>Reads a short reply against what the previous response did (asked vs delivered); Current subject line is context only; domain-only message is a domain switch keeping entities; value-only message refines; current-message domain beats subject domain; number words are positions.<div class=note>Contains a misspelling example (oustaning) duplicated verbatim in 32 and a document rule duplicated in 34. Says &#x27;asked/delivered&#x27; split but later sections rarely use it.</div></td>
+<td class=rd><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>entity_op</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:393</code> <code>chatbot/turn/decide.py:631</code></div><div><code>document</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:354</code> <code>chatbot/turn/apply.py:1217</code></div><div><code>reference_positions</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:251</code> <code>chatbot/turn/apply.py:1446</code></div></td>
+<td><b>yes</b>: Current subject line present; previous response asked vs delivered<div class=q>&ldquo;A message that names ONLY a domain ... is a DOMAIN SWITCH about the SAME subject: set domain_hint to the new domain and emit no entities&rdquo;</div></td>
+<td>number words: English, Malay, Chinese numerals</td>
+<td>8: current term beats previous domain; 9: bare entity continues domain; 28: positional refs; 34: &#x27;Sales order&#x27; alone is SO; 32: oustaning example repeated</td>
+<td><span class=m>all 118 (always-on)</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>420</td>
+<td>Owner OK. Trim the misspelling example that 32 repeats.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s6" class="">
+<td class=num>6</td>
+<td><b>INTENT &amp; DOMAIN</b><div class=m>v94:67-84</div></td>
+<td class=num>194</td>
+<td>Lists intent_hint snake_case values and the closed domain_hint set.<div class=note>domain list omits purchase_order, which sec 45 and sec 91 use: contradiction. Typo &#x27;curent&#x27;. Sec 91 policy blocks regenerate the same domain roster.</div></td>
+<td class=rd><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div></td>
+<td><span class=m>no</span></td>
+<td>intents: 13 values; domains: 13 values + null</td>
+<td>8: same domains again with terms; 91: policy block lists domains again with switch words; 45: adds purchase_order domain not in this list; 53: purchase_cost</td>
+<td><span class=m>all 118 (always-on)</span></td>
+<td><span class="v dyn">MAKE DYNAMIC</span><div class=m>stage 2</div></td>
+<td class=num>120</td>
+<td>Hard-coded domain list misses purchase_order, sales, chat_analytics (dev has 16 domains). {{domains}} exists (chatbot_prompt_vars.py:312).<div class=risk>Risk: low; renders the same text until a domain changes, so the prompt cache still hits</div></td>
+</tr>
+<tr id="s7" class="">
+<td class=num>7</td>
+<td><b>DOMAIN IN MESSAGE</b><div class=m>v94:85-103</div></td>
+<td class=num>324</td>
+<td>domain_in_message is true when THIS message carries a domain or status word (stock, ETA, DO, PO, price, spec...), false when only entities/date/place; about words of message not domain_hint.<div class=note>(a) Stated purpose: downstream tells NEW QUESTION from REFINEMENT of the screen. It overlaps domain_hint plus continuation/entity_op: a message with no domain word keeps domain_hint by sec 8 tail, so domain_in_message is the same fact as &#x27;did the parser override via decisive term&#x27;, reconstructable from entities+entity_op. The word list duplicates sec 8 and 91 switch words. Candidate for deletion or code-side derivation.</div></td>
+<td class=rd><div><code>domain_in_message</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:129</code> <code>chatbot/lanes/business/find.py:127</code></div></td>
+<td><span class=m>no</span></td>
+<td>domain/status words: ~20 listed</td>
+<td>43: domain_in_message restated in pick answers; 54-55 area and 83/86/87: restated in examples</td>
+<td><details><summary>51 items</summary><span class=ids>G002 G004 G012 G013 G023 G026 G027 G030 G034 G036 G040 G044 G045 G046 G048 G049 G050 G051 G055 G059 G060 G062 G069 G074 G075 G076 G077 G079 G081 G083 G084 G086 G089 G090 G091 G092 G093 G102 G106 G107 G112 G116 G117 G120 G123 G125 G127 G130 G133 G134 G135</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>150</td>
+<td>Field DRIVES carry vs fresh domain (turn/decide.py:286-290). Keep the definition; drop the word lists that 8 and the policy block already carry.<div class=risk>Risk: medium; 51 TRAIN items</div></td>
+</tr>
+<tr id="s8" class="">
+<td class=num>8</td>
+<td><b>DECISIVE DOMAIN TERMS</b><div class=m>v94:104-198</div></td>
+<td class=num>1640</td>
+<td>Per-domain decisive signal words: any such term in the current message sets domain and intent, overriding previous domain; ambiguous goes null.<div class=note>Biggest section (1640 tok). Incoming checkpoint list repeated in sec 11. Names product code SRTWC286-SH-NEW and TCNU1851000. Customer-take rule embeds a sales-vs-stock/promo tie-break. Policy block 91 duplicates switch words.</div></td>
+<td class=rd><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>entities[].hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>requested_attributes</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1111</code> <code>chatbot/do_ask.py:97</code></div><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div></td>
+<td><b>yes</b>: previous turn&#x27;s product entity<div class=q>&ldquo;A product carried from the previous turn stays as the scoping entity when the domain switches&rdquo;</div></td>
+<td>domain term lists: 13 domains x 3-20 words; attachment classes ~5; incoming checkpoints ~15; customer-take verbs ~7</td>
+<td>3: price terms; 11: incoming checkpoints repeated as attribute keys; 15: attachment words repeated; 91: switch words per domain; 32: outstanding means order; 45: PO; 53: purchase cost</td>
+<td><span class=m>all 118 (always-on)</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>900</td>
+<td>Switch words are repeated in the policy block (domains_detail &#x27;Switch words&#x27;). Keep only the cross-domain tie-breaks.<div class=risk>Risk: medium: Malay / Chinese routing words; every TRAIN item routes through it</div></td>
+</tr>
+<tr id="s9" class="">
+<td class=num>9</td>
+<td><b>BARE ENTITY CONTINUATION</b><div class=m>v94:199-221</div></td>
+<td class=num>407</td>
+<td>A message that is only an entity value continues the previous domain with entity_op replace_combine and always emits the entity; no previous domain means null; except answers to numbered/did-you-mean/escalation offers.<div class=note>(b) Whole section is &#x27;if previous was X then Y&#x27; teaching. Same exception (value not an answer to offer) repeated in 31, 43. Could be computed in code from previous_conversation_state.</div></td>
+<td class=rd><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div><div><code>entity_op</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:393</code> <code>chatbot/turn/decide.py:631</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div></td>
+<td><b>yes</b>: previous turn domain; open picker/offer present or not<div class=q>&ldquo;If the previous turn had a business domain, CONTINUE it: domain_hint and intent_hint = the previous turn&#x27;s&rdquo;</div></td>
+<td><span class=m>-</span></td>
+<td>13: bare entity not clarification; 19: bare family code is product; 5: refine with value; 31: value is not a fragment; 43: new value not a pick</td>
+<td><details><summary>24 items</summary><span class=ids>G001 G005 G006 G017 G031 G039 G041 G043 G051 G052 G058 G080 G083 G088 G089 G103 G107 G108 G115 G117 G121 G123 G129 G133</span></details></td>
+<td><span class="v ctx">MOVE TO CONTEXT</span><div class=m>stage 3</div></td>
+<td class=num>150</td>
+<td>The engine already prints a &#x27;Current subject:&#x27; line (head/parser.py:815-853). The rule can say &#x27;a bare code continues the Current subject&#x27; in one line.<div class=risk>Risk: medium; 24 TRAIN items</div></td>
+</tr>
+<tr id="s10" class="">
+<td class=num>10</td>
+<td><b>IDEATION CONTINUATION</b><div class=m>v94:222-240</div></td>
+<td class=num>331</td>
+<td>If previous domain was ideate, short answers continue the idea (domain ideate, submit_idea, business_query); naming a team is not request_for_help; decisive other-domain term still wins.<div class=note>(b) Almost entirely conditional on prior turn. Plus a stray unrelated paragraph about standalone DO/delivery order (belongs in 8 order/DO) appended at end of this section, with entity_op reuse for prior order.</div></td>
+<td class=rd><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div></td>
+<td><b>yes</b>: previous domain == ideate and previous response asked a follow-up<div class=q>&ldquo;When the previous turn&#x27;s domain was &quot;ideate&quot;, the assistant is COLLECTING the details of an idea&rdquo;</div></td>
+<td><span class=m>-</span></td>
+<td>8: ideate domain definition; 13: request_for_help rule; 26: ideate no routing</td>
+<td><details><summary>2 items</summary><span class=ids>G036 G037</span></details></td>
+<td><span class="v ctx">MOVE TO CONTEXT</span><div class=m>stage 5</div></td>
+<td class=num>80</td>
+<td>The engine knows an idea draft is open (state.ideation, turn/apply.py:1905) but never prints it. Print one &#x27;Open draft: idea&#x27; line, then the rule is one sentence.<div class=risk>Risk: low; only 2 TRAIN items, so measure on held-out</div></td>
+</tr>
+<tr id="s11" class="">
+<td class=num>11</td>
+<td><b>REQUESTED ATTRIBUTES</b><div class=m>v94:241-301</div></td>
+<td class=num>1228</td>
+<td>Closed vocabulary of requested_attributes per domain: master_products (3), order (3), incoming (20 CRM keys), plus __all__ timeline sentinel and worked examples.<div class=note>Incoming key list is a hard-coded CRM schema mirror (could be generated). Chinese/Malay worked examples. Names TIIU6323920 container code.</div></td>
+<td class=rd><div><code>requested_attributes</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1111</code> <code>chatbot/do_ask.py:97</code></div></td>
+<td><span class=m>no</span></td>
+<td>master_products attrs: 3; order attrs: 3; incoming keys: 20; sentinel __all__</td>
+<td>8: incoming checkpoint words repeated; 51: attribute phrase whole; 62/74: quantity keyword; 65: open_question</td>
+<td><details><summary>15 items</summary><span class=ids>G003 G007 G018 G031 G036 G041 G046 G048 G049 G083 G102 G106 G107 G112 G118</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>700</td>
+<td>Drives which fields are fetched (lanes/business/fetch.py:1111). 20 field keys + 10 example lines; fold in 51.<div class=risk>Risk: medium; 15 TRAIN items</div></td>
+</tr>
+<tr id="s12" class="">
+<td class=num>12</td>
+<td><b>SCOPE INTENT</b><div class=m>v94:302-311</div></td>
+<td class=num>141</td>
+<td>scope_intent: broaden (all, no narrowing), specific (names narrowing value), null otherwise; one axis widened uses broaden_axis instead.<div class=note>Header lines in the broaden bullet are garbled (sentence break mid-bullet). Dependent on 23.</div></td>
+<td class=rd><div><code>scope_intent</code> <span class='tag wk'>DRIVES (narrow)</span> <code>chatbot/turn/apply.py:2132</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>23: broaden axis restated; 37: output key</td>
+<td><details><summary>12 items</summary><span class=ids>G001 G007 G009 G031 G036 G040 G059 G065 G084 G086 G102 G132</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>60</td>
+<td>Narrow reader: only broaden on a casual no-domain turn (turn/apply.py:2132). Broaden text repeats 23.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s13" class="">
+<td class=num>13</td>
+<td><b>MESSAGE TYPE</b><div class=m>v94:312-326</div></td>
+<td class=num>781</td>
+<td>Decision order for message_type: request_for_help (human/team/escalate), business_query when intent+domain set, clarification when domain null, else casual/unknown; clarification is the agent&#x27;s uncertainty not the user&#x27;s doubt.<div class=note>(c) Prompt says message_type is for classification where code reconciles offers; yet rule 2 makes message_type fully derivable from intent_hint+domain_hint != null (business_query). Rule 1 escalate handling repeated twice inside this section. 781 tok.</div></td>
+<td class=rd><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div></td>
+<td><b>yes</b>: previous offer exists (explicitly told to ignore as context only)<div class=q>&ldquo;Whether a reply accepts or declines a prior offer is reconciled DOWNSTREAM by code&rdquo;</div></td>
+<td>message types: 5</td>
+<td>4: escalate word; 9: bare entity is business_query; 31: escalation company pick; 10: ideate team not help; 49: escalate</td>
+<td><span class=m>all 118 (always-on)</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>250</td>
+<td>Field DRIVES the lane (turn/apply.py:2076). Rule 2 (intent + domain set = business_query) is derivable; escalation lines move to the merged escalation section. CHAT-ADVISOR-SPIKE is testing this paragraph (dev v108), so do not overlap.<div class=risk>Risk: medium; picks the lane on every turn</div></td>
+</tr>
+<tr id="s14" class="">
+<td class=num>14</td>
+<td><b>USER GOAL</b><div class=m>v94:327-329</div></td>
+<td class=num>69</td>
+<td>user_goal: plain restatement of what user wants this turn starting &#x27;trying to&#x27;, always populated.<div class=note>(c) Prompt gives no downstream purpose; only used as a free-text test hook in 9 and 19 of rationale. Looks like pure output tokens with no consumer stated. Candidate for removal if unused downstream.</div></td>
+<td class=rd><div><code>user_goal</code> <span class='tag wk'>DRIVES (weak)</span> <code>chatbot/lanes/business/predicate.py:289</code> <code>chatbot/lanes/escalation.py:1189</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>9: &#x27;if you can name it in user_goal&#x27; refers to it</td>
+<td><span class=m>all 118 (always-on)</span></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>69</td>
+<td>Used, as fallback text: certificate detection (lanes/business/predicate.py:289), escalation goal, casual reply, clarify wording. 69 tokens.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s15" class="">
+<td class=num>15</td>
+<td><b>ATTACHMENT TYPE EXTRACTION (product_attachment)</b><div class=m>v94:330-342</div></td>
+<td class=num>238</td>
+<td>When user names/implies an attachment type emit separate attachment_type entity with mapped value (photo, video, technical drawing, installation_guide, certificate).<div class=note>(d) Hard-coded and INCONSISTENT: installation_guide (underscore) here vs &#x27;installation guide&#x27; in 18 and the canonical_code enum; video listed here but not in 18/enum; 3D model in canonical but no trigger words.</div></td>
+<td class=rd><div><code>entities[].hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>entities[].canonical_code</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:944</code> <code>chatbot/trace.py:283</code></div></td>
+<td><span class=m>no</span></td>
+<td>attachment types: 5 groups in this section (photo,video,technical drawing,installation_guide,certificate); taxonomy in canonical_code line: 6 (adds 3D model)</td>
+<td>18: attachment_type hint repeated with different list; 8: product_attachment terms; 91: attachment_type entity kind</td>
+<td><details><summary>7 items</summary><span class=ids>G012 G016 G017 G019 G020 G117 G119</span></details></td>
+<td><span class="v dyn">MAKE DYNAMIC</span><div class=m>stage 2</div></td>
+<td class=num>238</td>
+<td>Prompt&#x27;s 6-word taxonomy is not the 17-row attachment_types table, and it is inconsistent (installation_guide vs &#x27;installation guide&#x27;; video has no code). Needs an owner decision (Q2).<div class=risk>Risk: medium; 7 TRAIN items</div></td>
+</tr>
+<tr id="s16" class="">
+<td class=num>16</td>
+<td><b>FLYER FLAG</b><div class=m>v94:343-349</div></td>
+<td class=num>83</td>
+<td>contains_flyer true when message asks for flyer/brochure; do not emit as entity.<div class=note>(e) Last two lines are orphaned fragments (&#x27;- set domain_hint = promotion ... brand/category named&#x27;) that read as a broken bullet; unclear if the flag also forces the domain.</div></td>
+<td class=rd><div><code>contains_flyer</code> <span class='tag pt'>PASSTHROUGH</span> <code>chatbot/turn/tail.py:86</code> <code>chatbot/engine.py:6511</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div></td>
+<td><span class=m>no</span></td>
+<td>flyer words: 4</td>
+<td>8: flyer is promotion resource; 18: promotion entity includes flyer</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>contains_flyer is PASSTHROUGH: stored in session state (session_state.py:23), only read as one idle-chat disqualifier (turn/apply.py:2001). No flyer branch. Keep the key in OUTPUT, default false.<div class=risk>Risk: low; 0 TRAIN items</div></td>
+</tr>
+<tr id="s17" class="">
+<td class=num>17</td>
+<td><b>ACCESS LEVELS</b><div class=m>v94:350-371</div></td>
+<td class=num>379</td>
+<td>access_levels: array drawn only from 7 fixed strings, set only from current message; maps brand+dealer/office words and &#x27;version/copy/the X one&#x27; phrasings.<div class=note>(d) Hard-coded: 7 literal strings and brand names Sorento/Mocha/Cabana baked in; a new company or tier requires a prompt edit. Could be injected from the DB.</div></td>
+<td class=rd><div><code>access_levels</code> <span class='tag wk'>DRIVES (weak)</span> <code>chatbot/lanes/business/gate.py:1814</code> <code>chatbot/engine.py:931</code></div></td>
+<td><span class=m>no</span></td>
+<td>access levels: 7 values; brand+tier mapping: 6 pairs plus 3 fallbacks</td>
+<td>37: output key; 91: product_attachment tier narrowing</td>
+<td><details><summary>6 items</summary><span class=ids>G001 G059 G061 G065 G089 G122</span></details></td>
+<td><span class="v dyn">MAKE DYNAMIC</span><div class=m>stage 2</div></td>
+<td class=num>120</td>
+<td>{{access_levels}} exists (chatbot_prompt_vars.py:394). The field is empty in 249/249 captures (turn_runtime.py:4279 comment); entitlement comes from the resolver. Deletion candidate later (Q3).<div class=risk>Risk: low; 6 TRAIN items</div></td>
+</tr>
+<tr id="s18" class="">
+<td class=num>18</td>
+<td><b>ENTITY OPERATIONS</b><div class=m>v94:372-403</div></td>
+<td class=num>757</td>
+<td>Defines each entity hint and canonical_code rules, the entity JSON shape, and the five entity_op values.<div class=note>Contains the entity_op block starting after sec 21 header &#x27;Also emit ONE entity_op&#x27; (actually sits in 21). Brand says &#x27;never a fixed list&#x27;. Hint enum here omits specification and warehouse spelled; hint list differs from 91.</div></td>
+<td class=rd><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>entities[].hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>entities[].canonical_code</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:944</code> <code>chatbot/trace.py:283</code></div><div><code>entities[].current_message</code> <span class='tag dr'>DRIVES</span> <code>chatbot/order_list.py:134</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>entity_op</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:393</code> <code>chatbot/turn/decide.py:631</code></div></td>
+<td><span class=m>no</span></td>
+<td>entity hints: 12; attachment classes: 5; attachment_type kinds: 5; entity_op values: 5</td>
+<td>15: attachment_type again; 19: what is not an entity; 20: pronouns not entity; 23: clear vs broaden; 21: confident; 76: brand list; 91: entity kinds again</td>
+<td><details><summary>107 items</summary><span class=ids>G001 G002 G003 G004 G005 G006 G007 G008 G009 G010 G012 G013 G014 G017 G019 G020 G023 G026 G027 G028 G029 G030 G031 G034 G036 G037 G038 G039 G040 G041 G043 G044 G045 G046 G047 G048 G049 G050 G051 G052 G053 G054 G055 G056 G058 G059 G060 G061 G062 G063 G064 G065 G066 G069 G072 G074 G075 G076 G077 G079 G080 G081 G082 G083 G084 G085 G086 G088 G089 G090 G091 G092 G093 G097 G099 G102 G103 G104 G105 G106 G107 G108 G109 G110 G111 G112 G113 G114 G115 G116 G117 G119 G120 G121 G122 G123 G125 G126 G127 G129 G130 G132 G133 G134 G135 G136 G137</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>600</td>
+<td>Core entity rules. Absorb 19 and 20 here.<div class=risk>Risk: high if over-cut: 107 TRAIN items</div></td>
+</tr>
+<tr id="s19" class="">
+<td class=num>19</td>
+<td><b>WHAT IS NEVER AN ENTITY, AND WHAT ALWAYS IS</b><div class=m>v94:404-418</div></td>
+<td class=num>294</td>
+<td>Grammar particles are never entities; a bare alphanumeric run that looks like a product code is always a product entity with replace_combine; product + PO is a business_query.<div class=note>(f) Overlaps 20 in theme (what is not an entity) and 18 (entity def). Includes a PO routing example that belongs in 45. Hint &#x27;de&#x27; is warehouse example is Chinese/Malay specific.</div></td>
+<td class=rd><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>entity_op</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:393</code> <code>chatbot/turn/decide.py:631</code></div><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div></td>
+<td><span class=m>no</span></td>
+<td>particles: 9</td>
+<td>9: bare value is entity; 20: other non-entities; 45: wc286 PO example; 18: never absorb into user_goal</td>
+<td><details><summary>37 items</summary><span class=ids>G003 G004 G010 G030 G038 G043 G044 G046 G048 G049 G050 G051 G052 G053 G054 G062 G077 G088 G089 G090 G103 G106 G107 G108 G109 G110 G113 G114 G115 G117 G119 G120 G125 G127 G129 G132 G135</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>120</td>
+<td>Merge into 18. Needed in short form: every entities[].raw is sent to the resolver, so a filler word becomes a lookup.<div class=risk>Risk: medium; 37 TRAIN items</div></td>
+</tr>
+<tr id="s20" class="">
+<td class=num>20</td>
+<td><b>PRONOUN REFERENCE, NEVER AN ENTITY</b><div class=m>v94:419-424</div></td>
+<td class=num>236</td>
+<td>Pronouns/demonstratives pointing outside the message are never entities and set anaphora.backward_reference true.<div class=note>(f) Overlaps 19 as a second &#x27;never an entity&#x27; rule; could merge 19+20 under one heading. Adds an output key anaphora only used here.</div></td>
+<td class=rd><div><code>anaphora.backward_reference</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:471</code> <code>chatbot/turn/sub_asks.py:429</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>19: other non-entities; 5: current subject carried; 18: entity def</td>
+<td><details><summary>13 items</summary><span class=ids>G003 G007 G037 G063 G064 G084 G085 G086 G090 G097 G113 G114 G136</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>60</td>
+<td>Merge into 19 (anaphora.backward_reference drives).<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s21" class="">
+<td class=num>21</td>
+<td><b>ENTITY CONFIDENCE</b><div class=m>v94:425-456</div></td>
+<td class=num>786</td>
+<td>entity.confident is true unless several untyped concepts were crammed into one raw; split labelled parts; also holds the entity_op definitions (clear, replace_combine, replace, modify, reuse).<div class=note>Two unrelated topics in one section (confidence + entity_op). entity_op is the real heart, confidence has a worked &#x27;one siew srtkt72ss&#x27; customer-name example.</div></td>
+<td class=rd><div><code>entities[].confident</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2100</code> <code>chatbot/lanes/business/answer.py:3935</code></div><div><code>entity_op</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:393</code> <code>chatbot/turn/decide.py:631</code></div></td>
+<td><b>yes</b>: none beyond current message<div class=q>&ldquo;When unsure between replace_combine and reuse: if the message names a concrete new value&rdquo;</div></td>
+<td>entity_op values: 5</td>
+<td>18: entity JSON shape; 23: clear vs widening; 9: replace_combine rule</td>
+<td><details><summary>43 items</summary><span class=ids>G001 G003 G005 G006 G009 G010 G012 G023 G026 G027 G030 G031 G034 G038 G040 G041 G045 G046 G048 G050 G051 G063 G074 G075 G077 G079 G080 G084 G086 G089 G091 G092 G093 G102 G105 G107 G114 G123 G127 G130 G132 G136 G137</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>400</td>
+<td>entities[].confident DRIVES unresolved-product clarify (turn/apply.py:2100). Repeats broaden text from 23.<div class=risk>Risk: medium; 43 TRAIN items</div></td>
+</tr>
+<tr id="s22" class="">
+<td class=num>22</td>
+<td><b>MATCH MODE</b><div class=m>v94:457-459</div></td>
+<td class=num>32</td>
+<td>match_mode: and for combined filter, or for alternatives, default and.<div class=note>32 tokens; may be unused downstream; trivial.</div></td>
+<td class=rd><div><code>match_mode</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td><span class=m>-</span></td>
+<td><details><summary>64 items</summary><span class=ids>G001 G003 G005 G006 G009 G010 G012 G013 G014 G017 G020 G023 G026 G027 G030 G031 G034 G038 G039 G040 G041 G043 G045 G046 G048 G050 G051 G053 G058 G060 G062 G069 G074 G077 G079 G080 G083 G084 G086 G088 G089 G091 G092 G093 G102 G103 G105 G107 G109 G111 G114 G115 G117 G119 G120 G121 G123 G125 G126 G127 G129 G132 G133 G135</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>32</td>
+<td>Short. Code forces &#x27;or&#x27; for 2+ product tokens (lanes/business/resolve_gate.py:654).<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s23" class="">
+<td class=num>23</td>
+<td><b>BROADEN AXIS</b><div class=m>v94:460-514</div></td>
+<td class=num>886</td>
+<td>broaden_axis and broaden_to semantics for widening a single axis (date, entity hint, all), worked examples, and keep domain/intent while widening.<div class=note>(g) Restated at least in 12, 21 (clear note), 37 (output keys), and 86 (everyone/any agent -&gt; broaden_axis customer, lines ~1636-1641). Contains product code SRTWC286-SH and customer HANLIM.</div></td>
+<td class=rd><div><code>broaden_axis</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:194</code> <code>chatbot/turn/apply.py:2963</code></div><div><code>broaden_to</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:211</code></div><div><code>entity_op</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:393</code> <code>chatbot/turn/decide.py:631</code></div><div><code>scope_intent</code> <span class='tag wk'>DRIVES (narrow)</span> <code>chatbot/turn/apply.py:2132</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div></td>
+<td><b>yes</b>: previous turn domain present<div class=q>&ldquo;When broaden_axis is &quot;date&quot; or an entity hint, and a business domain is already in play: KEEP domain_hint and intent_hint from the previous turn&rdquo;</div></td>
+<td>axes: date + entity hints + all; broaden_to: 3 values</td>
+<td>12: scope_intent restates; 21: clear vs broaden; 37: output keys describe; 86: narrowing/widening again (line 1636-1641: everyone/any agent); 65: open question</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>400</td>
+<td>Owner right: restated in 12, 21, 37 and 86. One definition.<div class=risk>Risk: unmeasured: 0 TRAIN items, held-out only</div></td>
+</tr>
+<tr id="s24" class="">
+<td class=num>24</td>
+<td><b>DEMAND QTY</b><div class=m>v94:515-517</div></td>
+<td class=num>21</td>
+<td>demand_qty is the stated quantity as a number or null.<div class=note>Third quantity mechanism: demand_qty vs entities[].quantity (62, 74) vs requested_attributes quantity (11). Four ways to say &#x27;quantity&#x27;.</div></td>
+<td class=rd><div><code>demand_qty</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2484</code> <code>chatbot/turn/apply.py:2501</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>62: entities[].quantity; 74: quantity entity</td>
+<td><details><summary>8 items</summary><span class=ids>G008 G080 G081 G082 G083 G099 G111 G122</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>21</td>
+<td>Fold into the one quantity section (with 61, 62, 73, 74).<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s25" class="">
+<td class=num>25</td>
+<td><b>CORRECTION / DOUBT</b><div class=m>v94:518-520</div></td>
+<td class=num>26</td>
+<td>If user says the previous answer was wrong or incomplete, set correction true.<div class=note>Two lines only; correction semantics for doubting vs real wrong answer not defined.</div></td>
+<td class=rd><div><code>correction</code> <span class='tag pt'>PASSTHROUGH</span> <code>chatbot/turn/apply.py:1999</code></div></td>
+<td><b>yes</b>: previous answer exists<div class=q>&ldquo;If the user indicates the previous answer was WRONG or incomplete&rdquo;</div></td>
+<td><span class=m>-</span></td>
+<td>13: doubt is not clarification; 86: correction true example</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>correction is PASSTHROUGH: only an idle-chat disqualifier (turn/apply.py:1999). &#x27;how about 100?&#x27; is acted on via demand_qty. Keep the key, default false.<div class=risk>Risk: low; 0 TRAIN items</div></td>
+</tr>
+<tr id="s26" class="">
+<td class=num>26</td>
+<td><b>ROUTING</b><div class=m>v94:521-544</div></td>
+<td class=num>408</td>
+<td>Routing table mapping domain set this turn to suggested_team and suggested_agent; null when no signal; ideate has no routing.<div class=note>Hard-coded team/agent table duplicated by sec 91 &#x27;Escalates to&#x27; per domain; purchase_order, purchase_cost, spo, goods_receive absent here but 91 has Escalates to purchasing: drift risk. Always derivable from domain in code.</div></td>
+<td class=rd><div><code>routing.suggested_team</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/answer.py:1808</code> <code>chatbot/lanes/business/answer.py:3231</code></div><div><code>routing.suggested_agent</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/escalation.py:1538</code> <code>chatbot/lanes/business/answer.py:5528</code></div></td>
+<td><span class=m>no</span></td>
+<td>domain-to-team routes: 8; teams: 8 enum values; agents: 5</td>
+<td>37: output enum teams/agents; 91: policy blocks Escalates to &lt;team&gt;; 4: escalation</td>
+<td><span class=m>all 118 (always-on)</span></td>
+<td><span class="v dyn">MAKE DYNAMIC</span><div class=m>stage 2</div></td>
+<td class=num>150</td>
+<td>{{teams}} / {{agents}} exist (chatbot_prompt_vars.py:386, :390); the policy block repeats &#x27;Escalates to&#x27;.<div class=risk>Risk: low; dev lists match today (8 teams, 5 agents)</div></td>
+</tr>
+<tr id="s27" class="">
+<td class=num>27</td>
+<td><b>DATE FILTER (per-message, never carried over)</b><div class=m>v94:545-570</div></td>
+<td class=num>573</td>
+<td>date_filter_start/end come only from the current message, domain-independent, relative converted using current date; date_mode (started/ended/overlap) for promotions by the verb used.<div class=note>Negative teaching: states &#x27;never carry over&#x27; which is the default if the parser is stateless. Tomorrow example hard-codes 29 June 2026.</div></td>
+<td class=rd><div><code>date_filter_start</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>date_filter_end</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>date_mode</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:714</code></div></td>
+<td><b>yes</b>: previous_conversation_state date filter (to ignore)<div class=q>&ldquo;If the current message does NOT state any date, BOTH date_filter_start and date_filter_end MUST be null  -  even if the previous turn had a date filter&rdquo;</div></td>
+<td>date_mode: 3 values; relative-date words: ~12</td>
+<td>2: relative dates; 59: bare month is date filter; 68: dates on sales analysis; 37: output</td>
+<td><details><summary>11 items</summary><span class=ids>G003 G036 G049 G054 G063 G064 G085 G086 G097 G110 G136</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage 4</div></td>
+<td class=num>573</td>
+<td>Owner OK. Absorb the restatements in 59 and 68.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s28" class="">
+<td class=num>28</td>
+<td><b>POSITIONAL REFERENCES</b><div class=m>v94:571-586</div></td>
+<td class=num>409</td>
+<td>Positional references (3rd, last, first two, ranges, bare number up to previous count) go to reference_positions, never entities.<div class=note>(h) Covers only numeric/ordinal positions; no mention of a typed product CODE. Overlaps 5, 43 and 83. Previous response needs &#x27;N records&#x27; text from the prior turn.</div></td>
+<td class=rd><div><code>reference_positions</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:251</code> <code>chatbot/turn/apply.py:1446</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div></td>
+<td><b>yes</b>: previous response listed N numbered records<div class=q>&ldquo;A BARE NUMBER ... that is no larger than the previous turn&#x27;s own record count is a POSITION&rdquo;</div></td>
+<td>position phrases: ~8</td>
+<td>5: number words as positions; 29: reference target; 43: open numbered question; 44: short token; 60/65: option picks; 83: answering the bot&#x27;s own question</td>
+<td><details><summary>31 items</summary><span class=ids>G001 G002 G004 G007 G017 G028 G041 G043 G044 G047 G054 G059 G061 G063 G072 G081 G087 G088 G089 G090 G099 G110 G113 G114 G115 G116 G117 G122 G129 G132 G136</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>200</td>
+<td>Merge with 43. The Open question JSON already carries {position, code, label} per option (turn/question.py:63-77).<div class=risk>Risk: high: the 11 Oct ablation cut positional picks and pass fell</div></td>
+</tr>
+<tr id="s29" class="">
+<td class=num>29</td>
+<td><b>REFERENCE TARGET (which set a positional reply means)</b><div class=m>v94:587-592</div></td>
+<td class=num>178</td>
+<td>When previous response has the did-you-mean marker and the current message refers to positions, set reference_target dym (bare numbers or suggestion n) vs result (explicitly qualified result item).<div class=note>(h) Only handles bare number or &#x27;suggestion N&#x27; vs &#x27;product 2&#x27;; a typed CODE answering a did-you-mean list is not mentioned here at all. Depends on a marker string injected by code.</div></td>
+<td class=rd><div><code>reference_target</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn_runtime.py:627</code> <code>chatbot/lanes/business/answer.py:1996</code></div><div><code>reference_positions</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:251</code> <code>chatbot/turn/apply.py:1446</code></div></td>
+<td><b>yes</b>: did-you-mean marker present in previous response<div class=q>&ldquo;When &quot;Previous response&quot; contains the marker &quot;[&lt;N&gt; did-you-mean suggestions active]&quot;&rdquo;</div></td>
+<td>reference_target values: 3</td>
+<td>28: positions; 43: open numbered question; 91: did-you-mean on per entity kind</td>
+<td><details><summary>26 items</summary><span class=ids>G001 G002 G004 G017 G041 G043 G044 G047 G054 G061 G063 G072 G087 G088 G090 G110 G114 G115 G116 G117 G122 G124 G129 G132 G136 G137</span></details></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>Dead: its trigger &#x27;[N did-you-mean suggestions active]&#x27; is printed by no code (only the old in-code constant, chatbot_parser_prompt.py:684). reference_target stays in OUTPUT as null; bare positions still flow (answer_bridge.py:1476).<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s30" class="">
+<td class=num>30</td>
+<td><b>PERSON-NAME MENTION</b><div class=m>v94:593-605</div></td>
+<td class=num>244</td>
+<td>Extract any named person (honorifics, partial, reversed) to person_mention in surface wording; independent of reference_positions.<div class=note>Always-extract rule; downstream decides use. Examples &#x27;Ms Tan&#x27;, &#x27;Tan Wei&#x27;.</div></td>
+<td class=rd><div><code>person_mention</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/escalation.py:1028</code> <code>chatbot/turn_runtime.py:1603</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>31: do not set person_mention for company name</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>150</td>
+<td>person_mention DRIVES escalation routing (lanes/escalation.py:1028).<div class=risk>Risk: unmeasured: 0 TRAIN items</div></td>
+</tr>
+<tr id="s31" class="">
+<td class=num>31</td>
+<td><b>COMPANY-NAME REPLY ON AN ESCALATION OFFER</b><div class=m>v94:606-639</div></td>
+<td class=num>780</td>
+<td>When the previous response offered escalation, a reply naming exactly one offered company (name or code) sets escalation.is_escalation_confirmation and company_pick; a value not in the list re-scopes; fragments are casual.<div class=note>Pure teaching block, 780 tok. Fifth restatement that &#x27;a value is not a fragment&#x27; (with 9, 43, 49, 90). Hard-coded company names and 3-letter codes. Prompt says deterministic code resolves the pick, so the LLM only extracts the name.</div></td>
+<td class=rd><div><code>escalation.is_escalation_confirmation</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2073</code> <code>chatbot/lanes/escalation.py:1103</code></div><div><code>escalation.company_pick</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/escalation.py:261</code></div><div><code>is_affirmative</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:630</code> <code>chatbot/turn/apply.py:205</code></div><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div><div><code>entity_op</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:393</code> <code>chatbot/turn/decide.py:631</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div></td>
+<td><b>yes</b>: previous response offered escalation / pending offer company list<div class=q>&ldquo;When the previous assistant message offered an escalation (&quot;Would you like me to escalate ...&quot;) or asked which company to route to&rdquo;</div></td>
+<td>company codes: 3 (SRT, MCH, CBN); companies: 3; example replies: ~9</td>
+<td>4: escalate affirmation; 9: value not an answer; 13: request_for_help; 49: new question not yes; 90: escalation verdict banner; 43: option pick</td>
+<td><details><summary>4 items</summary><span class=ids>G114 G115 G116 G136</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>0</td>
+<td>Merge into one escalation section. company_pick is matched in code against the pending offer (turn_runtime.py:1541). The &#x27;Companies OFFERED&#x27; line it cites is printed by no code.<div class=risk>Risk: medium; 4 TRAIN items</div></td>
+</tr>
+<tr id="s32" class="">
+<td class=num>32</td>
+<td><b>ORDER_STATUS FILTER</b><div class=m>v94:640-678</div></td>
+<td class=num>716</td>
+<td>order_status filter: outstanding or delivered or null from current message words; any status value forces order domain, never inventory; misspellings read by meaning.<div class=note>Two output keys, order_status and status, carry the same axis (37 admits status mirrors order_status). Enum here says outstanding|delivered only, but 41-42 add 3 values and 57 adds sales_report. Misspelling examples oustaning duplicated in 5. Product codes CB88SS, SRTWC8518-SH named.</div></td>
+<td class=rd><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:1218</code> <code>chatbot/turn/apply.py:1424</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>requested_attributes</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1111</code> <code>chatbot/do_ask.py:97</code></div><div><code>document</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:354</code> <code>chatbot/turn/apply.py:1217</code></div></td>
+<td><span class=m>no</span></td>
+<td>outstanding phrasings: ~9; delivered phrasings: 5</td>
+<td>8: outstanding means ORDER; 41: so_outstanding adds values; 42: do_outstanding; 5: oustaning example; 37: status key; 55/57: sales_report status</td>
+<td><details><summary>9 items</summary><span class=ids>G046 G049 G050 G051 G055 G084 G086 G090 G106</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>350</td>
+<td>One report-kind table instead of per-kind blocks. status and order_status overlap; code merges them (turn/apply.py:1561).<div class=risk>Risk: medium; 9 TRAIN items</div></td>
+</tr>
+<tr id="s33" class="">
+<td class=num>33</td>
+<td><b>IS_ACTIVE FILTER</b><div class=m>v94:679-691</div></td>
+<td class=num>198</td>
+<td>is_active: false for discontinued/expired/old, true for explicit active/current, null default.<div class=note>Overlaps requested_attributes discontinued (11) for products.</div></td>
+<td class=rd><div><code>is_active</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:731</code> <code>chatbot/lanes/business/answer.py:3385</code></div></td>
+<td><span class=m>no</span></td>
+<td>inactive words: ~6; active words: ~4</td>
+<td>8: discontinue sets master_products; 11: discontinued attribute</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>198</td>
+<td>is_active DRIVES the tool filter (lanes/business/fetch.py:731).<div class=risk>Risk: unmeasured: 0 TRAIN items</div></td>
+</tr>
+<tr id="s34" class="">
+<td class=num>34</td>
+<td><b>DOCUMENT</b><div class=m>v94:692-721</div></td>
+<td class=num>584</td>
+<td>document is a list from SO, DO, PO, SPO, GRN read from the current message wherever it sits; a bare paper word is a business_query order.<div class=note>Order-document rule restated in 5, 10 (DO paragraph), 42. &#x27;both&#x27; over a detail offer is stated here and in 42/43/60. Names product 7445, 7443, 8518, brand warehouse BRW/IB.</div></td>
+<td class=rd><div><code>document</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:354</code> <code>chatbot/turn/apply.py:1217</code></div><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>reference_positions</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:251</code> <code>chatbot/turn/apply.py:1446</code></div><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div></td>
+<td><span class=m>no</span></td>
+<td>document codes: 5</td>
+<td>5: Sales order alone is SO; 8: DO standalone; 42: document word decides scope; 45: PO; 44: short token</td>
+<td><details><summary>2 items</summary><span class=ids>G084 G086</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>350</td>
+<td>Same example as 42 (verbatim).<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s35" class="">
+<td class=num>35</td>
+<td><b>ASKS (a message that names more than one domain)</b><div class=m>v94:722-737</div></td>
+<td class=num>333</td>
+<td>asks lists every domain the current message names when more than one; domain_hint stays the first; &#x27;also/too&#x27; adds to the standing domain.<div class=note>Only the also/too paragraph depends on previous state; rest is current-message-only. Two examples are ask lists spanning domains defined in 6.</div></td>
+<td class=rd><div><code>asks</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:452</code> <code>chatbot/turn/apply.py:1015</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div></td>
+<td><b>yes</b>: standing domain from previous turn<div class=q>&ldquo;&quot;also&quot;, &quot;as well&quot; and &quot;too&quot; ADD the newly named domain to whatever domain the conversation already carries&rdquo;</div></td>
+<td><span class=m>-</span></td>
+<td>45: stock, incoming and PO example; 37: output key</td>
+<td><details><summary>2 items</summary><span class=ids>G091 G112</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>333</td>
+<td>asks DRIVES multi-domain turns (turn/decide.py:452).<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s36" class="">
+<td class=num>36</td>
+<td><b>TOPIC RESET</b><div class=m>v94:738-744</div></td>
+<td class=num>87</td>
+<td>topic_reset true when current message drops the subject and starts something else; default false.<div class=note>Mutually relies on understanding &#x27;same topic&#x27;, which 5 and 9 also define. Likely overlaps entity_op clear/replace.</div></td>
+<td class=rd><div><code>topic_reset</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:1030</code> <code>chatbot/turn/task.py:556</code></div></td>
+<td><b>yes</b>: previous subject (conversation state)<div class=q>&ldquo;true when the current message DROPS what the conversation was about&rdquo;</div></td>
+<td><span class=m>-</span></td>
+<td>5: domain switch vs refine; 86/87: narrowing; 9: bare entity continuation</td>
+<td><details><summary>2 items</summary><span class=ids>G028 G082</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>87</td>
+<td>topic_reset DRIVES (turn/apply.py:1030).<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s37" class="">
+<td class=num>37</td>
+<td><b>OUTPUT (exactly these keys, no others, no comments)</b><div class=m>v94:745-785</div></td>
+<td class=num>677</td>
+<td>The exact output JSON schema with all keys and enum values; return one JSON object.<div class=note>Schema is split: &#x27;TWO MORE OUTPUT KEYS&#x27; (38) adds group_by/top_n and later sections add sales_channel, sales_basis, open_question_answer etc. Missing comma after requested_attributes line, would break copy-paste. Enum comments partly stale (order_status lacks 3 values).</div></td>
+<td class=rd><span class=m>none (format / prose)</span></td>
+<td><span class=m>no</span></td>
+<td>message_type: 5; entity_op: 5; teams: 8; agents: 5; domains/status enums: 6</td>
+<td>26: routing; 17: access levels; 32: status enums; 23: broaden; 41-42: status values; 48+: group_by, top_n, sales keys appended later</td>
+<td><span class=m>all 118 (always-on)</span></td>
+<td><span class="v keep">KEEP</span><div class=m>stage 1</div></td>
+<td class=num>720</td>
+<td>Fix: missing comma after requested_attributes (v94:765), stale status enums, fold in 38. The schema has 58 required keys (head/parser.py:85-683) but this block lists fewer; the rest are announced across later sections.<div class=risk>Risk: low; schema enforces keys</div></td>
+</tr>
+<tr id="s38" class="bn">
+<td class=num>38</td>
+<td><b>TWO MORE OUTPUT KEYS, AND THE SO / PO / SPO VOCABULARY</b> <span class=m>(banner)</span><div class=m>v94:786-795</div></td>
+<td class=num>93</td>
+<td>Banner announcing two extra output keys group_by and top_n and the SO/PO/SPO vocabulary.<div class=note>Banner only; the title says SO/PO/SPO vocabulary but no vocabulary follows here; 93 tokens of scaffolding. Schema should be one place.</div></td>
+<td class=rd><div><code>group_by</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1026</code> <code>chatbot/lanes/business/fetch.py:1192</code></div><div><code>top_n</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1047</code> <code>chatbot/lanes/business/fetch.py:600</code></div></td>
+<td><span class=m>no</span></td>
+<td>group_by values: 6</td>
+<td>37: output schema; 39-40: details</td>
+<td><span class=m>all 118 (always-on)</span></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>Banner; its two keys go into 37.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s39" class="">
+<td class=num>39</td>
+<td><b>GROUP_BY</b><div class=m>v94:796-806</div></td>
+<td class=num>194</td>
+<td>group_by from the current message words only: customer, transporter, date, product, warehouse, supplier; default null.<div class=note>English/Malay phrase table; &#x27;never infer from context&#x27; is negative teaching about state.</div></td>
+<td class=rd><div><code>group_by</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1026</code> <code>chatbot/lanes/business/fetch.py:1192</code></div></td>
+<td><span class=m>no</span></td>
+<td>axes: 6; phrasings: ~20 in 3 languages</td>
+<td>45: by supplier by product sets group_by; 38: banner; 91-ish: none</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>194</td>
+<td>group_by DRIVES report grouping (lanes/business/fetch.py:1026).<div class=risk>Risk: unmeasured: 0 TRAIN items</div></td>
+</tr>
+<tr id="s40" class="">
+<td class=num>40</td>
+<td><b>TOP_N</b><div class=m>v94:807-814</div></td>
+<td class=num>84</td>
+<td>top_n integer from the current message only, else null, never carried over.<div class=note>Restated and specialised in 79.</div></td>
+<td class=rd><div><code>top_n</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1047</code> <code>chatbot/lanes/business/fetch.py:600</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>79: TOP_N on a top selling ask</td>
+<td><details><summary>1 items</summary><span class=ids>G064</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>84</td>
+<td>top_n.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s41" class="">
+<td class=num>41</td>
+<td><b>ORDER_STATUS GAINS &quot;so_outstanding&quot;</b><div class=m>v94:815-824</div></td>
+<td class=num>231</td>
+<td>order_status gains so_outstanding: SO ordered with no DO yet, vs outstanding = DO created not delivered; phrasings in English/Malay/Chinese; not check_po.<div class=note>Incremental patch section: enum additions appended after 32 instead of editing 32. 32 and 37 enum comments contradict the 6-value set stated here.</div></td>
+<td class=rd><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:1218</code> <code>chatbot/turn/apply.py:1424</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div></td>
+<td><span class=m>no</span></td>
+<td>so_outstanding phrasings: ~8; full status set: 6 values</td>
+<td>32: order_status base; 42: do_outstanding; 34: document SO; 45: not check_po</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>80</td>
+<td>Row in the report-kind table.<div class=risk>Risk: unmeasured: 0 TRAIN items</div></td>
+</tr>
+<tr id="s42" class="">
+<td class=num>42</td>
+<td><b>ORDER_STATUS GAINS &quot;do_outstanding&quot; AND &quot;outstanding_both&quot;</b><div class=m>v94:825-850</div></td>
+<td class=num>469</td>
+<td>order_status gains do_outstanding and outstanding_both; document word decides scope wherever it sits; bare outstanding stays outstanding and CRM asks which document.<div class=note>Verbatim duplicate of the Srtwc8518-SH example in 34. &#x27;Document decides scope wherever it sits&#x27; is stated twice (34 and 42). Names products SRTWT7443, SRTWT7445, warehouses BRW IB BRW-IB.</div></td>
+<td class=rd><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:1218</code> <code>chatbot/turn/apply.py:1424</code></div><div><code>document</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:354</code> <code>chatbot/turn/apply.py:1217</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div></td>
+<td><span class=m>no</span></td>
+<td>status values: 3 more; phrasings: ~10</td>
+<td>34: document word wherever it sits (duplicated example &#x27;Srtwc8518-SH dealer delivery order outstanding ... BRW&#x27; verbatim); 41; 44: BRW location; 60: both; 43: both option</td>
+<td><details><summary>1 items</summary><span class=ids>G055</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>150</td>
+<td>Row in the report-kind table; example duplicates 34.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s43" class="">
+<td class=num>43</td>
+<td><b>AN OPEN NUMBERED QUESTION IS ANSWERED WITH reference_positions</b><div class=m>v94:851-901</div></td>
+<td class=num>942</td>
+<td>When the user block lists &#x27;Open question options&#x27;, answer by number or by words naming an option into reference_positions, fill other fields as usual; paraphrases pick an option; &#x27;all&#x27; with no all-option is every number; a NEW question is not an answer; a typed code or name from the list is both an entity and its position.<div class=note>(h) YES covered: &#x27;A CODE OR NAME FROM THE LIST IS ITS POSITION&#x27; (options &#x27;B&#x27; -&gt; reference_positions [2] AND entities [B]; &#x27;stoick SRTWC286-SH-NEW&#x27; -&gt; [4]). But it contradicts the next line &#x27;Never emit BOTH an entity and a reference_position for the same message&#x27; - direct contradiction in the same section. Typed-code answers otherwise only handled here.</div></td>
+<td class=rd><div><code>reference_positions</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:251</code> <code>chatbot/turn/apply.py:1446</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>domain_in_message</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:129</code> <code>chatbot/lanes/business/find.py:127</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div></td>
+<td><b>yes</b>: open numbered question with option list in user block<div class=q>&ldquo;When the user block says the assistant is waiting for a reply AND lists &quot;Open question options:&quot;&rdquo;</div></td>
+<td>example option sets: 5; paraphrase triggers: ~8</td>
+<td>28: positional refs; 29: reference_target; 7: domain_in_message; 60: narrowing reply; 65: open_question_answer; 83: answering the bot&#x27;s own top selling question</td>
+<td><details><summary>22 items</summary><span class=ids>G001 G002 G004 G017 G041 G043 G044 G047 G054 G061 G072 G087 G088 G090 G110 G114 G115 G116 G117 G122 G129 G132</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>450</td>
+<td>Fix first: v94:891-893 says emit the position AND the typed code; v94:900 says never both. 20 example lines. Code already maps a typed code to its option (turn/apply.py:2915-2926).<div class=risk>Risk: high: positional picks</div></td>
+</tr>
+<tr id="s44" class="">
+<td class=num>44</td>
+<td><b>IN AN ORDER OR OUTSTANDING ASK, A SHORT TOKEN IS A LOCATION</b><div class=m>v94:902-918</div></td>
+<td class=num>371</td>
+<td>Under an order/outstanding ask, a short token (&lt;=4 chars letters or letter+one digit, or hyphenated site code &lt;=10 chars) is a warehouse entity, anything longer is a customer; product codes carry digits.<div class=note>Hard-coded warehouse code examples (IB, BB, BRW, MWH...) and a length-based heuristic (&#x27;longer than 4 = customer&#x27;) that is a code-side check; rule conflicts with &#x27;DC1 / WH3&#x27; (digit) vs &#x27;product code carries digits&#x27;.</div></td>
+<td class=rd><div><code>entities[].hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div></td>
+<td><span class=m>no</span></td>
+<td>short warehouse codes: ~15 named; two shape rules</td>
+<td>8: customer name in order question; 42: BRW example; 18: warehouse hint</td>
+<td><details><summary>2 items</summary><span class=ids>G084 G086</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>371</td>
+<td>Domain-specific location tokens.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s45" class="">
+<td class=num>45</td>
+<td><b>PURCHASE ORDERS: domain_hint &quot;purchase_order&quot;, intent_hint &quot;check_po&quot;</b><div class=m>v94:919-935</div></td>
+<td class=num>273</td>
+<td>PO question means what we ordered from a supplier: domain purchase_order, intent check_po; DO/SO/customer are never purchase_order; PO alone is never purchase_cost; multi-ask example.<div class=note>Starts at line 919, outside the 1-918 range asked but read anyway. purchase_order domain appears only here and in 91, not in the domain list in sec 6.</div></td>
+<td class=rd><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>group_by</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1026</code> <code>chatbot/lanes/business/fetch.py:1192</code></div><div><code>asks</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:452</code> <code>chatbot/turn/apply.py:1015</code></div></td>
+<td><span class=m>no</span></td>
+<td>PO phrasings: 7</td>
+<td>8: no purchase_order in decisive terms; 6: domain list lacks purchase_order; 19: wc286 PO example; 41: not check_po for outstanding SO; 46-48: PO rules continue; 53: purchase_cost vs PO</td>
+<td><details><summary>4 items</summary><span class=ids>G040 G048 G127 G128</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage 4</div></td>
+<td class=num>273</td>
+<td>Absorb 48.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s46" class="">
+<td class=num>46</td>
+<td><b>SPO LAST RECEIPT: intent_hint &quot;check_spo&quot;, domain_hint &quot;spo_allocation&quot;</b><div class=m>v94:936-945</div></td>
+<td class=num>142</td>
+<td>Last-in/last-received phrasing maps to check_spo / spo_allocation; &quot;last 3 in&quot; sets top_n; stock and incoming questions stay as they are.</td>
+<td class=rd><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>top_n</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1047</code> <code>chatbot/lanes/business/fetch.py:600</code></div></td>
+<td><span class=m>no</span></td>
+<td>last-in trigger phrases (9, EN/MY/ZH)</td>
+<td>48: code is product in SPO ask; 91: spo_allocation domain registry line</td>
+<td><details><summary>3 items</summary><span class=ids>G132 G133 G134</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>142</td>
+<td>SPO.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s47" class="">
+<td class=num>47</td>
+<td><b>A BARE &quot;SPEC&quot; ASKS FOR ALL OF THEM</b><div class=m>v94:946-957</div></td>
+<td class=num>218</td>
+<td>A bare &quot;spec/specs/specification&quot; with no named property gives requested_attributes []; a named property wins.<div class=note>Names product code SRTKT73SS in examples.</div></td>
+<td class=rd><div><code>requested_attributes</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1111</code> <code>chatbot/do_ask.py:97</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div></td>
+<td><span class=m>no</span></td>
+<td>property examples (~11); spec words (4)</td>
+<td>72: specification vocabulary overlap; 91: switch word spec</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>80</td>
+<td>Merge into 72.<div class=risk>Risk: unmeasured: 0 TRAIN items</div></td>
+</tr>
+<tr id="s48" class="">
+<td class=num>48</td>
+<td><b>IN A PO ASK, THE CODE IS THE PRODUCT</b><div class=m>v94:958-966</div></td>
+<td class=num>180</td>
+<td>In a PO ask the token after for/of or bare code is a product entity, not an order; PO/SO numbers look like 202602-S0002.<div class=note>Names SRTWC8517, C-FH14, MSK11A-QT.</div></td>
+<td class=rd><div><code>entities[].hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>entities[].raw</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div></td>
+<td><span class=m>no</span></td>
+<td>PO number shape + 3 code examples</td>
+<td>53: same code-is-product rule; 46: same for SPO</td>
+<td><details><summary>3 items</summary><span class=ids>G040 G048 G127</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>80</td>
+<td>Merge into 45.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s49" class="">
+<td class=num>49</td>
+<td><b>A NEW QUESTION IS NEVER A &quot;YES&quot;</b><div class=m>v94:967-978</div></td>
+<td class=num>181</td>
+<td>When an escalate offer is open and the message asks something new, it is a business_query with is_escalation_confirmation false and the entity from this turn.<div class=note>Fully restated by 90 (which says it outranks earlier lines). Names SRTWC8517.</div></td>
+<td class=rd><div><code>escalation.is_escalation_confirmation</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2073</code> <code>chatbot/lanes/escalation.py:1103</code></div><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div></td>
+<td><b>yes</b>: previous assistant turn made an escalation offer<div class=q>&ldquo;When the previous reply offered to escalate (&quot;Would you like me to escalate to ... team?&quot;) and the current message ASKS SOMETHING&rdquo;</div></td>
+<td><span class=m>-</span></td>
+<td>90: FALSE when message brings own question; 50: offer open, delivery ask; 31: value is not a fragment; 4: affirmation</td>
+<td><details><summary>23 items</summary><span class=ids>G001 G002 G003 G004 G007 G028 G031 G041 G047 G056 G059 G061 G063 G080 G081 G089 G090 G113 G114 G116 G132 G136 G137</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>0</td>
+<td>Merge into the one escalation section.<div class=risk>Risk: medium; 23 TRAIN items</div></td>
+</tr>
+<tr id="s50" class="">
+<td class=num>50</td>
+<td><b>A DELIVERY WORD PLUS A NAME IS AN ORDER ASK</b><div class=m>v94:979-981</div></td>
+<td class=num>96</td>
+<td>A delivery/order word beside a customer or product name is check_order business_query, not request_for_help, even with an escalate offer open.<div class=note>Example names hanlim.</div></td>
+<td class=rd><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>escalation.is_escalation_confirmation</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2073</code> <code>chatbot/lanes/escalation.py:1103</code></div></td>
+<td><b>yes</b>: an escalation offer may be open<div class=q>&ldquo;even when an escalate offer is open&rdquo;</div></td>
+<td><span class=m>-</span></td>
+<td>49: offer open, new ask; 90: own question is false; 13: message type request_for_help</td>
+<td><details><summary>9 items</summary><span class=ids>G019 G046 G049 G050 G054 G084 G086 G106 G110</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>96</td>
+<td>Short routing cue.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s51" class="">
+<td class=num>51</td>
+<td><b>THE ATTRIBUTE PHRASE, WHOLE</b><div class=m>v94:982-985</div></td>
+<td class=num>66</td>
+<td>requested_attributes must carry the customers whole attribute phrase, never shortened; not applied to canonical_code.</td>
+<td class=rd><div><code>requested_attributes</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1111</code> <code>chatbot/do_ask.py:97</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>47: requested_attributes rules; 72: raw is customer words</td>
+<td><details><summary>4 items</summary><span class=ids>G083 G102 G107 G112</span></details></td>
+<td><span class="v del">DELETE</span><div class=m>stage 3</div></td>
+<td class=num>0</td>
+<td>Restates 11.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s52" class="bn">
+<td class=num>52</td>
+<td><b>LAST PURCHASE COST</b> <span class=m>(banner)</span><div class=m>v94:986-989</div></td>
+<td class=num>18</td>
+<td>Banner heading for last purchase cost.<div class=note>Pure banner, ~18 tokens.</div></td>
+<td class=rd><span class=m>none (format / prose)</span></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td><span class=m>-</span></td>
+<td><details><summary>5 items</summary><span class=ids>G045 G123 G124 G125 G126</span></details></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>Banner.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s53" class="">
+<td class=num>53</td>
+<td><b>LAST PURCHASE COST: intent_hint &quot;check_po_cost&quot;, domain_hint &quot;purchase_cost&quot;</b><div class=m>v94:990-1006</div></td>
+<td class=num>294</td>
+<td>Cost words (last purchase cost, what did we pay, buying price) map to check_po_cost / purchase_cost; selling-price words stay master_products or stock; code after for is a product.<div class=note>Refers back to PRICE TERMINOLOGY.</div></td>
+<td class=rd><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>top_n</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1047</code> <code>chatbot/lanes/business/fetch.py:600</code></div><div><code>group_by</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1026</code> <code>chatbot/lanes/business/fetch.py:1192</code></div></td>
+<td><span class=m>no</span></td>
+<td>cost trigger phrases (11); selling-price negatives (5)</td>
+<td>48: code is the product; 91: purchase_cost registry line; 44: price terminology</td>
+<td><details><summary>5 items</summary><span class=ids>G045 G123 G124 G125 G126</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>294</td>
+<td>Last purchase cost.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s54" class="bn">
+<td class=num>54</td>
+<td><b>LOW STOCK REPORT FILTERS</b> <span class=m>(banner)</span><div class=m>v94:1007-1062</div></td>
+<td class=num>1046</td>
+<td>Defines the low_stock object (group_by, categories, all_categories, brands, suppliers) for low_stock_report asks, with category translations, grouping phrases, refine-the-report and answer-the-bots-question rules.<div class=note>Key described as &#x27;One more OUTPUT key&#x27;, in addition to main OUTPUT block. Large (1046t) for one report; refine + open-question clauses are conditional teaching.</div></td>
+<td class=rd><div><code>low_stock</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/low_stock_ask.py:253</code> <code>chatbot/lanes/business/chat_report.py:111</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>domain_in_message</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:129</code> <code>chatbot/lanes/business/find.py:127</code></div><div><code>open_question_answer</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2814</code> <code>chatbot/turn/sub_asks.py:373</code></div><div><code>topic_reset</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:1030</code> <code>chatbot/turn/task.py:556</code></div><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div></td>
+<td><b>yes</b>: previous response starts &#x27;Low stock report (&#x27; and/or an Open question about low_stock_report<div class=q>&ldquo;when &quot;Previous response&quot; starts &quot;Low stock report (&quot;, a message that only names a filter or a grouping&rdquo;</div></td>
+<td>category examples (~8 + translations 6); group_by values (6); grouping phrases (~20); brand words sorento/mocha/cabana</td>
+<td>65: open_question_answer modes; 76: Known brands; 37: output block key</td>
+<td><details><summary>1 items</summary><span class=ids>G134</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>600</td>
+<td>low_stock DRIVES. Hard-codes Sorento / Mocha / Cabana.<div class=risk>Risk: medium; only 1 TRAIN item</div></td>
+</tr>
+<tr id="s55" class="">
+<td class=num>55</td>
+<td><b>SALES RANKING: order_status &quot;sales_ranking&quot;, domain_hint &quot;order&quot;</b><div class=m>v94:1063-1131</div></td>
+<td class=num>1560</td>
+<td>Sales ranked by one dimension (salesman, customer, brand, category, location, channel, month) is order_status sales_ranking with group_by, top_n, measure, basis and ranking_refine; defines follow-up refinements to a previous ranking and what is NOT a ranking.<div class=note>Biggest section (1560t). Names CWC7606-SH, SA01, SR1234. Embeds two follow-up state machines (Top N ... response; open basis question). Defines &#x27;ranking_refine&#x27; and &#x27;measure&#x27; as extra keys.</div></td>
+<td class=rd><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>group_by</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1026</code> <code>chatbot/lanes/business/fetch.py:1192</code></div><div><code>top_n</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1047</code> <code>chatbot/lanes/business/fetch.py:600</code></div><div><code>measure</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/report_ask.py:607</code> <code>chatbot/lanes/business/report_ask.py:602</code></div><div><code>ranking_refine</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/report_ask.py:607</code> <code>chatbot/lanes/business/report_ask.py:602</code></div><div><code>basis</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:911</code> <code>chatbot/lanes/business/report_ask.py:199</code></div><div><code>rank_direction</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:944</code> <code>chatbot/lanes/business/report_ask.py:475</code></div><div><code>sales_channel</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:858</code> <code>chatbot/lanes/business/fetch.py:1031</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>date_filter_start</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>date_filter_end</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>reference_positions</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:251</code> <code>chatbot/turn/apply.py:1446</code></div><div><code>domain_in_message</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:129</code> <code>chatbot/lanes/business/find.py:127</code></div></td>
+<td><b>yes</b>: previous response is a sales ranking, or an open basis / how-many / top-selling question<div class=q>&ldquo;&quot;Previous response&quot; starts &quot;Top N sales agents|customers|brands|
+categories|locations|channels|months by delivered sales&quot;&rdquo;</div></td>
+<td>group_by values (8); basis values (3); measure (2); ranking verbs/phrases ~25 incl ZH; business model chain</td>
+<td>78: top_selling ranking pattern; 57: sales_channel as sales_report; 67: sales_analysis contrast; 83: answering bot ranking question; 86: narrowing a ranking</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>500</td>
+<td>Report-kind table. &#x27;sales_ranking&#x27; is not a chatbot_status_words row (code still reads it).<div class=risk>Risk: unmeasured: 0 TRAIN items</div></td>
+</tr>
+<tr id="s56" class="bn">
+<td class=num>56</td>
+<td><b>SALES REPORT</b> <span class=m>(banner)</span><div class=m>v94:1132-1140</div></td>
+<td class=num>57</td>
+<td>Banner: says sales_channel key is emitted on every object in addition to OUTPUT.<div class=note>Key announced as addition; sections 56 and 58 both introduce sales_channel.</div></td>
+<td class=rd><div><code>sales_channel</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:858</code> <code>chatbot/lanes/business/fetch.py:1031</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>58: sales_channel defined again; 37: OUTPUT block</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>Banner.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s57" class="">
+<td class=num>57</td>
+<td><b>SALES REPORT: order_status &quot;sales_report&quot;, domain_hint &quot;order&quot;</b><div class=m>v94:1141-1166</div></td>
+<td class=num>431</td>
+<td>Report-style words (sales report, sales performance, how much did X buy) are order_status sales_report with domain order / check_order always, even if only a product code is present.<div class=note>Repeats the &#x27;order_status X + domain order + check_order&#x27; pattern. Names SRTWC286, KIM HUAT, SRTKT39SS.</div></td>
+<td class=rd><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>requested_attributes</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1111</code> <code>chatbot/do_ask.py:97</code></div><div><code>sales_channel</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:858</code> <code>chatbot/lanes/business/fetch.py:1031</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div></td>
+<td><span class=m>no</span></td>
+<td>sales_report trigger phrases (~7 incl MY/ZH)</td>
+<td>55: order_status pattern, sales_ranking; 67: sales_analysis contrast; 78: top_selling contrast; 32: order_status filter</td>
+<td><details><summary>8 items</summary><span class=ids>G062 G063 G064 G065 G066 G135 G136 G137</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>200</td>
+<td>Report-kind table.<div class=risk>Risk: medium; 8 TRAIN items</div></td>
+</tr>
+<tr id="s58" class="">
+<td class=num>58</td>
+<td><b>SALES_CHANNEL: a NEW nullable output key, &quot;dealer&quot; | &quot;project&quot; | null</b><div class=m>v94:1167-1194</div></td>
+<td class=num>506</td>
+<td>sales_channel is dealer/project only on sales_report (and sales_analysis, ranking); the word dealer in an outstanding ask is never a channel; product-code-shaped tokens after dealer stay products.<div class=note>Heading calls it &quot;a NEW nullable output key&quot;; it is already announced in 56 and used in 55/60/67, so the NEW label is stale. Names Srt5674-N, hanlim, SRTWC286.</div></td>
+<td class=rd><div><code>sales_channel</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:858</code> <code>chatbot/lanes/business/fetch.py:1031</code></div><div><code>entities[].hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>date_filter_start</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>date_filter_end</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div></td>
+<td><span class=m>no</span></td>
+<td>channel values (2)</td>
+<td>55: sales_channel as sales_report; 67: sales_channel on analysis; 56: sales_channel announced</td>
+<td><details><summary>1 items</summary><span class=ids>G065</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>200</td>
+<td>Still calls sales_channel &#x27;a NEW&#x27; key.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s59" class="">
+<td class=num>59</td>
+<td><b>A BARE MONTH NAME IS STILL A DATE FILTER, EVEN BESIDE A CHANNEL WORD AND A CODE</b><div class=m>v94:1195-1211</div></td>
+<td class=num>304</td>
+<td>A bare month name anywhere sets date_filter_start/end, even beside a channel word and product code.<div class=note>Pure restatement of the DATE FILTER rule (cites it twice). Hard-codes 2026 dates in examples. Names SRTWC912, KIM HUAT.</div></td>
+<td class=rd><div><code>date_filter_start</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>date_filter_end</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>sales_channel</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:858</code> <code>chatbot/lanes/business/fetch.py:1031</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>2: DATE FILTER rule restated; 58: dealer Srt5674-N August example</td>
+<td><details><summary>3 items</summary><span class=ids>G063 G064 G136</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>80</td>
+<td>Restates DATE FILTER.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s60" class="">
+<td class=num>60</td>
+<td><b>A NARROWING REPLY UNDER AN OPEN SALES REPORT / OUTSTANDING DETAIL OFFER</b><div class=m>v94:1212-1240</div></td>
+<td class=num>437</td>
+<td>When Pending says a sales_report_detail or outstanding_detail reply is awaited, a message that only narrows (product code, location, month, channel) is a refinement with domain_hint null and order_status null; a message with its own question is a new ask.<div class=note>Third copy of the &#x27;narrowing reply keeps screen&#x27; pattern (55, 60, 86). Names SRTWC286, BB warehouse, total home.</div></td>
+<td class=rd><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>sales_channel</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:858</code> <code>chatbot/lanes/business/fetch.py:1031</code></div><div><code>date_filter_start</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>date_filter_end</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>reference_positions</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:251</code> <code>chatbot/turn/apply.py:1446</code></div></td>
+<td><b>yes</b>: Pending line names sales_report_detail or outstanding_detail<div class=q>&ldquo;When &quot;Pending&quot; states the assistant is waiting for a sales_report_detail or outstanding_detail reply&rdquo;</div></td>
+<td><span class=m>-</span></td>
+<td>86: narrowing a top selling ranking; 55: ranking refine follow-up; 28: previous-response context rules</td>
+<td><details><summary>17 items</summary><span class=ids>G001 G031 G035 G056 G063 G088 G089 G110 G114 G115 G116 G122 G124 G129 G133 G136 G137</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>250</td>
+<td>Narrowing reply.<div class=risk>Risk: medium; 17 TRAIN items</div></td>
+</tr>
+<tr id="s61" class="bn">
+<td class=num>61</td>
+<td><b>THE OPEN TASK, PER-PRODUCT QUANTITIES, AND PROCEEDING</b> <span class=m>(banner)</span><div class=m>v94:1241-1250</div></td>
+<td class=num>92</td>
+<td>Banner: announces proceed_anyway and entities[].quantity as additions to OUTPUT.<div class=note>Quantity announced here AND in banner 73; proceed_anyway key announced as in addition though likely in main OUTPUT.</div></td>
+<td class=rd><div><code>proceed_anyway</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/task.py:248</code> <code>chatbot/turn/apply.py:2592</code></div><div><code>entities[].quantity</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:454</code> <code>chatbot/turn/apply.py:2262</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>74: quantity banner again; 62: quantity heading</td>
+<td><details><summary>6 items</summary><span class=ids>G008 G080 G081 G082 G083 G122</span></details></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>Banner.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s62" class="">
+<td class=num>62</td>
+<td><b>entities[].quantity</b><div class=m>v94:1251-1263</div></td>
+<td class=num>246</td>
+<td>Per-product quantity: the number written beside each entity goes in that entity quantity; one unattached number is demand_qty.<div class=note>Duplicates section 74 almost entirely (two definitions of entities[].quantity). Names MWT5727SS-CR, MHS1028, MSK11A-QT, ABC123.</div></td>
+<td class=rd><div><code>entities[].quantity</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:454</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>demand_qty</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2484</code> <code>chatbot/turn/apply.py:2501</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>74: entities[].quantity defined again; 63: quantity for open task product</td>
+<td><details><summary>3 items</summary><span class=ids>G080 G099 G111</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>0</td>
+<td>Into the one quantity section.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s63" class="">
+<td class=num>63</td>
+<td><b>AN OPEN TASK IS A FACT, AND THE MESSAGE MAY BE ABOUT IT</b><div class=m>v94:1264-1284</div></td>
+<td class=num>352</td>
+<td>When an &quot;Open task:&quot; line is present, a quantity for a named product sets that entity quantity regardless of subject; add/drop/make/proceed/never-mind/back-to phrases operate on the open stock check.<div class=note>Names ABC123, MHS1028, SRTWC8517, MSK11A-QT.</div></td>
+<td class=rd><div><code>entities[].quantity</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:454</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>entity_op</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:393</code> <code>chatbot/turn/decide.py:631</code></div><div><code>proceed_anyway</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/task.py:248</code> <code>chatbot/turn/apply.py:2592</code></div><div><code>topic_reset</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:1030</code> <code>chatbot/turn/task.py:556</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div></td>
+<td><b>yes</b>: an &#x27;Open task:&#x27; line is present in the user block<div class=q>&ldquo;When the user block carries a line beginning &quot;Open task:&quot;&rdquo;</div></td>
+<td>proceed phrases (4)</td>
+<td>65: quantities open question kind; 64: stock quantity revision</td>
+<td><details><summary>2 items</summary><span class=ids>G008 G122</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>352</td>
+<td>Reads the printed &#x27;Open task:&#x27; line (turn/task.py:417).<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s64" class="">
+<td class=num>64</td>
+<td><b>A LINE BEGINNING &quot;Last answered:&quot;</b><div class=m>v94:1285-1301</div></td>
+<td class=num>286</td>
+<td>When a &quot;Last answered:&quot; line is present, a message stating only a new quantity is the same product at the new quantity: demand_qty, correction true, entities empty; a bare number is not a list position.<div class=note>Names SRTGV332-DIY, SRTKT1631SS, SRTWC286. Overlaps 65 last_answer.</div></td>
+<td class=rd><div><code>demand_qty</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2484</code> <code>chatbot/turn/apply.py:2501</code></div><div><code>correction</code> <span class='tag pt'>PASSTHROUGH</span> <code>chatbot/turn/apply.py:1999</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>reference_positions</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:251</code> <code>chatbot/turn/apply.py:1446</code></div></td>
+<td><b>yes</b>: a &#x27;Last answered:&#x27; line is present<div class=q>&ldquo;When the user block carries a line like &quot;Last answered: SRTGV332-DIY x 20.&quot;&rdquo;</div></td>
+<td>new-quantity phrasings (6 incl MY)</td>
+<td>65: last_answer open question kind; 63: open task quantity; 28: bare number reference position</td>
+<td><details><summary>4 items</summary><span class=ids>G080 G081 G082 G083</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>286</td>
+<td>Reads the printed &#x27;Last answered:&#x27; line.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s65" class="">
+<td class=num>65</td>
+<td><b>THE OPEN QUESTION AND open_question_answer</b><div class=m>v94:1302-1354</div></td>
+<td class=num>1160</td>
+<td>Defines the Open question line (kinds pick_one, choose_brand, confirm, quantities, last_answer, how_many_to_show, free) and the open_question_answer object: how to read picks, yes/no, per-line quantities, all, done, cancel, in EN/MY/ZH.<div class=note>1160t. &#x27;Emit on every object&#x27; key; may duplicate main OUTPUT entry. Largest conditional-on-state block. Mapping of numbers/ordinals across languages is long.</div></td>
+<td class=rd><div><code>open_question_answer</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2814</code> <code>chatbot/turn/sub_asks.py:373</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>reference_positions</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:251</code> <code>chatbot/turn/apply.py:1446</code></div><div><code>demand_qty</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2484</code> <code>chatbot/turn/apply.py:2501</code></div></td>
+<td><b>yes</b>: an &#x27;Open question:&#x27; line (kind, options, items, owed, qty, asked_qty)<div class=q>&ldquo;A line &quot;Open question: {...}&quot; is the ONE question the assistant is waiting on&rdquo;</div></td>
+<td>question kinds (7); modes (7); number words/ordinals in 3 languages (~40)</td>
+<td>54: low stock open question answer; 83: answer to bots top selling question; 84: answer to customer or sales agent; 64: last answered revision; 63: open task quantities; 37: OUTPUT key</td>
+<td><details><summary>24 items</summary><span class=ids>G001 G002 G003 G008 G031 G035 G056 G063 G080 G081 G082 G083 G088 G089 G110 G114 G115 G116 G122 G124 G129 G133 G136 G137</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 5</div></td>
+<td class=num>600</td>
+<td>22 example lines.<div class=risk>Risk: medium; 24 TRAIN items</div></td>
+</tr>
+<tr id="s66" class="bn">
+<td class=num>66</td>
+<td><b>SALES ANALYSIS</b> <span class=m>(banner)</span><div class=m>v94:1355-1366</div></td>
+<td class=num>84</td>
+<td>Banner: announces sales_basis, sales_company and group_by month/year as additions.<div class=note>Keys defined in 69 and 70 right after, so banner is a third mention.</div></td>
+<td class=rd><div><code>sales_basis</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1034</code></div><div><code>sales_company</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1038</code></div><div><code>group_by</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1026</code> <code>chatbot/lanes/business/fetch.py:1192</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>69: sales_basis heading; 70: sales_company heading</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>Banner.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s67" class="">
+<td class=num>67</td>
+<td><b>SALES ANALYSIS: order_status &quot;sales_analysis&quot;, domain_hint &quot;order&quot;</b><div class=m>v94:1367-1384</div></td>
+<td class=num>301</td>
+<td>Company-own sales totals with no product or customer named are order_status sales_analysis, domain order, check_order, entities [] and sales_channel/group_by/sales_company set.<div class=note>Same &#x27;order_status X, domain order, check_order&#x27; pattern again.</div></td>
+<td class=rd><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>sales_channel</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:858</code> <code>chatbot/lanes/business/fetch.py:1031</code></div><div><code>group_by</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1026</code> <code>chatbot/lanes/business/fetch.py:1192</code></div><div><code>sales_company</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1038</code></div><div><code>date_filter_start</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>date_filter_end</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div></td>
+<td><span class=m>no</span></td>
+<td>trigger phrases (~9 incl MY/ZH)</td>
+<td>57: order_status pattern, sales_report; 55: sales_analysis contrast; 58: sales_channel as sales_report</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>150</td>
+<td>Report-kind table.<div class=risk>Risk: unmeasured: 0 TRAIN items</div></td>
+</tr>
+<tr id="s68" class="">
+<td class=num>68</td>
+<td><b>DATES ON A SALES ANALYSIS</b><div class=m>v94:1385-1390</div></td>
+<td class=num>94</td>
+<td>Years named give start of earliest year to end of latest; no period gives null/null; ambiguous period asks.<div class=note>Restates DATE FILTER for one report.</div></td>
+<td class=rd><div><code>date_filter_start</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>date_filter_end</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>2: DATE FILTER general rule; 59: date filter restated</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v del">DELETE</span><div class=m>stage 4</div></td>
+<td class=num>0</td>
+<td>Restates DATE FILTER.<div class=risk>Risk: unmeasured</div></td>
+</tr>
+<tr id="s69" class="">
+<td class=num>69</td>
+<td><b>SALES_BASIS: &quot;ordered&quot; | &quot;delivered&quot; | &quot;invoiced&quot; | null</b><div class=m>v94:1391-1396</div></td>
+<td class=num>115</td>
+<td>sales_basis from ordered/delivered/invoiced words, null otherwise; only on a sales analysis.<div class=note>Third parallel name for the same concept: sales_basis (analysis), basis (ranking/top selling), &#x27;basis&#x27; values differ (invoiced, outstanding, unclear).</div></td>
+<td class=rd><div><code>sales_basis</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1034</code></div></td>
+<td><span class=m>no</span></td>
+<td>basis values (3) with ~9 trigger words</td>
+<td>81: basis same idea for ranking; 55: basis for sales ranking</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>80</td>
+<td>sales_basis.<div class=risk>Risk: unmeasured</div></td>
+</tr>
+<tr id="s70" class="">
+<td class=num>70</td>
+<td><b>SALES_COMPANY: the company named, or null</b><div class=m>v94:1397-1401</div></td>
+<td class=num>53</td>
+<td>sales_company is the company named (Sorento/Mocha) for a sales analysis, else null; never a customer.<div class=note>Overlaps brand entity: Mocha sales example in 67 uses sales_company instead of brand.</div></td>
+<td class=rd><div><code>sales_company</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1038</code></div></td>
+<td><span class=m>no</span></td>
+<td>company names (2)</td>
+<td>76: brand vs company names</td>
+<td><details><summary>2 items</summary><span class=ids>G063 G136</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>53</td>
+<td>sales_company.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s71" class="bn">
+<td class=num>71</td>
+<td><b>SPECIFICATIONS: WHAT A PRODUCT IS DESCRIBED BY</b> <span class=m>(banner)</span><div class=m>v94:1402-1412</div></td>
+<td class=num>116</td>
+<td>Banner: adds entities[].spec_key and spec_value on every entity, drawn from the Specification lines in the policy block.<div class=note>spec_key/spec_value explained in 71 and again in 72.</div></td>
+<td class=rd><div><code>entities[].spec_key</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:745</code></div><div><code>entities[].spec_value</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:745</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>72: spec_key/spec_value defined again; 91: Specification lines</td>
+<td><details><summary>11 items</summary><span class=ids>G003 G007 G018 G050 G051 G052 G063 G108 G118 G126 G136</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 1</div></td>
+<td class=num>40</td>
+<td>Banner, defines spec_key / spec_value a second time.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s72" class="">
+<td class=num>72</td>
+<td><b>THE specification ENTITY</b><div class=m>v94:1413-1453</div></td>
+<td class=num>720</td>
+<td>A specification entity is a property a product is described by (finish, mounting, trap, material, thickness); one entity per property, category carries only the product type, off-list property words get spec_value null, misspelt colours still map to finish.<div class=note>720t. One bullet is conditional (domain word alone after an answer keeps spec). Rest static. Heading rule &#x27;attachment_type is ONLY a kind of document&#x27; is an anti-confusion rule.</div></td>
+<td class=rd><div><code>entities[].hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>entities[].spec_key</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:745</code></div><div><code>entities[].spec_value</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:745</code></div><div><code>entities[].raw</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>entity_op</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:393</code> <code>chatbot/turn/decide.py:631</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div></td>
+<td><b>yes</b>: a previous answered subject with specifications<div class=q>&ldquo;A domain word alone after an answer (&quot;cert?&quot;, &quot;stock?&quot;, &quot;incoming?&quot;, &quot;photo?&quot;) keeps the subject&rdquo;</div></td>
+<td>spec key examples (finish, mounting, trap_type, thickness)</td>
+<td>47: spec/specification handling; 91: 50 Specification lines vocabulary; 71: spec_key banner</td>
+<td><details><summary>16 items</summary><span class=ids>G001 G002 G003 G004 G006 G007 G008 G009 G012 G018 G050 G051 G052 G108 G118 G126</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>400</td>
+<td>Absorb 47 and 51.<div class=risk>Risk: medium; 16 TRAIN items</div></td>
+</tr>
+<tr id="s73" class="bn">
+<td class=num>73</td>
+<td><b>QUANTITY</b> <span class=m>(banner)</span><div class=m>v94:1454-1462</div></td>
+<td class=num>55</td>
+<td>Banner: adds entities[].quantity on every entity.<div class=note>Third announcement of entities[].quantity (61, 73, plus definitions in 62 and 74).</div></td>
+<td class=rd><div><code>entities[].quantity</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:454</code> <code>chatbot/turn/apply.py:2262</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>61: quantity banner; 62: quantity heading; 74: quantity definition</td>
+<td><details><summary>5 items</summary><span class=ids>G003 G007 G080 G099 G111</span></details></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>Banner.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s74" class="">
+<td class=num>74</td>
+<td><b>QUANTITY: entities[].quantity</b><div class=m>v94:1463-1480</div></td>
+<td class=num>311</td>
+<td>A count beside a product code (x3, 3 pcs, 3x) is that products quantity and is stripped from raw; a caption that is only a quantity applies to the photos products; no quantity means null.<div class=note>Near-duplicate of 62. Names M210-GM, SRTBF 11502, SRTWC286. Photo caption clause.</div></td>
+<td class=rd><div><code>entities[].quantity</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:454</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>entities[].raw</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>entities[].canonical_code</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:944</code> <code>chatbot/trace.py:283</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>62: entities[].quantity per product; 73: quantity banner</td>
+<td><details><summary>5 items</summary><span class=ids>G003 G007 G080 G099 G111</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>250</td>
+<td>The one quantity section (24, 61, 62, 73, 74).<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s75" class="bn">
+<td class=num>75</td>
+<td><b>KNOWN BRANDS</b> <span class=m>(banner)</span><div class=m>v94:1481-1484</div></td>
+<td class=num>18</td>
+<td>Banner: KNOWN BRANDS.<div class=note>Pure banner, 18 tokens.</div></td>
+<td class=rd><span class=m>none (format / prose)</span></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td><span class=m>-</span></td>
+<td><details><summary>5 items</summary><span class=ids>G063 G075 G130 G136 G137</span></details></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>Banner.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s76" class="">
+<td class=num>76</td>
+<td><b>KNOWN BRANDS: entities[].hint &quot;brand&quot;</b><div class=m>v94:1485-1502</div></td>
+<td class=num>285</td>
+<td>The Known brands line (built live each turn) is the only source of brand names; a token matching a listed name or code is a brand entity with canonical_code the listed name; no line means no brand entities.<div class=note>Brand list is NOT hard-coded here: line is dynamic. But literals Sorento/Mocha/Cabana appear in 54, 86, 90 and section 31 company codes.</div></td>
+<td class=rd><div><code>entities[].hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>entities[].canonical_code</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:944</code> <code>chatbot/trace.py:283</code></div></td>
+<td><b>yes</b>: a &#x27;Known brands:&#x27; line is present<div class=q>&ldquo;No &quot;Known brands:&quot; line at all this turn (nothing active) means no brand entity can
+be named&rdquo;</div></td>
+<td>example brands Sorento, Mocha (2)</td>
+<td>18: Known brands line source; 54: brands filter Known brands; 86: brand Sorento Mocha Cabana literal</td>
+<td><details><summary>5 items</summary><span class=ids>G063 G075 G130 G136 G137</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>150</td>
+<td>The brand list is already live per turn (turn/context.py:101-116). Drop the hard-coded brand names.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s77" class="bn">
+<td class=num>77</td>
+<td><b>TOP SELLING</b> <span class=m>(banner)</span><div class=m>v94:1503-1514</div></td>
+<td class=num>97</td>
+<td>Banner: adds rank_by, basis, rank_group, rank_direction on every object.<div class=note>Four keys announced, then each defined in own heading 80-85, each defined once more in 83/86 answer rules.</div></td>
+<td class=rd><div><code>rank_by</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:907</code> <code>chatbot/lanes/business/report_ask.py:195</code></div><div><code>basis</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:911</code> <code>chatbot/lanes/business/report_ask.py:199</code></div><div><code>rank_group</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:915</code> <code>chatbot/lanes/business/__init__.py:522</code></div><div><code>rank_direction</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:944</code> <code>chatbot/lanes/business/report_ask.py:475</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>78: top_n/rank keys; 80: rank_by; 81: basis; 82: rank_group; 85: rank_direction</td>
+<td><details><summary>1 items</summary><span class=ids>G064</span></details></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>Banner.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s78" class="">
+<td class=num>78</td>
+<td><b>TOP SELLING: order_status &quot;top_selling&quot;, domain_hint &quot;order&quot;</b><div class=m>v94:1515-1532</div></td>
+<td class=num>337</td>
+<td>Ranking items or categories by sales (top selling, best selling, most sold, 畅销) is order_status top_selling, domain order, check_order, top_n from the number; sold with top/most/best is never an order list.<div class=note>Same &#x27;order_status X, domain order, check_order&#x27; pattern. Also clarifies top 5/last 3 with no selling word stays top_n.</div></td>
+<td class=rd><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>top_n</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1047</code> <code>chatbot/lanes/business/fetch.py:600</code></div></td>
+<td><span class=m>no</span></td>
+<td>trigger phrases (~20 incl MY/ZH)</td>
+<td>55: sales_ranking pattern; 57: sales_report pattern; 67: sales_analysis pattern; 79: top_n</td>
+<td><details><summary>1 items</summary><span class=ids>G064</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>150</td>
+<td>Report-kind table.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s79" class="">
+<td class=num>79</td>
+<td><b>TOP_N on a top selling ask</b><div class=m>v94:1533-1536</div></td>
+<td class=num>55</td>
+<td>top_n is the number in the current message, else null; never invent.<div class=note>A one-sentence rule repeated in 55 and 78.</div></td>
+<td class=rd><div><code>top_n</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1047</code> <code>chatbot/lanes/business/fetch.py:600</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>55: top_n from current message only; 78: top_n from number; 46: top_n last 3</td>
+<td><details><summary>1 items</summary><span class=ids>G064</span></details></td>
+<td><span class="v del">DELETE</span><div class=m>stage 4</div></td>
+<td class=num>0</td>
+<td>Repeats top_n (40, 55).<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s80" class="">
+<td class=num>80</td>
+<td><b>RANK_BY: what the ranking is by</b><div class=m>v94:1537-1543</div></td>
+<td class=num>104</td>
+<td>rank_by quantity or amount from words like by qty, by RM, ikut nilai; null when neither said.</td>
+<td class=rd><div><code>rank_by</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:907</code> <code>chatbot/lanes/business/report_ask.py:195</code></div></td>
+<td><span class=m>no</span></td>
+<td>quantity words (6); amount words (8)</td>
+<td>83: answering by quantity or amount</td>
+<td><details><summary>3 items</summary><span class=ids>G064 G065 G137</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>70</td>
+<td>rank_by.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s81" class="">
+<td class=num>81</td>
+<td><b>BASIS: which sale is counted</b><div class=m>v94:1544-1549</div></td>
+<td class=num>94</td>
+<td>basis delivered or ordered from the words, unclear for ambiguous, null when only selling/sold.<div class=note>Different value set than 55 basis (outstanding) and 69 (invoiced).</div></td>
+<td class=rd><div><code>basis</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:911</code> <code>chatbot/lanes/business/report_ask.py:199</code></div></td>
+<td><span class=m>no</span></td>
+<td>delivered words (3); ordered words (4)</td>
+<td>55: basis for sales ranking; 69: sales_basis</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>60</td>
+<td>basis.<div class=risk>Risk: unmeasured</div></td>
+</tr>
+<tr id="s82" class="">
+<td class=num>82</td>
+<td><b>RANK_GROUP: what is ranked</b><div class=m>v94:1550-1560</div></td>
+<td class=num>158</td>
+<td>rank_group is item, category or unclear; a named category is a filter (rank_group item) and a category entity.</td>
+<td class=rd><div><code>rank_group</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:915</code> <code>chatbot/lanes/business/__init__.py:522</code></div><div><code>entities[].hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>entities[].hint_confident</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:571</code> <code>chatbot/head/grounding.py:267</code></div></td>
+<td><span class=m>no</span></td>
+<td>rank_group values (3)</td>
+<td>83: answering rank group question; 86: category narrowing</td>
+<td><details><summary>1 items</summary><span class=ids>G064</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>100</td>
+<td>rank_group.<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s83" class="">
+<td class=num>83</td>
+<td><b>ANSWERING THE BOT&#x27;S OWN TOP SELLING QUESTION</b><div class=m>v94:1561-1591</div></td>
+<td class=num>583</td>
+<td>When the Previous response is one of the bots top selling questions (by quantity or amount, items or categories, delivered or ordered, how many), the current message answers it: set only that key, never reference_positions; a year after a ranked list is a period.<div class=note>583t almost fully conditional on previous bot message text. Matches literal question strings. Bare-number pick rule contradicts none but competes with 65 pick.</div></td>
+<td class=rd><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div><div><code>domain_in_message</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:129</code> <code>chatbot/lanes/business/find.py:127</code></div><div><code>rank_by</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:907</code> <code>chatbot/lanes/business/report_ask.py:195</code></div><div><code>rank_group</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:915</code> <code>chatbot/lanes/business/__init__.py:522</code></div><div><code>basis</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:911</code> <code>chatbot/lanes/business/report_ask.py:199</code></div><div><code>top_n</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1047</code> <code>chatbot/lanes/business/fetch.py:600</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>reference_positions</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:251</code> <code>chatbot/turn/apply.py:1446</code></div><div><code>date_filter_start</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div><div><code>date_filter_end</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:718</code> <code>chatbot/lanes/business/report_ask.py:579</code></div></td>
+<td><b>yes</b>: previous assistant turn asked one of 4 top-selling questions, or showed a ranked list<div class=q>&ldquo;When &quot;Previous response&quot; is one of the bot&#x27;s top selling questions, the CURRENT message answers it&rdquo;</div></td>
+<td>4 fixed bot question strings; answers per question ~12</td>
+<td>80: rank_by answers; 81: basis answers; 82: rank_group answers; 65: open question answer; 55: answering How many / Delivered ordered outstanding</td>
+<td><details><summary>2 items</summary><span class=ids>G065 G137</span></details></td>
+<td><span class="v ctx">MOVE TO CONTEXT</span><div class=m>stage 5</div></td>
+<td class=num>100</td>
+<td>The engine records the question it asked (focus.top_selling.asked, engine.py:2594) but does not print it. Print it as an Open question and the 4 literal bot-question strings go.<div class=risk>Risk: medium; 2 TRAIN items</div></td>
+</tr>
+<tr id="s84" class="">
+<td class=num>84</td>
+<td><b>ANSWERING &quot;CUSTOMER OR SALES AGENT?&quot;</b><div class=m>v94:1592-1601</div></td>
+<td class=num>176</td>
+<td>When Previous response is &quot;Do you mean customer X or sales agent Y? Reply 1 ... 2 ...&quot;, a reply of 1/customer maps to reference_positions [1] and 2/sales agent to [2], with top_selling/order and no entities.<div class=note>Names sean, fanny. Entirely conditional (176t). A pick_one Open question would cover it.</div></td>
+<td class=rd><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>reference_positions</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:251</code> <code>chatbot/turn/apply.py:1446</code></div></td>
+<td><b>yes</b>: previous assistant turn asked the customer-or-sales-agent question<div class=q>&ldquo;When &quot;Previous response&quot; is &quot;Do you mean customer X or sales agent Y? Reply 1 for the
+customer, 2 for the sales agent.&quot;&rdquo;</div></td>
+<td><span class=m>-</span></td>
+<td>65: pick_one answer; 83: answering bot question; 86: agent vs customer</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v ctx">MOVE TO CONTEXT</span><div class=m>stage 5</div></td>
+<td class=num>0</td>
+<td>Same mechanism as 83.<div class=risk>Risk: unmeasured: 0 TRAIN items</div></td>
+</tr>
+<tr id="s85" class="">
+<td class=num>85</td>
+<td><b>RANK_DIRECTION: most sold first or least sold first</b><div class=m>v94:1602-1612</div></td>
+<td class=num>209</td>
+<td>rank_direction bottom for cold/least/worst/slowest/bottom N (sets top_selling and top_n), top for top/hot/best, else null; spelling slips tolerated.<div class=note>Contains a targeted fix (&#x27;worsr&#x27;,&#x27;wrost&#x27;, NEVER out_of_scope), conversation-specific.</div></td>
+<td class=rd><div><code>rank_direction</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:944</code> <code>chatbot/lanes/business/report_ask.py:475</code></div><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>top_n</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1047</code> <code>chatbot/lanes/business/fetch.py:600</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div></td>
+<td><span class=m>no</span></td>
+<td>bottom words (~12 incl MY/ZH)</td>
+<td>55: bottom 5 sales agents; 78: top selling</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>120</td>
+<td>rank_direction.<div class=risk>Risk: unmeasured</div></td>
+</tr>
+<tr id="s86" class="">
+<td class=num>86</td>
+<td><b>NARROWING A TOP SELLING ASK</b><div class=m>v94:1613-1653</div></td>
+<td class=num>828</td>
+<td>When Previous response is a top selling ranking or one of its questions, a message naming who sold it, a category, brand or customer narrows the ranking: entity with the right hint, order_status top_selling, domain_in_message false; corrections set broaden_axis/broaden_to; multi-part phrases split into entities.<div class=note>828t. Names fanny, sean, hanlim, chin chun. Mostly state-dependent. Hard-codes brand names Sorento Mocha Cabana.</div></td>
+<td class=rd><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>domain_in_message</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:129</code> <code>chatbot/lanes/business/find.py:127</code></div><div><code>entities[].hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>entities[].hint_confident</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:571</code> <code>chatbot/head/grounding.py:267</code></div><div><code>correction</code> <span class='tag pt'>PASSTHROUGH</span> <code>chatbot/turn/apply.py:1999</code></div><div><code>broaden_axis</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:194</code> <code>chatbot/turn/apply.py:2963</code></div><div><code>broaden_to</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:211</code></div></td>
+<td><b>yes</b>: previous assistant turn is a top-selling ranking or its question<div class=q>&ldquo;When &quot;Previous response&quot; is a top selling ranking or one of its questions, a message that
+only names who sold it&rdquo;</div></td>
+<td>axis words (4 hints); broaden axes (4: customer, sales_agent, category, brand); brand literals Sorento Mocha Cabana</td>
+<td>60: narrowing refine pattern; 55: follow-up to a ranking; 76: brand entity; 23: broaden_axis rule</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 5</div></td>
+<td class=num>300</td>
+<td>Mostly &#x27;if the previous reply was a ranking&#x27;.<div class=risk>Risk: unmeasured: 0 TRAIN items</div></td>
+</tr>
+<tr id="s87" class="">
+<td class=num>87</td>
+<td><b>FROM A RANKING TO ANOTHER ORDER REPORT</b><div class=m>v94:1654-1665</div></td>
+<td class=num>177</td>
+<td>When Previous response is a top selling ranking, a message asking outstanding / the DO / the orders runs that report with entities [] and domain_in_message true; never out_of_scope.<div class=note>Overlaps the order_status rules of 32, 41, 42.</div></td>
+<td class=rd><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>order_status</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/fetch.py:1101</code> <code>chatbot/turn/apply.py:1309</code></div><div><code>document</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:354</code> <code>chatbot/turn/apply.py:1217</code></div><div><code>domain_in_message</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:129</code> <code>chatbot/lanes/business/find.py:127</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div></td>
+<td><b>yes</b>: previous assistant turn is a top selling ranking<div class=q>&ldquo;When &quot;Previous response&quot; is a top selling ranking, a message asking for another order
+report runs THAT report&rdquo;</div></td>
+<td><span class=m>-</span></td>
+<td>41: outstanding order_status; 42: outstanding order_status; 32: order_status filter</td>
+<td><span class='tag pt'>0 items</span></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 4</div></td>
+<td class=num>100</td>
+<td>From ranking to another report.<div class=risk>Risk: unmeasured</div></td>
+</tr>
+<tr id="s88" class="bn">
+<td class=num>88</td>
+<td><b>SELF REFERENCE</b> <span class=m>(banner)</span><div class=m>v94:1666-1674</div></td>
+<td class=num>55</td>
+<td>Banner: adds self_reference to every object.<div class=note>Banner, 55t.</div></td>
+<td class=rd><div><code>self_reference</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:2104</code> <code>chatbot/engine.py:2206</code></div></td>
+<td><span class=m>no</span></td>
+<td><span class=m>-</span></td>
+<td>89: self_reference defined; 37: OUTPUT block</td>
+<td><details><summary>1 items</summary><span class=ids>G036</span></details></td>
+<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
+<td class=num>0</td>
+<td>Banner.<div class=risk>Risk: none</div></td>
+</tr>
+<tr id="s89" class="">
+<td class=num>89</td>
+<td><b>SELF_REFERENCE: the asker means their OWN account</b><div class=m>v94:1675-1689</div></td>
+<td class=num>271</td>
+<td>self_reference is true when the asker uses a first-person word for their own account (my, mine, our, 我的, saya punya), else false; never guess.<div class=note>Examples list in 3 languages.</div></td>
+<td class=rd><div><code>self_reference</code> <span class='tag dr'>DRIVES</span> <code>chatbot/engine.py:2104</code> <code>chatbot/engine.py:2206</code></div></td>
+<td><span class=m>no</span></td>
+<td>first-person words (~14 across EN/MY/ZH)</td>
+<td>88: banner; 1: company rule about Sorento itself</td>
+<td><details><summary>1 items</summary><span class=ids>G036</span></details></td>
+<td><span class="v keep">KEEP</span><div class=m>stage -</div></td>
+<td class=num>271</td>
+<td>self_reference DRIVES scope (engine.py:2104).<div class=risk>Risk: low</div></td>
+</tr>
+<tr id="s90" class="bn">
+<td class=num>90</td>
+<td><b>ESCALATION CONFIRMATION: ONE SEMANTIC VERDICT</b> <span class=m>(banner)</span><div class=m>v94:1690-1765</div></td>
+<td class=num>1268</td>
+<td>is_escalation_confirmation is one semantic verdict that this person agrees to be handed to a human: true for yes/escalate/picking an offered team or company, false when the message has its own question, codes or subject, or declines; company name counts only if it IS the answer. This outranks earlier lines.<div class=note>1268t. Restates 4 (is_affirmative paragraph literally) and 31 (title repeated, &#x27;narrowed&#x27;, own company_pick rule, says OUTRANKS section 31). 31 also covers pick; 31 says &#x27;whatever the message_type&#x27;, 90 narrows it. Names CHENG HUAT HARDWARE, MWC-SC8609-PP, SRTWC8517.</div></td>
+<td class=rd><div><code>escalation.is_escalation_confirmation</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2073</code> <code>chatbot/lanes/escalation.py:1103</code></div><div><code>escalation.company_pick</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/escalation.py:261</code></div><div><code>is_affirmative</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:630</code> <code>chatbot/turn/apply.py:205</code></div><div><code>message_type</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/apply.py:2078</code> <code>chatbot/turn/apply.py:2026</code></div><div><code>entities</code> <span class='tag dr'>DRIVES</span> <code>chatbot/head/grounding.py:267</code> <code>chatbot/turn/apply.py:2262</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>domain_in_message</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:129</code> <code>chatbot/lanes/business/find.py:127</code></div></td>
+<td><b>yes</b>: an escalation offer is open (yes/no, team menu, company pick, or Pending team_pick/member_offer/company_pick)<div class=q>&ldquo;An offer is open when the Previous response makes one, or when the user block says the
+assistant is waiting for a team_pick, member_offer or company_pick reply.&rdquo;</div></td>
+<td>offer shapes (3); yes words (~8)</td>
+<td>4: is_affirmative AFFIRMATION rule; 31: company-name reply on offer, restated narrowed; 49: new question never a yes; 50: delivery word offer open; 13: message_type request_for_help</td>
+<td><details><summary>4 items</summary><span class=ids>G114 G115 G116 G136</span></details></td>
+<td><span class="v shrink">SHRINK</span><div class=m>stage 3</div></td>
+<td class=num>700</td>
+<td>Becomes the one escalation section (absorbs 4&#x27;s escalate word, 31, 49).<div class=risk>Risk: medium</div></td>
+</tr>
+<tr id="s91" class="">
+<td class=num>91</td>
+<td><b>POLICY BLOCKS (generated)</b><div class=m>v94:1766-1850</div></td>
+<td class=num>3598</td>
+<td>The generated policy block: 10 domain registry lines, 13 entity-kind lines, 50 Specification vocabulary lines (keys, choices, trigger words), a product types list, and the {{find_filters}} placeholder.<div class=note>3598t, all static generated. Includes product-code-named choices (seat_cover: SRTSCBD319-UF etc. as spec values, each code twice). Spec lines ~2.9k tokens, product types ~150t.</div></td>
+<td class=rd><div><code>entities[].spec_key</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:745</code></div><div><code>entities[].spec_value</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:745</code></div><div><code>domain_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/turn/decide.py:395</code> <code>chatbot/turn/apply.py:2089</code></div><div><code>intent_hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/predicate.py:193</code> <code>chatbot/lanes/business/fetch.py:1154</code></div><div><code>entities[].hint</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/resolve_gate.py:654</code> <code>chatbot/turn/apply.py:2100</code></div><div><code>low_stock</code> <span class='tag dr'>DRIVES</span> <code>chatbot/lanes/business/low_stock_ask.py:253</code> <code>chatbot/lanes/business/chat_report.py:111</code></div></td>
+<td><span class=m>no</span></td>
+<td>domains (10); entity kinds (13); Specification keys (50, ~9.6k chars); product types (45); switch words ~50; seat_cover choices = list of SRTSCBD seat cover product codes</td>
+<td>72: specification entity rules; 47: spec switch word; 54: category product types</td>
+<td><span class=m>all 118 (always-on)</span></td>
+<td><span class="v dyn">MAKE DYNAMIC</span><div class=m>stage 2</div></td>
+<td class=num>3600</td>
+<td>Static snapshot written at publish (chatbot_parser_prompt.py:1220). wording_layer() already swaps it for {{domains_detail}} {{entity_kinds_detail}} {{specs}} (chatbot_prompt_vars.py:684-693). Fixes drift: has_massage spec missing, purchase_order.<div class=risk>Risk: low; same size, stays in sync</div></td>
+</tr>
+</table></div>
+
+<h2 id="stages">6. Staged plan and cost</h2>
+<p>Each stage is its own unlabelled prompt version and its own PR. Gate per stage: parser-gold TRAIN (118 items) shows
+no drop against the base version on the same day, then crew runs held-out. Nothing is labelled or published without
+your PASS. Base version: whichever version is the prod candidate when the stage starts (likely the v104 line from
+CHAT-ADVISOR-SPIKE, which already uses <code>{{specs}}</code>), not v94 blindly; section numbers here are v94's.</p>
+<div class="tw"><table>
+<tr><th>Stage</th><th>What changes</th><th class=num>Sections</th><th class=num>Tokens before</th><th class=num>After</th><th>Risk</th><th>Gate cost</th></tr>
+<tr><td><b>1. Fix and delete dead text</b></td><td>Section 43 contradiction; OUTPUT comma and stale enums; delete REFERENCE TARGET (dead), FLYER, CORRECTION, the "before calling the MCP tool" line and 9 banners.</td><td class=num>15</td><td class=num>1,704</td><td class=num>790</td><td>low</td><td rowspan=4>Per stage: TRAIN x2 repeats = 236 calls, about $1.40; crew held-out (113 items) about $0.70 a repeat. Base-version TRAIN x2 once, about $1.40. The per-lane cap of 300 calls a day means one stage gate a day.</td></tr>
+<tr><td><b>2. Make lists dynamic</b></td><td>Policy block to <code>{{domains_detail}}</code> <code>{{entity_kinds_detail}}</code> <code>{{specs}}</code>; <code>{{domains}}</code>, <code>{{access_levels}}</code>, <code>{{teams}}</code>, <code>{{agents}}</code>. Attachment types after Q2.</td><td class=num>5</td><td class=num>4,817</td><td class=num>4,228</td><td>low; fixes drift</td></tr>
+<tr><td><b>3. Collapse repeats: conversation and entity rules</b></td><td>One escalation section (4, 31, 49, 90); one entity section (18, 19, 20); positional (28 + 43); trim 7, 8, 9, 11, 12, 13, 21.</td><td class=num>20</td><td class=num>11,809</td><td class=num>5,750</td><td>medium to high: positional and entity rules carried the 11 Oct ablation drop</td></tr>
+<tr><td><b>4. Collapse repeats: reports, specs, quantity, dates</b></td><td>One report-kind table (order status, sales report, sales analysis, top selling, ranking); one quantity section; one spec section; one broaden definition; dates restatements out.</td><td class=num>29</td><td class=num>11,057</td><td class=num>5,467</td><td>medium; many of these rules have 0 TRAIN items, so held-out carries the gate</td></tr>
+<tr><td><b>5. Move facts into context</b></td><td>Small code PRs, each red-first: print the open idea draft; print the top-selling question as an Open question; add <code>option.code</code> to the engine's label match. Then shrink 10, 83, 84, 86, and trim 65's 22 example lines.</td><td class=num>5</td><td class=num>3,078</td><td class=num>1,080</td><td>medium; code + prompt together</td><td>Same gate, plus pytest for each code change (no LLM).</td></tr>
+</table></div>
+<p class="m">Sections left as they are: 17, 15,150 tokens cut in total (35,585 to 20,435). Cost estimate from the
+parser-gold v1 rate (about $1.4 to $1.6 per 250 parses); actual USD comes from each run's own usage.</p>
+
+<h2 id="questions">7. Questions for you</h2>
+<ol>
+<li><b>Order.</b> (a) Stage 1 first: lowest risk, fixes two bugs, about 900 tokens. (b) Stage 3 first: biggest cut.
+Recommendation: (a), because a clean baseline makes the later, riskier cuts easier to read.</li>
+<li><b>Attachment types</b> (section 15). (a) Keep the 6 kinds as words in the prompt. (b) A new variable from the
+17-row <code>attachment_types</code> table. (c) Map the 17 rows onto the 6 kinds in the table. Recommendation: (a) for
+now, (b) as its own small lane after checking how the resolver uses <code>canonical_code</code>, so the diet does not
+also change behaviour.</li>
+<li><b>Access levels</b> (section 17). (a) Make dynamic and keep. (b) Delete the field and the section, since the
+resolver decides entitlement and the field was empty in 249 of 249 captures. Recommendation: (a) now; (b) only after
+the promotion notice at <code>gate.py:1814</code> gets its access from the resolver instead.</li>
+<li><b>Code in stage 5.</b> (a) Allowed in this lane as small separate PRs (red test first). (b) Prompt only, leave
+the teaching. Recommendation: (a): three small facts the engine already has.</li>
+<li><b>Worked examples.</b> (a) Trim only 65 (stage 5). (b) Trim examples across all sections. Recommendation: (a);
+the 11 Oct ablation showed examples carry pass rate, so a wide example cut needs its own measured stage.</li>
+</ol>
+
+<h2 id="lessons">8. What 11 Oct taught us (PR #1568, PR #1574)</h2>
+<ul>
+<li>Per-message prompt parts (cards, retrieved examples) cut tokens 41% but raised cost 47% and p95, because they
+break the prompt cache. This plan keeps one static prompt plus variables that render the same text between data
+changes.</li>
+<li>A static trim (v52) cut tokens 7% and cost 7%, pass 82.2% against 84.1%. The cost lever is small.</li>
+<li>The ablation (v53) fell to 77.6% against 84.1%; the suspects were positional picks and the "14 ada stock" follow-up.
+That is why positional rules sit in stage 3 with a high risk mark and why stages are gated one at a time.</li>
+</ul>
+
+<h2 id="method">9. Method and caveats</h2>
+<ul>
+<li>Sections split at <code>== X ==</code> headings, banner titles and the policy block marker; tokens with tiktoken
+o200k_base over the raw template.</li>
+<li>Readers: every parser key traced through <code>PARSE_OUTPUT_JSON_SCHEMA</code> (<code>chatbot/head/parser.py:85-683</code>,
+58 required keys) to its consumers. <code>app/schemas/ai_semantic_parser.py</code> is an older schema used only by
+<code>ai_assistant_service.py</code>, not this parser.</li>
+<li>TRAIN mapping is by each section's trigger (markers in the recorded context, words in the message); counts for
+broad sections (18, 21, 22) run high and a "0" can hide an item the trigger missed. Item text is never copied here; only
+ids.</li>
+<li>"After" tokens are estimates of the rewritten section, to be replaced by the real count of each stage's version.</li>
+<li>Untouched: CHAT-ADVISOR-SPIKE work (#1720, #1730, #1731, #1737, F5 <code>typed_as</code>).</li>
+</ul>
+</main>
+</div>
+</body>
+</html>
