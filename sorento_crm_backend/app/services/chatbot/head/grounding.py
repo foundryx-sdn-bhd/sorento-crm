@@ -123,9 +123,10 @@ def load_vocabulary(db: "Session") -> Vocabulary:
     `merged_synonyms`, `merged_allowed_values`, `display_spec_value`)."""
     from app.models.product import ProductCategory
     from app.models.resources import AttachmentType
-    from app.services.product_class_signal import CLASS_SYNONYMS, stored_class_labels
+    from app.services.product_class_signal import stored_class_labels
     from app.services.product_spec_registry import (
         active_registry,
+        class_synonyms,
         display_spec_value,
         merged_allowed_values,
         merged_synonyms,
@@ -136,7 +137,7 @@ def load_vocabulary(db: "Session") -> Vocabulary:
     type_phrases: set[str] = set()
     class_words: set[str] = set()
     class_phrases: set[str] = set()
-    for label, synonyms in CLASS_SYNONYMS.items():
+    for label, synonyms in class_synonyms(db).items():
         class_phrases.update(" ".join(_words(p)) for p in [label, *synonyms])
     class_phrases.update(" ".join(_words(label)) for label in stored_class_labels(db))
     for label, synonyms in db.query(ProductCategory.class_label, ProductCategory.search_synonyms).filter(
@@ -147,8 +148,6 @@ def load_vocabulary(db: "Session") -> Vocabulary:
     for row in active_registry(db):
         synonyms = merged_synonyms(row)
         if row.spec_key == "class":
-            for value, phrases in synonyms.items():
-                class_phrases.update(" ".join(_words(p)) for p in [value, *phrases])
             continue
         if row.spec_key == "product_type":
             for value, phrases in synonyms.items():
@@ -521,17 +520,22 @@ def _names_a_type(db: "Session", text: str, vocab: Vocabulary) -> bool:
 
 def names_a_class_label(db: "Session", raw: str) -> bool:
     """Is `raw`, word for word, the name of a class (a class label staff or products carry, or
-    a class of the built-in vocabulary), never one of its synonyms?"""
+    a class the seed names), never one of its synonyms?"""
     said = " ".join(_words(raw))
     return any(" ".join(_words(label)) == said for label in class_label_names(db))
 
 
 def class_label_names(db: "Session") -> list[str]:
-    """Every class name: the built-in vocabulary's, the ones products carry, and staff's."""
-    from app.models.product import ProductCategory
-    from app.services.product_class_signal import CLASS_SYNONYMS, stored_class_labels
+    """Every class name: the seed's class choices, the ones products carry, and staff's.
 
-    labels = [*CLASS_SYNONYMS, *stored_class_labels(db)]
+    The seed's labels, not the registry row's: this list is printed on the parser's own
+    `Product types:` line (`turn_runtime.product_type_names`), and chat fix PR-A changes no
+    parser input (crew round 2; the registry-read version rides PR-A2)."""
+    from app.models.product import ProductCategory
+    from app.services.product_class_signal import stored_class_labels
+    from app.services.product_spec_registry import shipped_class_synonyms
+
+    labels = [*shipped_class_synonyms(), *stored_class_labels(db)]
     labels += [r[0] for r in db.query(ProductCategory.class_label).filter(ProductCategory.class_label.isnot(None))]
     return labels
 
@@ -591,9 +595,9 @@ def _remainder(raw: str, used: set[int]) -> str:
     return " ".join(kept)
 
 
-def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
-    """A `specification` entity the parser emitted, checked against the registry: a key
-    it knows and a value among that key's choices, else grounded from its raw words."""
+def _bound(entity: dict[str, Any], vocab: Vocabulary) -> Grounded | None:
+    """The parser's `spec_key`/`spec_value` as a registry-placed Grounded, or None when
+    the key is unknown or the value is not one of its choices, a number or a bool."""
     key_name = str(entity.get("spec_key") or "").strip()
     value = entity.get("spec_value")
     raw = str(entity.get("raw") or "").strip()
@@ -606,16 +610,40 @@ def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
             except (TypeError, ValueError, IndexError):
                 number = None
             if number is not None:
-                return [Grounded(entry.key, entry.label, said, int(number) if number.is_integer() else number, entry.unit)]
+                return Grounded(entry.key, entry.label, said, int(number) if number.is_integer() else number, entry.unit)
         else:
             spoken = " ".join(_words(value))
             if entry.data_type == "boolean" and isinstance(value, bool):
-                return [Grounded(entry.key, entry.label, said, value)]
+                return Grounded(entry.key, entry.label, said, value)
             if spoken in entry.phrases:
-                return [Grounded(entry.key, entry.label, said, entry.phrases[spoken], words=spoken)]
+                return Grounded(entry.key, entry.label, said, entry.phrases[spoken], words=spoken)
             for phrase, stored in entry.phrases.items():
                 if str(stored).lower() == str(value).strip().lower() or str(stored).replace("_", " ").lower() == spoken:
-                    return [Grounded(entry.key, entry.label, said, stored, words=phrase)]
+                    return Grounded(entry.key, entry.label, said, stored, words=phrase)
+    return None
+
+
+def _in_message(bound: Grounded, entry: _Key, message: str) -> bool:
+    """Whether the message holds any non-stopword word of a registry phrase of the key stored as the bound value."""
+    said = _words(message)
+    for phrase, stored in entry.phrases.items():
+        if stored == bound.value:
+            parts = _words(phrase)
+            if any(w not in _STOPWORDS and any(_same(w, t) for t in said) for w in parts):
+                return True
+    return False
+
+
+def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
+    """A `specification` entity the parser emitted, checked against the registry: a key
+    it knows and a value among that key's choices, else grounded from its raw words."""
+    key_name = str(entity.get("spec_key") or "").strip()
+    value = entity.get("spec_value")
+    raw = str(entity.get("raw") or "").strip()
+    entry = next((k for k in vocab.keys if k.key == key_name), None)
+    bound = _bound(entity, vocab)
+    if bound is not None:
+        return [bound]
     found, _ = ground_words(raw or str(value or ""), vocab)
     if found:
         return found
@@ -634,7 +662,14 @@ def _as_typed(grounded: list[Grounded], entity: dict[str, Any], message: str | N
     unknown value of its key, said as the customer typed it (the message's words that
     nothing else in the turn and nothing in the catalogue's vocabulary accounts for).
     Left as grounded when the message is not known or holds no such word, and for an
-    entity carried from an earlier message."""
+    entity carried from an earlier message.
+
+    Reversed for a registry-valid value (owner ruling 16 Oct 2026, CHAT-FIX F4): when the
+    parser's key and value are among the registry's, that value binds whatever was typed
+    ("gunmetl" -> gunmetal). It is said as typed when every word of it is in the message and
+    known to the vocabulary (plurals count), and in the registry's words only when it holds a
+    word the vocabulary does not know (a typo). Only a
+    value the registry does not hold (value None) keeps the exact-only handling above."""
     if not message or not grounded or entity.get("current_message") is False:
         return grounded
     said = _words(message)
@@ -643,6 +678,14 @@ def _as_typed(grounded: list[Grounded], entity: dict[str, Any], message: str | N
     out: list[Grounded] = []
     for g in grounded:
         words = _words(g.said)
+        if g.value is not None:
+            # Said as typed when every word is in the message and known to the vocabulary
+            # (plurals count); put into the registry's words only when it holds an unknown word.
+            spoken = bool(words) and all(
+                any(_same(w, t) for t in said) and any(_same(w, k) for k in vocab.known_words) for w in words
+            )
+            out.append(g if spoken or not g.words else Grounded(g.key, g.label, g.words, g.value, g.unit, g.known, g.words))
+            continue
         if not words or any(any(_same(w, t) for t in said) for w in words):
             out.append(g)
             continue
@@ -742,9 +785,10 @@ def ground(
                 if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() not in _SPEC_HINTS
             ]
             grounded = _as_typed(_validate(entity, vocab), entity, message, vocab, others)
-            if not grounded and raw and str(verdict.get("domain_hint") or "").strip().lower() == "promotion":
-                # PROMO-SUBJECT-FILTER AC-38: on a promotion ask a qualifier no listed key
-                # holds is an unknown descriptor, asked back as typed, never dropped.
+            if not grounded and raw:
+                # PROMO-SUBJECT-FILTER AC-38, on every domain since chat fix PR-A (AC-A6): a
+                # qualifier no listed key holds is an unknown descriptor, said back as typed
+                # ("Couldn't find: <word>"), never dropped to answer the ask unfiltered.
                 grounded = [Grounded("", "", raw)]
             add(grounded, entity)
             notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in grounded]})
@@ -770,8 +814,42 @@ def ground(
             keep = _covered_by_class(tokens, vocab)
             grounded, used = ground_words(raw, vocab, keep=keep)
             unheard, used = _unheard_words(db, raw, used, keep)
-            grounded = [*grounded, *(Grounded("", "", word) for word in unheard)]
-            if not grounded:
+            accounted = False
+            solo = (
+                bool(message)
+                and len(unheard) == 1
+                and any(_same(unheard[0], t) for t in _words(message))
+                and not [t for i, t in enumerate(tokens) if i not in used and i not in keep and t not in _STOPWORDS]
+            )
+
+            def correction(spec: dict[str, Any]) -> tuple[Grounded, str] | None:
+                bound = _bound(spec, vocab)
+                entry = next((k for k in vocab.keys if k.key == bound.key), None) if bound is not None else None
+                phrase = (bound.words or next((p for p, v in entry.phrases.items() if v == bound.value), None)) if entry else None
+                if bound is None or entry is None or not phrase or entry.data_type == "numeric":
+                    return None
+                if any(g.key == bound.key for g in grounded) or _in_message(bound, entry, message or ""):
+                    return None
+                return bound, phrase
+
+            own = correction(entity) if solo else None
+            if own is not None:
+                # CHAT-FIX F4 (owner, 16 Oct 2026): the parser's registry-valid, phrased,
+                # non-numeric spec is the one unheard word the message holds ("undrmount" ->
+                # under_counter), said in the registry's phrase. Anything else takes the path below.
+                bound, phrase = own
+                grounded = [*grounded, Grounded(bound.key, bound.label, phrase, bound.value, bound.unit, bound.known, bound.words)]
+            elif (
+                solo
+                and len([e for e in entities if isinstance(e, dict) and str(e.get("hint") or "").strip().lower() in _CLASS_HINTS | {_PRODUCT_HINT}]) == 1
+                and len([e for e in entities if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() in _SPEC_HINTS and e.get("current_message") is not False and not any(not _same(w, unheard[0]) and any(_same(w, t) for t in _words(message)) for w in _words(e.get("raw"))) and correction(e)]) == 1
+            ):
+                # Same ruling, the split shape: one other spec entity is the correction, so the
+                # word is accounted for and not said back.
+                accounted = True
+            else:
+                grounded = [*grounded, *(Grounded("", "", word) for word in unheard)]
+            if not grounded and not accounted:
                 fixed = _corrected_class(db, raw, vocab)
                 if fixed != raw:
                     out.append({**entity, "raw": fixed})

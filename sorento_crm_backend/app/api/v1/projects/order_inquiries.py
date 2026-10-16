@@ -208,6 +208,8 @@ def _worklist_filters(
     project: Optional[str] = None,
     # S3 (`PLAN-oi-header-list-detail.md`): the OI detail page's own Lines tab.
     inquiry_id: Optional[str] = None,
+    # OI-BULK-RESERVE v4: the Lines page's Reserve facet, one request row's own status.
+    reserve: Optional[str] = None,
 ) -> dict:
     filters = {
         "query": query,
@@ -230,6 +232,7 @@ def _worklist_filters(
         "delivery_from": delivery_from,
         "delivery_to": delivery_to,
         "inquiry_id": inquiry_id,
+        "reserve": reserve,
     }
     _validate_worklist_filter_uuids(filters)
     # `axis_key` is NOT validated here: it is compared against a UUID column on every
@@ -391,6 +394,13 @@ def list_order_inquiry_worklist(
             "by `order_inquiries.id`."
         ),
     ),
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = Query(
+        None,
+        description=(
+            "OI-BULK-RESERVE: keep a line when one of its own reserve request rows is in "
+            "this status (the Documents view's four statuses)."
+        ),
+    ),
     include_history: bool = Query(
         False,
         description=(
@@ -441,6 +451,7 @@ def list_order_inquiry_worklist(
                 axis_key=axis_key,
                 inquiry_id=inquiry_id,
                 project=project,
+                reserve=reserve,
             ),
         )
     except Exception as exc:
@@ -482,6 +493,7 @@ def order_inquiry_worklist_summary(
     spo_number: Optional[str] = Query(None, max_length=_MAX_FILTER_LENGTH),
     delivery_from: Optional[str] = Query(None),
     delivery_to: Optional[str] = Query(None),
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = Query(None),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -507,6 +519,7 @@ def order_inquiry_worklist_summary(
                 delivery_from,
                 delivery_to,
                 project=project,
+                reserve=reserve,
             ),
         )
     except Exception as exc:
@@ -540,6 +553,7 @@ def export_order_inquiry_worklist(
             "Excel - exactly this header's own rows."
         ),
     ),
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = Query(None),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -571,6 +585,7 @@ def export_order_inquiry_worklist(
                 delivery_to,
                 project=project,
                 inquiry_id=inquiry_id,
+                reserve=reserve,
             )
         )
         return Response(
@@ -734,6 +749,7 @@ def order_inquiry_worklist_matrix(
     spo_number: Optional[str] = Query(None, max_length=_MAX_FILTER_LENGTH),
     delivery_from: Optional[str] = Query(None),
     delivery_to: Optional[str] = Query(None),
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = Query(None),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -768,6 +784,7 @@ def order_inquiry_worklist_matrix(
                 delivery_from,
                 delivery_to,
                 project=project,
+                reserve=reserve,
             ),
         )
         return {"data": cells}
