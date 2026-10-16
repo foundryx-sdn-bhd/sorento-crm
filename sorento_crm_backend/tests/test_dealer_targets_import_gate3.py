@@ -307,3 +307,15 @@ def test_a_shared_quarterly_incentive_reaches_both_halves_of_a_split():
     ]
     owns = sorted((s.codes[0], [(t.threshold, t.rate) for t in s.tiers]) for s in parsed.schemes if len(s.codes) == 1)
     assert owns == [(keys[0], [(D("100000"), D("4"))]), (keys[1], [(D("90000"), D("3"))])]
+
+
+def test_a_rate_column_after_a_quarterly_block_not_named_incentive_still_fails():
+    """Review nit: the header check itself, beside a quarterly block."""
+
+    def fill(ws):
+        ws["A1"], ws["B1"] = "DEALER NAME", "QUARTERLY (POINT)"
+        ws["B2"], ws["C2"] = "OCT-DEC", "TOTAL INCENTIVE"
+        ws["A3"], ws["B3"], ws["C3"] = "X TRADING A/C I", 100000, 0.04
+
+    row = _parse(fill).rows[0]
+    assert row.status == "not_representable" and "cannot place" in row.reason
