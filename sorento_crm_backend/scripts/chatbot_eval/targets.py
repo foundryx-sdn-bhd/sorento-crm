@@ -12,11 +12,13 @@ from typing import Any
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 CODE_RE = re.compile(r"\b(?=[A-Z0-9-]*\d)(?=[A-Z0-9-]*[A-Z])[A-Z][A-Z0-9-]{3,}\b")
 MONTHS = {m: i + 1 for i, m in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split())}
-DATE_DMY = re.compile(r"\b(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})\b")
-DATE_MDY = re.compile(r"\b([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})\b")
+_MONTH = (r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?"
+          r"|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)")  # exact names only: "Marble" and "Mayfair" are not months
+DATE_DMY = re.compile(r"\b(\d{1,2})\s+(" + _MONTH + r")\.?,?\s+(\d{4})\b", re.I)
+DATE_MDY = re.compile(r"\b(" + _MONTH + r")\.?\s+(\d{1,2}),?\s+(\d{4})\b", re.I)
 DATE_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})(?!\d)")
 DATE_SLASH = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
-DATE_MY = re.compile(r"\b([A-Za-z]{3,9})\.?,?\s+(\d{4})\b")
+DATE_MY = re.compile(r"\b(" + _MONTH + r")\.?,?\s+(\d{4})\b", re.I)
 NUM_RE = re.compile(r"(?<![\w.])\d[\d,]*(?:\.\d+)?")
 ORDINAL_RE = re.compile(r"^\s*\d{1,3}[.)]\s+", re.M)
 
@@ -326,23 +328,28 @@ def _spec(row, item):
     return [("spec_set", got == want and bool(want), "The spec words were not grounded to the expected set.")]
 
 
+def _type_word(x) -> str:
+    return _norm(x).replace("_", " ")
+
+
 def _attachment(row, item):
     gold = item.get("gold") or {}
-    code = _norm(gold.get("attachment_type"))
-    labels = {x for x in (code, _norm(gold.get("attachment_type_name"))) if x}
+    accepted = {_type_word(x) for x in [gold.get("attachment_type"), gold.get("attachment_type_name"),
+                                        *(gold.get("attachment_type_names") or [])] if x}
     files = [f for t in _tools(row) if isinstance(t.get("envelope"), dict)
              for f in (t["envelope"].get("attachments") or []) if isinstance(f, dict)]
     announced = (_stage(row, "replied").get("facts") or {}).get("files")
     sent = announced if isinstance(announced, int) else len(files)
-    asked = {_norm(e.get("canonical_code")) for e in _entities(row) if e.get("hint") == "attachment_type"}
-    checks = [("asked_type", asked == {code}, "The asked type was read differently from the type requested.")]
+    asked = [e for e in _entities(row) if e.get("hint") == "attachment_type"]
+    asked_ok = bool(asked) and all(_type_word(e.get("canonical_code") or e.get("raw")) in accepted for e in asked)
+    checks = [("asked_type", asked_ok, "The asked type was read differently from the type requested.")]
     if gold.get("none_on_record"):
         checks.append(("none_on_record", not files and sent == 0,
                        "Files were sent although none exist on record."))
         return checks
     checks += [
         ("files", bool(files) and sent > 0, "No files were sent."),
-        ("type", bool(files) and all(_norm(f.get("attachmentType")) in labels for f in files),
+        ("type", bool(files) and all(_type_word(f.get("attachmentType")) in accepted for f in files),
          "The files sent are not of the type asked."),
     ]
     return checks
