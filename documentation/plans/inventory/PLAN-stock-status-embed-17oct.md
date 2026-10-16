@@ -1,6 +1,6 @@
 # PLAN: Available stock status, embedded in every process (STOCK-STATUS)
 
-Status: Mock round 2 posted (owner answers applied), waiting on owner OK of the mock, and crew masked rows to reconcile Q1 (lane STOCK-STATUS, size L, standard track; build only after the owner OKs the mock)
+Status: Mock round 3 on crew's masked data (Forecast reconciled, Transferable F, PL fix); waiting on owner OK of the mock (lane STOCK-STATUS, size L, standard track; build only after the owner OKs the mock)
 
 ## Owner request (17 Oct)
 
@@ -91,7 +91,7 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
 
 ## 2. Behaviour card (posted as one crew-ask)
 
-### Rules (round 2: owner answers 17 Oct applied; only Q1 still open)
+### Rules (round 3: owner answers + crew's masked rows of 17 Oct applied)
 
 - R1. One panel, one product. Rows = every ACTIVE location carrying any nonzero figure, minus the
   locations the viewer's stock visibility policy excludes (`app/services/stock_visibility.py:364`).
@@ -101,22 +101,39 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
   **No status / health column** (owner, 17 Oct: "dint need the health level column"). Negative
   figures print red; nothing else judges a number. Item chips at the embed points state on hand and
   SO, not a level.
-- R3. Incoming PL (Q2 a): the part of open, not-arrived, non-draft packing lists not yet on an SPO
-  (`PL_UNALLOCATED_SQL`), filled on the Total row only; location rows show a dot. Never placed on a
-  location from the free-text `delivery_warehouse`. Expanding the PL line lists the shipments.
-- R3b. Forecast per location = On hand - SO + PO + SPO, plus "Forecast incl. incoming PL" = total
-  Forecast + PL under the footer. Kept only if the masked rows show it is AutoCount's formula (Q1);
-  otherwise the column is dropped.
+- R3. Incoming PL (Q2 a): per item, over not-arrived, non-draft packing lists, each PL line's
+  still-to-land qty (shipped - received) LESS the qty of that item's SPO rows on the same shipment,
+  floored at 0. An SPO row is "on" a shipment when `spo_allocations.inbound_shipment_id` names it OR
+  its `container_number` equals the shipment's `shipping_container_number`
+  (`app/models/procurement.py:143,570`). Filled on the Total row only; location rows show a dot. Never
+  placed on a location from the free-text `delivery_warehouse`. Expanding it lists the shipments.
+  **Not `PL_UNALLOCATED_SQL`:** that formula subtracts the STORED `inbound_shipment_lines.
+  spo_allocated_quantity`, which is 0 on PL-2609-051 and PL-2610-005 although SPO rows link them, and
+  PL-2609-040 matches its SPO by container only. For SRTWB1515 it gives 686 where 227 is really on no
+  SPO, so PL + SPO counts 459 twice. The loading plan's Incoming PL cell
+  (`container_request_service.py:133`) carries the same double count today; reported, not fixed here.
+- R3b. Forecast per location = On hand - SO + PO + SPO: **AutoCount's formula, confirmed** from the
+  crew's rows (Q1). It fits every SRTWB1515 row; the 459 was SPO (BRW-BB 50, BRW-IR 385, BRW-IB 24).
+  The CRM's own `available` is On hand - SO + SPO, so Forecast = available + PO. Under the footer,
+  "Forecast incl. incoming PL" = total Forecast + Incoming PL.
 - R4. SO outstanding counts the way AutoCount does (owner, Q3 b): `qty_ordered - qty_delivered`
-  over open lines, the rule the CRM's Stock screen already uses
-  (`app/services/inventory_service.py:1324-1369`). A line CS marked "covered" COUNTS (tagged
-  "covered in CRM" in the document list). **This differs from the fulfilment board and the loading
+  over open lines of open orders, the rule the CRM's Stock screen already uses
+  (`app/services/inventory_service.py:1324-1369`), **and leaving out lines of orders AutoCount marks
+  Transferable = F** (`sales_orders.is_transferable IS NOT FALSE`, `app/services/scm/demand.py:184`
+  `is_transferable_order()`). Measured: SRTWB1515's CRM SO is 10,583 against AutoCount's 10,390; all
+  193 sit at BRW-BB on 27 lines of 5 Transferable F orders; without them the CRM equals AutoCount to
+  the unit. The Stock screen's rule and `is_open_demand()` both count F orders today (owner decision
+  (a), 1 Oct, for the board), so the panel adds the F cut itself. A line CS marked "covered" COUNTS
+  (tagged "covered in CRM" in the document list). **This differs from the fulfilment board and the loading
   plan**, whose rule (`app/services/scm/demand.py:168-181`) drops covered lines and reads CS's
   `qty_required` instead of `qty_ordered`, so their SO can be lower than this panel's. The panel
   follows AutoCount; the difference is stated, not hidden.
 - R5. Horizon: an "SO due by" selector (All / end of this month / +1 / +2 / +3 months). It cuts SO
-  only, by line `required_date`, else the header's `requested_delivery_date`; a line with neither
-  date always counts. Supply is never cut ("SO until Nov, less on hand, SPO and incoming PL").
+  only, by line `required_date`, else the header's `requested_delivery_date`. A line with no date,
+  OR with the placeholder date 1 Jan 2030 (AutoCount's "3001"), is "no date yet" and always counts:
+  28 lines carry it (SRTWB1515 4,411: BRW-BB 3,476, BRW-IB 920, BRW-IR 15; CWCX605-RL 7,332), so
+  treating it as a real date would quietly drop 4,411 of SRTWB1515's 10,390 from every horizon. The
+  document list prints it as "No date". Supply is never cut ("SO until Nov, less on hand, SPO and incoming PL").
 - R6. (Dropped, owner Q4: no status / health level anywhere.)
 - R7. Expanding a location lists its documents: SO, PO, SPO, sorted by delivery / expected date,
   with Doc no, Type, Account (debtor or creditor code), Name, Doc date, Delivery / ETA, Loading date
@@ -136,18 +153,29 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
   "No location" row, so the total still matches.
 - SPO past its ETA: still counted (`spo_supply.py:9-22`), the doc row shows days late.
 - Inactive warehouse holding stock: not listed and not counted (same cut as the replenishment page).
+  SRTWB1515 has 35 there (CON 32, JB SHOWR 1, PJ-SR 1, REJ100% 1); AutoCount's report lists
+  JB SHOWR / PJ-SR / REJ100% / CON, and the CRM's on hand is 495 against AutoCount's 499, with the 4
+  not located (the screenshot moment differs from the copy). Open point for the build: whether
+  AutoCount counts some inactive CRM locations (see Q6).
+- Warehouses are not company-scoped (`warehouses` has no company cut in `location_stock_for_product`),
+  so another company's pools (HOLD, HQ, 2nd REWORK) appear as zero rows; the panel scopes them out
+  and hides all-zero rows (R1).
+- An item code with nothing anywhere (SRTWCX8605-S-PJ: 0 at every active location, no open SO / PO /
+  SPO / PL) shows the empty state; its live sibling SRTWCX8605-S-RL-PJ is a different item.
 - Viewer without the permission for a linked document: the doc number shows, not as a link.
 - 375px: one card per location (On hand, SO, PO, SPO, Forecast), then a Total card carrying
   Incoming PL.
 - An SO line with `qty_delivered > qty_ordered` (over-delivery): contributes 0, never negative.
 
-### Examples (to be pinned with the crew's masked rows)
+### Examples (crew's masked rows, dev DB = 15 Oct prod copy)
 
-- SRTWB1515 per the owner's screenshot: on hand 499, SO -10,390, PO 2,438, AutoCount forecast
-  -6,994. On hand + SO + PO = -7,453: AutoCount's forecast carries 459 more than the three columns
-  shown. One location: 0 - 7,312 + 1,734 = -5,578 against -5,528 (50 apart). The masked rows
-  decide what the 459 is (A/O? SPO?) before R3 is final.
-- CWCX605-RL and SRTWCX8605-S-PJ: waiting on the crew's rows.
+- SRTWB1515, panel rules applied: On hand 495 (AutoCount 499), SO 10,390 (= AutoCount, after
+  dropping 193 Transferable F at BRW-BB), PO 2,438, SPO 459, Forecast 495 - 10,390 + 2,438 + 459 =
+  -6,998 (AutoCount -6,994, the 4 of on hand). BRW-BB: 0 - 7,312 + 1,734 + 50 = -5,528, equal to
+  AutoCount. Incoming PL 227 (PL-2610-001 118, PL-2610-010 109); Forecast incl. PL -6,771.
+- CWCX605-RL: On hand 1,030, SO 12,081, PO 1,820, SPO 0, Forecast -9,231; Incoming PL 641
+  (PL-2610-014, on no SPO); Forecast incl. PL -8,590. (Transferable F not measured for this item.)
+- SRTWCX8605-S-PJ: nothing at any active location, so the empty state.
 
 ### Questions (max 5)
 
@@ -156,12 +184,10 @@ verbatim: "B, autocount is source of truth, dint need the health level column. N
 po, incoming pl, spo most important"). Q1: reconcile against AutoCount's -6,994 from the crew's
 masked rows before build, and name what the 459 is.
 
-Working hypothesis for the 459: it is SRTWB1515's SPO total, so AutoCount's Forecast = On hand
-+ SO (negative) + PO + SPO, i.e. Q1 (a) exactly. The location example fits the same way (its SPO
-would be 50: 0 - 7,312 + 1,734 + 50 = -5,528). Unconfirmed until the masked rows arrive.
+The 459 is SPO (crew's rows, 17 Oct): AutoCount's Forecast = On hand - SO + PO + SPO, Q1 (a).
 
 - Q1. Forecast: (a) On hand - SO + PO + SPO, (b) AutoCount's exact formula once the masked rows
-  show what the 459 is. Recommendation: (a) now, reconciled to (b) before build.
+  show what the 459 is. **Answered: (a) is AutoCount's formula**, confirmed row by row.
 - Q2. Incoming PL: (a) one product-level line, not split by location, (b) split by the PL's
   free-text `delivery_warehouse`. Recommendation: (a), because (b) is free text and would put
   numbers on locations that may be wrong.
@@ -170,16 +196,23 @@ would be 50: 0 - 7,312 + 1,734 + 50 = -5,528). Unconfirmed until the masked rows
 - Q4. Status thresholds: (a) Backorder < 0, High above the CRM's per-location max level, Healthy
   otherwise, (b) AutoCount's own levels (needs a new ingest field). **Answered: no status column at all.**
 - Q5. Per-project totals: (a) group by the SO's project label, falling back to customer,
-  (b) customer only. Recommendation: (a).
+  (b) customer only. Recommendation: (a). **Answered (a).**
+- Q6 (new, from the crew's rows). Inactive CRM locations that hold stock (SRTWB1515: CON 32,
+  JB SHOWR 1, PJ-SR 1, REJ100% 1): (a) leave them out, the CRM's existing cut; (b) list them, counted,
+  because AutoCount's report lists those locations. Recommendation: (a) for now, with a footnote
+  "35 more at inactive locations" under the total, because 499 - 495 = 4 does not match any
+  combination of them cleanly; crew to read AutoCount's JB SHOWR / PJ-SR / REJ100% / CON rows for
+  SRTWB1515 at one moment to settle it.
 
 ## 3. Mock
 
-`documentation/plans/inventory/mockups/stock-status.html`, round 2 (round 1 had a Status column and the board's SO rule). Six screens at 1280 and 375:
+`documentation/plans/inventory/mockups/stock-status.html`, round 3: SRTWB1515 drawn from the crew's masked rows (round 1 had a Status column and the board's SO rule; round 2 used made-up figures). Six screens at 1280 and 375:
 stand-alone page (By location with BRW-BB expanded to its documents), By project tab, Order inquiry
 line expand, Fulfilment planning item chip + popover (same chip on the OI worklist), Loading plan row
 dialog tab, empty state. Each screen ends with a "Built from" table mapping every element to its
-existing component. SRTWB1515's figures reproduce the screenshot totals under the 459 hypothesis
-above; names and document numbers are placeholders (public repo).
+existing component. Quantities, dates, document numbers, account codes and short company names are
+the crew's masked rows (person names masked by crew); project labels are AutoCount's, cut at 12
+characters as crew sent them.
 
 ## 4. Build sketch (after the mock is OK'd)
 
@@ -187,7 +220,8 @@ above; names and document numbers are placeholders (public repo).
   `location_stock_for_product`'s on hand / PO / SPO readers (rows; its SO reader uses the board's
   `demand.py` rule, so the panel's SO comes from the AutoCount-shaped
   `open_so_qty_by_product_warehouse` instead, R4), the stock-detail SO / SPO readers plus a PO reader
-  (documents), `PL_UNALLOCATED_SQL` (product line) and a project grouping. Gate: open question
+  (documents), the R3 Incoming PL reader (NOT `PL_UNALLOCATED_SQL`) and a project grouping; SO adds
+  the Transferable F cut (R4) and treats 2030-01-01 as no date (R5). Gate: open question
   between `inventory.stock.view` and the board's `projects.projects.view`; decided in the plan
   before Phase 2.
 - FE: `StockStatusPanel` (CellStockTable-based) + `StockStatusChip` (QuotationStockChip pattern),
