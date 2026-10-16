@@ -356,6 +356,30 @@ def test_ssr_3_dealer_availability_set_lists_codes_and_asks_how_many(world):
     _clean(reply)
 
 
+def test_ssr_3_engine_dealer_set_answer_equals_the_dealer_code_answer(
+    session_factory, monkeypatch, stub_parser, stub_access, world
+):
+    """SSR-3 (unified rule): an availability (dealer) contact asking the set, no quantity,
+    gets what a dealer asking the same codes by code gets, below any first line (the engine
+    quantity task and numbered codes, no stock number)."""
+    products = [world.basin(world.sorento, "ZZEA", 10), world.basin(world.mocha, "ZZEB", 6)]
+    world.commit()
+    code_chat = make_chat(session_factory, monkeypatch, stub_parser, stub_access, world, mode="availability")
+    code_reply = code_chat.say("stock for these codes", _code_ask(products))
+    set_chat = make_chat(session_factory, monkeypatch, stub_parser, stub_access, world, mode="availability")
+    set_reply = set_chat.say("any wash basin has stock", _set_ask())
+
+    def below_header(reply: str) -> str:
+        first, _, rest = reply.partition("\n")
+        return rest.strip("\n") if first.startswith("Here's what you want") else reply.strip("\n")
+
+    assert below_header(set_reply) == below_header(code_reply), (set_reply, code_reply)
+    for p in products:
+        assert p.product_code in set_reply, set_reply
+    assert not re.search(r"Quantity|Total|On Hand|\b(10|6)\b", set_reply), set_reply
+    _clean(set_reply)
+
+
 def test_ssr_4_first_line_is_the_set_header_not_the_code_intro(
     session_factory, monkeypatch, stub_parser, stub_access, world
 ):
@@ -456,6 +480,12 @@ def test_ssr_7_misspelt_word_answers_the_set_without_it_and_says_couldnt_find(
 
     assert not [ln for ln in reply.split("\n") if ln.startswith("• ")], reply
     assert _codes_shown(reply), reply
+    first = reply.split("\n", 1)[0]
+    brand_name = world.sorento.brand_name
+    brand_name = brand_name.title() if brand_name.isupper() else brand_name
+    assert first.startswith(f"Here's what you want: {brand_name} wash basins"), reply
+    assert "undrmount" not in first, reply
+    assert re.search(r"\(\d[\d,]*(, showing 1 to \d+)?\)$", first), reply
     body = [ln for ln in reply.split("\n") if ln.strip() and not ln.startswith("_Data last updated")]
     assert re.fullmatch(r"Couldn't find: \"?undrmount\"?.*", body[-1]), reply
     _clean(reply)

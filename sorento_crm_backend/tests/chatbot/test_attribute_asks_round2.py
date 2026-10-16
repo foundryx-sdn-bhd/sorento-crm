@@ -613,7 +613,8 @@ def test_w5_a_page_of_the_default_brand_set_keeps_the_default(chat, sorento_defa
     first = one_line_header(page)
     # Amended to fix round 9 on PR #833: no default brand; the count typed after the
     # breakdown lists that many of the whole set.
-    assert first.startswith("Here's what you want: wash basins with stock (8, showing 1 to 2)"), page
+    # SET-STOCK-RENDER (SSR-5/6): the ask already listed 1 to 3, so the count continues at 4.
+    assert first.startswith("Here's what you want: wash basins with stock (8, showing 4 to 5)"), page
     assert len(row_codes(page)) == 2, page
 
 

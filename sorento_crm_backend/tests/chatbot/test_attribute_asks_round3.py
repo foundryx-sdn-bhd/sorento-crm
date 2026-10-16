@@ -401,13 +401,16 @@ def test_w2_a_count_after_a_listed_page_continues_the_same_set(chat, world, smal
     page1 = chat.say("2", _bare(top_n=2))
     page2 = chat.say("2", _bare(**parser_reads))
 
+    # SET-STOCK-RENDER (SSR-5/6): the ask already listed 1 to 3, so the counts continue from 4.
     head = "Here's what you want: P trap water closets with stock (6"
-    assert one_line_header(page2) == f"{head}, showing 3 to 4)", page2
+    assert one_line_header(page1) == f"{head}, showing 4 to 5)", page1
+    assert [b[0].split(".")[0] for b in _blocks(page1)] == ["4", "5"], page1
+    assert one_line_header(page2) == f"{head})", page2
     assert "Stock summary for the requested products" not in page2, page2
-    assert [b[0].split(".")[0] for b in _blocks(page2)] == ["3", "4"], page2
-    one, two = _listed(page1), _listed(page2)
+    assert [b[0].split(".")[0] for b in _blocks(page2)] == ["6"], page2
+    zero, one, two = _listed(ask), _listed(page1), _listed(page2)
     every = sorted(_codes(world["srt_ptrap"] + world["mch_ptrap"]))
-    assert sorted(one + two + _listed(chat.say("2", _bare(**parser_reads)))) == every, (page1, page2)
+    assert sorted(zero + one + two) == every, (ask, page1, page2)
 
     before = len(chat.calls)
     done = chat.say("2", _bare(**parser_reads))
@@ -428,11 +431,14 @@ def test_w2_the_owner_sequence_30_then_10_lists_31_to_40(chat, world, monkeypatc
 
     monkeypatch.setattr(answer_mod, "SET_LIST_MAX", 3)
     chat.say("which water closet has stock, p trap", _wc_ptrap())
-    chat.say("3", _bare(top_n=3))
+    # SET-STOCK-RENDER (SSR-5/6): the ask lists 1 to 3, "3" lists 4 to 6 (all shown, bare
+    # count), and "10" has nothing left.
+    first3 = chat.say("3", _bare(top_n=3))
+    assert one_line_header(first3).endswith("P trap water closets with stock (6)"), first3
+    assert len(_blocks(first3)) == 3, first3
     page = chat.say("10", _bare(top_n=10))
-    # Amended to fix round 9 on PR #833: every brand (6), the leg said once.
-    assert one_line_header(page).endswith("P trap water closets with stock (6)"), page
-    assert len(_blocks(page)) == 3, page
+    assert one_line_header(page).endswith("P trap water closets with stock (6). That is all 6."), page
+    assert len(_blocks(page)) == 0, page
 
 
 # --------------------------------------------------------------------------- #

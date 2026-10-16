@@ -535,9 +535,10 @@ def test_a_count_after_the_breakdown_fetches_the_same_document_type(chat, world,
     calls = chat.attachment_calls()
     assert len(calls) == 2, chat.calls
     assert calls[1].get("attachment_type_ids") == [world["drawing"].id], calls[1]
-    assert len(calls[1].get("product_ids") or []) == 3, calls[1]
-    assert one_line_header(second) == "Here's what you want: taps with technical drawing (5, showing 1 to 3)", second
-    assert _row_types(second) == [DRAWING] * 3, second
+    # SET-STOCK-RENDER (SSR-5/6): the ask listed 1 to 3, so "3" lists the 2 left, count bare.
+    assert len(calls[1].get("product_ids") or []) == 2, calls[1]
+    assert one_line_header(second) == "Here's what you want: taps with technical drawing (5)", second
+    assert _row_types(second) == [DRAWING] * 2, second
 
 
 # --------------------------------------------------------------------------- #
