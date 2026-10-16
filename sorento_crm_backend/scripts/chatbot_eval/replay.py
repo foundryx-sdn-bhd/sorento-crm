@@ -398,6 +398,24 @@ def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
         yield
 
 
+@contextlib.contextmanager
+def _tool_capture(into: list[dict[str, Any]]) -> Iterator[None]:
+    """Pass-through on `MCPRuntimeClient.call_tool`: records name, args and the FULL result (no cap)."""
+    from unittest import mock
+
+    from app.services.ai_assistant_service import MCPRuntimeClient
+
+    original = MCPRuntimeClient.call_tool
+
+    def call_tool(self: Any, name: str, arguments: dict[str, Any]) -> Any:
+        result = original(self, name, arguments)
+        into.append({"name": name, "args": copy.deepcopy(dict(arguments)), "result": result})
+        return result
+
+    with mock.patch.object(MCPRuntimeClient, "call_tool", call_tool):
+        yield
+
+
 def _new_usage() -> dict[str, Any]:
     return {"calls": 0, "prompt_tokens": 0, "cached_tokens": 0, "completion_tokens": 0, "usd": 0.0}
 
@@ -427,10 +445,11 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
         key = f"{item['item_id']}|{item.get('run')}"
         inner["message"]["messageId"] = "live-" + hashlib.sha256(key.encode()).hexdigest()[:16]
     envelope = Envelope(**payload)
-    usage, misses = _new_usage(), []
+    usage, misses, tool_results = _new_usage(), [], []
     with contextlib.ExitStack() as stack:
         _guard_network(stack, misses, MODEL_HOSTS)
         stack.enter_context(_metered(usage, total))
+        stack.enter_context(_tool_capture(tool_results))
         result = engine.run_turn(envelope, session_factory=factory)
     if getattr(result, "duplicate", False):
         return {**out, "skipped": "duplicate"}
@@ -440,7 +459,7 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
     understood = next(((r.get("facts") or {}) for r in trace if isinstance(r, dict) and r.get("stage") == "understood"), {})
     out.update(
         provenance={k: understood.get(k) for k in PROVENANCE_KEYS},
-        usage=usage,
+        usage=usage, tool_results=tool_results,
         turn={"envelope": copy.deepcopy(turn.envelope) if turn is not None else None, "trace": trace,
               "response": copy.deepcopy(turn.response) if turn is not None else None,
               "branch_kind": result.branch_kind},
