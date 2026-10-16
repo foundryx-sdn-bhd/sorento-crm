@@ -1,7 +1,7 @@
 /** NUMBER-FIELDS round 3 (R5): bad input in PO amount is refused with the sentence, nothing is sent. */
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   Project,
@@ -153,16 +153,6 @@ async function openEditor() {
   const save = await screen.findByRole('button', { name: 'Save purchase order' });
   await screen.findByRole('textbox', { name: 'Code on the PO on SRT-WC-01' });
   return save;
-}
-
-/** Into the gear, where everything that is not Edit now lives. */
-async function openGear() {
-  // Radix opens its menus on pointerdown, which fireEvent.click does not send.
-  fireEvent.pointerDown(
-    await screen.findByRole('button', { name: 'Purchase order actions' }),
-    { button: 0, ctrlKey: false },
-  );
-  return within(await screen.findByRole('menu'));
 }
 
 beforeEach(() => {

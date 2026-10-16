@@ -1,7 +1,7 @@
 /** NUMBER-FIELDS round 3 (R6): bad input in Rough value is refused with the sentence, nothing is sent. */
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 if (!window.matchMedia) {

@@ -1,9 +1,9 @@
 /** NUMBER-FIELDS round 3 (R10): bad input in a 'between' box shows the sentence on that box. */
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
-import type { RuleFactItem, RuleGroup } from './types';
+import type { RuleFactItem } from './types';
 
 // ---- mock the facts hook ----
 const useRuleFactsMock = vi.fn();

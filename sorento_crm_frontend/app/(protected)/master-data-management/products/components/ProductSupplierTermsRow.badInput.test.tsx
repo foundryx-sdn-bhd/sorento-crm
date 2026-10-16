@@ -6,7 +6,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ProductSupplier } from '../../../procurement-management/product-suppliers/types/productSupplier.types';
 import {
   ProductSupplierTermsRow,
-  draftToPatch,
   termsError,
   type SupplierTermsDraft,
 } from './ProductSupplierTermsRow';

@@ -39,6 +39,7 @@ vi.mock('../hooks/useReserveRowOptions', () => ({
     ),
 }));
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const createSpy = vi.fn(async (_inquiryId: string, _payload: unknown) => ({
   id: 'rr-1',
   ordinal: 1,

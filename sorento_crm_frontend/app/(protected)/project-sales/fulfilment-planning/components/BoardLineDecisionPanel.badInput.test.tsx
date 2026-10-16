@@ -1,16 +1,13 @@
 /** NUMBER-FIELDS round 3 (S8): bad input in a board quantity is never read as 0; the sentence shows and nothing is decided. */
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { BoardDecisionPill } from './BoardDecisionPill';
 import { BoardLineDecisionPanel } from './BoardLineDecisionPanel';
 import type {
-  BoardBorrowCandidate,
   BoardCellLocation,
   BoardContribution,
   BoardDecision,
-  BoardLineDecision,
 } from '../../_shared/types/fulfilmentPlanning.types';
 
 const KEY = 'so-a|22|SRTWB7518|2026-06-29';
