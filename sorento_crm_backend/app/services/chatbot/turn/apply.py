@@ -2744,7 +2744,8 @@ STOCK_QTY_BY_CODE = "stock_qty_by_code"
 
 def _open_question_task(focus: Focus) -> Any:
     """The stock check the `Open question:` object states: still asking, or just
-    answered (`task.open_question` picks the same one)."""
+    answered. `task.open_question` offers the same check, except a one-line answered one,
+    which it leaves out (the "Last answered:" line states it)."""
     for task in focus.tasks or ():
         # A parked check is not the question on the table (review S3): "ok that's all"
         # under another subject must not answer it.

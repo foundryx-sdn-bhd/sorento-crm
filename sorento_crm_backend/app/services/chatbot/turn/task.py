@@ -715,10 +715,12 @@ def _revised(task: Task, verdict: dict[str, Any], turn_no: int) -> Task | None:
     one it means. A message that names a product of its own, or states a quantity
     beside one, is a stock ask of its own and is answered as one.
 
-    PR #1247 round 8: lines of any answered check are revised by `SLOT_QUANTITIES`,
-    which `apply._open_question_answer` writes from the parser's declared answer
-    (`open_question_answer`) to the "last_answer" object ("3 for all of them", "2. 10"). The other lines keep their
-    quantities, and the whole check is answered again."""
+    PR #1247 round 8: lines of an answered check of two or more lines are revised by
+    `SLOT_QUANTITIES`, which `apply._open_question_answer` writes from the parser's
+    declared answer (`open_question_answer`) to the "last_answer" object ("3 for all of
+    them", "2. 10"). A one-line answered check has no such object and is revised from
+    `demand_qty`. The other lines keep their quantities, and the whole check is
+    answered again."""
     quantities = {key.strip().casefold(): qty for key, qty in _slot_quantities(verdict).items()}
     if quantities:
         if not any(slot.key.strip().casefold() in quantities for slot in task.slots):
@@ -1236,11 +1238,11 @@ def open_question(tasks: Any) -> dict[str, Any] | None:
     """The stock question as the structured object the parser reads (PR #1247 round 8).
 
     `kind` is "quantities" while the quantities are still asked and "last_answer"
-    once the check is answered (a follow-up may revise it, "3 for all of them"); a parked
-    check is not offered. `asked_qty` is present only after "Is N for all K products, or
-    for one of them?". `items`
-    are the question's numbered lines in their fixed order, `qty` null while owed, and
-    `owed` names those positions. The parser answers it in `open_question_answer`.
+    once a check of two or more lines is answered (a follow-up may revise it, "3 for
+    all of them"); a one-line answer is not offered (F3), nor is a parked check.
+    `asked_qty` is present only after "Is N for all K products, or for one of them?".
+    `items` are the question's numbered lines in their fixed order, `qty` null while
+    owed, and `owed` names those positions. The parser answers it in `open_question_answer`.
     None with no stock task. Reads a `Task` or its wire dict, like `hint_lines`.
     """
     for row in tasks or ():
@@ -1249,6 +1251,11 @@ def open_question(tasks: Any) -> dict[str, Any] | None:
         task = row if isinstance(row, Task) else task_from_wire(row)
         if task is None or not task.slots or task.status == PARKED:
             # A parked check is not the question on the table (review S3).
+            continue
+        if task.status == ANSWERED and len(task.slots) == 1:
+            # F3 (16 Oct 2026): a one-line answer is stated once, by the "Last answered:"
+            # line; the object made the parser answer the delivered answer as a question.
+            # A bare number revises it from demand_qty (`_revised`), no object needed.
             continue
         items = [
             {"position": i, "code": slot.label, "qty": _number(slot.value)}
