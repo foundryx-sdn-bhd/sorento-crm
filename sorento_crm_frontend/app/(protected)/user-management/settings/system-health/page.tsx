@@ -25,10 +25,14 @@ import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect
 import { Switch } from '@/components/ui/switch';
 import { useSettings } from '../components/settings-context';
 
-const COUNT_RULES = { min: 0, integer: true };
-// Durations and counts: 0 is not a meaningful value here (it would disable the check
-// silently or collapse the window), so these start at 1.
-const POSITIVE_RULES = { min: 1, integer: true };
+// Equal to the backend bounds (app/api/v1/user_management/settings.py), so a figure that
+// passes here is never refused by the server.
+const FAIL_THRESHOLD_RULES = { min: 1, max: 100000, integer: true };
+const AUDIT_FLOOR_RULES = { min: 0, max: 1000000, integer: true };
+const LATENCY_TARGET_RULES = { min: 1, max: 3600, integer: true };
+const LATENCY_MULTIPLIER_RULES = { min: 1, max: 100, integer: true };
+const LATENCY_NO_REPLY_RULES = { min: 1, max: 1440, integer: true };
+const LATENCY_MIN_SAMPLE_RULES = { min: 1, max: 100000, integer: true };
 
 const SystemHealthSettingsPage = () => {
   const queryClient = useQueryClient();
@@ -86,12 +90,12 @@ const SystemHealthSettingsPage = () => {
   // Set by a Save that found a wrong number; the sentences then follow the typing.
   const [checked, setChecked] = useState(false);
   const errors = {
-    failThreshold: numberFieldError(failThreshold, COUNT_RULES),
-    auditFloor: numberFieldError(auditFloor, COUNT_RULES),
-    latencyTarget: numberFieldError(latencyTarget, POSITIVE_RULES),
-    latencyMultiplier: numberFieldError(latencyMultiplier, POSITIVE_RULES),
-    latencyNoReply: numberFieldError(latencyNoReply, POSITIVE_RULES),
-    latencyMinSample: numberFieldError(latencyMinSample, POSITIVE_RULES),
+    failThreshold: numberFieldError(failThreshold, FAIL_THRESHOLD_RULES),
+    auditFloor: numberFieldError(auditFloor, AUDIT_FLOOR_RULES),
+    latencyTarget: numberFieldError(latencyTarget, LATENCY_TARGET_RULES),
+    latencyMultiplier: numberFieldError(latencyMultiplier, LATENCY_MULTIPLIER_RULES),
+    latencyNoReply: numberFieldError(latencyNoReply, LATENCY_NO_REPLY_RULES),
+    latencyMinSample: numberFieldError(latencyMinSample, LATENCY_MIN_SAMPLE_RULES),
   };
   const hasNumberError = Object.values(errors).some(Boolean);
 
@@ -302,7 +306,7 @@ const SystemHealthSettingsPage = () => {
             <NumberInput
               id="health-fail-threshold"
               data-testid="health-integration-fail-threshold"
-              min={0}
+              min={1}
               value={failThreshold}
               onChange={(e) => setFailThreshold(e.target.value)}
                 error={checked ? errors.failThreshold : undefined}
