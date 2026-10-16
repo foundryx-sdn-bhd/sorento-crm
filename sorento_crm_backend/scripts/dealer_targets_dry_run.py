@@ -24,10 +24,24 @@ _KEEP = {
     "rm", "k", "m", "additional", "add", "addl", "a", "c", "ac", "i", "ii", "iii", "iv", "v",
     "point", "points", "pts", "q", "yearly", "year", "annual", "to", "nil", "na", "n", "and",
     "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
-    "quarterly", "monthly", "rate", "target", "incentive", "threshold",
+    "quarterly", "monthly", "rate", "target", "incentive", "threshold", "tier", "period",
 }
 
 _CATEGORIES = (
+    ("not read: no DEALER NAME", "SHEET_NOT_READ"),
+    ("no dealer name or customer code", "NO_NAME_OR_CODE"),
+    ("no customer has this name", "NO_NAME_MATCH"),
+    ("more than one customer has this name", "NAME_MATCHES_SEVERAL"),
+    ("picked customer", "PICK_NOT_A_CUSTOMER"),
+    ("skipped in the preview", "SKIPPED"),
+    ("is no rate", "NIL_RATE"),
+    ("is not a rate", "NOT_A_RATE"),
+    ("not an account of this dealer", "RATE_NAMES_UNKNOWN_ACCOUNT"),
+    ("has no incentive", "THRESHOLD_WITHOUT_INCENTIVE"),
+    ("cannot read the threshold", "THRESHOLD_UNREADABLE"),
+    ("name two different accounts to pay", "TWO_PAYEES"),
+    ("both every account and named accounts", "MIXED_RATES"),
+    ("an incentive column with no", "INCENTIVE_WITHOUT_TIER"),
     ("shares a target with row", "SHARES_A_BROKEN_TARGET"),
     ("PAY TO: no customer", "UNKNOWN_PAY_TO_CODE"),
     ("no customer with code", "UNKNOWN_CODE"),
@@ -101,7 +115,8 @@ def main(argv=None) -> int:
 
     summary = result["summary"]
     print(
-        f"rows {summary['rows']}, mapped {summary['mapped']}, not representable "
+        f"rows {summary['rows']}, mapped {summary['mapped']} (automatically by name "
+        f"{summary['auto_mapped']}), needs a pick {summary['needs_pick']}, not representable "
         f"{summary['not_representable']}, targets new {summary['targets_new']}, "
         f"updated {summary['targets_updated']}"
     )
@@ -111,9 +126,16 @@ def main(argv=None) -> int:
         if args.masked:
             if row["status"] == "mapped":
                 continue
-            print(f"{row['sheet']} row {row['row']}: {_mask(row['reason'])}")
+            line = f"{row['sheet']} row {row['row']}: {_mask(row['reason'])}"
+            if row["status"] == "needs_pick":
+                line += f", {len(row['suggestions'])} suggestion(s)"
+            print(line)
             continue
         line = f"{row['sheet']} row {row['row']} {row['code'] or '-'}: {row['status']}"
+        if row["customer"]:
+            line += f" = {row['customer']} ({row['match']})"
+        if row["suggestions"]:
+            line += " suggestions: " + "; ".join(f"{x['code']} {x['name']}" for x in row["suggestions"])
         if row["reason"]:
             line += f" ({row['reason']})"
         if row["warnings"]:
@@ -121,7 +143,8 @@ def main(argv=None) -> int:
         if row["target_keys"]:
             line += f" -> {', '.join(row['target_keys'])}"
         print(line)
-    return 0 if summary["not_representable"] == 0 else 1
+    # Non-zero on ANY row not mapped, any row waiting on a pick, or any sheet not read (item 8).
+    return 0 if dealer_target_import.gate_passes(result) else 1
 
 
 if __name__ == "__main__":
