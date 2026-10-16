@@ -1,8 +1,8 @@
 # PLAN: SR-CORE - Sample Request (consignment requisition) in project management
 
-Status: Build - owner OK on mock v2 (16 Oct 09:07, "ok"); card SETTLED (owner Q1 16 Oct 00:21, crew Q2-Q5 = (a)).
-Phase 2 red-first under way. Track: full (migration, new permissions, portal ingest). Slice 1 of 3 (SR-STOCK,
-SR-RETURN follow).
+Status: Review - built; reviewer kill tests clean after two fix rounds, security review PASS, cloud browser pass
+PASS on the head; waiting on the owner's hand-test (crew test copy). Track: full (migration, new permissions, portal
+ingest). Slice 1 of 3 (SR-STOCK, SR-RETURN follow).
 
 Discovery: `state/reports/SAMPLE-REQUEST-DISCOVERY-15oct.md` (crew), owner rulings 16 Oct 00:10.
 Card: `CARD-sample-request-core-15oct.md` (the behaviour contract). UAC: `sample-request-core-15oct-acceptance-criteria.md`.
@@ -245,3 +245,9 @@ no existence leak; UAC AC-SR-41 updated). `ProjectDetailClient.tsx` exports `TAB
   code" badge, Salesperson filter). Delete draft is the deferred pending-action delete (owner, draft only), as the
   mock's gear menu shows.
 - Portal requests are loaded by contact (the price tag precedent); AC-SR-41 reads "contact".
+
+## Follow-ups (not in this slice)
+
+- Comments for the owning salesperson: the form comment thread is gated on `projects.sample_requests.view`
+  (`services/form_comment_service.py` VIEW_PERMISSION), so a salesperson holding only `create` gets no Comments tab.
+  An owner rule in the comment service would let them talk to the coordinator on their own request.
