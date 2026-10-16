@@ -505,7 +505,8 @@ def _stock_mode(row: dict[str, Any]) -> str | None:
     return next((m for src in sources if (m := find(src))), None)
 
 
-def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tuple[str, bool | None, str] | None:
+def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None,
+                    followup: bool = False) -> tuple[str, bool | None, str] | None:
     """Crew policy: a quantity question ("how many", "berapa", or a quantity owed after the turn) is right only on a
     stock ask for a contact whose Stock Visibility mode is "availability"; anywhere else it is needless. A stock ask whose
     mode no tool result shows is unknown."""
@@ -522,7 +523,9 @@ def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> 
         before = _oq(row)[0]
         picked_stock = isinstance(before, dict) and before.get("kind") == "product_pick" and bool(
             (before.get("payload") or {}).get("stock_pick"))
-        stock_ask = bool(STOCK_WORDS_RE.search(user_message(row))) or picked_stock
+        # a follow-up on a stock answer: the domain held before the turn (memory focus.before.domains) is inventory
+        on_stock = followup and "inventory" in (_mem_focus(row, "before").get("domains") or [])
+        stock_ask = bool(STOCK_WORDS_RE.search(user_message(row))) or picked_stock or on_stock
     if not stock_ask:
         return ("no_qty_ask", False, "The bot asked how many although it was not needed.")
     mode = _stock_mode(row)
@@ -548,11 +551,11 @@ def _picker_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tu
 
 
 def _needless(row: dict[str, Any], gold: dict[str, Any], menu: bool = True,
-              shown: bool = False) -> list[tuple[str, bool | None, str]]:
+              shown: bool = False, followup: bool = False) -> list[tuple[str, bool | None, str]]:
     """The needless-question checks every item gets. `shown`: the answer already showed products, so a list left open
     after it is not a needless picker."""
     picker = None if shown else _picker_check(row, gold)
-    return [c for c in ((_menu_check(row, gold) if menu else None), _quantity_check(row, gold), picker) if c]
+    return [c for c in ((_menu_check(row, gold) if menu else None), _quantity_check(row, gold, followup), picker) if c]
 
 
 def _code_lookup(row, item):
@@ -604,7 +607,7 @@ def _subject_check(want: set[str], after: set[str]) -> tuple[str, bool | None, s
 
 def _followup(row, item):
     kind, gold = item.get("kind"), item.get("gold") or {}
-    return _followup_checks(row, item, kind, gold) + _needless(row, gold, menu=kind in {"and_x", "switch"})
+    return _followup_checks(row, item, kind, gold) + _needless(row, gold, menu=kind in {"and_x", "switch"}, followup=True)
 
 
 def _followup_checks(row, item, kind, gold):
