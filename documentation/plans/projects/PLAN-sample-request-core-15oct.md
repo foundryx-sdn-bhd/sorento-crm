@@ -178,8 +178,9 @@ Write-time refusals (422 on any write): unknown / inactive / out-of-scope `produ
 deliver_immediately, `quotation_version_id` of another project (code `SAMPLE_REQUEST_QUOTATION_PROJECT`),
 portal `project_id` not in `projects_for_contact` (code `SAMPLE_REQUEST_PROJECT_NOT_ALLOWED`).
 
-Submit refusals (422, code `SAMPLE_REQUEST_INCOMPLETE`, `message` names the field in plain words, `details.field`
-holds the payload key): customer (`customer_id` or `customer_name`), project (`project_id` or `project_title`;
+Submit refusals (422, code `SAMPLE_REQUEST_INCOMPLETE`, `message` names the field in plain words, top-level
+`details.field` holds the payload key; `AppException` gains an optional `details: dict` that is serialised only when
+given, so every existing error body is unchanged): customer (`customer_id` or `customer_name`), project (`project_id` or `project_title`;
 only `project_id` when `sample_request_require_project`), quotation (`quotation_version_id`, only when
 `sample_request_require_quotation`), delivery (`delivery_date` or `deliver_immediately`), `delivery_mode`,
 `ship_to_name`, lines (`lines`: at least one line or `board_mounting`; message "Add at least one item"),
@@ -217,9 +218,13 @@ draft/submitted), `GET /submissions/sample_request/{id}/pdf`, `GET /sample-reque
 Portal create sets `source=portal`, `contact_id`, `salesperson_id` = the contact's linked sales agent (or null).
 
 Settings: `system_settings.sample_request_require_project`, `sample_request_require_quotation` (bool, default false),
-in `GET /api/v1/settings/` and `PUT /api/v1/settings/general`, and in `GET /api/v1/settings/app-config` so a
-non-admin form can read them.
+in `GET /api/v1/user-management/settings/` (nested under `settings`) and `PUT /api/v1/user-management/settings/general`,
+and flat in `GET /api/v1/user-management/settings/app-config` so a non-admin form can read them.
 
 Delivered side effect: when `quotation_version_id` is set, one `ProjectSample` for that version with
 `submitted_on = date` (idempotent: a second Delivered never happens, the edge does not exist).
 Activity: one project activity row per status move when `project_id` is set.
+
+Red-round decisions (16 Oct, after the tester's report): another contact's portal request is 404 (loaded by id + contact,
+no existence leak; UAC AC-SR-41 updated). `ProjectDetailClient.tsx` exports `TABS`. Portal service module is
+`app/(auth)/portal/lib/sample-request-service.ts`; delivery-mode error text "Choose a delivery mode".

@@ -1,0 +1,306 @@
+"""SR-CORE portal surface, red-first (Phase 2). Every test cites its AC id.
+
+Through TestClient, because mounting order is the lesson of D49: the generic
+``/submissions/{kind}`` handler must not shadow the literal sample_request paths.
+Pattern: tests/test_portal_price_tag_routes.py.
+"""
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from app.main import app  # noqa: F401  MUST be first app import (circular import)
+
+from ._pg_fixture import blank_session
+from ._sample_request_seed import (
+    MARKER,
+    full_payload,
+    make_project,
+    make_user,
+    second_company,
+    seed_catalogue,
+    sorento,
+    uid,
+)
+
+PORTAL = "/api/v1/public/portal"
+BASE = f"{PORTAL}/submissions/sample_request"
+
+
+def _contact(db, *, granted: bool, company: bool = True) -> str:
+    from app.models.access import RespondContact
+    from tests._portal_grant import grant_portal_forms, link_contact_company
+
+    contact = RespondContact(
+        id=uid(), phone_number=f"+60{uid().replace('-', '')[:9]}", name=f"{MARKER} contact"
+    )
+    db.add(contact)
+    db.flush()
+    if company:
+        link_contact_company(db, contact.id)
+    if granted:
+        grant_portal_forms(db, contact.id, ["sample_request"])
+    return contact.id
+
+
+@pytest.fixture
+def portal():
+    from app.api.v1.public.portal import get_portal_token
+    from app.database import get_db
+    from app.models.portal import PortalToken
+    from fastapi.testclient import TestClient
+
+    from app.main import app as the_app
+
+    with blank_session() as db:
+        company_id = sorento(db)
+        from app.services import project_seed_service
+
+        other_company = second_company(db)
+        project_seed_service.run(db, company_id=company_id)
+        project_seed_service.run(db, company_id=other_company)
+        owner = make_user(db, f"{MARKER} owner")
+        cat = seed_catalogue(db)
+        inside = make_project(db, company_id, owner, f"{MARKER} inside tower")
+        outside = make_project(db, other_company, owner, f"{MARKER} outside tower")
+        granted = _contact(db, granted=True)
+        granted_b = _contact(db, granted=True)
+        ungranted = _contact(db, granted=False)
+        db.commit()
+
+        state = {"contact": granted}
+
+        def _token():
+            return PortalToken(id=uid(), contact_id=state["contact"], space_id="zzt-space")
+
+        the_app.dependency_overrides[get_db] = lambda: db
+        the_app.dependency_overrides[get_portal_token] = _token
+        try:
+            with TestClient(the_app, headers={"X-Portal-Token": "zzt-token"}) as c:
+                yield SimpleNamespace(
+                    c=c,
+                    db=db,
+                    state=state,
+                    cat=cat,
+                    inside=inside,
+                    outside=outside,
+                    granted=granted,
+                    granted_b=granted_b,
+                    ungranted=ungranted,
+                )
+        finally:
+            the_app.dependency_overrides.clear()
+
+
+def _as(p, contact_id):
+    p.state["contact"] = contact_id
+    return p.c
+
+
+def _create(p, contact=None, **over):
+    body = full_payload(product_id=p.cat.plain.id, **over)
+    res = _as(p, contact or p.granted).post(BASE, json=body)
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+# ------------------------------------------------------------------ AC-SR-40
+
+
+def test_ac_sr_40_sample_request_is_grantable_not_default():
+    """AC-SR-40: in GRANTABLE_PORTAL_FORM_TYPES, NOT in SUPPORTED_TYPES."""
+    from app.services.portal_service import GRANTABLE_PORTAL_FORM_TYPES, SUPPORTED_TYPES
+
+    assert "sample_request" in GRANTABLE_PORTAL_FORM_TYPES
+    assert "sample_request" not in SUPPORTED_TYPES
+
+
+def test_ac_sr_40_kind_label():
+    """AC-SR-40: the visibility service knows the label (plan S4)."""
+    from app.services import portal_form_visibility_service as svc
+
+    assert svc._KIND_LABELS["sample_request"] == "Sample Request"
+
+
+ROUTES = [
+    ("get", BASE, None),
+    ("post", BASE, {}),
+    ("get", f"{BASE}/{{id}}", None),
+    ("put", f"{BASE}/{{id}}", {}),
+    ("post", f"{BASE}/{{id}}/submit", None),
+    ("post", f"{BASE}/{{id}}/cancel", None),
+    ("get", f"{BASE}/{{id}}/pdf", None),
+    ("get", f"{PORTAL}/sample-request/products?q=zzt", None),
+]
+
+
+@pytest.mark.parametrize("method, url, body", ROUTES)
+def test_ac_sr_40_no_grant_is_403_on_every_route(portal, method, url, body):
+    """AC-SR-40: without the grant: 403 FORM_TYPE_NOT_VISIBLE, before any record lookup."""
+    c = _as(portal, portal.ungranted)
+    url = url.replace("{id}", uid())
+    res = getattr(c, method)(url, **({"json": body} if body is not None else {}))
+    assert res.status_code == 403, (url, res.status_code, res.text)
+    assert res.json().get("code") == "FORM_TYPE_NOT_VISIBLE"
+
+
+# ------------------------------------------------------------------ happy path
+
+
+def test_ac_sr_41_create_list_get_submit_cancel(portal):
+    """AC-SR-40/41/43: a granted contact creates, lists, opens, submits and cancels."""
+    d = _create(portal)
+    assert d["source"] == "portal"
+    assert d["status"] == "draft"
+    assert d["request_no"].startswith("SR-")
+
+    c = _as(portal, portal.granted)
+    listed = c.get(BASE)
+    assert listed.status_code == 200, listed.text
+    assert d["id"] in [r["id"] for r in listed.json()["data"]]
+
+    got = c.get(f"{BASE}/{d['id']}")
+    assert got.status_code == 200, got.text
+    assert got.json()["id"] == d["id"]
+
+    sub = c.post(f"{BASE}/{d['id']}/submit")
+    assert sub.status_code in (200, 201), sub.text
+    assert c.get(f"{BASE}/{d['id']}").json()["status"] == "submitted"
+
+    cancelled = c.post(f"{BASE}/{d['id']}/cancel")
+    assert cancelled.status_code == 200, cancelled.text
+    assert c.get(f"{BASE}/{d['id']}").json()["status"] == "cancelled"
+
+
+def test_ac_sr_43_cancel_is_not_offered_after_cancelled(portal):
+    """AC-SR-43: cancel only while draft/submitted -> a second cancel is 409."""
+    d = _create(portal)
+    c = _as(portal, portal.granted)
+    assert c.post(f"{BASE}/{d['id']}/cancel").status_code == 200
+    assert c.post(f"{BASE}/{d['id']}/cancel").status_code == 409
+
+
+def test_ac_sr_43_submitted_request_cannot_be_edited(portal):
+    """AC-SR-43 / 32: read-only after submit."""
+    d = _create(portal)
+    c = _as(portal, portal.granted)
+    assert c.post(f"{BASE}/{d['id']}/submit").status_code in (200, 201)
+    res = c.put(f"{BASE}/{d['id']}", json={"scope_note": "late"})
+    assert res.status_code == 409, res.text
+
+
+def test_ac_sr_02_portal_submit_refusal_carries_code_and_field(portal):
+    """AC-SR-02: the same SAMPLE_REQUEST_INCOMPLETE refusal on the portal."""
+    d = _create(portal, delivery_mode=None)
+    res = _as(portal, portal.granted).post(f"{BASE}/{d['id']}/submit")
+    assert res.status_code == 422, res.text
+    body = res.json()
+    assert body["code"] == "SAMPLE_REQUEST_INCOMPLETE"
+    assert body["details"]["field"] == "delivery_mode"
+
+
+def test_ac_sr_10_portal_inactive_product_is_422(portal):
+    """AC-SR-10: product check applies to the portal write too."""
+    body = full_payload(
+        product_id=portal.cat.plain.id, lines=[{"product_id": portal.cat.inactive.id, "qty": 1}]
+    )
+    res = _as(portal, portal.granted).post(BASE, json=body)
+    assert res.status_code == 422, res.text
+    assert res.json().get("code") == "SAMPLE_REQUEST_PRODUCT_INVALID"
+
+
+def test_ac_sr_11_portal_folded_search(portal):
+    """AC-SR-11: portal product search is dash, space and case blind, active only."""
+    c = _as(portal, portal.granted)
+    res = c.get(f"{PORTAL}/sample-request/products", params={"q": "zzt9101"})
+    assert res.status_code == 200, res.text
+    assert "ZZT-9101" in [r["product_code"] for r in res.json()]
+    every = c.get(f"{PORTAL}/sample-request/products", params={"q": "ZZT"}).json()
+    assert portal.cat.inactive.product_code not in [r["product_code"] for r in every]
+
+
+# ------------------------------------------------------------------ AC-SR-41
+
+
+def test_ac_sr_41_other_contacts_request_is_404_on_every_by_id_route(portal):
+    """AC-SR-41 + contract: records load by (id, contact_id); someone else's id is not found."""
+    d = _create(portal, contact=portal.granted)
+    c = _as(portal, portal.granted_b)
+    rid = d["id"]
+    assert c.get(f"{BASE}/{rid}").status_code == 404
+    assert c.put(f"{BASE}/{rid}", json={"scope_note": "x"}).status_code == 404
+    assert c.post(f"{BASE}/{rid}/submit").status_code == 404
+    assert c.post(f"{BASE}/{rid}/cancel").status_code == 404
+    assert c.get(f"{BASE}/{rid}/pdf").status_code == 404
+
+
+def test_ac_sr_41_list_only_shows_own_requests(portal):
+    """AC-SR-41: a contact lists only own requests."""
+    mine = _create(portal, contact=portal.granted)["id"]
+    theirs = _create(portal, contact=portal.granted_b)["id"]
+    ids = [r["id"] for r in _as(portal, portal.granted).get(BASE).json()["data"]]
+    assert mine in ids and theirs not in ids
+
+
+def test_ac_sr_54_portal_list_rows_carry_no_phone_or_address(portal):
+    """AC-SR-54: portal list rows never carry the personal-data keys; detail does."""
+    d = _create(portal, site_contact_phone="+60111222333", ship_to_address="9 Jalan Zzt")
+    c = _as(portal, portal.granted)
+    res = c.get(BASE)
+    assert "+60111222333" not in res.text and "Jalan Zzt" not in res.text
+    for row in res.json()["data"]:
+        assert "site_contact_phone" not in row and "ship_to_address" not in row
+    assert c.get(f"{BASE}/{d['id']}").json()["site_contact_phone"] == "+60111222333"
+
+
+# ------------------------------------------------------------------ AC-SR-42
+
+
+def test_ac_sr_42_project_outside_the_contacts_lookup_is_422(portal):
+    """AC-SR-42: a project the contact's lookup does not return -> SAMPLE_REQUEST_PROJECT_NOT_ALLOWED."""
+    body = full_payload(
+        product_id=portal.cat.plain.id, project_id=portal.outside.id, project_title=None
+    )
+    res = _as(portal, portal.granted).post(BASE, json=body)
+    assert res.status_code == 422, res.text
+    assert res.json().get("code") == "SAMPLE_REQUEST_PROJECT_NOT_ALLOWED"
+
+
+def test_ac_sr_42_project_inside_the_lookup_is_accepted(portal):
+    """AC-SR-42: the same write with an allowed project is created."""
+    d = _create(portal, project_id=portal.inside.id, project_title=None)
+    got = _as(portal, portal.granted).get(f"{BASE}/{d['id']}").json()
+    assert got["project_id"] == portal.inside.id
+
+
+def test_ac_sr_42_update_rechecks_the_project(portal):
+    """AC-SR-42: the API re-checks on save, not only on create."""
+    d = _create(portal)
+    res = _as(portal, portal.granted).put(
+        f"{BASE}/{d['id']}", json={"project_id": portal.outside.id}
+    )
+    assert res.status_code == 422, res.text
+    assert res.json().get("code") == "SAMPLE_REQUEST_PROJECT_NOT_ALLOWED"
+
+
+# ------------------------------------------------------------------ print
+
+
+def test_ac_sr_60_portal_pdf_for_own_request(portal):
+    """AC-SR-60/61: the owner prints own request as a PDF."""
+    d = _create(portal)
+    res = _as(portal, portal.granted).get(f"{BASE}/{d['id']}/pdf")
+    assert res.status_code == 200, res.text
+    assert res.headers["content-type"].startswith("application/pdf")
+    assert res.content.startswith(b"%PDF")
+
+
+def test_generic_submissions_handler_does_not_shadow_the_literal_route(portal):
+    """D49: POST /submissions/sample_request must reach the sample request route, not the
+    generic handler (which would answer with a body.fields complaint or an unsupported-kind 4xx)."""
+    res = _as(portal, portal.granted).post(
+        BASE, json=full_payload(product_id=portal.cat.plain.id)
+    )
+    assert res.status_code == 201, res.text
+    assert "fields" not in res.text

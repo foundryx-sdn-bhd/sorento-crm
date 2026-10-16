@@ -532,17 +532,19 @@ def test_ac_sr_11_master_data_select_keeps_old_hits_and_gains_folded(world):
 
 
 def _settings_row(w):
-    return w.api.as_(w.admin).get("/api/v1/settings/")
+    return w.api.as_(w.admin).get("/api/v1/user-management/settings/")
 
 
 def test_ac_sr_20_settings_default_false_and_round_trip(world):
     """AC-SR-20: both switches returned, OFF on deploy, saved by PUT /settings/general."""
-    got = _settings_row(world).json()["settings"]
+    first = _settings_row(world)
+    assert first.status_code == 200, first.text
+    got = first.json()["settings"]
     assert got["sample_request_require_project"] is False
     assert got["sample_request_require_quotation"] is False
 
     put = world.api.as_(world.admin).put(
-        "/api/v1/settings/general",
+        "/api/v1/user-management/settings/general",
         json={"sample_request_require_project": True, "sample_request_require_quotation": True},
     )
     assert put.status_code == 200, put.text
@@ -554,9 +556,9 @@ def test_ac_sr_20_settings_default_false_and_round_trip(world):
 def test_ac_sr_20_app_config_carries_the_switches_for_non_admins(world):
     """AC-SR-20 / plan S3: a salesperson form reads them from /settings/app-config."""
     world.api.as_(world.admin).put(
-        "/api/v1/settings/general", json={"sample_request_require_project": True}
+        "/api/v1/user-management/settings/general", json={"sample_request_require_project": True}
     )
-    res = world.api.as_(world.sales).get("/api/v1/settings/app-config")
+    res = world.api.as_(world.sales).get("/api/v1/user-management/settings/app-config")
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["sample_request_require_project"] is True
@@ -573,7 +575,7 @@ def test_ac_sr_21_project_switch_on_refuses_typed_title_but_old_request_opens(wo
     """AC-SR-21: ON refuses a typed title; a request saved before still opens and prints."""
     old = _draft(world, project_id=None, project_title="Typed before switch")
     world.api.as_(world.admin).put(
-        "/api/v1/settings/general", json={"sample_request_require_project": True}
+        "/api/v1/user-management/settings/general", json={"sample_request_require_project": True}
     )
     refused = _submit(world, _draft(world, project_id=None, project_title="Typed after")["id"])
     assert refused.status_code == 422, refused.text
@@ -590,7 +592,7 @@ def test_ac_sr_21_project_switch_on_refuses_typed_title_but_old_request_opens(wo
 def test_ac_sr_21_project_switch_on_registered_project_submits(world):
     """AC-SR-21: a registered project satisfies the switch."""
     world.api.as_(world.admin).put(
-        "/api/v1/settings/general", json={"sample_request_require_project": True}
+        "/api/v1/user-management/settings/general", json={"sample_request_require_project": True}
     )
     d = _draft(world, project_id=world.project.id, project_title=None)
     assert _submit(world, d["id"]).status_code in (200, 201)
@@ -599,7 +601,7 @@ def test_ac_sr_21_project_switch_on_registered_project_submits(world):
 def test_ac_sr_22_quotation_switch_on_refuses_without_version(world):
     """AC-SR-22: ON, submit refuses without a quotation version."""
     world.api.as_(world.admin).put(
-        "/api/v1/settings/general", json={"sample_request_require_quotation": True}
+        "/api/v1/user-management/settings/general", json={"sample_request_require_quotation": True}
     )
     d = _draft(world, project_id=world.project.id, project_title=None)
     res = _submit(world, d["id"])
@@ -612,7 +614,7 @@ def test_ac_sr_22_quotation_switch_on_refuses_without_version(world):
 def test_ac_sr_22_quotation_switch_on_with_own_version_submits(world):
     """AC-SR-22: a version of the request's project passes."""
     world.api.as_(world.admin).put(
-        "/api/v1/settings/general", json={"sample_request_require_quotation": True}
+        "/api/v1/user-management/settings/general", json={"sample_request_require_quotation": True}
     )
     d = _draft(
         world,
@@ -969,7 +971,9 @@ def test_create_needs_create_permission(world):
 
 def test_unknown_request_id_is_404(world):
     """Missing record -> 404."""
-    assert world.api.as_(world.coord).get(f"{SR}/{uid()}").status_code == 404
+    res = world.api.as_(world.coord).get(f"{SR}/{uid()}")
+    assert res.status_code == 404
+    assert res.json().get("code") == "NOT_FOUND", res.text  # not a bare route miss
 
 
 # ------------------------------------------------------------------ AC-SR-60 / 61
