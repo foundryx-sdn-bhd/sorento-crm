@@ -52,12 +52,12 @@ vi.mock('@/lib/toast', () => ({ toast: { custom: vi.fn() } }));
  * `apiFetch` is also used by the page's user-select query, so it is not
  * necessarily call[0] - indexing by position made these tests depend on request
  * ordering they do not control. */
-function saveCall(): [string, { body: string }] {
+function saveCall(): [string, { body: string; method?: string }] {
   const call = apiFetch.mock.calls.find(
-    ([url]: [string]) => typeof url === 'string' && url.includes('/settings/general'),
+    ([url]: unknown[]) => typeof url === 'string' && url.includes('/settings/general'),
   );
   if (!call) throw new Error('settings save was never issued');
-  return call as [string, { body: string }];
+  return call as [string, { body: string; method?: string }];
 }
 
 function savedBody(): Record<string, unknown> {
