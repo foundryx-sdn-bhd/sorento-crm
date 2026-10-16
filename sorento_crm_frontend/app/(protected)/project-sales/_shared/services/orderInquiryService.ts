@@ -669,6 +669,7 @@ export function worklistParams(params: OrderInquiryWorklistParams, limit: number
       so_month: params.so_month,
       po_number: params.po_number,
       spo_number: params.spo_number,
+      reserve: params.reserve,
       delivery_from: params.delivery_from,
       delivery_to: params.delivery_to,
       // S3: a Schedule cell's own drilldown. The pair is sent as the pair - the server

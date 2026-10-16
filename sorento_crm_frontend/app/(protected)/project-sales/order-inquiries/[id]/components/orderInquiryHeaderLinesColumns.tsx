@@ -215,7 +215,7 @@ function reserveChipText(staged: StagedReserveEntry): string {
   return `Reserve ${staged.qty}`;
 }
 
-function ReserveActionsCell({
+export function ReserveActionsCell({
   row,
   staged,
   onTickReserve,
@@ -223,6 +223,7 @@ function ReserveActionsCell({
   onEditReserve,
   onAmendReserve,
   onUndoStaged,
+  canAmend = true,
 }: {
   row: OrderInquiryWorklistRow;
   staged?: StagedReserveEntry;
@@ -231,6 +232,7 @@ function ReserveActionsCell({
   onEditReserve?: (row: OrderInquiryWorklistRow) => void;
   onAmendReserve?: (row: OrderInquiryWorklistRow) => void;
   onUndoStaged?: (rowId: string) => void;
+  canAmend?: boolean;
 }) {
   if (staged) {
     const chipText = reserveChipText(staged);
@@ -301,7 +303,8 @@ function ReserveActionsCell({
   // 6e.4 (AC-RS-83b): a declined line (CS answered 0) gets the same Amend as a reserved
   // one, so "0 -> up" stays reachable. Its reserve history is the Reserve tab of the
   // line's one History dialog now (owner ruling 26 Sep, G3), not an icon of its own.
-  if (row.reserve_state === 'reserved' || row.reserve_state === 'declined') {
+  // The cross-OI Lines page draws no Amend (OI-BULK-RESERVE v4): `canAmend={false}`.
+  if (canAmend && (row.reserve_state === 'reserved' || row.reserve_state === 'declined')) {
     return (
       <div className="flex items-center gap-1">
         <Button
