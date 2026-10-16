@@ -501,6 +501,8 @@ export const PromptChipEditor = forwardRef<
   );
 
   return (
+    // fill: 360px = the one-row toolbar (32) + gap (8) + the 320px editor floor. A toolbar that
+    // wraps to two rows needs this floor raised, or the editor spills over what follows.
     <div className={cn('space-y-2', fill && 'flex min-h-[360px] grow basis-0 flex-col', className)}>
       <div className="flex flex-wrap items-center gap-2">
         {!disabled ? (
