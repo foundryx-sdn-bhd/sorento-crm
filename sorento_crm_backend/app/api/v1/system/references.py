@@ -3507,9 +3507,8 @@ def resolve_reference_post(
         # R4 (round 4): what a zero set looked for and the count in its other values.
         if outcome.get("near_miss"):
             result["predicate"]["near_miss"] = outcome["near_miss"]
-        # Fix round 9: a long set's breakdown by the next attribute, and a zero set's
-        # described products without the legs.
-        for key in ("breakdown", "members", "set_brands"):
+        # Fix round 9: a zero set's described products without the legs.
+        for key in ("members", "set_brands"):
             if outcome.get(key):
                 result["predicate"][key] = outcome[key]
         # W4: what a page of this set replays - the bound specs, the brand and the ids

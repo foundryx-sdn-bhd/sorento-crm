@@ -784,9 +784,10 @@ def _set_breakdown(
     count}]}`, largest first, each count in distinct variant families as the set's own
     count is.
 
-    Fix round 9 on PR #833 (owner, 28 Sep 2026: "no cap", "always break it down"): a set
-    too long for one reply gives its full count and this breakdown, never a paging
-    question. The next attribute is the brand when none was named (no brand named means
+    Fix round 9 on PR #833: what a set that qualifies nothing does hold, when its
+    described products are too many to name (`members`); a longer set is listed in part,
+    never broken down (SET-STOCK-RENDER, owner 16 Oct 2026). The next attribute is the
+    brand when none was named (no brand named means
     every brand), then the class, then each registry key in the registry's own order that
     the ask did not already bind; the first that splits the set in two or more is used.
     One query over the members' brand and specification row; `_near_miss` counts the

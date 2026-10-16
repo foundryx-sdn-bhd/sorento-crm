@@ -3727,8 +3727,18 @@ def make_tool_runner(
             "files_as_links": bool(getattr(profile, "files_as_links", False)),
         }
         if page_predicate is not None:
+            # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local copy, 7 Oct
+            # 2026): the rows this page LISTS are the conversation's subject from here on,
+            # handed back on the envelope (`listed_products`) for the engine to settle
+            # onto `focus.products`. A page turn never runs the resolver, and
+            # `turn/apply._narrow_and_plan` settles the focus only from what the resolver
+            # matched, so after "sorento" listed 50 taps the focus still held turn 1's
+            # code-tier rows (the COLD TAP family) and "pic" ran over those two.
+            listed_products = listed_product_rows(db, page_ids)
+            # The code rides each id, so the fetch's set cut counts codes (twins, R4).
+            code_of = {row["uuid"]: row["canonical_code"] for row in listed_products}
             entities = [
-                {"uuid": pid, "entity_type": "product", "canonical_code": None}
+                {"uuid": pid, "entity_type": "product", "canonical_code": None, "code": code_of.get(pid)}
                 for pid in page_ids
             ]
             # ATTACH-SET-BRAND-FOLLOWUP (owner hand test, 6 Oct 2026): the document type the
@@ -3742,14 +3752,6 @@ def make_tool_runner(
                 {"uuid": type_id, "entity_type": "attachment_type", "canonical_code": None}
                 for type_id in set_page_attachment_type_ids(carry)
             ]
-            # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local copy, 7 Oct
-            # 2026): the rows this page LISTS are the conversation's subject from here on,
-            # handed back on the envelope (`listed_products`) for the engine to settle
-            # onto `focus.products`. A page turn never runs the resolver, and
-            # `turn/apply._narrow_and_plan` settles the focus only from what the resolver
-            # matched, so after "sorento" listed 50 taps the focus still held turn 1's
-            # code-tier rows (the COLD TAP family) and "pic" ran over those two.
-            listed_products = listed_product_rows(db, page_ids)
         elif spec.filters.get("task"):
             # Ported from PR #1118 (not merged): an OPEN TASK's own fetch is about the
             # TASK's subjects, all of them (`turn/task.py::StockQtyTask.to_fetch`): a
@@ -4527,16 +4529,19 @@ def page_the_set(
         stock_policy=stock_policy,
     )
     total = int(outcome.get("qualifying_total") or 0)
-    ids = [
-        c.get("product_id") or c.get("id")
-        for c in (outcome.get("candidates") or [])
-        if isinstance(c, dict)
-    ]
-    ids = [i for i in ids if i]
+    # SET-STOCK-RENDER R4: a page steps by product CODE, every company's product of a
+    # listed code riding with it, as `shown` counts codes.
+    ids_by_code: dict[str, list[str]] = {}
+    for c in outcome.get("candidates") or []:
+        pid = (c.get("product_id") or c.get("id")) if isinstance(c, dict) else None
+        if pid:
+            ids_by_code.setdefault(c.get("product_code") or pid, []).append(pid)
+    codes = list(ids_by_code)
     limit = answer_mod.SET_LIST_MAX if not size else min(int(size), answer_mod.SET_LIST_MAX)
     # "another N" continues from where the last list stopped.
     offset = max(0, int(key.get("shown") or 0))
-    page_ids = ids[offset : offset + limit]
+    page_codes = codes[offset : offset + limit]
+    page_ids = [pid for code in page_codes for pid in ids_by_code[code]]
     predicate = {
         "require": outcome.get("require") or key.get("require") or {},
         "qualifying_total": total,
@@ -4562,7 +4567,7 @@ def page_the_set(
         predicate["certificate_ids"] = outcome["certificate_ids"]
     # The next page's carry: the same description, moved past what this page lists.
     # Kept after the last page too (round 3 W2), so a further count says "That is all".
-    next_key = {**key, "total": total, "shown": min(offset + len(page_ids), total) if page_ids else offset}
+    next_key = {**key, "total": total, "shown": min(offset + len(page_codes), total) if page_codes else offset}
     predicate["next_carry"] = {"set_key": next_key} if total else None
     return predicate, page_ids
 

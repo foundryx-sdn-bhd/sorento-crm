@@ -2960,9 +2960,10 @@ def build_set_header(
 
     Fix round 12 on PR #833: the leg's word is in the phrase and nowhere else, so a stock,
     incoming, certificate or promotion ask gets one shape and the leg picks only the rows.
-    No paging (owner ruling, 26 Sep 2026): every qualifying product listed says the count
-    alone; a named count, or a set longer than `SET_LIST_MAX`, says which ones
-    (SET-STOCK-RENDER, owner 16 Oct 2026: no breakdown by the next attribute).
+    No paging (owner ruling, 26 Sep 2026): every qualifying product listed on one page
+    says the count alone; a named count, a set longer than `SET_LIST_MAX` and every
+    continuation page, the last included, say which ones (SET-STOCK-RENDER, owner 16 Oct
+    2026: no breakdown by the next attribute; UAC SSR-14).
 
     A pure string function: `qualifying_total` and `shown` are counts the caller already
     has, never re-derived here."""
@@ -2970,7 +2971,7 @@ def build_set_header(
     # about a described set (`{"price": "described"}`) names no leg at all.
     phrase = described_set_phrase(description, set_noun, require or {})
     withheld = not exhausted and shown <= 0 and qualifying_total > 0
-    if withheld or exhausted or shown >= qualifying_total - offset:
+    if withheld or exhausted or (not offset and shown >= qualifying_total):
         count = f"{qualifying_total:,}"
     else:
         count = f"{qualifying_total:,}, showing {offset + 1} to {offset + shown}"
