@@ -524,19 +524,51 @@ describe('order-qty ledger - the add-on quantity is editable (Fix A, user feedba
     expect(onDecide).toHaveBeenLastCalledWith(expect.objectContaining({ buy: 240 }));
   });
 
-  it('bounds: a typed figure above the cap clamps to 10x the proposed qty', () => {
-    renderLedger({ line: editableLine() });
+  it('NUMBER-FIELDS: a typed figure above the cap is kept as typed and blocked with a message', () => {
+    const { onDecide } = renderLedger({ line: editableLine() });
     const input = screen.getByRole('spinbutton', { name: 'Forecast add-on quantity' });
-    // Proposal is 60, so the cap is 600.
+    // Proposal is 60, so the cap is 600. No silent clamp any more.
     fireEvent.change(input, { target: { value: '99999' } });
-    expect(input).toHaveValue(600);
+    expect(input).toHaveValue(99999);
+    expect(screen.getByText(/^Enter a (whole )?number between 0 and 600/)).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(onDecide).not.toHaveBeenCalled();
   });
 
-  it('bounds: a negative or empty entry floors at zero', () => {
+  it('NUMBER-FIELDS: a negative entry stays as typed and is blocked, never floored to zero', () => {
     renderLedger({ line: editableLine() });
     const input = screen.getByRole('spinbutton', { name: 'Forecast add-on quantity' });
     fireEvent.change(input, { target: { value: '-5' } });
-    expect(input).toHaveValue(0);
+    expect(input).toHaveValue(-5);
+    expect(screen.getByText(/^Enter a (whole )?number between 0 and 600/)).toBeInTheDocument();
+  });
+
+  it('NUMBER-FIELDS: clearing the add-on stays empty and, while ticked, commits nothing', () => {
+    const { onDecide } = renderLedger({ line: editableLine() });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Add 60' }));
+    expect(onDecide).toHaveBeenCalledTimes(1);
+
+    const input = screen.getByRole('spinbutton', { name: 'Forecast add-on quantity' }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.value).toBe('');
+    // A blank is not a buy of 40: nothing new is recorded.
+    expect(onDecide).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/^Enter a (whole )?number/)).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.change(input, { target: { value: '200' } });
+    expect(screen.queryByText(/^Enter a (whole )?number/)).not.toBeInTheDocument();
+    expect(onDecide).toHaveBeenLastCalledWith(expect.objectContaining({ buy: 240 }));
+  });
+
+  it('NUMBER-FIELDS: ticking with the add-on blank commits nothing and shows the message', () => {
+    const { onDecide } = renderLedger({ line: editableLine() });
+    const input = screen.getByRole('spinbutton', { name: 'Forecast add-on quantity' }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.value).toBe('');
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    expect(onDecide).not.toHaveBeenCalled();
+    expect(screen.getByText(/^Enter a (whole )?number/)).toBeInTheDocument();
   });
 });
 
