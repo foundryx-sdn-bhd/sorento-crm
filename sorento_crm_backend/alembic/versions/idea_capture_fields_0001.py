@@ -12,7 +12,7 @@ equals the fallback. Each key is judged on its own. The seed runs first so the k
 also gives a fresh database a row to compare against.
 
 Revision ID: idea_capture_fields_0001
-Revises: oirj_0002_theme_sorento
+Revises: cfs_0001_spec_registry_seed
 """
 import logging
 
@@ -29,7 +29,7 @@ from app.services.ai_prompt_seed import (
 )
 
 revision = "idea_capture_fields_0001"
-down_revision = "oirj_0002_theme_sorento"
+down_revision = "cfs_0001_spec_registry_seed"
 branch_labels = None
 depends_on = None
 
