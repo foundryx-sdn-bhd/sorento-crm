@@ -38,11 +38,11 @@ export function ReviseApprovalDialog({
         if (!next) setReason('');
       }}
     >
-      <DialogContent className="max-h-[92vh] w-full max-w-md overflow-hidden">
+      <DialogContent className="max-h-[92dvh] w-full max-w-md overflow-hidden">
         <DialogHeader>
           <DialogTitle>Revise this quotation</DialogTitle>
         </DialogHeader>
-        <DialogBody className="max-h-[65vh] space-y-2 overflow-y-auto">
+        <DialogBody className="max-h-[65dvh] space-y-2 overflow-y-auto">
           <Label htmlFor="quotation-revise-reason">What changed, and why?</Label>
           <Textarea
             id="quotation-revise-reason"

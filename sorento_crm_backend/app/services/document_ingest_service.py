@@ -1267,8 +1267,10 @@ class DocumentIngestService(MasterRefResolver):
                     doc_number=payload.so_number,
                     item_code=self._product_code_of(row.product_id) or "",
                     location=self._warehouse_code_of(row.warehouse_id) or "",
-                    # AC-CANCEL-CRM: the planned basis leaves out what Cancel SO took.
-                    qty=float((row.qty_ordered or 0) - (row.qty_cancelled or 0)),
+                    # AC-CANCEL-CRM: the planned basis leaves out what Cancel SO took (and, CONSIGN-PLAN
+                    # Q3, what a consignment return took back).
+                    qty=float((row.qty_ordered or 0) - (row.qty_cancelled or 0)
+                               - (row.qty_returned or 0)),
                     required_date=row.required_date,
                     row_ref=str(row.id),
                     # Same identity `SalesOrderService._propagate_planning_change` sets
@@ -1300,8 +1302,10 @@ class DocumentIngestService(MasterRefResolver):
                     doc_number=payload.so_number,
                     item_code=self._product_code_of(row.product_id) or "",
                     location=self._warehouse_code_of(row.warehouse_id) or "",
-                    # AC-CANCEL-CRM: the planned basis leaves out what Cancel SO took.
-                    qty=float((row.qty_ordered or 0) - (row.qty_cancelled or 0)),
+                    # AC-CANCEL-CRM: the planned basis leaves out what Cancel SO took (and, CONSIGN-PLAN
+                    # Q3, what a consignment return took back).
+                    qty=float((row.qty_ordered or 0) - (row.qty_cancelled or 0)
+                               - (row.qty_returned or 0)),
                     required_date=row.required_date,
                     row_ref=str(row.id),
                     line_id=str(row.id),

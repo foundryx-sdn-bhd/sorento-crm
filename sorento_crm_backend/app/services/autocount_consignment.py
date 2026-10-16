@@ -348,14 +348,17 @@ def _transferred(db: Session, rows: list[SalesOrderLine]) -> dict[str, Decimal]:
 
 
 def recompute_returned(db: Session, so_line_ids: Iterable[str],
-                       company_id: Optional[str] = None) -> None:
+                       company_id: Optional[str] = None) -> list[tuple[str, Decimal, Decimal]]:
     """`qty_returned` on these lines: the matched lines of live return docs, or the CG's own
     TransferedQty (AutoCount's returned qty, CONSIGN-DELIVERED-FIX), whichever is larger,
     capped at ordered. The two are one fact pushed twice; the larger is the one that has
-    landed. Only this column is written. In the caller's transaction."""
+    landed. Only this column is written. In the caller's transaction. Answers
+    `(line id, returned before, returned after)` for every line it moved, so the cancel
+    ingest can raise a planning change for it (CONSIGN-PLAN Q3: returns lower the plan)."""
     ids = sorted({str(i) for i in so_line_ids if i})
     if not ids:
-        return
+        return []
+    moved: list[tuple[str, Decimal, Decimal]] = []
     sums = _matched_returns(db, ids, keyed_only=False, company_id=company_id)
     whole = {
         str(i) for (members,) in (
@@ -381,8 +384,10 @@ def recompute_returned(db: Session, so_line_ids: Iterable[str],
         total = max(total, transferred.get(str(row.id), _ZERO))
         value = max(min(total, ordered), _ZERO)
         if Decimal(row.qty_returned or 0) != value:
+            moved.append((str(row.id), Decimal(row.qty_returned or 0), value))
             row.qty_returned = value
     db.flush()
+    return moved
 
 
 __all__ = [

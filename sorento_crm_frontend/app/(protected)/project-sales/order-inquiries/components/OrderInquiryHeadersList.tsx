@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { Send } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   ColumnDef,
   PaginationState,
+  RowSelectionState,
   SortingState,
   getCoreRowModel,
   useReactTable,
@@ -18,6 +20,7 @@ import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridListToolbar } from '@/components/ui/data-grid-list-toolbar';
 import { DataGridPagination } from '@/components/ui/data-grid-pagination';
+import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,15 +28,18 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { useResetPageOnFilterChange } from '@/hooks/useResetPageOnFilterChange';
 import { buildDetailSearch } from '@/lib/listNavQuery';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { getUserLookup } from '@/services/userSelectService';
+import { toast } from '@/lib/toast';
 import {
   useOrderInquiryHeaders,
   useOrderInquiryWorklistSummary,
   useReserveStatusSummary,
 } from '../../_shared/hooks/useOrderInquiry';
+import { HandoverResendDialog } from '../../_shared/components/HandoverResendDialog';
 import { useParkedSendActions } from '../../_shared/hooks/useParkedSendActions';
 import { formatInquiryQty } from '../../_shared/lib/orderInquiryWorklist';
 import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
@@ -57,6 +63,9 @@ const LISTING_KEY = 'projects.projects.view::order-inquiry-headers';
 
 type StateFilter = 'all' | 'outstanding' | 'completed';
 
+const ACTION_PERMISSION = 'projects.order_inquiry.action';
+/** The send route's own cap (`HandoverResendIn`). */
+const MAX_RESEND = 50;
 
 function reserveFrom(value: string | null): OrderInquiryReserveStatus | '' {
   return (ORDER_INQUIRY_RESERVE_STATUSES as string[]).includes(value ?? '')
@@ -162,6 +171,13 @@ export function OrderInquiryHeadersList() {
     projectFilter,
     reserveFilter,
   ]);
+  // A tick on a row the new filter excludes is not a selection any more.
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  useEffect(() => {
+    setRowSelection({});
+  }, [stateFilter, searchQuery, raisedByFilter, agentFilter, projectFilter, reserveFilter]);
+  const [resendIds, setResendIds] = useState<string[] | null>(null);
+  const closeResend = useCallback(() => setResendIds(null), []);
 
   const params = useMemo<OrderInquiryHeaderListParams>(
     () => ({
@@ -215,6 +231,7 @@ export function OrderInquiryHeadersList() {
   });
   const worklistSummary = useOrderInquiryWorklistSummary({});
 
+  const canAct = useHasPermission(ACTION_PERMISSION);
   const reserveSummary = useReserveStatusSummary();
   const { actions: sendActions, dialog: parkedSendDialog } = useParkedSendActions();
 
@@ -274,6 +291,9 @@ export function OrderInquiryHeadersList() {
 
   const columns = useMemo<ColumnDef<OrderInquiryHeader>[]>(
     () => [
+      ...(canAct
+        ? [buildSelectColumn<OrderInquiryHeader>({ rowLabel: (row) => `Select ${row.original.inquiry_no}` })]
+        : []),
       {
         accessorKey: 'raised_at',
         header: ({ column }) => <DataGridColumnHeader title="Raised at" column={column} />,
@@ -495,7 +515,7 @@ export function OrderInquiryHeadersList() {
         ),
       },
     ],
-    [],
+    [canAct],
   );
 
   const table = useReactTable({
@@ -503,7 +523,9 @@ export function OrderInquiryHeadersList() {
     data: rows,
     pageCount: Math.ceil((data?.total || 0) / pagination.pageSize),
     getRowId: (row) => row.id,
-    state: { pagination, sorting },
+    state: { pagination, sorting, rowSelection },
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: canAct,
     onPaginationChange: setPagination,
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
@@ -577,6 +599,26 @@ export function OrderInquiryHeadersList() {
             }
             secondaryActions={sendActions}
             secondaryActionsAsMenu
+            bulkActions={
+              canAct
+                ? [
+                    {
+                      key: 'send-to-purchasing',
+                      label: 'Send to purchasing',
+                      icon: Send,
+                      onClick: () => {
+                        // Ids, not loaded rows: a tick on an earlier page still counts.
+                        const ids = Object.keys(rowSelection).filter((rowId) => rowSelection[rowId]);
+                        if (ids.length > MAX_RESEND) {
+                          toast.error(`Tick at most ${MAX_RESEND} order inquiries at a time.`);
+                          return;
+                        }
+                        setResendIds(ids);
+                      },
+                    },
+                  ]
+                : []
+            }
             filters={{
               kind: 'custom',
               // The list stays readable (and the state toggle reachable) while a filter is set.
@@ -679,6 +721,11 @@ export function OrderInquiryHeadersList() {
           <DataGridPagination />
         </CardFooter>
       </Card>
+      <HandoverResendDialog
+        inquiryIds={resendIds}
+        onClose={closeResend}
+        onSent={() => setRowSelection({})}
+      />
       {parkedSendDialog}
     </DataGrid>
   );
