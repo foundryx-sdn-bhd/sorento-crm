@@ -48,8 +48,6 @@ PROV_KEYS = {"code_sha", "prompt_sha256", "prompt_version", "model", "reasoning_
 def live_env(monkeypatch):
     """Test-level stubs the runner must leave alone: the parser, the MCP client and the provider's `chat`."""
     seen = {"parse_calls": [], "mcp_calls": [], "envelopes": [], "kwargs": []}
-    from app.config import settings
-    monkeypatch.setattr(settings, "openai_api_key", KEY)
 
     def fake_chat(self, messages, **kw):
         return llm_provider.ChatResult(content="{}", prompt_tokens=1000, completion_tokens=100, total_tokens=1100,
