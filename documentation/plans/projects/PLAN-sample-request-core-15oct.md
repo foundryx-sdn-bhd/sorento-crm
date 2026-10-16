@@ -1,8 +1,8 @@
 # PLAN: SR-CORE - Sample Request (consignment requisition) in project management
 
-Status: Review - built; reviewer kill tests clean after two fix rounds, security review PASS, cloud browser pass
-PASS on the head; waiting on the owner's hand-test (crew test copy). Track: full (migration, new permissions, portal
-ingest). Slice 1 of 3 (SR-STOCK, SR-RETURN follow).
+Status: Build (form rebuild) - owner OK on form mock v3 with three removals (16 Oct), recorded as
+`mockups/sample-request-form-v4.html`; red-first rebuild of the staff + portal create/edit forms under way. Track: full.
+Slice 1 of 3 (SR-STOCK, SR-RETURN follow).
 
 Discovery: `state/reports/SAMPLE-REQUEST-DISCOVERY-15oct.md` (crew), owner rulings 16 Oct 00:10.
 Card: `CARD-sample-request-core-15oct.md` (the behaviour contract). UAC: `sample-request-core-15oct-acceptance-criteria.md`.
@@ -260,3 +260,36 @@ the PR/SF document card (header grid on top in the paper form's order, the PR li
 row plus an "Or" column and the board as row 1, the paper footer fields below). Stock Inquiry's bordered form is
 single-product (no line table) and Order Inquiry has no create form, so PR/SF is the template. Rebuild waits for the
 owner's OK. Prepared fixes already on the branch: impersonated `/portal/sample_request/*` routes, portal date dd/mm/yyyy.
+
+## Form rebuild rulings (owner OK on mock v3, 16 Oct; built as mock v4)
+
+Owner, verbatim: "The quotation field, you can remove it. Then don't need the alternative column. Then don't need
+immediate arrangement ticker. And the rest should be fine, go".
+
+1. **No quotation.** The form has no Quotation field and there is no `sample_request_require_quotation` setting. This
+   replaces owner ruling 5 (15 Oct). Removed end to end: `sample_requests.quotation_version_id`, the setting column, the
+   setting in GET/PUT settings and app-config, the System Settings switch, and the Delivered -> Samples (feedback) row
+   (card rule 13, AC-SR-22, AC-SR-33), which only existed for the quotation version.
+2. **No alternative product.** `sample_request_lines.alt_product_id` is removed; a line is one picked product. The PDF
+   prints no "OR".
+3. **No "Immediate arrangement".** `sample_requests.deliver_immediately` is removed. Request Delivery Date is a plain
+   date, required on submit (AC-SR-03 now: "Submit refuses without a Request Delivery Date"). The queue sorts by
+   delivery date ascending.
+4. **Layout = mock v4.** Staff New / Edit: PageHeader + the Purchase Request / Sponsorship Form document card
+   (`PurchaseRequestDocumentEditCard.tsx` look: border-2, badges, centred title "Consignment Requisition Form",
+   2-column `DocField` grid) in the paper order Sales Person, Date, Customer Name, Project Title, Registered project,
+   For, Request Delivery Date, Ship To, Shipping Address, Contact Person, Contact Phone / Note, Consignment No / PO No
+   (read-only here); then "Line items" + "Add row" as the PR line table (No., Item Code = product search box, Qty,
+   Remark, delete), row 1 = "Mount & label sample board" checkbox + label; then Delivery (Deliver-Van / Self-Deliver /
+   Self-Collection), Loan Period, Goods Taken From (Demo Sets / New Goods), Purpose; footer Cancel, Save as draft,
+   Submit. Customer = the PR searchable customer box (`RequestCustomerField` pattern: debtors with code, free text
+   allowed for a customer without a debtor code). Portal: the portal PR / SF layout (`SubmissionForm.tsx`
+   PurchaseRequestFormSection card, debtor-async customer limited to the contact's debtors-for-agent, project-async,
+   "Items" table with "+ Add item", footer Cancel / Save as draft / Submit sample request; read-only after submit with
+   the status badge). On a phone the table scrolls inside its own box.
+5. **Shipped with this round** (already on the branch): impersonated `/portal/sample_request/*` routes and test;
+   portal "Created" date dd/mm/yyyy (Malaysia).
+
+Migration `sr_0001_sample_requests` is not merged, so it is edited in place (the three columns dropped from its DDL).
+The shared dev DB already holds them from the earlier crew-migration; they are harmless there, and a cleanup statement
+is offered separately (destructive, held for the owner).

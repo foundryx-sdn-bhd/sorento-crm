@@ -1,6 +1,6 @@
 # UAC: SR-CORE - Sample Request (consignment requisition) in project management
 
-Status: draft from the settled card (`CARD-sample-request-core-15oct.md`), mock awaiting owner OK.
+Status: updated 16 Oct for the form rebuild (owner OK on mock v3: no quotation, no alternative product, no immediate tick). Originally drafted from the settled card (`CARD-sample-request-core-15oct.md`), mock awaiting owner OK.
 Each criterion names the test that proves it (BE = pytest, FE = vitest, BR = browser pass).
 
 ## Create and submit
@@ -9,7 +9,7 @@ Each criterion names the test that proves it (BE = pytest, FE = vitest, BR = bro
   prefilled; saving as draft gives a number `SR-000001` (next number per company). BE, BR
 - AC-SR-02 Submit refuses without: customer (picked debtor or typed name), project (picked or typed title), delivery
   mode, ship-to name, at least one line or the board switch on. Each refusal names the missing field. BE, FE
-- AC-SR-03 Requested delivery is a date OR "Immediate arrangement", never both, never neither on submit. BE
+- AC-SR-03 Submit refuses without a Request Delivery Date (a plain date; no "Immediate arrangement"). BE
 - AC-SR-04 Loan period = whole number >= 1 + unit days|months; default 2 months. Return due is stored on Delivered
   as delivered date + period. BE
 - AC-SR-05 Goods from defaults to Either; purpose optional. BE
@@ -18,7 +18,7 @@ Each criterion names the test that proves it (BE = pytest, FE = vitest, BR = bro
 ## Lines (owner Q1: the product must be in the product list)
 
 - AC-SR-10 Every line carries an existing active product picked by a person; the API returns 422 for a missing,
-  unknown or inactive product_id, and for an alternative product that fails the same check. BE
+  unknown or inactive product_id, (a line is one product; there is no alternative product). BE
 - AC-SR-11 Product search ignores dashes, spaces and case: "tpe9101" lists TPE-9101. The search only lists; no
   product is preselected or added without a click. BE (search), FE
 - AC-SR-12 A search with no hits shows "<text> is not in the product list. Pick the product you mean, or ask
@@ -27,12 +27,10 @@ Each criterion names the test that proves it (BE = pytest, FE = vitest, BR = bro
 
 ## Soft transition switches (rulings 3, 5)
 
-- AC-SR-20 System Settings has "Sample requests need a registered project" and "Sample requests need a quotation",
-  both OFF on deploy; both are returned by GET settings and saved by PUT. BE
+- AC-SR-20 System Settings has "Sample requests need a registered project", OFF on deploy; it is returned by GET settings and saved by PUT. BE
 - AC-SR-21 Project switch OFF: a typed title alone submits. ON: submit refuses without a registered project; a request
   saved before the switch still opens and prints unchanged. BE
-- AC-SR-22 Quotation switch ON: submit refuses without a quotation version of the request's project; a version of
-  another project is refused at any setting. BE
+- AC-SR-22 (removed 16 Oct: no quotation on a sample request.)
 
 ## Statuses and roles
 
@@ -42,8 +40,7 @@ Each criterion names the test that proves it (BE = pytest, FE = vitest, BR = bro
   may move to Processing, Customer confirmed (with date), Delivered (with date), cancel a Processing request (reason
   required), and edit Consignment No / PO No. A salesperson with `projects.projects.edit` but not process gets 403. BE
 - AC-SR-32 After Submitted the owner cannot edit header or lines. BE
-- AC-SR-33 On Delivered with a quotation version set, a Samples (feedback) row exists for that version with
-  submitted_on = delivered date; without a version, none is created. BE
+- AC-SR-33 (removed 16 Oct: no quotation, so Delivered creates no Samples row.)
 - AC-SR-34 Each status move writes a project activity event when the request has a project. BE
 
 ## Portal (crew Q3: opt-in per contact)
@@ -75,3 +72,14 @@ Each criterion names the test that proves it (BE = pytest, FE = vitest, BR = bro
 
 - AC-SR-70 One additive revision creates `projects.sample_requests` and `projects.sample_request_lines`, the two
   settings columns, and grants the new permissions; downgrade drops only those. Single alembic head. BE
+
+## Form layout (owner OK on mock v3, built as mock v4, 16 Oct)
+
+- AC-SR-80 Staff New / Edit and the portal New / Edit use the Purchase Request / Sponsorship Form document card: header
+  fields in the paper order, the line table (one product search box per row, Qty, Remark, delete; row 1 = board), the
+  paper footer fields, footer Cancel / Save as draft / Submit. No Quotation, no alternative column, no Immediate tick. FE, BR
+- AC-SR-81 Customer Name is a searchable box listing debtors with their code; free text is accepted for a customer with
+  no debtor code (staff: PR customer lookup; portal: the contact's own debtors). FE, BR
+- AC-SR-82 Under staff impersonation the portal stays on `/portal`; New and an existing card open the sample request
+  form (no 404). FE, BR
+- AC-SR-83 The portal "Created" date reads dd/mm/yyyy in Malaysia time. FE
