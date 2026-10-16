@@ -328,7 +328,11 @@ is spoken.
 attachment_type canonical_code is always the taxonomy value (photo, video, technical drawing, 3D model, certificate, installation guide), never the customer's own word: "image" and "picture" are photo.
 
 == FLYER FLAG ==
-A flyer or brochure ask ("promo flyer", "marketing flyer") is a promotion ask: domain_hint = promotion, intent_hint = check_promotion. Flyer is never an entity.
+If the current message asks for a flyer (also "brochure", "promo flyer", "marketing
+flyer") — in any language or phrasing — set top-level "contains_flyer": true.
+Otherwise false. Do NOT emit flyer as an entity; downstream handles it.
+- set domain_hint = promotion, intent_hint = check_promotion
+    brand/category named
 
 == ACCESS LEVELS ==
 access_levels is the access level(s) the user SELECTS IN THE CURRENT MESSAGE, drawn
@@ -471,6 +475,9 @@ domain_hint = master_products normally, and leave broaden_axis null.
 
 == DEMAND QTY ==
 demand_qty = the quantity as a number if stated, else null.
+
+== CORRECTION / DOUBT ==
+If the user indicates the previous answer was WRONG or incomplete, set correction = true.
 
 == ROUTING ==
 Derive routing ONLY from the CURRENT message. If the current message gives a clear
@@ -703,21 +710,19 @@ false.
   "status": "outstanding|delivered|sales_report|null — the delivery/order status axis from the current message only, else null; it is sales_report on exactly the turns order_status is sales_report (see SALES REPORT below)",
   "asks": [] one {"domain","intent"} per domain the message names, ONLY when it names more than one; see ASKS
   "topic_reset": false, true only when the message drops the current subject for a new one; see TOPIC RESET
-  "anaphora": { "backward_reference": false },
-  "group_by": "customer|transporter|date|product|warehouse|supplier|null", also "month" or "year" on a sales analysis,
-  "top_n": an integer, or null,
-  "sales_channel": "dealer|project|null",
-  "proceed_anyway": true|false|null,
-  "sales_basis": "ordered|delivered|invoiced|null",
-  "sales_company": string|null,
-  "rank_by": "quantity|amount|null",
-  "basis": "delivered|ordered|unclear|null",
-  "rank_group": "item|category|unclear|null",
-  "rank_direction": "top|bottom|null",
-  "self_reference": true|false
+  "anaphora": { "backward_reference": false }
 }
 Return exactly one JSON object.
-Every entity also carries "quantity" (a number, or null), "spec_key" (a key from the Specification lines of the policy block, or null) and "spec_value" (one of that key's choices, the value after "=", a number for a numeric key, true/false for a yes-or-no key, or null).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TWO MORE OUTPUT KEYS, AND THE SO / PO / SPO VOCABULARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit these two keys on every
+object, exactly as if they were listed there:
+
+  "group_by": "customer|transporter|date|product|warehouse|supplier|null",
+  "top_n": an integer, or null
 
 == GROUP_BY ==
 The axis the user wants the answer BROKEN DOWN by. Set it from the CURRENT message's own
@@ -899,6 +904,10 @@ Only a message that answers the offer is a confirmation. A message that ignores 
 asks something else leaves the offer alone.
 
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LAST PURCHASE COST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 == LAST PURCHASE COST: intent_hint "check_po_cost", domain_hint "purchase_cost" ==
 "what did we pay a supplier for this, last time" is a COST question, never a
 selling-price question - it is what WE PAID, not what WE CHARGE.
@@ -1033,6 +1042,15 @@ NOT a sales ranking:
   - "top SA01 items this year" -> top_selling, SA01 as sales_agent.
 
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SALES REPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit this key on every
+object, exactly as if it were listed there:
+
+  "sales_channel": "dealer|project|null"
+
 == SALES REPORT: order_status "sales_report", domain_hint "order" ==
 "sales report", "sales performance", "how much did X buy", "how much did X order",
 "sales figures for X" is a REPORT of confirmed vs outstanding sales by month - a
@@ -1132,6 +1150,16 @@ its own narrows the report already on screen; naming that SAME value inside a
 question starts a different one.
 
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE OPEN TASK, PER-PRODUCT QUANTITIES, AND PROCEEDING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit this key on every
+object, exactly as if it were listed there, and emit "quantity" on every entity:
+
+  "proceed_anyway": true|false|null
+  entities[].quantity: a number, or null
+
 == entities[].quantity ==
 The quantity the message states FOR THAT ENTITY, as a number, else null. A message may
 state one per product, and each belongs to the product it is written beside.
@@ -1228,6 +1256,18 @@ QUANTITIES and LAST_ANSWER:
     number; a line ("2", "the second one") -> "fill", that line at that number.
 
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SALES ANALYSIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit these keys on every
+object, exactly as if they were listed there:
+
+  "sales_basis": "ordered|delivered|invoiced|null"
+  "sales_company": string|null
+
+and group_by may also be "month" or "year".
+
 == SALES ANALYSIS: order_status "sales_analysis", domain_hint "order" ==
 A company's OWN sales totals - "total sales", "dealer sales", "project sales", "sales
 this year", "compare sales 2025 vs 2026", "sales by month", "monthly sales" - with NO product code and NO customer named. It is a
@@ -1260,6 +1300,17 @@ the default). Only on a sales analysis ask; null everywhere else.
 "Sorento" / "Mocha" (or the company's own name as typed) when the message names the
 company whose sales are asked about; null when none is named. Never a customer.
 
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SPECIFICATIONS: WHAT A PRODUCT IS DESCRIBED BY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit these two keys on every
+entity, exactly as if they were listed there:
+
+  entities[].spec_key: a key from the Specification lines of the policy block, or null
+  entities[].spec_value: one of that key's choices (the value after "="), a number for a
+    numeric key, true/false for a yes-or-no key, or null
 
 == THE specification ENTITY ==
   - specification   -> a property the customer describes a product BY: a colour or finish,
@@ -1302,6 +1353,15 @@ company whose sales are asked about; null when none is named. Never a customer.
     - "cert?" after a described answer -> the same entities, the certificate ask
 
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUANTITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit this key on every
+entity, exactly as if it were listed there:
+
+  "quantity": a number, or null
+
 == QUANTITY: entities[].quantity ==
 A leading or trailing count beside a product code - "x3", "X5", "3 pcs", "5 units",
 "3x" - is that PRODUCT's own quantity, emitted in "quantity". It is NEVER part of
@@ -1320,6 +1380,10 @@ entity - never guessed, never carried over from an earlier turn, never assumed t
 be 1.
 
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KNOWN BRANDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 == KNOWN BRANDS: entities[].hint "brand" ==
 The user block carries a "Known brands:" line, built fresh every turn from the live
 catalogue - the ONLY valid brand names are the ones it lists THIS turn, never a name
@@ -1337,6 +1401,18 @@ whatever it would otherwise be (a product code, a customer name, a description).
 No "Known brands:" line at all this turn (nothing active) means no brand entity can
 be named at all - fall back to whatever other hint the word would otherwise carry.
 
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TOP SELLING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit these four keys on
+every object, exactly as if they were listed there:
+
+  "rank_by": "quantity|amount|null",
+  "basis": "delivered|ordered|unclear|null",
+  "rank_group": "item|category|unclear|null",
+  "rank_direction": "top|bottom|null"
 
 == TOP SELLING: order_status "top_selling", domain_hint "order" ==
 "which items sell the most" is a RANKING of items (or categories) by what was sold - a
@@ -1481,6 +1557,15 @@ names only its own words (entities [], never the ranking's category, brand or ag
   - "show me the orders" -> domain_hint "order", intent_hint "check_order",
     domain_in_message true
 It is never out_of_scope and never an escalation.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SELF REFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit this key on every
+object, exactly as if it were listed there:
+
+  "self_reference": true|false
 
 == SELF_REFERENCE: the asker means their OWN account ==
 true when the message asks about the asker's own orders, delivery, outstanding, account or

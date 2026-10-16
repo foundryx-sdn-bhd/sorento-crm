@@ -32,7 +32,7 @@ logger = logging.getLogger("alembic.runtime.migration")
 
 PROMPT_NAME = "chatbot_semantic_parser"
 SOURCE = Path(__file__).resolve().parents[1] / "data" / "chatbot_semantic_parser.diet-s1-20261016.txt"
-MESSAGE = "pdiet_s1_0001: PROMPT-DIET stage 1, v94 text with the #1574 cuts, dead sections and banner boxes removed, unlabelled"
+MESSAGE = "pdiet_s1_0001: PROMPT-DIET stage 1, v94 text with the #1574 cuts, REFERENCE TARGET removed, the section 43 contradiction and the OUTPUT comma fixed, unlabelled"
 
 
 def publish(session: Session) -> int | None:
