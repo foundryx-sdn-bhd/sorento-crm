@@ -197,7 +197,11 @@ def scenario(db):
     project = _customer(db, f"300-ZZT{_sfx()}", "ZZT PROJECT CO", debtor_type="project")
     pcash = _customer(db, f"302-ZZT{_sfx()}", "ZZT PROJECT CASH CO", debtor_type="project_cash")
     cash = _customer(db, f"301-ZZT{_sfx()}", "ZZT CASH CO", debtor_type="cash_sales")
-    untyped = _customer(db, f"300-ZZT{_sfx()}", "ZZT UNTYPED CO", debtor_type=None)
+    untyped = _customer(db, f"300-ZZT{_sfx()}", "ZZT UNTYPED CO")
+    # The Customer insert listener fills a missing debtor type, so only a hand-cleared row is
+    # blank (app/models/order.py:184): clear it the same way.
+    db.execute(text("UPDATE customers SET debtor_type = NULL WHERE id = :i"), {"i": str(untyped.id)})
+    db.expire(untyped)
     ids = {
         "sf_project": _request(db, customer_id=project.id).id,
         "sf_pcash": _request(db, customer_id=pcash.id).id,
