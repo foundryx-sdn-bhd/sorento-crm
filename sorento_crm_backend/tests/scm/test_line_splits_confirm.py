@@ -19,6 +19,7 @@ import pytest
 from app.models.planning_change import PlanningChangeRow  # noqa: F401
 from app.models.project_so import (
     ACK_ACKNOWLEDGED,
+    ACK_CHANGED,
     INQUIRY_CANCELLED,
     IV_CANCEL_BALANCE,
     IV_ORDER,
@@ -151,7 +152,9 @@ def test_a_linked_split_is_not_cancelled_on_the_origin_nor_re_ordered_on_the_tar
     live_18 = _live(s, s.line_18, IV_ORDER)
     assert len(live_18) == 1, "no second ORDER row for the 49 on line 18"
     assert _linked(s, live_18[0]) == Decimal("49")
-    assert live_18[0].ack_state == ACK_ACKNOWLEDGED, "purchasing is not asked to confirm again"
+    # Line 18's own qty also changed (82 -> 121 with 49 in = its own CANCEL 10), so the owner's
+    # 17 Sep 2026 handshake ruling sends the restated acknowledged row back to To confirm.
+    assert live_18[0].ack_state == ACK_CHANGED
 
     remarks = [(h.get("line_no"), h["line"]["remark"], h["line"]["qty"]) for h in told]
     delays_49 = [h for h in told if h.get("line_no") == 2 and h["line"]["qty"] == "49"]
@@ -171,3 +174,67 @@ def test_without_stored_splits_confirm_tells_the_cancel_balance_as_today(api):
     row_2 = s.db.get(OrderInquiryRow, s.row_2.id)
     assert Decimal(str(row_2.qty)) == Decimal("2")
     assert _linked(s, row_2) == Decimal("2")
+
+
+def test_a_move_alone_does_not_ask_purchasing_again(api):
+    """SO417636 shape: line A 417 -> 14 with 403 linked to line B 192 -> 595. B's restated
+    qty equals AutoCount, so nothing is left to tell and B's acknowledgement stands."""
+    client, world = api
+    db = world.db
+    d_a, d_b = date(2026, 10, 20), date(2026, 11, 20)
+    core_so = _core_so(db, world.company_id)
+    core_a = _core_line(db, core_so, world.product, world.own_wh, qty_ordered="417",
+                        required_date=d_a)
+    core_b = _core_line(db, core_so, world.product, world.own_wh, qty_ordered="192",
+                        required_date=d_b)
+    order = _project_so(db, world.project, so_id=core_so.id, autocount_doc_no=core_so.so_number)
+    line_a = _project_line(db, order, line_no=20, product=world.product, core_line=core_a)
+    line_b = _project_line(db, order, line_no=30, product=world.product, core_line=core_b)
+    db.commit()
+    r = _confirm(client, order.id, [_line_payload(line_a.id, buy_qty="417"),
+                                    _line_payload(line_b.id, buy_qty="192")])
+    assert r.status_code == 200, r.text
+    row_a, row_b = _order_row(world, line_a), _order_row(world, line_b)
+    _po, po_line = _po_line(world, _supplier(world), qty=417, expected_date=date(2026, 9, 30))
+    _link(world, row_a, po_line, qty=417, document="202609-S0417")
+    for row in (row_a, row_b):
+        row.ack_state = ACK_ACKNOWLEDGED
+        row.acknowledged_by = world.actor
+        row.acknowledged_at = datetime.utcnow()
+    db.commit()
+
+    core_a.qty_ordered, line_a.qty = Decimal("14"), Decimal("14")
+    core_b.qty_ordered, line_b.qty = Decimal("595"), Decimal("595")
+    db.commit()
+    batch = _build(world, [
+        _change(QTY_CHANGED, core_a, so_number=core_so.so_number,
+                old_date=d_a, new_date=d_a, old_qty="417", new_qty="14"),
+        _change(QTY_CHANGED, core_b, so_number=core_so.so_number,
+                old_date=d_b, new_date=d_b, old_qty="192", new_qty="595"),
+    ], core_so, [str(core_a.id), str(core_b.id)])
+    assert batch is not None, "premise: the pending change batch exists"
+    s = _S()
+    s.client, s.world, s.db, s.order, s.batch = client, world, db, order, batch
+    s.line_2, s.line_18, s.row_2, s.row_18, s.po_line = line_a, line_b, row_a, row_b, po_line
+    r = _put(s, [{"line_id": str(line_a.id), "splits": [
+        _sp(14, d_a, on=str(line_a.id)),
+        _sp(403, d_b, on=str(line_b.id)),
+    ]}])
+    assert r.status_code == 200, f"premise: the splits save ({r.status_code}) {r.text}"
+
+    before = len(_TOLD)
+    r = _confirm(client, order.id, [_line_payload(line_a.id, buy_qty="14"),
+                                    _line_payload(line_b.id, buy_qty="595")],
+                 batch_id=str(batch.id))
+    assert r.status_code == 200, r.text
+    db.commit()
+    db.expire_all()
+    remarks = [(h.get("line_no"), h["line"]["remark"]) for h in _TOLD[before:]]
+
+    assert _live(s, line_a, IV_CANCEL_BALANCE) == []
+    assert not [x for x in remarks if x[0] == 20 and "CANCEL" in x[1]], remarks
+    assert not [x for x in remarks if x[0] == 30 and x[1].startswith("ORDER")], remarks
+    live_b = _live(s, line_b, IV_ORDER)
+    assert len(live_b) == 1
+    assert _linked(s, live_b[0]) == Decimal("403"), "B holds A's moved links"
+    assert live_b[0].ack_state == ACK_ACKNOWLEDGED, "nothing left to tell, no re-confirm"
