@@ -1,6 +1,6 @@
 # PLAN: portal login linked to several sales agents sees all their customers (PORTAL-MULTI-AGENT)
 
-Status: in build. Track: small fix (S; no migration, no schema change, no CRM screen change).
+Status: in review (PR #1726, hand test filed). Track: small fix (S; no migration, no schema change, no CRM screen change).
 Security-reviewer joins: the diff changes portal data scope.
 
 ## Owner rule (16 Oct 2026)

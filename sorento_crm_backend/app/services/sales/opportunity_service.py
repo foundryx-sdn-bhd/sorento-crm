@@ -154,6 +154,32 @@ def _assert_customer_is_agents_own(
         raise _unprocessable("That customer is not yours.", "CUSTOMER_NOT_YOURS")
 
 
+def agent_owning_customer(
+    db: Session, agents: List[SalesAgent], customer_id: Optional[str]
+) -> Optional[SalesAgent]:
+    """Portal: the linked agent whose customer this is, or ``None`` (no customer, or
+    somebody else's - `CUSTOMER_NOT_YOURS` answers that one)."""
+    if not customer_id:
+        return None
+    owner_id = db.query(Customer.sales_agent_id).filter(Customer.id == customer_id).scalar()
+    return next((agent for agent in agents if agent.id == owner_id), None)
+
+
+def default_portal_agent(db: Session, agents: List[SalesAgent]) -> SalesAgent:
+    """Portal: the agent a prospect (no customer) goes to - the first by code that the
+    request's company scope can see (shared, or in the scope), else the first by code."""
+    from app.models.base import get_company_scope
+
+    scope = get_company_scope(db)
+
+    def visible(agent: SalesAgent) -> bool:
+        if agent.company_id is None or scope is None:
+            return True
+        return isinstance(scope, frozenset) and agent.company_id in scope
+
+    return next((agent for agent in agents if visible(agent)), agents[0])
+
+
 def _assert_customer_exists(db: Session, customer_id: str) -> None:
     """N2 (Phase 3): a customer_id that names no row is a 422, not a silent FK-less
     write - `restrict_customer_to_agent_id` already proves existence for the portal
@@ -271,7 +297,7 @@ def create_opportunity(
     customer_id = payload.get("customer_id")
     prospect_name = payload.get("prospect_name")
     _validate_customer_or_prospect(db, customer_id=customer_id, prospect_name=prospect_name)
-    if restrict_customer_to_agent_id and customer_id:
+    if restrict_customer_to_agent_id is not None and customer_id:
         _assert_customer_is_agents_own(
             db, customer_id=customer_id, sales_agent_id=restrict_customer_to_agent_id
         )
@@ -427,7 +453,7 @@ def update_opportunity(
         customer_id = payload.get("customer_id", opportunity.customer_id)
         prospect_name = payload.get("prospect_name", opportunity.prospect_name)
         _validate_customer_or_prospect(db, customer_id=customer_id, prospect_name=prospect_name)
-        if restrict_customer_to_agent_id and customer_id:
+        if restrict_customer_to_agent_id is not None and customer_id:
             _assert_customer_is_agents_own(
                 db, customer_id=customer_id, sales_agent_id=restrict_customer_to_agent_id
             )

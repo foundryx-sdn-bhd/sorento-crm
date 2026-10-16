@@ -4,9 +4,10 @@ Mounted at ``/api/v1/public/portal`` beside the price tag routes. Auth: the port
 
 The page belongs to a portal contact linked to one or more active sales agents
 (`sales_agents_for_contact`, the same resolution the debtor lookup uses). It lists the stock
-asks of the customers assigned to any of those agents (`customers.sales_agent_id`), never the agent's order debtors, and edits the same
-`state` and `note` the CRM customer's Asks tab edits. A contact linked to no agent gets 403
-`NOT_A_SALES_AGENT`; an ask outside the agent's customers is a 404.
+asks of the customers assigned to any of those agents (`customers.sales_agent_id`), never the
+agents' order debtors, and edits the same `state` and `note` the CRM customer's Asks tab edits.
+A contact linked to no active agent gets 403 `NOT_A_SALES_AGENT`; an ask outside those agents'
+customers is a 404.
 
 Fix round 5 (owner, 29 Sep): Customer asks is also a per-contact switch, the
 `contact_portal_form_overrides` row Price Tag Request is switched by (Contact page -> Portal

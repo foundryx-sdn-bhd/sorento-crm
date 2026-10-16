@@ -4,14 +4,14 @@ Mounted at ``/api/v1/public/portal`` beside the Customer asks routes. Auth: the 
 
 The view belongs to a portal contact linked to one or more active sales agents
 (`sales_agents_for_contact`, the same resolution Customer asks uses). It lists the WhatsApp
-conversations of the customers assigned to any of those agents and reads one thread at a time through the SAME service core the CRM's
-ticket drawer and Conversations inbox read (`ConversationSLATrackingService`), after its own
-scope check. Read-only: no reply, no note (owner ruling 30 Sep, Q1). Messages only: the staff
-internal notes on a contact are NOT served here (security review 30 Sep: a portal token is not a
-staff session, and the notes table is not company-scoped), so there is no `/comments` twin.
-A contact linked to no agent gets 403 `NOT_A_SALES_AGENT`; the per-contact `conversation`
-switch off gets 403 `FORM_TYPE_NOT_VISIBLE`; a contact outside the agent's customers is a 404
-on every thread read.
+conversations of the customers assigned to any of those agents and reads one thread at a time
+through the SAME service core the CRM's ticket drawer and Conversations inbox read
+(`ConversationSLATrackingService`), after its own scope check. Read-only: no reply, no note
+(owner ruling 30 Sep, Q1). Messages only: the staff internal notes on a contact are NOT served
+here (security review 30 Sep: a portal token is not a staff session, and the notes table is not
+company-scoped), so there is no `/comments` twin. A contact linked to no active agent gets 403
+`NOT_A_SALES_AGENT`; the per-contact `conversation` switch off gets 403 `FORM_TYPE_NOT_VISIBLE`;
+a contact outside those agents' customers is a 404 on every thread read.
 """
 from __future__ import annotations
 

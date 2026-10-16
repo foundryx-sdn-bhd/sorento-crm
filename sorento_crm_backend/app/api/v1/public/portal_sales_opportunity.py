@@ -101,34 +101,19 @@ def _require_agents(db: Session, token: PortalToken) -> List[SalesAgent]:
     # Agents that ALL carry a `company_id` may narrow the request to those companies, but
     # only to the ones the contact's scope already permits; a shared agent among them, or
     # companies that all disagree with the contact's scope, leave the existing (already
-    # correct) scope untouched rather than widen it. A scope that is not a set (UNSET: a
-    # junk Bearer or X-API-Key sent beside the portal token, security review 16 Oct 2026)
-    # is bounded by the contact's OWN companies, never by the agents' alone.
+    # correct) scope untouched rather than widen it. A scope that is not a set (None, or
+    # UNSET from a junk Bearer or X-API-Key sent beside the portal token: security review
+    # 16 Oct 2026) is bounded by the contact's OWN companies, never by the agents' alone.
     companies = {agent.company_id for agent in agents}
     if None not in companies:
         existing_scope = get_company_scope(db)
-        allowed = (
-            existing_scope
-            if isinstance(existing_scope, frozenset)
-            else portal_contact_scope(db, token.contact_id)
-        )
-        narrowed = companies & allowed
-        if narrowed:
-            set_company_scope(db, frozenset(narrowed))
+        if isinstance(existing_scope, frozenset):
+            if companies & existing_scope:
+                set_company_scope(db, frozenset(companies & existing_scope))
+        else:
+            own = portal_contact_scope(db, token.contact_id)
+            set_company_scope(db, frozenset(companies & own) or own)
     return agents
-
-
-def _agent_for_customer(
-    db: Session, agents: List[SalesAgent], customer_id: Optional[str]
-) -> Optional[SalesAgent]:
-    """The linked agent whose customer this is, or ``None`` (no customer, or somebody
-    else's - the service's `CUSTOMER_NOT_YOURS` answers that one)."""
-    from app.models.order import Customer
-
-    if not customer_id:
-        return None
-    owner_id = db.query(Customer.sales_agent_id).filter(Customer.id == customer_id).scalar()
-    return next((agent for agent in agents if agent.id == owner_id), None)
 
 
 def _resolve_company(db: Session, *, customer_id: Optional[str], agent: SalesAgent) -> str:
@@ -238,8 +223,11 @@ def portal_create_sales_opportunity(
     agents = _require_agents(db, token)
     try:
         body = payload.model_dump(exclude_unset=True)
-        # The agent whose customer it is; a prospect (no customer) goes to the first by code.
-        agent = _agent_for_customer(db, agents, body.get("customer_id")) or agents[0]
+        # The agent whose customer it is; a prospect (no customer) goes to the first by code
+        # that the request's scope can see.
+        agent = svc.agent_owning_customer(db, agents, body.get("customer_id")) or svc.default_portal_agent(
+            db, agents
+        )
         company_id = _resolve_company(db, customer_id=body.get("customer_id"), agent=agent)
         with company_scope(db, frozenset({company_id})):
             opportunity = svc.create_opportunity(
@@ -285,7 +273,7 @@ def portal_update_sales_opportunity(
         body = payload.model_dump(exclude_unset=True)
         # Moved to another linked agent's customer: the opportunity follows the customer to
         # that agent, the same rule a create stamps by.
-        owner = _agent_for_customer(db, agents, body.get("customer_id"))
+        owner = svc.agent_owning_customer(db, agents, body.get("customer_id"))
         if owner is not None and owner.id != opportunity.sales_agent_id:
             body["sales_agent_id"] = owner.id
         with company_scope(db, frozenset({opportunity.company_id})):
