@@ -22,6 +22,7 @@ state; the tail (S2) is what fills it.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import logging
 import re
@@ -55,6 +56,7 @@ from app.services.chatbot.turn.reconcile import narrowed_miss_lines
 from app.services.chatbot.turn.state import is_staff_profile
 from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
+from app.utils.build_info import GIT_SHA
 from app.services.ledger_family import customer_groups
 from app.services.chatbot.head import grounding, parser
 from app.services.chatbot.head.access import check_access, default_space_id
@@ -141,6 +143,12 @@ WORKER_POLL_INTERVAL_SECONDS = 0.25
 # its own "(k/m)" line, after a blank line.
 _MARKED_PART_BREAK = re.compile(r"\n\n(?=\(\d+/\d+\)\n)")
 _MARKED_PART_HEAD = re.compile(r"\((\d+)/(\d+)\)\n")
+
+
+def _parser_prompt_sha256(config: Any) -> str | None:
+    """Hash of the exact system prompt text the parser was given, for run provenance."""
+    text = getattr(config, "system_prompt", None)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest() if isinstance(text, str) else None
 
 
 def split_marked_message(text: str) -> list[str]:
@@ -4580,6 +4588,11 @@ def _run_stages_body(  # noqa: PLR0915
             facts={
                 "prompt_version": parser_config.prompt_version,
                 "model": parser_config.model,
+                "prompt_sha256": _parser_prompt_sha256(parser_config),
+                "provider": getattr(parser_config, "provider", None),
+                # The parser call sends no reasoning effort, so None is the recorded truth.
+                "reasoning_effort": None,
+                "code_sha": GIT_SHA,
                 # A replay miss fails here: the console check must not read it as a live
                 # spend (LLM-TEST-COST).
                 "llm_cassette": llm_cassette.mode_label(),
@@ -4646,6 +4659,12 @@ def _run_stages_body(  # noqa: PLR0915
             "intent": verdict.get("intent_hint"),
             "entities": len(verdict.get("entities") or []),
             "prompt_version": parser_config.prompt_version,
+            "model": parser_config.model,
+            "prompt_sha256": _parser_prompt_sha256(parser_config),
+            "provider": getattr(parser_config, "provider", None),
+            # The parser call sends no reasoning effort, so None is the recorded truth.
+            "reasoning_effort": None,
+            "code_sha": GIT_SHA,
             "tokens": int(parser_usage.get("total_tokens") or 0),
             # Chatbot memory lane A (contract section 6): the provider's own split,
             # alongside the total the trace already carried.
