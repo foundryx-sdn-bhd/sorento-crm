@@ -12,6 +12,8 @@ event `{kind: "apply", note: "payload omitted"}`. `row["prev_bot_message"]` carr
 """
 from __future__ import annotations
 
+import pytest
+
 from scripts.chatbot_eval.targets import grade_turn, made_up_facts
 from tests.chatbot_eval.test_targets import check, item, ent, _att, _file, GOLD_TS  # noqa: F401  (helpers only)
 
@@ -882,3 +884,64 @@ def test_no_attachment_tool_run_still_fails_files():
 def test_a_reply_claiming_attachment_with_nothing_sent_still_fails_files():
     res = grade_turn(_live_att([_file("Drawing")], reply="I have attached the file(s) below."), item("attachment", **GOLD_TS))
     assert res["checks"]["files"] is False and res["passed"] is False, res["checks"]
+
+
+# ------------------------------------------------------------------ review round 16
+def _switch(gold_code, held, **gold):
+    r = row2(mem_before=[prod("SRTOLD1", UB)], mem_after=[prod(held, UA)], tools=[TOOL_A])
+    return grade_turn(r, item("followup", "switch", subject_after=[gold_code], **gold))
+
+
+def test_a_longer_held_code_does_not_satisfy_an_exact_gold_subject():
+    res = _switch("SRTWC8605", "SRTWC8605-SC")
+    assert res["checks"]["new_subject"] is False, res["checks"]
+
+
+def test_the_same_longer_code_satisfies_a_gold_subject_flagged_unresolved():
+    res = _switch("SRTWC8605", "SRTWC8605-SC", code_unresolved=True)
+    assert res["checks"]["new_subject"] is True, res["checks"]
+
+
+def test_picker_options_satisfy_the_subject_only_when_the_gold_code_is_unresolved():
+    q = {"kind": "product_pick", "expects": "choice", "payload": {}, "asked_at_turn": 2,
+         "options": [{"label": "SRTWC286A", "code": "SRTWC286A"}, {"label": "SRTWC286B", "code": "SRTWC286B"}]}
+    r = row2(oq={"before": None, "after": q, "writer": "engine"}, tools=[TOOL_A])
+    exact = grade_turn(r, item("followup", "and_x", fact="inventory", subject_after=["SRTWC286"]))
+    assert exact["checks"]["new_subject"] is False, exact["checks"]
+
+
+@pytest.mark.parametrize("spec_value", ["something else", 7, "no"])
+def test_a_wrong_non_boolean_spec_value_does_not_match_the_gold_filter_through_raw(spec_value):
+    v = {"entities": [{"raw": "intelligent toilet", "hint": "specification", "spec_key": "is_smart",
+                       "spec_value": spec_value}], "reference_positions": []}
+    r = row2(verdict=v, mem_after=[prod("SRTA100", UA)], tools=[TOOL_A])
+    res = grade_turn(r, item("followup", "refine", subject_after=["SRTA100"],
+                             filter={"kind": "spec", "value": "intelligent toilet"}))
+    assert res["checks"]["filter"] is False, res["checks"]
+
+
+@pytest.mark.parametrize("spec_value", [True, False, None])
+def test_a_boolean_or_empty_spec_value_still_matches_through_raw(spec_value):
+    v = {"entities": [{"raw": "intelligent toilet", "hint": "specification", "spec_key": "is_smart",
+                       "spec_value": spec_value}], "reference_positions": []}
+    r = row2(verdict=v, mem_after=[prod("SRTA100", UA)], tools=[TOOL_A])
+    res = grade_turn(r, item("followup", "refine", subject_after=["SRTA100"],
+                             filter={"kind": "spec", "value": "intelligent toilet"}))
+    assert res["checks"]["filter"] is True, res["checks"]
+
+
+def test_an_old_shape_memory_question_never_takes_the_post_turn_state_as_before():
+    from scripts.chatbot_eval.targets import _oq
+
+    after = {"kind": "product_pick", "expects": "choice", "payload": {}, "options": [{"label": "white"}]}
+    post = {"kind": "confirm", "expects": "choice", "payload": {}, "options": [{"label": "AFTERONLY"}]}
+    r = row2(state_oq=post, oq=after)   # the bare after value, no before/after keys: the older row shape
+    assert _oq(r) == (None, after)
+
+
+def test_a_gold_option_that_is_literally_a_label_wins_over_the_position_reading():
+    q = {"kind": "product_pick", "expects": "choice", "payload": {}, "asked_at_turn": 1,
+         "options": [{"label": "1"}, {"label": "3"}, {"label": "5"}]}
+    r = row2(verdict=_picks([2]), state_oq=q, oq={"before": q, "after": None, "writer": "engine"})
+    res = grade_turn(r, item("followup", "answer", option="3"))
+    assert res["checks"]["option"] is True, res["checks"]
