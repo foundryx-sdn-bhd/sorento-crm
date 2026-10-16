@@ -171,28 +171,26 @@ Once CHAT-GROUNDING-TYPO binds "undermoun" to under counter, the same ask is exa
 follow-up (6 products).
 
 Example 3, the owner's 04:03Z "i mean any stock for sorento undrmount basin". Today: "Sorento
-undrmount wash basins" + 46 size lines. Unified (only if Q2 is (b)): the same reply as example 2,
-"Couldn't find: "undrmount"." at the end.
+undrmount wash basins" + 46 size lines. Built (Q2 (b2), see Q2): the miss without the lines:
+
+```
+Here's what you want: Sorento undrmount wash basins
+
+Couldn't find: "undrmount".
+```
+(plus the escalate offer where today's reply has one; a staff profile gets none).
 
 Example 4, Zilin (default policy: detailed, empty locations shown), 04:01Z "any undermunt basin
 has stock?". Today: "(10)" over 34 blocks, 15 of them on hand 0. Unified (R3): "(10)" over the
 19 blocks with stock (SRTWB7518 keeps 1 of 7: MWH-AM 1; SRTWB7109 keeps 3 of 9).
 
-Example 5, dealer on "Availability only" (the code answer's shape; no captured dev turn, the
-list below assumes a policy that allows every location):
-
-```
-Here's what you want: under counter wash basins with stock (20)
-
-1. BRBC22102W
-2. BRBC22131W-ENG
-...
-20. VLDWB1610
-
-How many units do you need?
-```
-then, after "5 each", the code answer's lines, e.g. "BRBC22102W x 5: ..." with the verdict of
-`_availability_line` (presenters.py:1545). No numbers of stock, ever.
+Example 5, dealer on "Availability only". Corrected 16 Oct after the tester's engine run: the
+dealer does not see the set header at all. The engine's own quantity ask (STOCK-QTY-PARTIAL-FILL,
+`turn/task.py` after_reply) answers the set exactly as it answers the same codes asked by code:
+"How many units for each?" then the numbered codes, no stock number. The SSR-3 engine test pins
+"dealer set reply == dealer code reply" and is GREEN on main, so R1 already holds for dealers and
+nothing changes for them. After a quantity, the code answer's verdict lines follow
+(`_availability_line`, presenters.py:1545).
 
 ## Edge cases
 
@@ -218,6 +216,10 @@ references.py:3456); (b) (a) plus the misspelt-word reply (example 3: the set wi
 listed, then "Couldn't find"); (c) (b) plus the two "nothing matched" replies (answer.py:2842,
 :2859). Recommendation: (b), the two replies you hit; (c) changes "nothing matched" messages,
 which deserve their own look.
+BUILT as (b2), captain 16 Oct, on the coder's conflict report: the misspelt-word reply loses its
+breakdown lines but keeps its miss shape (example 3), with no rows. Listing the set without the
+word would answer up to 50 of 276 basins nobody asked for and drop the escalate offer the miss
+carries; the misspelt word itself is CHAT-GROUNDING-TYPO's fix. Say so if you want the listing.
 
 Q3. Numbering in detailed mode. The header counts products (20) while a detailed answer numbers
 each location block (1 to 35), exactly as the code answer does. (a) keep it (unified with the
