@@ -17,14 +17,17 @@
  *   DELETE /sales/targets/{id}                                                      sales.targets.delete
  *   GET    /sales/targets/point-ratios                   -> {rows: PointRatio[]}    sales.targets.view
  *   POST   /sales/targets/point-ratios   body {effective_from, rm_per_point}        sales.targets.edit
- *   POST   /sales/targets/import?dry_run&year  multipart file -> DealerImportResult sales.targets.edit
+ *   POST   /sales/targets/import?dry_run&year  multipart file (+ picks JSON) -> DealerImportResult sales.targets.edit
+ *   GET    /sales/targets/import/template?year  -> .xlsx                           sales.targets.edit
  * The screens park `sales_target.delete` instead of calling DELETE (D7), through
  * useDeferredAction. Products for the scope picker come from master data's own
  * `/master-data/products/select`, paged on the server (about 22,000 rows).
  */
 import { apiFetch } from '@/lib/api';
 import { extractApiError } from '@/lib/api-client';
+import { saveBlobAs } from '@/lib/save-blob';
 import type {
+  DealerImportPicks,
   DealerImportResult,
   PointRatio,
   SalesTargetCreatePayload,
@@ -149,12 +152,25 @@ export async function savePointRatio(payload: { effective_from: string; rm_per_p
   return read(await apiFetch(`${BASE}/point-ratios`, jsonInit('POST', payload)), 'Failed to save the ratio');
 }
 
-export async function importDealerTargets(file: File, dryRun: boolean, year: number): Promise<DealerImportResult> {
+export async function importDealerTargets(
+  file: File,
+  dryRun: boolean,
+  year: number,
+  picks: DealerImportPicks = {},
+): Promise<DealerImportResult> {
   const body = new FormData();
   body.append('file', file);
+  if (Object.keys(picks).length) body.append('picks', JSON.stringify(picks));
   const search = new URLSearchParams({ dry_run: String(dryRun), year: String(year) });
   return read(
     await apiFetch(`${BASE}/import?${search.toString()}`, { method: 'POST', body }),
     dryRun ? 'Failed to test the file' : 'Failed to import the file',
   );
+}
+
+/** The empty workbook in the delivered layout plus a CUSTOMER CODE column. */
+export async function downloadDealerTargetsTemplate(year: number): Promise<void> {
+  const response = await apiFetch(`${BASE}/import/template?year=${year}`);
+  if (!response.ok) throw new Error(await extractApiError(response, 'Failed to download the template'));
+  saveBlobAs(await response.blob(), `dealer-targets-template-${year}.xlsx`);
 }

@@ -10,6 +10,7 @@ import {
   getSalesTarget,
   getSalesTargetOptions,
   getSalesTargets,
+  downloadDealerTargetsTemplate,
   importDealerTargets,
   patchSalesTarget,
   patchSalesTargetPeriod,
@@ -18,6 +19,7 @@ import {
   searchTargetProducts,
 } from '../services/salesTargetService';
 import type {
+  DealerImportPicks,
   SalesTargetCreatePayload,
   SalesTargetListParams,
   SalesTargetUpdatePayload,
@@ -167,8 +169,8 @@ export function useSavePointRatio() {
 export function useImportDealerTargets() {
   const invalidate = useInvalidateTargets();
   return useMutation({
-    mutationFn: ({ file, dryRun, year }: { file: File; dryRun: boolean; year: number }) =>
-      importDealerTargets(file, dryRun, year),
+    mutationFn: ({ file, dryRun, year, picks }: { file: File; dryRun: boolean; year: number; picks?: DealerImportPicks }) =>
+      importDealerTargets(file, dryRun, year, picks),
     onSuccess: (result) => {
       if (result.dry_run) return;
       invalidate();
@@ -177,5 +179,12 @@ export function useImportDealerTargets() {
       );
     },
     onError: (error: Error) => toast.error(error.message || 'Failed to import the file'),
+  });
+}
+
+export function useDownloadDealerTemplate() {
+  return useMutation({
+    mutationFn: (year: number) => downloadDealerTargetsTemplate(year),
+    onError: (error: Error) => toast.error(error.message || 'Failed to download the template'),
   });
 }

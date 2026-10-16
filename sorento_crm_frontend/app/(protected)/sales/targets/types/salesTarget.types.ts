@@ -270,25 +270,42 @@ export interface PointRatio {
   rm_per_point: number;
 }
 
+export interface DealerImportSuggestion {
+  customer_id: string;
+  code: string;
+  name: string;
+}
+
 export interface DealerImportRow {
   sheet: string;
   row: number;
+  /** "<sheet>!<row>": the key a pick names. */
+  pick_key: string;
   code: string | null;
   name_in_file: string | null;
   account_in_file: string | null;
   customer: string | null;
-  status: 'mapped' | 'not_representable';
+  /** auto (exact name and account), code, or picked. */
+  match: 'auto' | 'code' | 'picked' | null;
+  suggestions: DealerImportSuggestion[];
+  status: 'mapped' | 'needs_pick' | 'skipped' | 'not_representable';
   reason: string | null;
   warnings: string[];
   target_keys: string[];
   target_nos: string[];
 }
 
+/** Per row ("<sheet>!<row>"): the picked customer id, or "skip". */
+export type DealerImportPicks = Record<string, string>;
+
 export interface DealerImportResult {
   dry_run: boolean;
   summary: {
     rows: number;
     mapped: number;
+    auto_mapped: number;
+    needs_pick: number;
+    skipped: number;
     not_representable: number;
     targets_new: number;
     targets_updated: number;

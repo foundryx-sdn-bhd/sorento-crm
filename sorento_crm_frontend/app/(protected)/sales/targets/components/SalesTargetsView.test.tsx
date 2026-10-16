@@ -74,6 +74,7 @@ const hooks = vi.hoisted(() => ({
   usePointRatios: () => ({ data: { rows: [] }, isLoading: false }),
   useSavePointRatio: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useImportDealerTargets: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDownloadDealerTemplate: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock('../hooks/useSalesTargets', () => hooks);
 
