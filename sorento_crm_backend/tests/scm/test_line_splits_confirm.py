@@ -614,23 +614,46 @@ def test_a_split_does_not_move_off_a_placed_row_with_no_link(api, emails):
 
 
 def test_a_split_does_not_move_onto_a_target_row_whose_document_is_received_in_full(api, emails):
-    """Line 2 51 -> 2 linked to an open PO (DOC-A); line 18's 82 row is linked to DOC-B, received
-    in full; 49 is split onto line 18 (82 -> 131). The sent email is the no-split result."""
-    s = _lines(api, [(2, 51, D_2, 2), (18, 82, D_18, 131)])
-    _po, po_b = _po_line(s.world, _supplier(s.world), qty=82, expected_date=date(2026, 8, 25))
-    _link(s.world, s.no[18][2], po_b, qty=82, document="DOC-B")
-    po_b.qty_received = Decimal("82")
-    s.db.commit()
-    _split(s, 2, [(2, D_2, "own"), (49, D_18, 18)])
-    sent = _confirm_sent(s, emails)
-    assert any(r == "CANCEL 49" for _q, r in sent), ("line 2 as without splits", sent)
-    assert not [t for t in sent if t[0] == "49" and t[1].startswith("DELAY")], sent
-    assert not [t for t in sent if t == ("131", "ORDER")], ("line 18 is not told 131 fresh", sent)
-    row_2 = s.db.get(OrderInquiryRow, s.no[2][2].id)
-    assert _linked(s, row_2) == Decimal("2"), "DOC-A's link is not dropped"
-    for row in _live(s, s.no[18][1], IV_ORDER):
-        links = ProjectOrderInquiryService(s.db)._links_of(row.id)
-        assert not [l for l in links if l.po_line_id == s.po_line.id], "nothing moved onto line 18"
+    """Rule: a split onto a received target changes nothing versus no splits. The same setup is
+    run twice in one world (two orders), once with the 49 split onto line 18 and once without;
+    the sent email lines and the rows of lines 2 and 18 must be equal."""
+
+    def run(with_split):
+        s = _lines(api, [(2, 51, D_2, 2), (18, 82, D_18, 131)])
+        _po, po_b = _po_line(s.world, _supplier(s.world), qty=82, expected_date=date(2026, 8, 25))
+        _link(s.world, s.no[18][2], po_b, qty=82, document="DOC-B")
+        po_b.qty_received = Decimal("82")
+        s.db.commit()
+        if with_split:
+            _split(s, 2, [(2, D_2, "own"), (49, D_18, 18)])
+        start = len(emails)
+        _confirm_sent(s, emails)
+        lines = sorted(
+            (ln["qty"], ln["remark"]) for ctx in emails[start:] for ln in ctx["lines"]
+        )
+        svc = ProjectOrderInquiryService(s.db)
+        rows = {}
+        for no in (2, 18):
+            out = []
+            for r in s.db.query(OrderInquiryRow).filter(OrderInquiryRow.so_line_id == s.no[no][1].id):
+                links = sorted(
+                    (str(l.document), str(Decimal(str(l.qty)))) for l in svc._links_of(r.id)
+                )
+                out.append((r.verb, r.state, str(Decimal(str(r.qty))), r.ack_state, links))
+            rows[no] = sorted(out)
+        doc_a = Decimal("0")
+        for r in s.db.query(OrderInquiryRow).filter(OrderInquiryRow.so_line_id == s.no[2][1].id):
+            doc_a += sum(
+                (Decimal(str(l.qty)) for l in svc._links_of(r.id) if l.po_line_id == s.po_line.id),
+                Decimal("0"),
+            )
+        return lines, rows, doc_a
+
+    plain_lines, plain_rows, plain_doc_a = run(False)
+    split_lines, split_rows, split_doc_a = run(True)
+    assert split_lines == plain_lines, ("sent email differs from the no-split result", split_lines, plain_lines)
+    assert split_rows == plain_rows, ("rows differ from the no-split result", split_rows, plain_rows)
+    assert split_doc_a == plain_doc_a and split_doc_a > Decimal("0"), "DOC-A's link is not dropped"
 
 
 def test_a_split_does_not_move_onto_a_placed_target_row_with_no_link(api, emails):

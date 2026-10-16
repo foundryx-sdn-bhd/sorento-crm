@@ -33,7 +33,10 @@ vi.mock('@dnd-kit/core', async () => {
     ...actual,
     DndContext: (props: Record<string, unknown> & { children?: React.ReactNode }) => {
       dnd.props.push(props);
-      return <actual.DndContext {...(props as never)} />;
+      return React.createElement(
+        actual.DndContext as unknown as React.ComponentType<Record<string, unknown>>,
+        props,
+      );
     },
   };
 });
