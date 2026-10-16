@@ -719,3 +719,36 @@ def test_a_long_digit_run_in_a_header_cell_parses_fast():
     parse_workbook(_wb(fill), year=2026)
     assert _number("9" * 100_000 + "x") is None
     assert time.monotonic() - started < 5
+
+
+def test_every_string_is_cut_when_the_grid_is_built():
+    """Security re-check B4: one long shared string can sit in every cell; the grid keeps at
+    most MAX_CELL_TEXT + 1 characters of it, so no later read (dash, NIL, %) walks it whole."""
+    from openpyxl import load_workbook
+
+    from app.services.sales import dealer_target_import as imp
+
+    def fill(ws):
+        ws["A1"], ws["B1"] = "DEALER NAME", "Q1"
+        ws["A2"], ws["B2"] = "ACME", "1 " * 10_000
+
+    ws = load_workbook(io.BytesIO(_wb(fill))).active
+    grid = imp._Grid(ws)
+    assert len(grid.value(2, 2)) == imp.MAX_CELL_TEXT + 1
+
+
+def test_a_sheet_title_past_excels_limit_is_refused():
+    """Security re-check B5: a title is copied into every row's key and reason; Excel itself
+    stops at 31 characters, so a longer one is not a real file."""
+    import pytest
+
+    from app.services.error_handler import AppException
+    from app.services.sales.dealer_target_import import parse_workbook
+
+    def fill(ws):
+        ws.title = "X" * 40
+        ws["A1"], ws["B1"] = "DEALER NAME", "Q1"
+
+    with pytest.raises(AppException) as exc:
+        parse_workbook(_wb(fill), year=2026)
+    assert exc.value.status_code == 422

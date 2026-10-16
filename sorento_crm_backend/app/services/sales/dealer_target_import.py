@@ -450,6 +450,8 @@ def _columns(grid: "_Grid", first: int, last: int, year: int) -> List[_Column]:
 #: size is not trusted, only the cells that hold a value are visited, and a sheet past these is
 #: skipped with a note. The real files are a few hundred rows wide of a few dozen columns.
 MAX_SHEETS = 30
+#: Excel's own limit on a sheet's name.
+MAX_SHEET_TITLE = 31
 MAX_SHEET_CELLS = 100_000
 MAX_SHEET_ROWS = 5_000
 MAX_SHEET_COLS = 300
@@ -481,6 +483,10 @@ class _Grid:
         self.formats: Dict[Tuple[int, int], str] = {}
         for (r, c), cell in getattr(ws, "_cells", {}).items():
             value = cell.value
+            if isinstance(value, str):
+                # Cut once, here: one long shared string can sit in every cell (security
+                # re-check B4). One character over keeps every length check firing.
+                value = value[: MAX_CELL_TEXT + 1]
             if value is None or (isinstance(value, str) and not value.strip()):
                 continue
             self.values[(r, c)] = value
@@ -674,6 +680,14 @@ def parse_workbook(data: bytes, *, year: int) -> ParsedWorkbook:
     if len(wb.worksheets) > MAX_SHEETS:
         raise AppException(
             status_code=422, message=f"That workbook has more than {MAX_SHEETS} sheets.", code="FILE_TOO_LARGE"
+        )
+    if any(len(ws.title) > MAX_SHEET_TITLE for ws in wb.worksheets):
+        # A title is copied into every row's key and reason (security re-check B5); Excel
+        # itself stops at 31 characters, so a longer one is not a real file.
+        raise AppException(
+            status_code=422,
+            message=f"A sheet name is longer than {MAX_SHEET_TITLE} characters.",
+            code="FILE_TOO_LARGE",
         )
     rows: List[RowResult] = []
     schemes: List[Scheme] = []
