@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { readable, readableValue } from '@/lib/spec-readable';
 import { cn } from '@/lib/utils';
@@ -90,6 +92,10 @@ export function SpecValueCell({
   busy?: boolean;
 }) {
   const [saving, setSaving] = useState(false);
+  // Set by a Save that found a blank or invalid number; the sentence then follows the typing.
+  const [checked, setChecked] = useState(false);
+  const numberError =
+    row.dataType === 'numeric' ? numberFieldError(draft, {}) : undefined;
 
   // A key the registry no longer defines is still stored on the row, and is still worth
   // showing - it just has no editor, because there is no data type, no vocabulary and
@@ -121,6 +127,10 @@ export function SpecValueCell({
   }
 
   const save = async () => {
+    if (numberError) {
+      setChecked(true);
+      return;
+    }
     const value = toScalar(draft, row.dataType);
     if (value === null) return;
     setSaving(true);
@@ -198,23 +208,39 @@ export function SpecValueCell({
           />
         ) : (
           <div className="relative">
-            <Input
-              value={draft}
-              onChange={(event) => onDraftChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void save();
-                if (event.key === 'Escape') onCancel();
-              }}
-              disabled={disabled}
-              type={row.dataType === 'numeric' ? 'number' : 'text'}
-              aria-label={row.label}
-              autoFocus
-              className={cn('h-8 text-sm', row.unit && 'pe-10')}
-            />
+            {row.dataType === 'numeric' ? (
+              <NumberInput
+                value={draft}
+                onChange={(event) => onDraftChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void save();
+                  if (event.key === 'Escape') onCancel();
+                }}
+                disabled={disabled}
+                aria-label={row.label}
+                autoFocus
+                error={checked ? numberError : undefined}
+                className={cn('h-8 text-sm', row.unit && 'pe-10')}
+              />
+            ) : (
+              <Input
+                value={draft}
+                onChange={(event) => onDraftChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void save();
+                  if (event.key === 'Escape') onCancel();
+                }}
+                disabled={disabled}
+                type="text"
+                aria-label={row.label}
+                autoFocus
+                className={cn('h-8 text-sm', row.unit && 'pe-10')}
+              />
+            )}
             {/* The unit is the registry's and is never typed: a person entering
                 "770mm" into a numeric key writes a string the ranker cannot compare. */}
             {row.unit && (
-              <span className="pointer-events-none absolute inset-y-0 end-2 flex items-center text-xs text-muted-foreground">
+              <span className="pointer-events-none absolute end-2 top-0 flex h-8 items-center text-xs text-muted-foreground">
                 {row.unit}
               </span>
             )}
@@ -226,7 +252,7 @@ export function SpecValueCell({
         variant="ghost"
         className="size-8 shrink-0"
         aria-label={`Save ${row.label}`}
-        disabled={disabled || toScalar(draft, row.dataType) === null}
+        disabled={disabled || (row.dataType !== 'numeric' && toScalar(draft, row.dataType) === null)}
         onClick={() => void save()}
       >
         <Check className="size-4" />

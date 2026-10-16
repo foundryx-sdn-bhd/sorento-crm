@@ -14,6 +14,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/lib/toast';
 import { OrderFilterFieldSelect } from '@/components/list/OrderFilterFieldSelect';
@@ -302,12 +303,18 @@ export function ListQueryFilterDialog({
                                 { value: 'false', label: 'False' },
                               ]}
                             />
+                          ) : f.data_type === 'number' ? (
+                            <NumberInput
+                              placeholder={row.op === 'in' ? 'a, b, c' : 'Value'}
+                              value={row.valueRaw}
+                              onChange={(e) => updateRow(row.id, { valueRaw: e.target.value })}
+                            />
                           ) : (
                             <Input
                               placeholder={row.op === 'in' ? 'a, b, c' : 'Value'}
                               value={row.valueRaw}
                               onChange={(e) => updateRow(row.id, { valueRaw: e.target.value })}
-                              type={f.data_type === 'number' ? 'number' : f.data_type === 'date' ? 'date' : 'text'}
+                              type={f.data_type === 'date' ? 'date' : 'text'}
                             />
                           )}
                         </div>
