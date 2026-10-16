@@ -93,7 +93,7 @@ async def test_old_parameter_set_reaches_the_backend_with_none_of_the_new_keys(n
     fn = _compile_tool(spec)
     client = _CapturingClient()
 
-    await fn(_FakeCtx(client))  # type: ignore[arg-type]
+    await fn(_FakeCtx(client), contact_id="900000008", space_id="364817")  # type: ignore[arg-type]
 
     assert client.query is not None, name
     for key in ("include_sellable", "include_specs", "include_pipeline"):

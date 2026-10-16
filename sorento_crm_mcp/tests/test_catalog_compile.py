@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from sorento_crm_mcp.catalog import CATALOG
+from sorento_crm_mcp.scope import is_scoped
 from sorento_crm_mcp.server import (
     TOOL_REQUIRED_NARROWING_FILTERS,
     TOOL_REQUIRED_QUERY_HINTS,
@@ -55,6 +56,10 @@ async def test_tool_runs_with_fake_context(spec):
     fn = _compile_tool(spec)
     _PP_UUID = "11111111-1111-4111-8111-111111111111"
     kwargs: dict[str, str] = {p: _PP_UUID for p in spec.path_params}
+    # SEC-MCP-AUTH: a company-scoped tool refuses a call without the calling contact.
+    if is_scoped(spec):
+        kwargs.setdefault("contact_id", "900000008")
+        kwargs.setdefault("space_id", "364817")
     for b in spec.body_params:
         kwargs.setdefault(b, "{}")
     # Parent-relation tools (orders_by_product, incoming_stock_by_product, GRN,
@@ -171,6 +176,8 @@ async def test_certificate_ids_alone_reaches_the_backend():
     fn = _compile_tool(spec)
     out = await fn(
         _FakeCtx(_FakeClient()),
+        contact_id="900000008",
+        space_id="364817",
         certificate_ids="11111111-1111-4111-8111-111111111111",
     )  # type: ignore[arg-type]
     assert "certificate_ids" in out
@@ -213,6 +220,8 @@ async def test_attachment_type_ids_alone_reaches_the_backend():
     fn = _compile_tool(spec)
     out = await fn(
         _FakeCtx(_FakeClient()),
+        contact_id="900000008",
+        space_id="364817",
         attachment_type_ids="11111111-1111-4111-8111-111111111111,22222222-2222-4222-8222-222222222222",
     )  # type: ignore[arg-type]
     assert "attachment_type_ids" in out
@@ -224,6 +233,8 @@ async def test_attachment_type_codes_alone_reaches_the_backend():
     fn = _compile_tool(spec)
     out = await fn(
         _FakeCtx(_FakeClient()),
+        contact_id="900000008",
+        space_id="364817",
         attachment_type_codes="Container Status,catalogue",
     )  # type: ignore[arg-type]
     assert "attachment_type_codes" in out
@@ -234,5 +245,5 @@ async def test_contact_id_alone_is_short_circuited():
     """No document named -> empty page, and the backend is never called."""
     spec = next(s for s in CATALOG if s.name == "crm_resource_attachments_list")
     fn = _compile_tool(spec)
-    out = await fn(_FakeCtx(_FakeClient()), contact_id="rio_10532f")  # type: ignore[arg-type]
+    out = await fn(_FakeCtx(_FakeClient()), contact_id="rio_10532f", space_id="364817")  # type: ignore[arg-type]
     assert "rio_10532f" not in out

@@ -189,7 +189,7 @@ def test_any_other_scope_header_value_is_refused():
 
 def test_lookup_resolve_without_contact_is_refused():
     client = _Client()
-    out = _run("crm_lookup_resolve", client, set_key="product", raw="abc")
+    out = _run("crm_lookup_resolve", client, set_key="product", raw="abc", locale="en")
     assert out["error"] == "scope_required"
     assert client.calls == []
 
@@ -204,7 +204,7 @@ def test_products_attachment_fanout_forwards_the_contact():
         client,
         contact_id=CONTACT,
         space_id=SPACE,
-        attachment_type_ids="00000000-0000-0000-0000-0000000000c1",
+        attachment_type_ids="6f1c2a4e-8b3d-4c5e-9f7a-1b2c3d4e5f60",
     )
     child = [c for c in client.calls if c["path"].endswith("/product-attachments")]
     assert child, "the fan-out should have run"
@@ -257,3 +257,100 @@ def test_http_staff_header_reaches_the_tool(http_app):
     client, calls = http_app
     _call(client, "crm_master_brands_list", {}, {"X-MCP-Scope": "staff"})
     assert len(calls) == 1
+
+
+# --- crew conditions (16 Oct): the staff opt-out needs a valid bearer, and is logged -------------
+
+
+NO_BEARER = {k: v for k, v in MCP_HEADERS.items() if k != "Authorization"}
+
+
+def _http_app_in(monkeypatch, mode):
+    calls: list[dict] = []
+
+    async def fake_request(self, method, path, *, path_params=None, query=None, body=None, tool_name=None):
+        calls.append({"path": path, "query": dict(query or {})})
+        return json.dumps(BACKEND_ROWS)
+
+    monkeypatch.setattr(server.CRMClient, "request", fake_request)
+    settings = Settings(
+        CRM_BASE_URL="http://crm.local", EXTERNAL_API_KEY="k", MCP_AUTH_TOKEN=TOKEN, MCP_AUTH_MODE=mode
+    )
+    return create_http_app(settings), calls
+
+
+def _tools_call(name, arguments):
+    return {"jsonrpc": "2.0", "id": "1", "method": "tools/call", "params": {"name": name, "arguments": arguments}}
+
+
+def test_staff_header_without_a_bearer_is_401(monkeypatch):
+    app, calls = _http_app_in(monkeypatch, "enforce")
+    with TestClient(app) as c:
+        resp = c.post(
+            "/mcp", json=_tools_call("crm_master_brands_list", {}), headers={**NO_BEARER, "X-MCP-Scope": "staff"}
+        )
+    assert resp.status_code == 401
+    assert calls == []
+
+
+def test_staff_header_with_a_wrong_bearer_is_401(monkeypatch):
+    app, calls = _http_app_in(monkeypatch, "permit")
+    with TestClient(app) as c:
+        resp = c.post(
+            "/mcp",
+            json=_tools_call("crm_master_brands_list", {}),
+            headers={**NO_BEARER, "Authorization": "Bearer nope", "X-MCP-Scope": "staff"},
+        )
+    assert resp.status_code == 401
+    assert calls == []
+
+
+def test_permit_mode_ignores_the_staff_header_without_a_bearer(monkeypatch):
+    """Permit lets an unauthenticated call in, but never as staff: it still needs a contact."""
+    app, calls = _http_app_in(monkeypatch, "permit")
+    with TestClient(app) as c:
+        resp = c.post(
+            "/mcp", json=_tools_call("crm_master_brands_list", {}), headers={**NO_BEARER, "X-MCP-Scope": "staff"}
+        )
+    assert resp.status_code == 200, resp.text
+    text = resp.text
+    if "text/event-stream" in resp.headers.get("content-type", ""):
+        text = [ln[5:].strip() for ln in text.splitlines() if ln.startswith("data:")][-1]
+    out = json.loads(json.loads(text)["result"]["content"][0]["text"])
+    assert out["error"] == "scope_required"
+    assert calls == []
+
+
+def test_bearer_without_the_staff_header_still_needs_a_contact(http_app):
+    """A contact-facing caller (the chatbot lanes) holds the bearer but never sends the header."""
+    client, calls = http_app
+    out = _call(client, "crm_order_management_orders_list", {"contact_id": "", "space_id": ""})
+    assert out["error"] == "scope_required"
+    assert calls == []
+
+
+def test_staff_scope_call_is_logged_with_tool_and_user(http_app, caplog):
+    import logging
+
+    client, _calls = http_app
+    with caplog.at_level(logging.INFO, logger="sorento_crm_mcp.scope"):
+        _call(
+            client,
+            "crm_master_brands_list",
+            {},
+            {"X-MCP-Scope": "staff", "X-MCP-Staff-User": "00000000-0000-0000-0000-0000000000d1"},
+        )
+    lines = [r.getMessage() for r in caplog.records if "staff-scope" in r.getMessage()]
+    assert lines, "a staff opt-out must leave a log line"
+    assert "tool=crm_master_brands_list" in lines[0]
+    assert "staff_user=00000000-0000-0000-0000-0000000000d1" in lines[0]
+    assert TOKEN not in caplog.text
+
+
+def test_scoped_staff_call_with_a_contact_is_not_logged(http_app, caplog):
+    import logging
+
+    client, _calls = http_app
+    with caplog.at_level(logging.INFO, logger="sorento_crm_mcp.scope"):
+        _call(client, "crm_master_brands_list", {"contact_id": CONTACT, "space_id": SPACE}, {"X-MCP-Scope": "staff"})
+    assert not [r for r in caplog.records if "staff-scope" in r.getMessage()]
