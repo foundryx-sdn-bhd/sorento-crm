@@ -138,7 +138,7 @@ def _lookup_subjects(row: dict[str, Any]) -> set[str]:
     """Subjects named by the lookup's own strings (order numbers, delivery orders, ...): not products, so not in memory."""
     ids = _uuid_map(row)
     out: set[str] = set()
-    for env in _looked_up_envelopes(row):
+    for env in _hit_envelopes(row):
         for field in ("entities", "product_codes"):
             for x in env.get(field) or []:
                 if isinstance(x, str):
@@ -156,12 +156,19 @@ def _looked_up_envelopes(row: dict[str, Any]) -> list[dict[str, Any]]:
     return [e for e in ((_stage(row, "looked_up").get("raw") or {}).get("envelopes") or []) if isinstance(e, dict)]
 
 
+def _hit_envelopes(row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Lookup envelopes that found something: one reporting a miss, an unresolved word or an error names no subject."""
+    return [e for e in _looked_up_envelopes(row)
+            if e.get("outcome") not in ("not_found", "miss", "unresolved", "error")
+            and not e.get("miss") and not e.get("unresolved") and not e.get("error")]
+
+
 def _resolved_codes(row: dict[str, Any]) -> set[str]:
     """The codes the turn settled on: memory after, else the lookup's own strings, else the verdict's entities."""
     codes = _codes_of(_mem_focus(row, "after").get("products"))
     if codes:
         return codes
-    for env in _looked_up_envelopes(row):
+    for env in _hit_envelopes(row):
         for field in ("entities", "product_codes"):
             codes |= {_key(x) for x in (env.get(field) or []) if isinstance(x, str)}
     if codes:
@@ -416,13 +423,13 @@ def _followup(row, item):
     if kind == "refine":
         flt = gold.get("filter") or {}
         extra = _mem_focus(row, "after").get("extra") or {}
-        values = {_norm(e.get("spec_value")) for e in _entities(row) if e.get("spec_value") is not None}
-        values |= {_norm(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "brand"}
-        values |= {_norm(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
-        values |= {_norm(b) for b in (_mem_focus(row, "after").get("brands") or [])}
+        values = {_val(e.get("spec_value")) for e in _entities(row) if e.get("spec_value") is not None}
+        values |= {_val(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "brand"}
+        values |= {_val(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
+        values |= {_val(b) for b in (_mem_focus(row, "after").get("brands") or [])}
         checks = [
             ("subject", (want <= after_subject) if want else None, "The subject was dropped when refining."),
-            ("filter", _norm(flt.get("value")) in values, "The new filter was not applied."),
+            ("filter", _val(flt.get("value")) in values, "The new filter was not applied."),
         ]
         if real:  # asking instead of looking up is not a refine that worked
             checks.append(("lookup", bool(_tools(row)), "The bot did not run a lookup after the filter."))
@@ -475,8 +482,18 @@ def _ideas_answer(row, gold):
 CLASS_KEYS = ("class", "product_type", "furniture_type")
 
 
+_UNIT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:mm|cm|m|kg|g|l|litres?|liters?|w|v|inch|in)?")
+
+
 def _val(x: Any) -> str:
-    return re.sub(r"\s+", " ", _norm(x).replace("_", " "))
+    """A spec / filter value as a comparable string: lower case, "_" = space, a number with or without its unit
+    ("300mm", "300 mm", 300) is the bare number."""
+    text = re.sub(r"\s+", " ", _norm(x).replace("_", " "))
+    m = _UNIT_RE.fullmatch(text)
+    if m:
+        n = float(m.group(1))
+        return str(int(n)) if n == int(n) else str(n)
+    return text
 
 
 def _spec(row, item):
