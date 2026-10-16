@@ -65,7 +65,7 @@ describe('ApplyTagSettingsDialog', () => {
 
     const row = screen.getByTestId('apply-tag-row-c1');
     expect(within(row).getByText('Stock checks')).toBeInTheDocument();
-    expect(within(row).getByText(/Retail/)).toBeInTheDocument();
+    expect(within(row).getAllByText(/Retail/).length).toBeGreaterThanOrEqual(1);
     expect(row).toHaveTextContent(/on/i);
     expect(row).toHaveTextContent(/off/i);
     expect(row).toHaveTextContent('Skip period questions');

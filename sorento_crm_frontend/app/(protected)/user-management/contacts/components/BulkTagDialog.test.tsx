@@ -4,7 +4,7 @@
  * call shows the extracted message and the dialog stays open and usable (never stuck).
  * Assumed: ./BulkTagDialog default export, props
  *   { open, onOpenChange, mode: 'add' | 'remove', targetContacts, onApplied? }
- * Buttons: continue = /^(continue|preview)/i, confirm = /^(apply|confirm)/i.
+ * Buttons: continue = /^(continue|preview)/i, confirm = 'Add tag to 2 contacts'.
  * Services: ../../contact-tags/services/contactTagService { getContactTags, bulkTagContacts }.
  */
 import React from 'react';
@@ -107,6 +107,7 @@ describe('BulkTagDialog', () => {
         addTagIds: ['tag-a'],
         removeTagIds: [],
         dryRun: true,
+        applySettings: true,
       }),
     );
     expect(await screen.findByText('Alice')).toBeInTheDocument();
@@ -134,7 +135,7 @@ describe('BulkTagDialog', () => {
     const { onApplied } = renderDialog('add');
     fireEvent.click(await screen.findByRole('button', { name: 'Dealer' }));
     fireEvent.click(screen.getByRole('button', { name: /^(continue|preview)/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /^(apply|confirm)/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add tag to 2 contacts' }));
 
     await waitFor(() =>
       expect(tagSvc.bulkTagContacts).toHaveBeenLastCalledWith({
@@ -142,6 +143,7 @@ describe('BulkTagDialog', () => {
         addTagIds: ['tag-a'],
         removeTagIds: [],
         dryRun: false,
+        applySettings: true,
       }),
     );
     await waitFor(() => expect(onApplied).toHaveBeenCalled());
@@ -171,10 +173,10 @@ describe('BulkTagDialog', () => {
     renderDialog('add');
     fireEvent.click(await screen.findByRole('button', { name: 'Dealer' }));
     fireEvent.click(screen.getByRole('button', { name: /^(continue|preview)/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /^(apply|confirm)/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add tag to 2 contacts' }));
 
     expect(await screen.findByText(/Server went away\./)).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^(apply|confirm)/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add tag to 2 contacts' })).not.toBeDisabled();
   });
 });

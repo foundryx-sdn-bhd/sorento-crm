@@ -181,10 +181,12 @@ def test_t3_7_portal_override_only_where_resolved_visibility_differs(client, db,
     assert db.query(ContactPortalFormOverride).filter_by(contact_id=already.id).count() == 0
 
 
-def test_t3_8_agents_upsert_only_the_agents_set_and_reuse_the_legacy_row(client, db, all_perms):
+def test_t3_8_agents_update_only_the_agents_set_and_reuse_the_legacy_row(client, db, all_perms):
     a, b = _agent(db), _agent(db)
     tag = _stag(client, db, {"agents": {a.id: False}})
     contact = _holder(client, db, [tag])
+    db.add(ContactAgentAccess(respond_contact_id=contact.id, respond_contact_phone=contact.phone_number,
+                              agent_id=a.id, is_allowed=True))
     db.add(ContactAgentAccess(respond_contact_id=contact.id, respond_contact_phone=contact.phone_number,
                               agent_id=b.id, is_allowed=True))
     legacy = _holder(client, db, [tag])
@@ -198,6 +200,15 @@ def test_t3_8_agents_upsert_only_the_agents_set_and_reuse_the_legacy_row(client,
     assert db.query(ContactAgentAccess).filter_by(agent_id=b.id, respond_contact_id=contact.id).one().is_allowed is True
     legacy_rows = db.query(ContactAgentAccess).filter_by(agent_id=a.id, respond_contact_phone=legacy.phone_number).all()
     assert len(legacy_rows) == 1 and legacy_rows[0].is_allowed is False
+
+
+def test_t3_8_deny_on_a_contact_with_no_grant_row_is_already_denied_so_no_row_is_created(client, db, all_perms):
+    a = _agent(db)
+    tag = _stag(client, db, {"agents": {a.id: False}})
+    bare = _holder(client, db, [tag])
+    body = _rows(_apply(client, [bare.id], dry_run=False))
+    assert body["results"][0]["status"] == "unchanged"
+    assert db.query(ContactAgentAccess).filter_by(agent_id=a.id, respond_contact_phone=bare.phone_number).count() == 0
 
 
 def test_tier_apply_changes_only_the_tier_key(client, db, all_perms):
@@ -318,3 +329,57 @@ def test_gates_limits_and_skipped(client, db, perms, all_perms):
     assert client.post(f"{TAGS}/{tag['id']}/apply", json={"dry_run": True}).status_code == 403
     assert client.post(BULK, json={"contact_ids": [held.id], "add_tag_ids": [tag["id"]],
                                    "remove_tag_ids": [], "apply_settings": True, "dry_run": False}).status_code == 403
+
+
+# ---------------------------------------------------------------- stock / spec include vs exclude
+
+
+def _wh(db):
+    from app.models.inventory import Warehouse
+
+    code = unique_code("zwh")
+    row = Warehouse(warehouse_code=code, warehouse_name=f"ZZT {code}", company_id=DEFAULT_COMPANY_ID)
+    db.add(row)
+    db.flush()
+    return row
+
+
+def test_stock_visibility_with_both_include_and_exclude_is_422_naming_the_section(client, db, all_perms):
+    w1, w2 = _wh(db), _wh(db)
+    tag = _tag(client)
+    resp = client.patch(f"{TAGS}/{tag['id']}", json={"settings": {"stock_visibility": {
+        "mode": "compact", "warehouse_ids": [w1.id], "excluded_warehouse_ids": [w2.id], "hide_zero_locations": False}}})
+    assert resp.status_code == 422, resp.text
+    assert "stock_visibility" in resp.text
+    assert client.get(f"{TAGS}/{tag['id']}").json()["settings"] == {}
+
+
+def test_spec_visibility_with_both_include_and_exclude_is_422_naming_the_section(client, db, all_perms):
+    from app.services.spec_visibility import DEFAULT_HIDDEN_KEYS
+
+    key = sorted(DEFAULT_HIDDEN_KEYS)[0]  # always an accepted key, so only the both-lists rule can reject
+    tag = _tag(client)
+    resp = client.patch(f"{TAGS}/{tag['id']}", json={"settings": {"spec_visibility": {
+        "spec_keys": [key], "excluded_spec_keys": [key]}}})
+    assert resp.status_code == 422, resp.text
+    assert "spec_visibility" in resp.text
+    assert client.get(f"{TAGS}/{tag['id']}").json()["settings"] == {}
+
+
+def test_include_on_one_tag_and_exclude_on_another_is_a_stock_conflict_not_written_not_failed(client, db, all_perms):
+    w1, w2 = _wh(db), _wh(db)
+    inc = _stag(client, db, {"stock_visibility": {"mode": "compact", "warehouse_ids": [w1.id],
+                                                  "excluded_warehouse_ids": None, "hide_zero_locations": False}}, "ZZT-inc")
+    exc = _stag(client, db, {"stock_visibility": {"mode": "compact", "warehouse_ids": None,
+                                                  "excluded_warehouse_ids": [w2.id], "hide_zero_locations": False}}, "ZZT-exc")
+    contact = _holder(client, db, [inc, exc])
+    read = _read(client, contact)
+    conflicts = [i for i in read["items"] if i["section"] == "stock_visibility" and i["conflict"]]
+    assert conflicts, read["items"]
+    assert sorted(t["name"] for t in conflicts[0]["conflict_tags"]) == ["ZZT-exc", "ZZT-inc"]
+
+    row = _rows(_apply(client, [contact.id], dry_run=False))["results"][0]
+    assert row["status"] != "failed", row
+    assert any("tock" in c["label"] for c in row["conflicts"]), row["conflicts"]
+    assert db.execute(text("SELECT count(*) FROM stock_visibility_policies WHERE contact_id = :c"),
+                      {"c": contact.id}).scalar() == 0
