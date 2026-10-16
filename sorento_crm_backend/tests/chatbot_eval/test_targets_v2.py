@@ -259,10 +259,10 @@ def test_spec_ignores_class_keys_and_compares_values_as_normalised_strings():
             {"key": "mounting", "value": "Under Counter"}, {"key": "length", "value": "200"}]
     r = grade_turn(row2(verdict=v, mem_extra={"specification": bot}), item("spec", spec=gold))
     check(r, True)
-    assert "class" in r["checks"], "class keys are reported as their own check"
+    assert "class" in r["info"], "class keys are reported as their own info entry"
     wrong_class = grade_turn(row2(verdict=v, mem_extra={"specification": bot}),
                              item("spec", spec=[{"key": "class", "value": "tap"}, {"key": "mounting", "value": "under_counter"}]))
-    assert wrong_class["passed"] is True and wrong_class["checks"]["class"] is False
+    assert wrong_class["passed"] is True and wrong_class["info"]["class"] is False
     check(grade_turn(row2(verdict=v, mem_extra={"specification": bot}), item("spec", spec=[{"key": "length", "value": "300"}])),
           False, "spec")
 
@@ -354,10 +354,10 @@ def test_old_subject_still_in_memory_does_not_fail_and_x_new_item_or_switch():
     r = row2(message="and srtb200?", **both)
     res = grade_turn(r, item("followup", "and_x", variant="new_item", fact="inventory", subject_after=["SRTB200"]))
     check(res, True)
-    assert "old_dropped" in res["checks"], "old_dropped stays reported"
+    assert "old_dropped" in res["info"], "old_dropped stays reported"
     sw = grade_turn(row2(message="stock of srtb200", **both), item("followup", "switch", subject_after=["SRTB200"]))
     check(sw, True)
-    assert "old_dropped" in sw["checks"]
+    assert "old_dropped" in sw["info"]
 
 
 def test_empty_or_missing_gold_subject_skips_the_subject_check():
@@ -1190,3 +1190,133 @@ def test_alpha_trading_linked_does_not_cover_alpha_enterprise_shown():
     ("ALPHA TRADING PTE. LTD.", "Alpha Trading Pte Ltd", "Alpha Trading Pte Ltd")])
 def test_only_legal_form_suffixes_and_punctuation_are_ignored_when_matching_the_own_company(linked, watch, shown):
     assert _watch(f"{shown} has 40 pcs.", [linked], [watch]) == []
+
+
+# ------------------------------------------------------------------ review round 20
+UNLINKED = {"audience": "unlinked", "linked_customer_ids": [], "linked_customer_names": [], "hidden_fields": []}
+STAFF_ASKER = {"audience": "staff", "linked_customer_ids": None, "linked_customer_names": [], "hidden_fields": []}
+
+
+# 1. a leak fails an item of any slice (targets.py ~842 applies it to the scope slice only)
+def _lookup_leaking_row():
+    r = row2(mem_after=[prod("SRTA100", UA)], tools=[TOOL_A], reply="SRTA100 has 40 pcs. " + DO_REPLY)
+    r["tool_results"] = [{"name": "crm_delivery_orders_list", "args": {}, "result": DO_RESULT}]
+    return r
+
+
+def test_a_code_lookup_that_shows_an_unlinked_contact_another_companys_delivery_order_fails():
+    res = grade_turn(_lookup_leaking_row(), dict(item("code_lookup", **GOLD_CL), asker=UNLINKED))
+    assert res["leaks"] and res["passed"] is False, res
+
+
+def test_the_same_code_lookup_for_staff_still_passes():
+    res = grade_turn(_lookup_leaking_row(), dict(item("code_lookup", **GOLD_CL), asker=STAFF_ASKER))
+    assert res["leaks"] == [] and res["passed"] is True, res
+
+
+# 2. honest none has its own check name; "files" only means files were sent
+def test_an_honest_none_is_reported_as_none_on_record_not_as_files_sent():
+    r = _live_att([_file("Drawing")])
+    r["uuid_codes"] = {UA: "SRTA100"}
+    res = grade_turn(r, item("attachment", code="SRTA100", **GOLD_TS))
+    assert res["checks"].get("none_on_record") is True and "files" not in res["checks"], res["checks"]
+
+
+# 3. a refine's subject may be a non-empty subset of the gold list or of the products held before
+def _narrow(gold_codes, after, held_before=()):
+    r = row2(verdict=REFINE_V, mem_before=[prod(c, f"00000000-0000-4000-8000-{k:012d}") for k, c in enumerate(held_before)],
+             mem_after=[prod(c, f"00000000-0000-4000-9000-{k:012d}") for k, c in enumerate(after)], tools=[TOOL_A])
+    return grade_turn(r, item("followup", "refine", subject_after=gold_codes, filter={"kind": "spec", "value": "chrome"}))
+
+
+def test_a_narrowed_answer_that_is_a_subset_of_the_gold_subject_passes_the_subject_check():
+    assert _narrow(["SRTA1", "SRTA2", "SRTA3", "SRTB9"], ["SRTA1", "SRTA2"])["checks"]["subject"] is True
+
+
+def test_a_narrowed_answer_that_is_a_subset_of_the_products_held_before_passes_the_subject_check():
+    assert _narrow(["SRTZ1"], ["SRTA1", "SRTA2"], held_before=["SRTA1", "SRTA2", "SRTA3"])["checks"]["subject"] is True
+
+
+def test_an_empty_or_outside_the_set_subject_still_fails():
+    assert _narrow(["SRTA1", "SRTA2"], [])["checks"]["subject"] is False
+    assert _narrow(["SRTA1", "SRTA2"], ["SRTA1", "SRTQ7"])["checks"]["subject"] is False
+
+
+# 4a. the product-vs-customer menu rule also covers attachment, and_x and switch items, unless the gold is ambiguous
+def _kind_menu(types=("product", "attachment")):
+    return {"kind": "kind_pick", "expects": "choice", "payload": {}, "asked_at_turn": 2,
+            "options": [{"position": i + 1, "label": f"Sorento ({t})", "raw": "Sorento", "code": "Sorento", "uuid": None,
+                         "uuids": [], "entity_type": t, "payload": {"kind": t}} for i, t in enumerate(types)]}
+
+
+def test_a_needless_menu_fails_an_attachment_item():
+    r = _live_att([_file("Drawing")])
+    r["trace"].append({"kind": "memory", "open_question": {"before": None, "after": _kind_menu(), "writer": "engine"}})
+    res = grade_turn(r, item("attachment", **GOLD_TS))
+    assert res["checks"].get("no_menu") is False and res["passed"] is False, res["checks"]
+
+
+@pytest.mark.parametrize("kind", ["and_x", "switch"])
+def test_a_needless_menu_fails_an_and_x_or_switch_item(kind):
+    r = row2(mem_before=[prod("SRTOLD1", UB)], mem_after=[prod("SRTNEW1", UA)], tools=[TOOL_A],
+             oq={"before": None, "after": _kind_menu(), "writer": "engine"})
+    res = grade_turn(r, item("followup", kind, fact="inventory", subject_after=["SRTNEW1"]))
+    assert res["checks"].get("no_menu") is False and res["passed"] is False, res["checks"]
+
+
+def test_a_which_one_menu_is_right_when_the_gold_code_is_ambiguous():
+    r = row2(mem_after=[prod("SRTA100", UA)], tools=[TOOL_A], oq={"before": None, "after": _kind_menu(), "writer": "engine"})
+    res = grade_turn(r, item("code_lookup", ambiguous=True, **GOLD_CL))
+    assert res["checks"].get("no_menu") is not False, res["checks"]
+
+
+# 4b. a trailing quantity question after the answer is needless on a lookup, spec, attachment or promo answer
+QTY_OQ = {"kind": "product_pick", "expects": "choice", "payload": {"stock_pick": True}, "asked_at_turn": 2,
+          "options": [], "owed": ["quantity"]}
+
+
+def _qty_row(base):
+    base["trace"].append({"kind": "memory", "open_question": {"before": None, "after": QTY_OQ, "writer": "engine"}})
+    return base
+
+
+def test_a_trailing_quantity_question_fails_a_code_lookup():
+    r = _qty_row(row2(state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[TOOL_A],
+                      reply="SRTA100 has 40 pcs. How many units?"))
+    res = grade_turn(r, item("code_lookup", **GOLD_CL))
+    assert res["checks"]["tool_ran"] is True and res["checks"]["code"] is True, res["checks"]   # only the question is wrong
+    assert res["passed"] is False, res["checks"]
+
+
+def test_a_trailing_quantity_question_fails_a_spec_item():
+    r = _qty_row(row2(verdict=SPEC_V, reply="Here are white taps: SRTKT100."))
+    assert grade_turn(r, item("spec", **SPEC_ITEM))["passed"] is False
+
+
+def test_a_trailing_quantity_question_fails_an_attachment_item():
+    r = _qty_row(_att([_file("Technical Specifications")], reply="Here are the files."))
+    assert grade_turn(r, item("attachment", **GOLD_TS))["checks"]["type"] is True   # the attachment itself is right
+    assert grade_turn(r, item("attachment", **GOLD_TS))["passed"] is False
+
+
+# 5. reason texts say narrowing down, not refine
+def test_a_refine_failure_reason_never_says_refine_or_refining():
+    r = row2(verdict=REFINE_V, mem_after=[prod("SRTB200", UA)], tools=[TOOL_A])
+    res = grade_turn(r, item("followup", "refine", subject_after=["SRTA100"], filter={"kind": "spec", "value": "chrome"}))
+    assert res["passed"] is False and "refin" not in res["reason"].lower(), res["reason"]
+    assert "narrowing down" in res["reason"].lower(), res["reason"]
+
+
+# 6. checks that do not decide `passed` live in a separate `info` dict
+def test_class_is_reported_in_info_and_not_in_checks():
+    v = {"entities": [{"raw": "white", "hint": "specification", "spec_key": "colour", "spec_value": "white"},
+                      {"raw": "basin", "hint": "category", "canonical_code": "basin"}], "reference_positions": []}
+    r = row2(verdict=v, reply="Here are white basins: SRTWB100.")
+    res = grade_turn(r, item("spec", spec=[{"key": "class", "value": "basin"}, {"key": "colour", "value": "white"}]))
+    assert "class" in res["info"] and "class" not in res["checks"], (res.get("info"), res["checks"])
+
+
+def test_old_dropped_is_reported_in_info_and_not_in_checks_on_a_real_trace():
+    r = row2(mem_before=[prod("SRTOLD1", UB)], mem_after=[prod("SRTNEW1", UA)], tools=[TOOL_A])
+    res = grade_turn(r, item("followup", "switch", fact="inventory", subject_after=["SRTNEW1"]))
+    assert "old_dropped" in res["info"] and "old_dropped" not in res["checks"], (res.get("info"), res["checks"])
