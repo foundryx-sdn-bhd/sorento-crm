@@ -1165,8 +1165,16 @@ def turn_apply(state_in: Any, *args: Any, **kwargs: Any) -> Any:
     if live and getattr(out, "quoted_live", None) is None:
         out = dataclasses_replace(out, quoted_live=live)
     # CHAT-STATE: the decision the parser's `state_changes` led rides to the tail too.
-    if getattr(state_in, "state_led", None) and getattr(out, "state_led", None) is None:
-        out = dataclasses_replace(out, state_led=state_in.state_led)
+    carried = {
+        name: getattr(state_in, name)
+        for name in ("state_led", "state_path", "held_aside", "slot_ask")
+        if getattr(state_in, name, None) and not getattr(out, name, None)
+    }
+    if carried:
+        out = dataclasses_replace(out, **carried)
+    if getattr(state_in, "slot_ask", None) is not None:
+        # An unclear held slot is asked, not fetched: the question is the plan's ask.
+        plan.ask, plan.fetch = state_in.slot_ask, []
     return out, plan
 
 
@@ -4705,6 +4713,7 @@ def _run_stages_body(  # noqa: PLR0915
     # today's turn untouched.
     state_path = bool(parser_config.state_block or parser_bypassed)
     if state_path:
+        state_in = dataclasses_replace(state_in, state_path=True)
         shown_view = chat_state.view(state_in, open_question)
         state_log: dict[str, Any] = {
             "shown": chat_state.render(shown_view),
@@ -4719,12 +4728,15 @@ def _run_stages_body(  # noqa: PLR0915
                 open_question=open_question,
                 domains=[d.name for d in policy.domains],
                 kinds=[k.kind for k in policy.kinds],
-                brands=[b.get("brand_code") for b in brands if isinstance(b, dict) and b.get("brand_code")],
+                brands=brands,
                 positions_read_elsewhere=_positions_read_elsewhere(state_in),
             )
             state_log = {**applied.log, "shown": state_log["shown"], "before": shown_view}
             if applied.valid:
-                state_in, verdict = applied.state, applied.verdict
+                # A slot the parser said `skip` for is off the focus for this turn only; the
+                # tail puts it back, so the stored focus keeps it.
+                state_in = chat_state.set_aside(applied.state, applied.log.get("slots") or {})
+                verdict = applied.verdict
             else:
                 verdict = applied.verdict
         remembered_before["_chat_state"] = state_log
@@ -5371,10 +5383,6 @@ def _run_stages_body(  # noqa: PLR0915
                 state_out.focus,
                 unsettled_only=plan.ask is None,
             )
-            if state_led:
-                resolver_parse_output = _without_slots_the_domain_does_not_take(
-                    resolver_parse_output, plan.domains, policy
-                )
             resolver_parse_output = _without_carried_domain_on_a_roster_pick(
                 resolver_parse_output, plan.trace.rules_fired
             )
@@ -7289,6 +7297,7 @@ def _run_stages_body(  # noqa: PLR0915
                 contact_respond_id=contact_respond_id,
                 turn_trace=turn_trace,
                 state=state_out,
+                remembered_before=remembered_before,
             )
             actions = [*actions, *extra_actions]
             _close_turn(
@@ -8426,24 +8435,6 @@ def _demand_qty_missing(verdict: dict[str, Any]) -> bool:
     return jsc.is_empty(verdict.get("demand_qty")) or verdict.get("demand_qty") == 0
 
 
-def _without_slots_the_domain_does_not_take(
-    parse_output: dict[str, Any], domains: Any, policy: Any
-) -> dict[str, Any]:
-    """CHAT-STATE R14 (owner, 16 Oct 2026): a held customer is handed to the resolver only
-    for an ask whose domain takes one (`chatbot_domains.narrowing` keys). It stays in the
-    stored focus, so a following order or sales ask applies it again. The held period is
-    gated the same way where the plan is built (`takes_date_filter`, apply.py)."""
-    rows = [policy.domain(name) for name in (domains or ())]
-    rows = [row for row in rows if row is not None]
-    if not rows or any("customer" in row.narrowing for row in rows):
-        return parse_output
-    kept = [
-        e for e in parse_output.get("entities") or []
-        if not (isinstance(e, dict) and e.get("hint") == "customer" and e.get("current_message") is False)
-    ]
-    return {**parse_output, "entities": kept}
-
-
 def _state_log(before: dict[str, Any], state: Any, answer: Any) -> dict[str, Any]:
     """CHAT-STATE: the memory event's `state` key, `{shown, before, changes, rejected, after}`;
     empty off the state path. `after` is the view of the state this turn leaves behind."""
@@ -8452,8 +8443,9 @@ def _state_log(before: dict[str, Any], state: Any, answer: Any) -> dict[str, Any
         return {}
     from app.services.chatbot.turn import tail as turn_tail
 
+    state = chat_state.restored(state)
     focus = state.focus
-    if getattr(state, "state_led", None):
+    if getattr(state, "state_path", False):
         focus = dataclasses_replace(
             focus,
             last_list=turn_tail.last_list_after(
@@ -8494,6 +8486,7 @@ def _record_memory_trace(
     from app.services.chatbot.turn.pending import to_wire
     from app.services.chatbot.turn.state import focus_to_wire
 
+    state = chat_state.restored(state) if state is not None else None
     # The contact intake resolved (workspace-scoped, by primary key), never a second
     # `respond_io_id` lookup; the profile BEFORE is intake's snapshot, the AFTER is
     # read now, once this turn's writes are in (reviewer pass at d89110c0, S22).
@@ -10253,8 +10246,8 @@ def run_tail(
         applied = state = turn_tail.carry_live_state(
             applied, question is not None, applied.quoted_live, non_answer=True
         )
-    tail_focus = state.focus
-    if getattr(state, "state_led", None):
+    tail_focus = chat_state.restored(state).focus
+    if getattr(state, "state_path", False):
         # CHAT-STATE: a turn the parser's `state_changes` led records the list it showed.
         tail_focus = dataclasses_replace(
             tail_focus, last_list=turn_tail.last_list_after(tail_focus.last_list, question=question, sections=[])
@@ -10293,6 +10286,17 @@ def run_tail(
             "turn_no": getattr(state, "turn_no", 0),
         },
     )
+    if before.get("_chat_state") and not turn_trace.has_event("memory"):
+        # CHAT-STATE: an arm that hands the memory event nowhere else still shows the state log.
+        import types as _types
+
+        turn_trace.add(
+            "memory",
+            {
+                "dry_run": dry_run,
+                **_state_log(before, state, _types.SimpleNamespace(question=question, sections=[])),
+            },
+        )
 
     written = (not dry_run) and write_session
     if written:
@@ -10568,6 +10572,7 @@ def _complete_canned_lane(
     contact_respond_id: str,
     turn_trace: trace_mod.TurnTrace,
     state: Any = None,
+    remembered_before: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, list[dict[str, Any]]]:
     """One of S3's eight lanes, answered inside the turn. `(reply, patch, actions)`.
 
@@ -10643,6 +10648,7 @@ def _complete_canned_lane(
             contact_respond_id=contact_respond_id,
             turn_trace=turn_trace,
             state=state,
+            remembered_before=remembered_before,
         )
         reply = {**reply, **reply_extras}
 

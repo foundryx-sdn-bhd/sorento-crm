@@ -299,6 +299,15 @@ class State:
     # `state_changes` were applied ("answer" / "new_ask" / "refine" / "carry"); None on
     # every other turn. Never serialised.
     state_led: str | None = None
+    # CHAT-STATE: the turn ran on the state path (the prompt in use or a dry-run emission asks
+    # for `state_changes`), so the tail records the list it showed. Never serialised.
+    state_path: bool = False
+    # CHAT-STATE: held slots the parser said `skip` for, set aside for this turn only
+    # (`{"customers": [...], "date_window": {...}}`) and put back by the tail. Never serialised.
+    held_aside: dict[str, Any] | None = None
+    # CHAT-STATE: a question the state change itself raises (an unclear held slot): the
+    # engine asks it instead of fetching. Never serialised.
+    slot_ask: Any = None
 
 
 # --------------------------------------------------------------------------- #
@@ -332,7 +341,8 @@ def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire["tasks"] = [task_to_wire(task) for task in (focus.tasks or ())]
     wire["extra"] = {k: list(v) for k, v in (focus.extra or {}).items()}
     wire["relation"] = focus.relation
-    wire["last_list"] = [dict(row) for row in focus.last_list] if focus.last_list else None
+    if focus.last_list:
+        wire["last_list"] = [dict(row) for row in focus.last_list]
     return wire
 
 

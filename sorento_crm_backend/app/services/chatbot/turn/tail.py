@@ -135,9 +135,11 @@ def session_payload(state: State, answer: Any, ctx: Any) -> dict[str, Any]:
     """
     if getattr(state, "quoted_live", None):
         state = carry_live_state(state, getattr(answer, "question", None) is not None, state.quoted_live)
-    focus = state.focus
-    if getattr(state, "state_led", None):
-        # CHAT-STATE: only a turn the parser's `state_changes` led records the list it showed.
+    from app.services.chatbot.turn import chat_state
+
+    focus = chat_state.restored(state).focus
+    if getattr(state, "state_path", False):
+        # CHAT-STATE: a turn on the state path records the list it showed.
         from dataclasses import replace
 
         focus = replace(

@@ -26,13 +26,14 @@ axis (entities with that hint; `sales_channel`; `date_mode` / `date_filter_start
 | op | when | axis | position |
 |---|---|---|---|
 | `keep` | the message continues the subject as it is | null | null |
-| `new_subject` | the message is a full ask with its own subject and measure; only the customer of the old subject still applies | null | null |
-| `set` | the message adds or replaces ONE part of the subject (brand, filter, period, channel, quantity, product, customer); one `set` per part it states | the part | null |
-| `clear` | the message removes one part of the subject | the part | null |
-| `pick` | the message points at an item of the `last list` (its number, its position, or its name as listed) | null | the item's number |
+| `keep` / `skip` / `clear` / `unclear` | the State holds a customer or a period: say what this message does with it (rules below) | `customer` or `period` | null |
+| `new_subject` | the message is a full ask with its own subject and measure; the held customer (see the held-slot rules), the access tier and the brand carry, nothing else | null | null |
+| `set` | the message adds or replaces ONE part of the subject; one `set` per value the message states, a stated value without its `set` is not used | one of: product, customer, warehouse, brand, tier, channel, period, status, sort, quantity, or an entity kind listed in the prompt | null |
+| `clear` | the message removes one part of the subject | one of the same names | null |
+| `pick` | the message points at an item of the `last list` (its number, its position, or its name as listed); one `pick` per picked position ("1 and 3" is two picks); only product rows of the `last list` can be picked | null | the item's number |
 | `answer` | the message answers the `open question` (one of its options, yes or no, or the value it asked for) | null | null |
-| `switch_domain` | the message asks a different kind of fact about the same subject | the domain name | null |
-| `close_question` | the message leaves the `open question` unanswered and asks something else | null | null |
+| `switch_domain` | the message asks a different kind of fact about the same subject; the new domain is the `domain_hint` you fill as usual | null | null |
+| `close_question` | the `open question` is still owed (it asked for something) and the message leaves it unanswered; never for a question that was already answered | null | null |
 
 Business rules:
 - "and <another item>?" replaces only that item (`set product` or `set customer`); the ask, quantity, period and
@@ -44,8 +45,18 @@ Business rules:
 - When the `open question` is open and the message is not an answer to it, add `close_question`.
 - Small talk, thanks and greetings change nothing: `[{"op": "keep", "axis": null, "position": null}]`.
 - When you cannot tell whether the message continues the subject or starts a new one, output `[]`.
-- When the State block is absent or every line is none, output `[{"op": "new_subject", "axis": null, "position": null}]`
-  for a business ask and `[]` otherwise.
+- When the State block is absent or every line is none, output `[]` (nothing to change); do not output `new_subject`.
+
+Held-slot rules (customer and period):
+- When the State holds a customer or a period, state for each one, per message: `keep` (it applies to this ask),
+  `skip` (it does not apply to this ask and stays held), `clear` (drop it), or `unclear` (you cannot tell). A slot you
+  say nothing about applies as before.
+- Period: a follow-up keeps the held period (no op needed, or `keep period`); a period this message states replaces it
+  (`set period`); for a brand-new topic the held period may not belong to, judge it: `skip period` or `clear period`.
+- Held customer: a delivery or "when will it arrive" ask with a held customer is delivery to that customer
+  (`keep customer`, delivery/order domain); a clearly ETA or incoming stock ask is product-level (`skip customer`). An
+  ETA ask is about incoming stock by meaning, not by a word. Say `unclear customer` only when you cannot tell; the
+  system then settles it from the customer record.
 """
 
 HEADING = "## Conversation state and state_changes"
