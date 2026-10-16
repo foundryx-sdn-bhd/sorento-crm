@@ -318,3 +318,15 @@ def test_oi_demand_rows_leaves_the_cancel_when_the_target_did_not_go_up(api):
     out, _counts = _oi_demand_rows(s.db, rows, s.core_so.so_number)
     cancels = [o for o in out if o["qty"] == Decimal("49")]
     assert cancels, [(o["qty"], o.get("line_no")) for o in out]
+
+
+@pytest.mark.parametrize("line18_now", ["82", "60"])
+def test_the_email_prints_only_the_splits_the_engine_honoured(api, line18_now):
+    """Line 18 did not grow, so the 49 split was not honoured: no "49 DELAY" line, and the
+    normal netting tells the CANCEL 49 as it does today. The own-line split (2 REMAIN) may
+    still print."""
+    s = _so402757(api, with_splits=True, line18_now=line18_now, batch_18=(line18_now != "82"))
+    told = _confirm_both(s, buy_18=line18_now)
+    line_2 = [(h["line"]["qty"], h["line"]["remark"]) for h in told if h.get("line_no") == 2]
+    assert not [t for t in line_2 if t[0] == "49" and t[1].startswith("DELAY")], line_2
+    assert ("49", "CANCEL 49") in line_2 or any(t[1] == "CANCEL 49" for t in line_2), line_2
