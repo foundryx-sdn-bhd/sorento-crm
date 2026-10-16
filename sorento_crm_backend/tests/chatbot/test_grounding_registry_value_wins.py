@@ -454,3 +454,18 @@ def test_z_dropped_set_specs_is_exactly_what_w3_removed(vdb):
     assert dropped_set_specs(before, after) == [carried]
     untouched = {"entities": [_e("undrmount basin", "category"), _e("under counter", "specification", spec_key="mounting", spec_value="under_counter")]}
     assert dropped_set_specs(untouched, with_new_set_words(untouched)) == []
+
+
+@pytest.mark.parametrize(
+    "message,raw,key,value",
+    [
+        ("any wall basin", "wall", "mounting", "wall_hung"),
+        ("any chrome finish basin", "chrome finish", "finish", "chrome"),
+        ("any gunmetals basin", "gunmetals", "finish", "gunmetal"),
+    ],
+    ids=["short-form", "key-word-beside-value", "plural"],
+)
+def test_aa_a_correctly_typed_word_the_catalogue_knows_is_said_as_typed(vdb, message, raw, key, value):
+    out = _ground(vdb, message, _e("basin", "category"), _e(raw, "specification", spec_key=key, spec_value=value))["entities"]
+    [spec] = _specs(out)
+    assert (spec["spec_key"], spec["spec_value"], spec["raw"]) == (key, value, raw), spec
