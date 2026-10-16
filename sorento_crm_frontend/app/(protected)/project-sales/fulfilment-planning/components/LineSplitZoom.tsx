@@ -272,7 +272,7 @@ export function LineSplitZoom({
                 : ''
             }`}
           </div>
-          {line.acting === false ? (
+          {line.stale ? (
             <div className="mt-1">
               <AutoCountChangedBadge />
             </div>

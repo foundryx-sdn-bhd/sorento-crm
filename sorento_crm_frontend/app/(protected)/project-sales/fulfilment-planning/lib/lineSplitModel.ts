@@ -35,6 +35,8 @@ export interface SplitLine {
   pendingChange: boolean;
   /** The saved splits still act on Confirm (false: AutoCount moved on from their base). */
   acting?: boolean;
+  /** AutoCount moved on from the saved splits' base (`split_state` stale): warn. */
+  stale?: boolean;
   deliveredQty?: number;
   /** Stored splits; empty = not split (one implicit split, `splitsOf`). */
   splits: SplitDraft[];
@@ -419,6 +421,9 @@ export function fromPayload(payload: LineSplitsPayload): SplitLine[] {
     deliveredQty: Number(line.delivered_qty) || 0,
     splits: line.splits.map((split) => ({
       id: split.id,
+    stale: line.split_state
+      ? line.split_state === 'stale'
+      : line.acting === false,
       qty: Number(split.qty) || 0,
       deliveryDate: split.is_cancel ? null : split.delivery_date,
       isCancel: split.is_cancel,

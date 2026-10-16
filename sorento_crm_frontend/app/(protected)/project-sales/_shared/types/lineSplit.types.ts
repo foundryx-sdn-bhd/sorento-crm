@@ -29,6 +29,12 @@ export interface LineSplitLine {
   pending_change: boolean;
   /** The saved splits still act on Confirm; false once AutoCount moved on from their base. */
   acting?: boolean;
+  /**
+   * `acting` (Confirm applies the splits), `applied` (the Confirm that applied them has run;
+   * the plan stays the line's record) or `stale` (AutoCount moved on: base is the line's
+   * current one and the view warns "AutoCount changed").
+   */
+  split_state?: 'acting' | 'applied' | 'stale';
   delivered_qty: number;
   splits: LineSplit[];
 }

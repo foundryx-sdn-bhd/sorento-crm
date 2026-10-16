@@ -368,7 +368,7 @@ const RowHeader = React.memo(function RowHeader({
             {`Split ${splitsOf(line).length}`}
           </Badge>
         ) : null}
-        {line.acting === false ? <AutoCountChangedBadge /> : null}
+        {line.stale ? <AutoCountChangedBadge /> : null}
         {gap > 0 ? (
           <span className="text-2xs font-semibold text-destructive">{`Gap ${gap}`}</span>
         ) : gap < 0 ? (

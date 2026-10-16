@@ -38,6 +38,9 @@ class LineSplitLineOut(BaseModel):
     #: The saved splits still act on Confirm: false once AutoCount moved on from the base
     #: they were made against (the view then warns "AutoCount changed").
     acting: bool = True
+    #: `acting` / `applied` / `stale` (`LineFacts.split_state`): only a stale line warns
+    #: "AutoCount changed" and reads its current base.
+    split_state: str = "acting"
     delivered_qty: float = 0
     splits: List[LineSplitOut] = []
 

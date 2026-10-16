@@ -75,6 +75,12 @@ def change_word(*, is_cancel: bool, delivery_date: Optional[date], base_date: Op
     return WORD_DELAY if delivery_date > base_date else WORD_ADVANCE
 
 
+#: A split line's state (`LineFacts.split_state`).
+SPLIT_ACTING = "acting"
+SPLIT_APPLIED = "applied"
+SPLIT_STALE = "stale"
+
+
 def _cancelled(core: Optional[SalesOrderLine]) -> bool:
     return core is not None and (core.line_status or "open") == "cancelled"
 
@@ -107,8 +113,13 @@ class LineFacts:
         return self.pending_from is not None
 
     def base(self) -> Tuple[Decimal, Optional[date]]:
-        """`(base_qty, base_date)` by the three rules in the module docstring."""
-        if self.splits:
+        """`(base_qty, base_date)` by the three rules in the module docstring.
+
+        A saved split keeps the base it was made against while it acts or once the Confirm
+        that applied it has run (`split_state`); a STALE plan reads the line's current base,
+        so the view shows the gap against it and a save is checked against it and stores it.
+        """
+        if self.splits and self.split_state != SPLIT_STALE:
             first = self.splits[0]
             return _dec(first.base_qty), first.base_date
         return self.live_base()
@@ -127,6 +138,33 @@ class LineFacts:
 
     @property
     def splits_act(self) -> bool:
+    @property
+    def split_state(self) -> str:
+        """`acting`, `applied` or `stale` for a split line (`acting` for an unsplit one).
+
+        * acting: the line still reads from the splits' base (`splits_act`); Confirm applies
+          them;
+        * applied: no change pending and the open qty is what the splits planned on the line
+          itself - the normal state after the Confirm that applied them; their plan stays
+          the line's record (base kept, Send to purchasing prints it);
+        * stale: anything else - AutoCount moved on; the line reads its current base, the
+          engine ignores the splits and Send to purchasing prints the current row.
+        """
+        if not self.splits or self.splits_act:
+            return SPLIT_ACTING
+        if self.pending_from is None:
+            own = sum(
+                (
+                    _dec(split.qty)
+                    for split in self.splits
+                    if not split.is_cancel and str(split.sits_on_line_id or "") == self.line_id
+                ),
+                _ZERO,
+            )
+            if own == self.now_qty:
+                return SPLIT_APPLIED
+        return SPLIT_STALE
+
         """Do this line's stored splits still describe the change in front of the planner?
 
         A split was made against a base (`base_qty`, `base_date`). It acts on Confirm (moves
@@ -241,6 +279,19 @@ class LineSplitService:
 
     def _facts_for(self, criterion: Any) -> Dict[str, LineFacts]:
         rows = (
+    def printable_origin_ids(self, line_ids: Iterable[str]) -> set:
+        """Which of these ORIGIN lines print their saved splits as purchasing's record:
+        `acting` or `applied`, never `stale` (Send to purchasing)."""
+        wanted = sorted({str(i) for i in line_ids if i})
+        if not wanted:
+            return set()
+        facts = self._facts_for(ProjectSalesOrderLine.id.in_(wanted))
+        return {
+            line_id
+            for line_id, f in facts.items()
+            if f.splits and f.split_state in (SPLIT_ACTING, SPLIT_APPLIED)
+        }
+
             self.db.query(ProjectSalesOrderLine, SalesOrderLine)
             .outerjoin(
                 SalesOrderLine,
@@ -340,7 +391,8 @@ class LineSplitService:
                     "pending_change": f.pending,
                     # The saved splits still act on Confirm (`splits_act`); false once
                     # AutoCount moved on from the base they were made against.
-                    "acting": (not f.splits) or f.splits_act,
+                    "acting": f.split_state == SPLIT_ACTING,
+                    "split_state": f.split_state,
                     "delivered_qty": float(f.delivered_qty),
                     "splits": [
                         {
