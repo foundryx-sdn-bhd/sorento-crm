@@ -615,7 +615,7 @@ def customer_scope_and_staff(
     customer's documents by number, and a linked one is not held to its links on the
     in-process number lookups (owner rule 11 Oct: a customer link does not make a staff
     member a dealer). `enforced` stays the core flag, so the customer-word gate, the
-    lists and the order routes keep a linked salesperson on its links as main does
+    lists and the order routes keep a linked staff user on its links as main does
     (crew ruling (a); tests/chatbot/test_chat_report_scope_leak.py)."""
     from app.services import contact_asker
     from app.services import contact_customer_scope as scope_mod
