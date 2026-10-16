@@ -6,10 +6,14 @@ import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
+  MeasuringStrategy,
   MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
+  pointerWithin,
+  rectIntersection,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
@@ -107,6 +111,19 @@ function isTyping(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   return Boolean(element && /^(INPUT|SELECT|TEXTAREA)$/.test(element.tagName));
 }
+
+/**
+ * The cell under the POINTER wins; only with the pointer over no cell (a keyboard drag)
+ * does the dragged card's own rectangle decide. Matching the card's rectangle alone
+ * dropped one row low near the bottom of the scrolling dialog (real browser).
+ */
+const splitCollision: CollisionDetection = (args) => {
+  const hits = pointerWithin(args);
+  return hits.length > 0 ? hits : rectIntersection(args);
+};
+
+/** Cells are re-measured during a drag: the dialog scrolls (autoscroll) under it. */
+const SPLIT_MEASURING = { droppable: { strategy: MeasuringStrategy.Always } };
 
 /** Focus a card by split id; true once it holds the focus. */
 function focusCardNow(splitId: string): boolean {
@@ -813,6 +830,8 @@ export function LineSplitDialog({
             ) : (
               <DndContext
                 sensors={sensors}
+                collisionDetection={splitCollision}
+                measuring={SPLIT_MEASURING}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
                 onDragCancel={() => {
