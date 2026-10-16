@@ -722,3 +722,73 @@ def test_the_live_turn_number_equals_the_recorded_one_despite_test_and_later_row
 
     out = go(session_factory, recorded_with_history)[0]
     assert turn_no(out["turn"]["trace"]) == turn_no(recorded_with_history["trace"])
+
+
+# ------------------------------------------------------------------ review round 9 (live L3 is the recorded prompt's block)
+R9_BLOCK = ("Recent exchanges, oldest first:\nUser: SYN-R9-QUESTION\nAssistant: (the Previous response)\n"
+            "Previous response: SYN-R9-ANSWER")
+L3_START, L3_END = "Recent exchanges, oldest first:", "Product types:"
+
+
+def _prompt_event(row):
+    return next(e for e in row["trace"] if isinstance(e, dict) and e.get("kind") == "prompt_text")
+
+
+def _l3_slice(text_):
+    a = text_.index(L3_START)
+    return text_[a:text_.index(L3_END, a)]
+
+
+def _set_recorded_l3(row, new_slice, est):
+    ev = _prompt_event(row)
+    old = _l3_slice(ev["text"])
+    ev["text"] = ev["text"].replace(old, new_slice, 1)
+    for rec in _walk(row["trace"]):
+        layers = rec.get("layers")
+        if isinstance(layers, list) and any(isinstance(x, dict) and x.get("layer") == "L3" for x in layers):
+            for x in layers:
+                if x.get("layer") == "L3":
+                    x["est_tokens"] = est
+
+
+def _drop_db_history(session_factory, row):
+    db = session_factory()
+    db.query(ChatbotTurn).filter(ChatbotTurn.id != row["id"]).delete()
+    db.commit()
+
+
+def test_a_console_turn_with_no_db_history_gets_the_recorded_l3_block_verbatim(session_factory, recorded_with_history,
+                                                                              live_env):
+    from app.services.chatbot.turn.context import est_tokens
+
+    row = copy.deepcopy(recorded_with_history)
+    orig = _l3_slice(_prompt_event(row)["text"])
+    norm = next(f for f in (lambda s: s, lambda s: s.rstrip("\n")) if est_tokens(f(orig)) == _layer_tokens(row["trace"])["L3"])
+    new_slice = R9_BLOCK + "\n"
+    _set_recorded_l3(row, new_slice, est_tokens(norm(new_slice)))
+    row["envelope"]["is_test"] = True
+    _drop_db_history(session_factory, row)   # the stack DB holds none of the console history
+    out = go(session_factory, row)[0]
+    block = live_env["parse_calls"][0]
+    assert R9_BLOCK in block, "the recorded L3 block is missing from the live parser input"
+    assert _layer_tokens(out["turn"]["trace"])["L3"] == _layer_tokens(row["trace"])["L3"]
+
+
+def test_a_recorded_prompt_with_no_l3_block_wins_over_prior_turns_in_the_db(session_factory, recorded_with_history,
+                                                                           live_env):
+    row = copy.deepcopy(recorded_with_history)
+    _set_recorded_l3(row, "", 0)
+    go(session_factory, row)   # the DB still holds both prior prod turns
+    block = live_env["parse_calls"][0]
+    assert PRIOR_1 not in block and PRIOR_2 not in block, "DB history was used although the recorded prompt had none"
+    assert "Recent exchanges" not in block and "Previous response:" not in block
+
+
+def test_a_recorded_turn_without_a_prompt_text_event_still_uses_the_as_of_db_history(session_factory,
+                                                                                      recorded_with_history, live_env):
+    row = copy.deepcopy(recorded_with_history)
+    row["trace"] = [e for e in row["trace"] if not (isinstance(e, dict) and e.get("kind") == "prompt_text")]
+    go(session_factory, row)
+    block = live_env["parse_calls"][0]
+    assert PRIOR_1 in block and PRIOR_2 in block
+    assert DECOY_LATER not in block and DECOY_TEST not in block
