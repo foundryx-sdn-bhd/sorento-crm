@@ -19,6 +19,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { useCreateTagSize, useUpdateTagSize } from '../hooks/useTagSizes';
 import type { TagSizeRecord } from '../../services/tagSizeService';
@@ -36,8 +38,9 @@ export function TagSizeDialog({
   size: TagSizeRecord | null;
 }) {
   const [name, setName] = useState('');
-  const [widthMm, setWidthMm] = useState(MIN_MM);
-  const [heightMm, setHeightMm] = useState(MIN_MM);
+  const [widthMm, setWidthMm] = useState<number | null>(MIN_MM);
+  const [heightMm, setHeightMm] = useState<number | null>(MIN_MM);
+  const [checked, setChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const createMutation = useCreateTagSize();
@@ -50,24 +53,31 @@ export function TagSizeDialog({
     setWidthMm(size?.width_mm ?? MIN_MM);
     setHeightMm(size?.height_mm ?? MIN_MM);
     setError(null);
+    setChecked(false);
   }, [open, size]);
 
-  const canSubmit = name.trim().length > 0 && widthMm >= MIN_MM && heightMm >= MIN_MM && !saving;
+  const canSubmit = name.trim().length > 0 && !saving;
+  const widthError = checked ? numberFieldError(widthMm, { min: MIN_MM }) : undefined;
+  const heightError = checked ? numberFieldError(heightMm, { min: MIN_MM }) : undefined;
 
   const submit = async () => {
     setError(null);
+    setChecked(true);
+    if (numberFieldError(widthMm, { min: MIN_MM }) || numberFieldError(heightMm, { min: MIN_MM })) return;
+    const width = parseNumberDraft(widthMm) as number;
+    const height = parseNumberDraft(heightMm) as number;
     try {
       if (size) {
         await updateMutation.mutateAsync({
           id: size.id,
-          input: { name: name.trim(), width_mm: widthMm, height_mm: heightMm },
+          input: { name: name.trim(), width_mm: width, height_mm: height },
         });
         toast.success('Tag size updated');
       } else {
         await createMutation.mutateAsync({
           name: name.trim(),
-          width_mm: widthMm,
-          height_mm: heightMm,
+          width_mm: width,
+          height_mm: height,
         });
         toast.success('Tag size created');
       }
@@ -102,22 +112,22 @@ export function TagSizeDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">
               <Label htmlFor="ts-width">Width (mm)</Label>
-              <Input
+              <NumberInput
                 id="ts-width"
-                type="number"
                 value={widthMm}
                 min={MIN_MM}
-                onChange={(e) => setWidthMm(parseFloat(e.target.value) || 0)}
+                onValueChange={setWidthMm}
+                error={widthError}
               />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="ts-height">Height (mm)</Label>
-              <Input
+              <NumberInput
                 id="ts-height"
-                type="number"
                 value={heightMm}
                 min={MIN_MM}
-                onChange={(e) => setHeightMm(parseFloat(e.target.value) || 0)}
+                onValueChange={setHeightMm}
+                error={heightError}
               />
             </div>
           </div>

@@ -58,7 +58,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -599,14 +600,24 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
   // saved) only on blur, in `commitManualLinePrice`.
   const [manualPriceDraft, setManualPriceDraft] = useState<Record<string, string>>({});
 
+  // A typed price that is not usable is not saved and not rewritten: the box keeps it and says why.
+  const [manualPriceError, setManualPriceError] = useState<Record<string, string | undefined>>({});
+
   const setManualLinePrice = useCallback((lineId: string, value: string) => {
     setManualPriceDraft((prev) => ({ ...prev, [lineId]: value }));
+    setManualPriceError((prev) => (prev[lineId] ? { ...prev, [lineId]: undefined } : prev));
   }, []);
 
   const commitManualLinePrice = useCallback(
     (lineId: string) => {
       const draft = manualPriceDraft[lineId];
-      const manual = draft === undefined || draft === '' ? null : Number(draft);
+      // Blank clears the override (no manual price); anything else must be a price.
+      const message = numberFieldError(draft, { min: 0.01, optional: true });
+      if (message) {
+        setManualPriceError((prev) => ({ ...prev, [lineId]: message }));
+        return;
+      }
+      const manual = parseNumberDraft(draft);
       setLinePriceOverrides((prev) => ({
         ...prev,
         [lineId]: { promotion_id: null, manual_sell_price: manual, locked: true },
@@ -1085,6 +1096,7 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
                                 placeholder="No covering promotion"
                                 emptyMessage="No promotion covers this line."
                                 disabled={savingLinePrice === line.id}
+                                error={manualPriceError[line.id]}
                               />
                             ) : (
                               <p className="text-sm font-medium">
@@ -1114,8 +1126,7 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
                                 ).toLocaleString('en-MY')}
                               </p>
                             ) : canEditLinePrice ? (
-                              <Input
-                                type="number"
+                              <NumberInput
                                 inputMode="decimal"
                                 // `ManualSellPrice` is `gt=0` with 2 decimal
                                 // places, so 0 is a refusal, not a bound.
