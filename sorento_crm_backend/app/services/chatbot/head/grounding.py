@@ -123,9 +123,10 @@ def load_vocabulary(db: "Session") -> Vocabulary:
     `merged_synonyms`, `merged_allowed_values`, `display_spec_value`)."""
     from app.models.product import ProductCategory
     from app.models.resources import AttachmentType
-    from app.services.product_class_signal import CLASS_SYNONYMS, stored_class_labels
+    from app.services.product_class_signal import stored_class_labels
     from app.services.product_spec_registry import (
         active_registry,
+        class_synonyms,
         display_spec_value,
         merged_allowed_values,
         merged_synonyms,
@@ -136,7 +137,7 @@ def load_vocabulary(db: "Session") -> Vocabulary:
     type_phrases: set[str] = set()
     class_words: set[str] = set()
     class_phrases: set[str] = set()
-    for label, synonyms in CLASS_SYNONYMS.items():
+    for label, synonyms in class_synonyms(db).items():
         class_phrases.update(" ".join(_words(p)) for p in [label, *synonyms])
     class_phrases.update(" ".join(_words(label)) for label in stored_class_labels(db))
     for label, synonyms in db.query(ProductCategory.class_label, ProductCategory.search_synonyms).filter(
@@ -147,8 +148,6 @@ def load_vocabulary(db: "Session") -> Vocabulary:
     for row in active_registry(db):
         synonyms = merged_synonyms(row)
         if row.spec_key == "class":
-            for value, phrases in synonyms.items():
-                class_phrases.update(" ".join(_words(p)) for p in [value, *phrases])
             continue
         if row.spec_key == "product_type":
             for value, phrases in synonyms.items():
@@ -521,17 +520,22 @@ def _names_a_type(db: "Session", text: str, vocab: Vocabulary) -> bool:
 
 def names_a_class_label(db: "Session", raw: str) -> bool:
     """Is `raw`, word for word, the name of a class (a class label staff or products carry, or
-    a class of the built-in vocabulary), never one of its synonyms?"""
+    a class the seed names), never one of its synonyms?"""
     said = " ".join(_words(raw))
     return any(" ".join(_words(label)) == said for label in class_label_names(db))
 
 
 def class_label_names(db: "Session") -> list[str]:
-    """Every class name: the built-in vocabulary's, the ones products carry, and staff's."""
-    from app.models.product import ProductCategory
-    from app.services.product_class_signal import CLASS_SYNONYMS, stored_class_labels
+    """Every class name: the seed's class choices, the ones products carry, and staff's.
 
-    labels = [*CLASS_SYNONYMS, *stored_class_labels(db)]
+    The seed's labels, not the registry row's: this list is printed on the parser's own
+    `Product types:` line (`turn_runtime.product_type_names`), and chat fix PR-A changes no
+    parser input (crew round 2; the registry-read version rides PR-A2)."""
+    from app.models.product import ProductCategory
+    from app.services.product_class_signal import stored_class_labels
+    from app.services.product_spec_registry import shipped_class_synonyms
+
+    labels = [*shipped_class_synonyms(), *stored_class_labels(db)]
     labels += [r[0] for r in db.query(ProductCategory.class_label).filter(ProductCategory.class_label.isnot(None))]
     return labels
 
@@ -742,9 +746,10 @@ def ground(
                 if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() not in _SPEC_HINTS
             ]
             grounded = _as_typed(_validate(entity, vocab), entity, message, vocab, others)
-            if not grounded and raw and str(verdict.get("domain_hint") or "").strip().lower() == "promotion":
-                # PROMO-SUBJECT-FILTER AC-38: on a promotion ask a qualifier no listed key
-                # holds is an unknown descriptor, asked back as typed, never dropped.
+            if not grounded and raw:
+                # PROMO-SUBJECT-FILTER AC-38, on every domain since chat fix PR-A (AC-A6): a
+                # qualifier no listed key holds is an unknown descriptor, said back as typed
+                # ("Couldn't find: <word>"), never dropped to answer the ask unfiltered.
                 grounded = [Grounded("", "", raw)]
             add(grounded, entity)
             notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in grounded]})

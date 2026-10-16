@@ -516,7 +516,7 @@ def test_w3_a_new_attribute_word_on_the_same_class_starts_a_new_set(chat, world,
     # Amended to the round 8 ruling on PR #833 (owner retest of round 7, 27 Sep 2026): the
     # header is the product-code answer's own intro naming the described set and its count.
     # Amended to fix round 9 on PR #833: the leg is said once.
-    assert "Here's what you want: bathtubs with incoming stock (2)" == one_line_header(text), text
+    assert "Here's what you want: products with incoming stock (2)" == one_line_header(text), text
     assert _codes_in(text, world) == _codes(world["srt_tubs"]), text
 
 
@@ -563,7 +563,7 @@ def test_w4_incoming_names_the_other_brands_with_incoming(chat, world):
     text = chat.say("which bathtub has incoming", _ask("incoming", "bathtub", "which bathtub has incoming"))
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): no brand named means every
     # brand, never a silent default: the Mocha tub is in the set.
-    assert one_line_header(text) == "Here's what you want: bathtubs with incoming stock (3)", text
+    assert one_line_header(text) == "Here's what you want: products with incoming stock (3)", text
     assert mocha_tub.product_code in text and "Other brands" not in text, text
 
 

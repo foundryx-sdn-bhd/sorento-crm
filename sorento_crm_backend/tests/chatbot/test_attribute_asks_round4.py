@@ -403,7 +403,7 @@ def test_r4_a_miss_with_nothing_in_any_value_says_so(chat, world):
     )
     # Amended to fix round 9 on PR #833: the one reply structure; nothing to list.
     assert text == (
-        "Here's what you want: gunmetal bathtubs with certificates\n\n"
+        "Here's what you want: gunmetal products with certificates\n\n"
         "Couldn't find: gunmetal (finish or colour). Would you like me to escalate to marketing product team?"
     ), text
 
@@ -453,7 +453,7 @@ def test_r5_a_reply_that_is_not_an_option_is_its_own_question(chat, world):
     chat.say("any water tap basin", _ask("stock", "water tap basin", "any water tap basin"))
     text = chat.say("which bathtub has incoming", _ask("incoming", "bathtub", "which bathtub has incoming"))
     # Amended to fix round 9 on PR #833: every brand (no silent default).
-    assert "Here's what you want: bathtubs with incoming stock (" in _header(text)[-1], text
+    assert "Here's what you want: products with incoming stock (" in _header(text)[-1], text
     # And the clarify is spent: a later bare "tap" is not read as its answer.
     later = chat.say("tap", _product_ask("tap", "tap"))
     assert "taps with stock" not in later, later
