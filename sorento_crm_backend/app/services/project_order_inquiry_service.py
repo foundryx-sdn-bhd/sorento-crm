@@ -47,10 +47,10 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import event, func, or_, tuple_
+from sqlalchemy import and_, event, func, or_, tuple_
 from sqlalchemy.orm import Session
 
 from app.models.base import company_scope, get_company_scope
@@ -98,6 +98,7 @@ from app.models.project_so import (
     OrderInquiry,
     OrderInquiryLink,
     OrderInquiryRaise,
+    OrderInquiryReleasedLink,
     OrderInquiryRow,
     OrderInquirySuggestedLink,
     ProjectSalesOrder,
@@ -3595,8 +3596,20 @@ class ProjectOrderInquiryService:
                 # what `pair_needs` read, never a second, re-derived capacity
                 # query (`_book_targets_map` is retired).
                 book_targets_by_line: Dict[str, List[Tuple[str, dict]]] = {}
+                # OI-RESERVE-RECEIVED: targets a row released to a CS reserve are never
+                # re-paired nor displaced onto.
+                excluded: Dict[str, set] = {}
+                for row_id_, po_id_, spo_id_ in self.db.query(
+                    OrderInquiryReleasedLink.row_id,
+                    OrderInquiryReleasedLink.po_line_id,
+                    OrderInquiryReleasedLink.spo_allocation_id,
+                ).filter(OrderInquiryReleasedLink.row_id.in_([n.key for n in needs])):
+                    excluded.setdefault(str(row_id_), set()).update(
+                        str(t) for t in (po_id_, spo_id_) if t
+                    )
                 links_by_key, _not_linkable = pair_needs(
                     self.db, needs, bought_rows, book_targets_out=book_targets_by_line,
+                    excluded_targets=excluded,
                 )
 
                 # D3: a need `pair_needs` could not fully satisfy might be blocked
@@ -3631,7 +3644,9 @@ class ProjectOrderInquiryService:
                     # Capacity has moved - the SAME needs, re-paired, is the only way
                     # the freed quantity actually reaches the book row (never a
                     # hand-written write here, which would be a second pairing rule).
-                    links_by_key, _not_linkable = pair_needs(self.db, needs, bought_rows)
+                    links_by_key, _not_linkable = pair_needs(
+                        self.db, needs, bought_rows, excluded_targets=excluded
+                    )
 
                 touched: List[OrderInquiryRow] = []
                 for row_id, held in links_by_key.items():
@@ -3851,7 +3866,18 @@ class ProjectOrderInquiryService:
                 .scalar()
             )
 
-        used_now = _ZERO
+        # OI-RESERVE-RECEIVED: quantity released to a CS reserve stays used up.
+        released_qty = _dec(
+            self.db.query(func.coalesce(func.sum(OrderInquiryReleasedLink.qty), 0))
+            .filter(
+                or_(
+                    OrderInquiryReleasedLink.po_line_id == target_id,
+                    OrderInquiryReleasedLink.spo_allocation_id == target_id,
+                )
+            )
+            .scalar()
+        )
+        used_now = released_qty
         protected_qty = _ZERO
         displaceable: List[Tuple[OrderInquiryLink, OrderInquiryRow]] = []
         for link in links:
@@ -3881,7 +3907,7 @@ class ProjectOrderInquiryService:
                 continue
             displaceable.append((link, row))
 
-        max_gain = min(amount_needed, capacity - protected_qty)
+        max_gain = min(amount_needed, capacity - protected_qty - released_qty)
         if max_gain <= _ZERO:
             return _ZERO, []
         to_free = max_gain - (capacity - used_now)
@@ -4078,8 +4104,41 @@ class ProjectOrderInquiryService:
         qty: Optional[Decimal] = None,
         borrow_hole: Optional[bool] = None,
     ) -> None:
-        """Queue one line of the `order_inquiry_handover` parallel-run email
-        (`PLAN-scm-oi-handover-email.md` S0-S3), fired post-commit by
+        """Queue `handover_item`'s line on this write's handover email, tagged with the
+        transaction it was earned under (see `handover_item` for the line itself)."""
+        item = self.handover_item(
+            row,
+            kind=kind,
+            was=was,
+            actor_user_id=actor_user_id,
+            qty=qty,
+            borrow_hole=borrow_hole,
+        )
+        #: Which savepoint this was earned under (C2, `_notify_purchasing`'s own rule), so
+        #: a sibling order's rollback cannot discard it.
+        item["tx_chain"] = tx_chain = _transaction_chain(self.db)
+        #: The OUTERMOST entry of that same chain - the ROOT transaction, not the innermost
+        #: savepoint (AC-H27/AC-H28, review round 2 ruling) - is what
+        #: `_fire_pending_handover` waits to see CONCLUDE BY COMMIT before firing, however
+        #: many savepoints this line's own write nests inside.
+        item["tx"] = tx_chain[-1] if tx_chain else None
+        self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(item)
+
+    def handover_item(
+        self,
+        row: OrderInquiryRow,
+        *,
+        kind: str,
+        was: Optional[Dict[str, Any]] = None,
+        actor_user_id: Optional[str] = None,
+        qty: Optional[Decimal] = None,
+        borrow_hole: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """One line of the `order_inquiry_handover` parallel-run email, built but not
+        queued: `_record_handover` queues it, and "Send to purchasing"
+        (`oi_handover_resend`) rebuilds an OI's open rows with it.
+
+        Queued lines (`PLAN-scm-oi-handover-email.md` S0-S3) are fired post-commit by
         `_fire_pending_handover` - the same `Session.info` queue this file already uses
         for `_dispatch_changed_with_links` / `_notify_purchasing` above, and for the same
         reason: several call sites here run deep inside the atomic confirmation
@@ -4175,58 +4234,48 @@ class ProjectOrderInquiryService:
             "remark": handover_remark(kind, row, was, qty),
             "was": _format_handover_was(was),
         }
-        self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(
-            {
-                #: Which row this line tells.
-                "row_id": str(row.id),
-                #: The project line this row is on, so a Confirm can replace a SAVED line's
-                #: row lines with its one decision line (`record_saved_line`).
-                "so_line_id": str(row.so_line_id) if row.so_line_id else None,
-                "order_inquiry_id": str(row.order_inquiry_id),
-                "pso_id": pso_id,
-                "so_number": so_number,
-                "customer": facts.get("customer"),
-                "project": facts.get("project"),
-                #: The subject's location: what LOCATION prints (a Borrow's, the line's own).
-                "stock_location": location,
-                #: AC-2/AC-3: what `_build_handover_context` sorts the whole queue by -
-                #: `so_number` above, then these two.
-                "line_no": line_no,
-                #: #1312: the core sales-order line this row's own line carries -
-                #: `_fire_pending_handover` keys its `handover_attachments` read on
-                #: this, and `_build_handover_context` reads it back to print/attach
-                #: what that returns. `None` for a row with no `so_line_id`, same as
-                #: `line_no` above.
-                "core_line_id": core_line_id,
-                "item_code": row.item_code,
-                #: Never empty for a line that moved (crew, 12 Oct): QTY CHANGE.
-                #: What this line adds to purchasing's order, as a number rather than read
-                #: back off REMARK's words (`record_saved_lines` folds it).
-                "adds_order": str(_handover_adds_order(kind, row, was, qty)),
-                #: A Borrow's hole raised, resized or cancelled: `record_saved_lines` reads
-                #: a donor move or reshuffle as the one hole settled (`_hole_move`).
-                "kind": kind,
-                "borrow_hole": (
-                    _is_borrow_order_back(row) if borrow_hole is None else borrow_hole
-                ),
-                "verb_keys": _handover_verb_keys(kind, row, was, qty)
-                or (
-                    ["QTY_CHANGE"]
-                    if (was or {}).get("qty") or (was or {}).get("delivery_date")
-                    else []
-                ),
-                "line": line,
-                "actor": self._handover_actor(resolved_actor_id),
-                #: Which savepoint this was earned under (C2, `_notify_purchasing`'s own
-                #: rule), so a sibling order's rollback cannot discard it.
-                "tx_chain": (tx_chain := _transaction_chain(self.db)),
-                #: The OUTERMOST entry of that same chain - the ROOT transaction, not
-                #: the innermost savepoint (AC-H27/AC-H28, review round 2 ruling) - is
-                #: what `_fire_pending_handover` waits to see CONCLUDE BY COMMIT before
-                #: firing, however many savepoints this line's own write nests inside.
-                "tx": tx_chain[-1] if tx_chain else None,
-            }
-        )
+        return {
+            #: Which row this line tells.
+            "row_id": str(row.id),
+            #: The project line this row is on, so a Confirm can replace a SAVED line's
+            #: row lines with its one decision line (`record_saved_line`).
+            "so_line_id": str(row.so_line_id) if row.so_line_id else None,
+            "order_inquiry_id": str(row.order_inquiry_id),
+            "pso_id": pso_id,
+            "so_number": so_number,
+            "customer": facts.get("customer"),
+            "project": facts.get("project"),
+            #: The subject's location: what LOCATION prints (a Borrow's, the line's own).
+            "stock_location": location,
+            #: AC-2/AC-3: what `_build_handover_context` sorts the whole queue by -
+            #: `so_number` above, then these two.
+            "line_no": line_no,
+            #: #1312: the core sales-order line this row's own line carries -
+            #: `_fire_pending_handover` keys its `handover_attachments` read on
+            #: this, and `_build_handover_context` reads it back to print/attach
+            #: what that returns. `None` for a row with no `so_line_id`, same as
+            #: `line_no` above.
+            "core_line_id": core_line_id,
+            "item_code": row.item_code,
+            #: Never empty for a line that moved (crew, 12 Oct): QTY CHANGE.
+            #: What this line adds to purchasing's order, as a number rather than read
+            #: back off REMARK's words (`record_saved_lines` folds it).
+            "adds_order": str(_handover_adds_order(kind, row, was, qty)),
+            #: A Borrow's hole raised, resized or cancelled: `record_saved_lines` reads
+            #: a donor move or reshuffle as the one hole settled (`_hole_move`).
+            "kind": kind,
+            "borrow_hole": (
+                _is_borrow_order_back(row) if borrow_hole is None else borrow_hole
+            ),
+            "verb_keys": _handover_verb_keys(kind, row, was, qty)
+            or (
+                ["QTY_CHANGE"]
+                if (was or {}).get("qty") or (was or {}).get("delivery_date")
+                else []
+            ),
+            "line": line,
+            "actor": self._handover_actor(resolved_actor_id),
+        }
 
     def record_saved_lines(
         self,
@@ -8394,6 +8443,28 @@ class ProjectOrderInquiryService:
             .group_by(OrderInquiryLink.spo_allocation_id)
             .all()
         }
+        # OI-RESERVE-RECEIVED (AC-RR-30): a received link released to a CS reserve keeps
+        # its quantity used up on the target - the stock went to other orders. The row's
+        # own sums never read this table; only the per-target tally does.
+        for target_id, qty in (
+            self.db.query(
+                OrderInquiryReleasedLink.po_line_id, func.sum(OrderInquiryReleasedLink.qty)
+            )
+            .filter(OrderInquiryReleasedLink.po_line_id.isnot(None))
+            .group_by(OrderInquiryReleasedLink.po_line_id)
+            .all()
+        ):
+            by_po[str(target_id)] = by_po.get(str(target_id), _ZERO) + _dec(qty)
+        for target_id, qty in (
+            self.db.query(
+                OrderInquiryReleasedLink.spo_allocation_id,
+                func.sum(OrderInquiryReleasedLink.qty),
+            )
+            .filter(OrderInquiryReleasedLink.spo_allocation_id.isnot(None))
+            .group_by(OrderInquiryReleasedLink.spo_allocation_id)
+            .all()
+        ):
+            by_spo[str(target_id)] = by_spo.get(str(target_id), _ZERO) + _dec(qty)
         self._linked_by_target_cache = (by_po, by_spo)
         return by_po, by_spo
 
@@ -11634,6 +11705,16 @@ class ProjectOrderInquiryService:
         for link, _row, _line in links:
             key = str(link.po_line_id)
             claimed[key] = claimed.get(key, _ZERO) + _dec(link.qty)
+        # AC-RR-34: a line whose received link was released to a CS reserve stays claimed.
+        for line_id, qty in (
+            self.db.query(
+                OrderInquiryReleasedLink.po_line_id, func.sum(OrderInquiryReleasedLink.qty)
+            )
+            .filter(OrderInquiryReleasedLink.po_line_id.in_(list(location_of)))
+            .group_by(OrderInquiryReleasedLink.po_line_id)
+            .all()
+        ):
+            claimed[str(line_id)] = claimed.get(str(line_id), _ZERO) + _dec(qty)
 
         moved = 0
         touched: List[OrderInquiryRow] = []
@@ -11788,8 +11869,115 @@ class ProjectOrderInquiryService:
             self._refresh_inquiry_states({row.order_inquiry_id for row in rows})
         return len(rows)
 
+    def po_lines_with_open_chained_spo(self, po_line_ids: Sequence[str]) -> set:
+        """OI-RESERVE-RECEIVED (AC-RR-6, lane-local): of these PO lines, the ids that still
+        have an OPEN shipping order chaining from them (`from_po_number` AND
+        `from_po_line_ref` name the line): the line reads closed but its goods have not
+        landed. One query for the whole set."""
+        wanted = [str(i) for i in po_line_ids if i]
+        if not wanted:
+            return set()
+        rows = (
+            self.db.query(PurchaseOrderLine.id)
+            .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id)
+            .join(
+                SPOAllocation,
+                and_(
+                    SPOAllocation.from_po_number == PurchaseOrder.po_number,
+                    SPOAllocation.from_po_line_ref == PurchaseOrderLine.source_ref,
+                    SPOAllocation.company_id == PurchaseOrderLine.company_id,
+                ),
+            )
+            .outerjoin(
+                InboundShipment, InboundShipment.id == SPOAllocation.inbound_shipment_id
+            )
+            .filter(
+                PurchaseOrderLine.id.in_(wanted),
+                PurchaseOrderLine.source_ref.isnot(None),
+                PurchaseOrderLine.source_ref != "",
+                *spo_supply.open_incoming_clauses(),
+                *spo_supply.visible_line_clauses(),
+            )
+            .distinct()
+            .all()
+        )
+        return {str(line_id) for (line_id,) in rows}
+
+    def received_links_of(self, row_id: str) -> List[OrderInquiryLink]:
+        """The row's PO/SPO links that name a FULLY RECEIVED document - the one "received"
+        test (`_received_documents_for`) the worklist's received pill also states."""
+        links = [
+            link
+            for link in self._links_of(row_id)
+            if link.reserve_request_row_id is None
+        ]
+        received = self._received_documents_for(links)
+        blocked = self.po_lines_with_open_chained_spo(
+            [link.po_line_id for link in links if link.po_line_id]
+        )
+        return [
+            link
+            for link in links
+            if str(link.id) in received and str(link.po_line_id or "") not in blocked
+        ]
+
+    def release_received_links(
+        self,
+        row: OrderInquiryRow,
+        *,
+        reserve_request_row_id: str,
+        reserved_qty: Decimal,
+        location: str,
+        actor_user_id: Optional[str],
+    ) -> List[OrderInquiryReleasedLink]:
+        """OI-RESERVE-RECEIVED: give up EVERY received link on the row for a CS reserve.
+
+        Each link is recorded in `order_inquiry_released_links` (so the target stays used
+        up), then deleted the way an unlink does, with its own note. Open links stay."""
+        # Locked, so a concurrent unlink cannot leave a released row for a link that is gone.
+        # Row first, then its links: the same order an unlink takes.
+        self.db.query(OrderInquiryRow.id).filter(
+            OrderInquiryRow.id == row.id
+        ).with_for_update().all()
+        self.db.query(OrderInquiryLink.id).filter(
+            OrderInquiryLink.row_id == row.id
+        ).with_for_update().all()
+        links = self.received_links_of(row.id)
+        if not links:
+            return []
+        released: List[OrderInquiryReleasedLink] = []
+        for link in links:
+            entry = OrderInquiryReleasedLink(
+                id=str(uuid.uuid4()),
+                company_id=row.company_id,
+                row_id=row.id,
+                reserve_request_row_id=reserve_request_row_id,
+                po_line_id=link.po_line_id,
+                spo_allocation_id=link.spo_allocation_id,
+                document=link.document,
+                qty=link.qty,
+                released_by=actor_user_id,
+            )
+            self.db.add(entry)
+            released.append(entry)
+        self.db.flush()
+
+        def _stamp(link: OrderInquiryLink) -> str:
+            doc = link.document or "document"
+            return (
+                f"Released {doc} (received, stock used by other orders) "
+                f"for CS reserve {_qty_str(reserved_qty)} @ {location}"
+            )
+
+        self._remove_links(row, links, stamp_for=_stamp)
+        return released
+
     def _remove_links(
-        self, row: OrderInquiryRow, links: Sequence[OrderInquiryLink]
+        self,
+        row: OrderInquiryRow,
+        links: Sequence[OrderInquiryLink],
+        *,
+        stamp_for: Optional[Callable[[OrderInquiryLink], str]] = None,
     ) -> None:
         """Delete these links and the audit claim each one put up.
 
@@ -11802,6 +11990,8 @@ class ProjectOrderInquiryService:
         for link in links:
             document = link.document
             stamp = f"Unlinked from {document}" if document else "Unlinked"
+            if stamp_for is not None:
+                stamp = stamp_for(link)
             row.note = f"{row.note}; {stamp}" if row.note else stamp
             # By ID, not by identity. `delete_own_claim` matches on (SO number, PO number,
             # item) and would have taken down the claim behind a SIBLING link on the same
@@ -12400,6 +12590,111 @@ def _build_handover_context(
     return context, pending[0]["order_inquiry_id"]
 
 
+_XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _handover_excel_names(db: Session, inquiry_ids: Sequence[str]) -> List[Tuple[str, Any]]:
+    """`(inquiry_id, header)` for each named OI that has a company, read unscoped: the ids
+    only ever come from rows the caller already wrote or was allowed to read."""
+    out: List[Tuple[str, Any]] = []
+    with company_scope(db, None):
+        for inquiry_id in inquiry_ids:
+            header = db.get(OrderInquiry, inquiry_id)
+            if header is not None and header.company_id:
+                out.append((str(inquiry_id), header))
+    return out
+
+
+def store_handover_excel(
+    db: Session,
+    context: Dict[str, Any],
+    inquiry_ids: Sequence[str],
+    *,
+    row_ids: Optional[Sequence[str]] = None,
+) -> None:
+    """Render and store each named OI's own Excel export (the workbook the detail page's
+    Export Excel makes) and put it first in the context's `email_attachments` (owner ruling,
+    16 Oct: the handover carries the OI Excel). `row_ids` limits the workbook to those rows
+    (Send to purchasing with lines ticked); `None` is the whole OI, as Export Excel prints it.
+
+    The render runs in a SAVEPOINT: a database error inside it is rolled back to there, so
+    the session the email is then sent on stays usable (review B1). Any failure is logged and
+    that workbook left out: the email still goes, the same rule as the per-line files."""
+    from app.services import storage_router
+    from app.services.order_inquiry_worklist_service import OrderInquiryWorklistService
+
+    stored: List[Dict[str, Any]] = []
+    for inquiry_id, header in _handover_excel_names(db, inquiry_ids):
+        filename = f"{header.inquiry_no}.xlsx"
+        try:
+            with company_scope(db, frozenset({str(header.company_id)})), db.begin_nested():
+                _name, file_bytes = OrderInquiryWorklistService(db).export_xlsx(
+                    inquiry_id=inquiry_id,
+                    **({"row_ids": list(row_ids)} if row_ids is not None else {}),
+                )
+            provider = storage_router.default_provider()
+            stored_key, _signed = storage_router.get_backend(provider).upload_file(
+                file_content=file_bytes,
+                file_path=f"exports/order-inquiry/handover/{uuid.uuid4()}/{filename}",
+                content_type=_XLSX_CONTENT_TYPE,
+            )
+            stored.append(
+                {
+                    "filename": filename,
+                    "storage_provider": provider,
+                    "storage_key": stored_key,
+                    "optional": True,
+                }
+            )
+        except Exception:  # noqa: BLE001 - a missing workbook never stops the email
+            logger.exception(
+                "order_inquiry_handover: could not attach the Excel of %s; sending without it",
+                inquiry_id,
+            )
+    if stored:
+        context["email_attachments"] = stored + list(context.get("email_attachments") or [])
+
+
+def build_handover_email(
+    db: Session, items: Sequence[Dict[str, Any]], *, store_excel: bool = True
+) -> Optional[Tuple[Dict[str, Any], str]]:
+    """THE handover email build, shared by the automatic send after a confirm
+    (`_fire_pending_handover`) and by "Send to purchasing" (`oi_handover_resend`), so both
+    carry the same lines, the same per-line SO files and the same OI Excel.
+
+    `items` are `ProjectOrderInquiryService.handover_item` dicts. Returns `_build_handover_
+    context`'s `(context, source_id)` plus `handover.excel_files` (the workbook names);
+    `None` on no items. `store_excel=False` names the workbooks without rendering or storing
+    them: a preview, a confirm with no enabled automation to send it, or a resend that stores
+    later (`store_handover_excel`) only for an OI that has someone to send to."""
+    # #1312: whatever files the lines hold. A failure here never stops the email itself:
+    # on any error the handover still sends, just without those files.
+    attachments_by_line: Dict[str, List[Dict[str, Any]]] = {}
+    core_line_ids = [item["core_line_id"] for item in items if item.get("core_line_id")]
+    if core_line_ids:
+        try:
+            from app.services import so_line_attachments
+
+            attachments_by_line = so_line_attachments.handover_attachments(db, core_line_ids)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "order_inquiry_handover: could not load line attachments; sending without files"
+            )
+    built = _build_handover_context(items, attachments_by_line)
+    if built is None:
+        return None
+    context, source_id = built
+    inquiry_ids = list(
+        dict.fromkeys(item["order_inquiry_id"] for item in items if item.get("order_inquiry_id"))
+    )
+    context["handover"]["excel_files"] = [
+        f"{header.inquiry_no}.xlsx" for _id, header in _handover_excel_names(db, inquiry_ids)
+    ]
+    if store_excel:
+        store_handover_excel(db, context, inquiry_ids)
+    return context, source_id
+
+
 def _build_undo_context(
     pending: Sequence[Dict[str, Any]]
 ) -> Optional[Tuple[Dict[str, Any], str]]:
@@ -12658,29 +12953,18 @@ def register_order_inquiry_post_commit_dispatch() -> None:
 
         fresh = SessionLocal()
         try:
-            # #1312: whatever files this write's lines hold, read on the FRESH session
-            # (the root has committed, so the uploads a concurrent upload wrote are
-            # visible here) - a failure here must never stop the email itself, so it
-            # is caught and logged INSIDE this try, separately from the dispatch below:
-            # on any error the handover still sends, just without attachments.
-            attachments_by_line: Dict[str, List[Dict[str, Any]]] = {}
-            core_line_ids = [
-                item["core_line_id"] for item in concluded if item.get("core_line_id")
-            ]
-            if core_line_ids:
-                try:
-                    from app.services import so_line_attachments
+            # #1312 + OI Excel (owner, 16 Oct): read on the FRESH session (the root has
+            # committed, so a concurrent upload's files are visible here); the one build
+            # "Send to purchasing" uses too.
+            # The workbook is stored only when an enabled automation will send it (S2).
+            from app.services import park_send
 
-                    attachments_by_line = so_line_attachments.handover_attachments(
-                        fresh, core_line_ids
-                    )
-                except Exception:  # noqa: BLE001
-                    logger.exception(
-                        "order_inquiry_handover: could not load line attachments; "
-                        "sending without files"
-                    )
-
-            built = _build_handover_context(concluded, attachments_by_line)
+            built = build_handover_email(
+                fresh,
+                concluded,
+                store_excel=park_send.first_automation(fresh, "order_inquiry_handover")
+                is not None,
+            )
             if built is None:
                 return
             context, source_id = built

@@ -38,6 +38,7 @@ export const PurchaseRequestSchema = z.object({
   // AC-L3. The portal already offers this picker to contacts (AC-F4); this is the office-side
   // half, so a form typed in by CS can carry the same reportable link.
   project_id: z.string().uuid().optional().nullable(),
+  customer_id: z.string().optional().nullable(),
   purpose: z.string().max(500).optional().nullable(),
   delivery_address: z.string().max(2000).optional().nullable(),
   total_project_value: projectValueSchema,

@@ -59,6 +59,17 @@ vi.mock(
   },
 );
 
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/project-sales/series/s1',
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+const listingPrefs = vi.fn((_args: unknown) => ({ resetToDefaults: async () => {}, isLoading: false }));
+vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
+  useListingColumnPreferences: (args: unknown) => listingPrefs(args),
+}));
+
 import { SeriesProductsTable } from './SeriesProductsTable';
 
 function row(overrides: Partial<SeriesProductRow> = {}): SeriesProductRow {
@@ -72,6 +83,11 @@ function row(overrides: Partial<SeriesProductRow> = {}): SeriesProductRow {
     in_scope: false,
     ...overrides,
   };
+}
+
+/** The service answers one server page: `{ data, total }`. */
+function serverPage(rows: SeriesProductRow[], total = rows.length) {
+  return { data: rows, total };
 }
 
 function renderTable() {
@@ -92,7 +108,7 @@ beforeEach(() => {
 
 describe('SeriesProductsTable', () => {
   it('says the series names nothing yet, and still offers a way to add', async () => {
-    getSeriesProductRows.mockResolvedValue([]);
+    getSeriesProductRows.mockResolvedValue(serverPage([]));
     renderTable();
 
     expect(await screen.findByText(/no products yet/i)).toBeInTheDocument();
@@ -100,12 +116,12 @@ describe('SeriesProductsTable', () => {
   });
 
   it('shows a priced row with the floor the server computed', async () => {
-    getSeriesProductRows.mockResolvedValue([
+    getSeriesProductRows.mockResolvedValue(serverPage([
       row({ selling_price: '220.00', max_discount_pct: '6.00', derived_floor: '206.80' }),
-    ]);
+    ]));
     renderTable();
 
-    await waitFor(() => expect(getSeriesProductRows).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(getSeriesProductRows).toHaveBeenCalledWith('s1', expect.objectContaining({ page: 1, limit: 50 })));
     expect(await screen.findByDisplayValue('220.00')).toBeInTheDocument();
     expect(screen.getByDisplayValue('6.00')).toBeInTheDocument();
     // Rendered, not recalculated - and carrying its unit, because a bare `206.80` sitting
@@ -117,9 +133,9 @@ describe('SeriesProductsTable', () => {
     // The unit belongs IN the row, not only in the header: the header scrolls away on a
     // series of ninety products, and two adjacent columns of bare decimals then say nothing
     // about which is money.
-    getSeriesProductRows.mockResolvedValue([
+    getSeriesProductRows.mockResolvedValue(serverPage([
       row({ selling_price: '220.00', max_discount_pct: '6.00', derived_floor: '206.80' }),
-    ]);
+    ]));
     renderTable();
 
     await screen.findByDisplayValue('220.00');
@@ -131,13 +147,14 @@ describe('SeriesProductsTable', () => {
     expect(screen.getByDisplayValue('220.00')).toBeInTheDocument();
   });
 
-  it('filters the table by code, and says how much it is hiding', async () => {
-    // Ctrl-F is not a substitute: the browser finds only what is scrolled into the DOM, so
-    // searching a long series for a code answers 0/0 for a product that is plainly there.
-    getSeriesProductRows.mockResolvedValue([
+  it('D3: search is sent to the server (debounced), not filtered in the browser, and the line reads N of TOTAL', async () => {
+    const two = [
       row({ product_id: 'p1', product_code: 'BT009', product_name: 'Bottle trap' }),
       row({ product_id: 'p2', product_code: 'CB1500SS', product_name: 'Kitchen sink' }),
-    ]);
+    ];
+    getSeriesProductRows.mockImplementation(async (_id: string, opts?: { query?: string }) =>
+      opts?.query ? serverPage([two[0]], 1) : serverPage(two, 2),
+    );
     renderTable();
 
     await screen.findByText('Bottle trap');
@@ -147,31 +164,42 @@ describe('SeriesProductsTable', () => {
       target: { value: 'bt00' },
     });
 
+    await waitFor(() =>
+      expect(getSeriesProductRows).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ page: 1, query: 'bt00' }),
+      ),
+    );
     await waitFor(() => expect(screen.queryByText('Kitchen sink')).not.toBeInTheDocument());
-    expect(screen.getByText('Bottle trap')).toBeInTheDocument();
     expect(screen.getByText('1 of 2 products')).toBeInTheDocument();
   });
 
-  it('finds a product by NAME as well as by code', async () => {
-    // The admin arrives from their own spreadsheet knowing one or the other, and being made
-    // to guess which one this box accepts is a puzzle the screen should not set.
-    getSeriesProductRows.mockResolvedValue([
-      row({ product_id: 'p1', product_code: 'BT009', product_name: 'Bottle trap' }),
-      row({ product_id: 'p2', product_code: 'CB1500SS', product_name: 'Kitchen sink' }),
-    ]);
+  it('D3: a search from page 2 goes back to page 1', async () => {
+    getSeriesProductRows.mockImplementation(async (_id: string, opts?: { page?: number }) =>
+      serverPage(
+        [row({ product_id: `p${opts?.page}`, product_code: `C${opts?.page}`, product_name: `Item page ${opts?.page}` })],
+        120,
+      ),
+    );
     renderTable();
-
-    await screen.findByText('Kitchen sink');
+    await screen.findByText('Item page 1');
+    fireEvent.click(await screen.findByRole('button', { name: /next page/i }));
+    await screen.findByText('Item page 2');
     fireEvent.change(screen.getByLabelText(/search products in this series/i), {
-      target: { value: 'sink' },
+      target: { value: 'item' },
     });
-
-    await waitFor(() => expect(screen.queryByText('Bottle trap')).not.toBeInTheDocument());
-    expect(screen.getByText('Kitchen sink')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(getSeriesProductRows).toHaveBeenLastCalledWith(
+        's1',
+        expect.objectContaining({ page: 1, query: 'item' }),
+      ),
+    );
   });
 
   it('says the search found nothing, rather than looking like an empty series', async () => {
-    getSeriesProductRows.mockResolvedValue([row({ product_code: 'BT009' })]);
+    getSeriesProductRows.mockImplementation(async (_id: string, opts?: { query?: string }) =>
+      opts?.query ? serverPage([], 0) : serverPage([row({ product_code: 'BT009' })], 1),
+    );
     renderTable();
 
     await screen.findByText('One piece WC');
@@ -179,13 +207,75 @@ describe('SeriesProductsTable', () => {
       target: { value: 'zzt-nothing' },
     });
 
-    // "No products yet" here would be a lie about the series, not about the search.
     expect(await screen.findByText(/no product here matches "zzt-nothing"/i)).toBeInTheDocument();
     expect(screen.queryByText(/no products yet/i)).not.toBeInTheDocument();
   });
 
+  it('D1/D2: shows the SERVER total, not the page size, and the app pager asks for page 2', async () => {
+    const page = (n: number) =>
+      Array.from({ length: 50 }, (_, i) =>
+        row({
+          product_id: `p${n}-${i}`,
+          product_code: `C${n}-${String(i).padStart(2, '0')}`,
+          product_name: `Item ${n}-${i}`,
+        }),
+      );
+    getSeriesProductRows.mockImplementation(async (_id: string, opts?: { page?: number }) =>
+      serverPage(page(opts?.page ?? 1), 120),
+    );
+    renderTable();
+
+    await screen.findByText('Item 1-0');
+    expect(screen.getByText('120 products')).toBeInTheDocument();
+    expect(screen.getByText(/1 - 50 of 120/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /next page/i }));
+
+    await waitFor(() =>
+      expect(getSeriesProductRows).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ page: 2, limit: 50 }),
+      ),
+    );
+    expect(await screen.findByText('Item 2-0')).toBeInTheDocument();
+  });
+
+  it('E1: Add a product sends the PICKED product code even when it is not in the first catalogue page', async () => {
+    getSeriesProductRows.mockResolvedValue(serverPage([]));
+    importSeriesProducts.mockResolvedValue({});
+    const others = Array.from({ length: 100 }, (_, i) => ({
+      id: `o${i}`,
+      product_code: `A${String(i).padStart(3, '0')}`,
+      product_name: `Other ${i}`,
+    }));
+    const zed = { id: 'uuid-zed', product_code: 'ZZ9000', product_name: 'Zed product' };
+    // The no-query list is 100 other products; only a typed search finds ZZ9000.
+    getProductsForLineSelect.mockImplementation(async (query?: string) =>
+      query ? [zed] : others,
+    );
+    renderTable();
+
+    fireEvent.click(await screen.findByRole('button', { name: /add a product/i }));
+    fireEvent.click(await screen.findByRole('combobox', { name: /^Product on / }));
+    const input = await screen.findByPlaceholderText(/search/i);
+    fireEvent.change(input, { target: { value: 'ZZ9' } });
+    fireEvent.click(await screen.findByRole('option', { name: /ZZ9000/ }, { timeout: 3000 }));
+    fireEvent.click(screen.getByRole('button', { name: /^Save / }));
+
+    await waitFor(() =>
+      expect(importSeriesProducts).toHaveBeenCalledWith(
+        's1',
+        { codes: ['ZZ9000'], mode: 'append' },
+      ),
+    );
+    expect(importSeriesProducts).not.toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ codes: ['uuid-zed'] }),
+    );
+  });
+
   it('leaves an unpriced row EMPTY rather than showing zero', async () => {
-    getSeriesProductRows.mockResolvedValue([row()]);
+    getSeriesProductRows.mockResolvedValue(serverPage([row()]));
     renderTable();
 
     // The product cell is a select trigger, not an input, so wait on the derived
@@ -200,9 +290,9 @@ describe('SeriesProductsTable', () => {
   it('shows no floor for a product priced with no discount stated', async () => {
     // AC-C4 on screen. 21 of the client's 51 priced products look exactly like this, and a
     // floor here would put every one of them in breach on the first discount.
-    getSeriesProductRows.mockResolvedValue([
+    getSeriesProductRows.mockResolvedValue(serverPage([
       row({ selling_price: '180.00', max_discount_pct: null, derived_floor: null }),
-    ]);
+    ]));
     renderTable();
 
     expect(await screen.findByDisplayValue('180.00')).toBeInTheDocument();
@@ -210,29 +300,29 @@ describe('SeriesProductsTable', () => {
   });
 
   it('asks the server for this series only once the id is known', async () => {
-    getSeriesProductRows.mockResolvedValue([]);
+    getSeriesProductRows.mockResolvedValue(serverPage([]));
     renderTable();
     await waitFor(() => expect(getSeriesProductRows).toHaveBeenCalledTimes(1));
-    expect(getSeriesProductRows).toHaveBeenCalledWith('s1');
+    expect(getSeriesProductRows).toHaveBeenCalledWith('s1', expect.objectContaining({ page: 1, limit: 50 }));
   });
   it('does not repeat the code as the Description when the name equals the code', async () => {
-    getSeriesProductRows.mockResolvedValue([row({ product_code: '1861', product_name: '1861' })]);
+    getSeriesProductRows.mockResolvedValue(serverPage([row({ product_code: '1861', product_name: '1861' })]));
     renderTable();
 
-    await waitFor(() => expect(getSeriesProductRows).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(getSeriesProductRows).toHaveBeenCalledWith('s1', expect.objectContaining({ page: 1, limit: 50 })));
     await waitFor(() => expect(screen.queryAllByText('1861')).toHaveLength(1));
     const dash = screen.getAllByText('-').find((el) => el.getAttribute('title') === '');
     expect(dash?.textContent).toBe('-');
   });
 
   it('shows the Description when the name differs from the code', async () => {
-    getSeriesProductRows.mockResolvedValue([row({ product_code: 'SRT6641', product_name: 'FLOOR TRAP' })]);
+    getSeriesProductRows.mockResolvedValue(serverPage([row({ product_code: 'SRT6641', product_name: 'FLOOR TRAP' })]));
     renderTable();
 
     expect(await screen.findByText('FLOOR TRAP')).toBeInTheDocument();
   });
   it('keeps the product picked on a NEW row, and saves it by its code', async () => {
-    getSeriesProductRows.mockResolvedValue([]);
+    getSeriesProductRows.mockResolvedValue(serverPage([]));
     const product = { id: 'p1', product_code: '1861', product_name: '1861' };
     getProductsForLineSelect.mockResolvedValue([product]);
     importSeriesProducts.mockResolvedValue({});
@@ -255,15 +345,92 @@ describe('SeriesProductsTable', () => {
     );
   });
 
+  it('D1: a newly added row keeps the picked product, shows its code, and saves it by id', async () => {
+    getSeriesProductRows.mockResolvedValue(serverPage([]));
+    importSeriesProducts.mockResolvedValue({});
+    updateSeriesProductPricing.mockResolvedValue(row());
+    getProductsForLineSelect.mockResolvedValue([
+      { id: 'p9', product_code: 'BT900', product_name: 'Nine trap' },
+    ]);
+    renderTable();
+
+    fireEvent.click(await screen.findByRole('button', { name: /add a product/i }));
+    fireEvent.click(await screen.findByRole('combobox', { name: /^Product on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /BT900/ }));
+
+    await waitFor(() => expect(screen.getByText('Nine trap')).toBeInTheDocument());
+    expect(screen.getByRole('combobox', { name: /^Product on / })).toHaveTextContent('BT900');
+    expect(screen.getByRole('combobox', { name: /^Product on / })).not.toHaveTextContent(
+      'Pick a product',
+    );
+
+    fireEvent.change(screen.getByRole('textbox', { name: /^Selling price on / }), {
+      target: { value: '150.00' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Save / }));
+
+    await waitFor(() =>
+      expect(importSeriesProducts).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ codes: ['BT900'] }),
+      ),
+    );
+    await waitFor(() =>
+      expect(updateSeriesProductPricing).toHaveBeenCalledWith(
+        's1',
+        'p9',
+        expect.objectContaining({ selling_price: '150.00' }),
+      ),
+    );
+  });
+
   it("shows no Remove (bin) button on an in-scope row, and keeps it on others (C6)", async () => {
-    getSeriesProductRows.mockResolvedValue([
+    getSeriesProductRows.mockResolvedValue(serverPage([
       row({ product_id: "p1", product_code: "IN-SCOPE", product_name: "Inside item", in_scope: true }),
       row({ product_id: "p2", product_code: "OUT-SCOPE", product_name: "Outside item", in_scope: false }),
-    ]);
+    ]));
     renderTable();
 
     await screen.findByText("Inside item");
     expect(screen.queryByRole("button", { name: "Remove IN-SCOPE" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove OUT-SCOPE" })).toBeInTheDocument();
+  });
+
+  it('moves to the last existing page when the total shrinks under the current page', async () => {
+    const item = (page: number) =>
+      Array.from({ length: 50 }, (_, i) =>
+        row({ product_id: `q${page}-${i}`, product_code: `D${page}-${i}`, product_name: `Thing ${page}-${i}` }),
+      );
+    getSeriesProductRows.mockImplementation(async (_id: string, opts?: { page?: number }) => {
+      const page = opts?.page ?? 1;
+      if (page >= 3) return serverPage([], 60); // the series shrank to 60 rows: 2 pages
+      return serverPage(item(page), 120);
+    });
+    renderTable();
+    await screen.findByText('Thing 1-0');
+    fireEvent.click(screen.getByRole('button', { name: /next page/i }));
+    await screen.findByText('Thing 2-0');
+    fireEvent.click(screen.getByRole('button', { name: /next page/i }));
+    await waitFor(() =>
+      expect(getSeriesProductRows.mock.calls.filter((c) => c[1]?.page === 3).length).toBeGreaterThan(0),
+    );
+    // never stranded on the empty page: it asks for page 2 again and shows its rows
+    await waitFor(() => expect(getSeriesProductRows).toHaveBeenLastCalledWith('s1', expect.objectContaining({ page: 2 })));
+    expect(await screen.findByText('Thing 2-0')).toBeInTheDocument();
+  });
+
+  it('the pager grid opts out of column-config persistence (listingKey null)', async () => {
+    getSeriesProductRows.mockResolvedValue(
+      serverPage(
+        Array.from({ length: 50 }, (_, i) => row({ product_id: `z${i}`, product_code: `Z${i}`, product_name: `Zed ${i}` })),
+        120,
+      ),
+    );
+    renderTable();
+    await screen.findByText('Zed 0');
+    expect(listingPrefs).toHaveBeenCalled();
+    for (const call of listingPrefs.mock.calls) {
+      expect((call[0] as { listingKey: unknown }).listingKey).toBeNull();
+    }
   });
 });

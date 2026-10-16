@@ -787,8 +787,10 @@ def recompute_cancelled(db: Session, touched: Touched,
                   and row.line_status != CANCELLED):
                 # The planned basis `plan_qty_of` reads (review should-fix 5).
                 base = Decimal(row.qty_ordered if row.qty_required is None else row.qty_required)
-                derived.plan_moves.append((str(row.id), max(base - before_c, _ZERO),
-                                           max(base - Decimal(row.qty_cancelled), _ZERO)))
+                returned = Decimal(row.qty_returned or 0)  # CONSIGN-PLAN Q3
+                derived.plan_moves.append((str(row.id), max(base - before_c - returned, _ZERO),
+                                           max(base - Decimal(row.qty_cancelled) - returned,
+                                               _ZERO)))
     if touched.po_line_ids:
         sums = _live_sums(db, AutocountCancelLine.purchase_order_line_id, touched.po_line_ids)
         rows = (
@@ -811,9 +813,30 @@ def recompute_cancelled(db: Session, touched: Touched,
             if row.qty_cancelled != value:
                 row.qty_cancelled = value
     # AC-CONSIGN-CRM: a return touches the consignment line it was (or is) matched to.
-    recompute_returned(db, touched.so_line_ids, company_id)
+    derived.plan_moves.extend(
+        return_plan_moves(db, recompute_returned(db, touched.so_line_ids, company_id))
+    )
     db.flush()
     return derived
+
+
+def return_plan_moves(db: Session, moved: list[tuple[str, Decimal, Decimal]]
+                      ) -> list[tuple[str, Decimal, Decimal]]:
+    """CONSIGN-PLAN Q3: a return lowers a live consignment line's plan the way a partial cancel
+    does, so the same `(line id, planned before, planned after)` shape goes to the hook."""
+    if not moved:
+        return []
+    rows = {str(r.id): r for r in db.query(SalesOrderLine)
+            .filter(SalesOrderLine.id.in_([m[0] for m in moved]))}
+    out = []
+    for line_id, was, now in moved:
+        row = rows.get(line_id)
+        if row is None or row.line_status == CANCELLED:
+            continue
+        base = Decimal(row.qty_ordered if row.qty_required is None else row.qty_required)
+        base -= Decimal(row.qty_cancelled or 0)
+        out.append((line_id, max(base - was, _ZERO), max(base - now, _ZERO)))
+    return [m for m in out if m[1] != m[2]]
 
 
 def _apply(row, total: Decimal, transferred: Any, header_status: Optional[str]) -> bool:
@@ -905,6 +928,9 @@ class AutocountCancelIngestService:
         self.book = book
         # What this batch's derivation moved, for the post-commit hooks (R5, Q4 a).
         self.derived = Derived()
+        #: Plan moves a consignment push's TransferedQty made, folded into the batch's
+        #: `derived` once it lands (CONSIGN-PLAN Q3).
+        self.consignment_moves: list[tuple[str, Decimal, Decimal]] = []
         # status:reason -> lines decided in the last batch (the sync log line).
         self.match_counts: dict[str, int] = {}
         # AC-CONSIGN-CRM: the SO ingest that writes consignments as sales orders, one per batch
@@ -921,6 +947,7 @@ class AutocountCancelIngestService:
         touched = Touched()
         to_match: list[AutocountCancelLine] = []
         self._removed_groups: set = set()
+        self.consignment_moves = []  # a reused service carries nothing over (CONSIGN-PLAN)
         try:
             for raw in records:
                 result.records.append(self._ingest_one(entity_type, raw, touched, to_match))
@@ -968,6 +995,8 @@ class AutocountCancelIngestService:
                 self._warn_unmatched(entity, result)
             savepoint.commit()
             # Only a derivation that landed reaches the post-commit hooks (review nit).
+            derived.plan_moves.extend(self.consignment_moves)
+            self.consignment_moves = []
             self.derived = derived
             self.match_counts = counts
             if counts:
@@ -1107,7 +1136,8 @@ class AutocountCancelIngestService:
                         .filter(SalesOrder.company_id == self.company_id,
                                 SalesOrder.so_number == doc.doc_no,
                                 SalesOrder.doc_type == DOC_TYPE_CONSIGNMENT).all()]
-            recompute_returned(self.db, line_ids, self.company_id)
+            self.consignment_moves.extend(return_plan_moves(
+                self.db, recompute_returned(self.db, line_ids, self.company_id)))
         return record
 
     def _apply(self, kind: str, doc: _CancelDoc, touched: Touched):
@@ -1203,6 +1233,7 @@ class AutocountCancelIngestService:
             raise UnsupportedIngestEntity(f"Unsupported AutoCount entity {entity!r}")
         result = DeletionResult(dry_run=dry_run)
         touched = Touched()
+        self.consignment_moves = []
         try:
             with company_scope(self.db, frozenset({self.company_id})):
                 for value in doc_keys:
@@ -1210,6 +1241,8 @@ class AutocountCancelIngestService:
                         self._delete_one(entity, value, date_from, date_to, touched))
                 self.db.flush()
                 self.derived = recompute_cancelled(self.db, touched, self.company_id)
+                self.derived.plan_moves.extend(self.consignment_moves)
+                self.consignment_moves = []
         finally:
             if dry_run:
                 self.db.rollback()
@@ -1382,7 +1415,12 @@ def _raise_planning_change(db: Session, moves: list[tuple[str, Decimal, Decimal]
     )
     by_id = {str(r[0].id): r for r in rows}
     before, after, order_ids = [], [], {}
+    # One move per line: a batch that cancelled AND returned units on a line reports two, and
+    # a diff fed both would pair them as two changes. First `was`, last `now`.
+    merged: dict[str, list[Decimal]] = {}
     for line_id, was, now in moves:
+        merged.setdefault(line_id, [was, now])[1] = now
+    for line_id, (was, now) in merged.items():
         found = by_id.get(line_id)
         if found is None:
             continue

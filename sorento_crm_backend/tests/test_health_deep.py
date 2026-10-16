@@ -184,7 +184,7 @@ def test_health_failure_names_no_host(client, monkeypatch):
     monkeypatch.setattr(database, "SessionLocal", broken)
     r = client.get("/health")
     assert r.status_code == 503
-    assert r.json() == {"status": "unhealthy", "database": "down"}
+    assert r.json() == {"status": "unhealthy"}  # main's body (test_api_v1_health.py pins it too)
 
 
 def test_a_flood_of_deep_checks_costs_one_probe_per_window(client, monkeypatch, scheduler_ok):

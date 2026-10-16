@@ -6,7 +6,8 @@ UAC:  documentation/plans/autocount/do-history-backfill-13oct-acceptance-criteri
 The shared service replays about 270,000 DOs from 2023-09-01. Through the push route each would
 write an audit row for its header and an embedding event for itself and every line. With the
 flag the route suppresses both for that request; instead it writes one IMPORT audit row per
-batch that names every order it wrote, and queues those orders for embedding in one insert.
+batch that names every order it wrote. It queues no embedding work at all (DO-BACKFILL-CRM,
+AC-DH46, `tests/test_do_backfill_quiet_hooks.py`).
 Without the flag nothing changes.
 """
 from __future__ import annotations
@@ -68,9 +69,8 @@ def test_plain_push_still_audits_and_enqueues_embeddings(env):
     assert _summary_rows(env) == []
 
 
-def test_backfill_push_writes_no_row_audit_and_no_per_row_embedding_event(env):
-    """AC-DH40: no audit row per DO, no listener event per DO or line; one queue event per DO
-    from the batch's single insert, so the history still reaches semantic search."""
+def test_backfill_push_writes_no_row_audit_and_no_embedding_event(env):
+    """AC-DH40: no audit row per DO; AC-DH46: no queue event for the DO or any line."""
     res = _post(env, DO_INGEST, [copy.deepcopy(r) for r in do_records()], backfill=True)
     recs = _records(res)
     assert recs["db1:DO:900001"]["outcome"] == "created"
@@ -80,7 +80,7 @@ def test_backfill_push_writes_no_row_audit_and_no_per_row_embedding_event(env):
         events = env.db.execute(
             select(EmbeddingQueue.event_type).where(EmbeddingQueue.source_id == order_id)
         ).scalars().all()
-        assert events == ["order.updated"]
+        assert events == []
         assert _audit_rows(env, order_id) == 0
 
 

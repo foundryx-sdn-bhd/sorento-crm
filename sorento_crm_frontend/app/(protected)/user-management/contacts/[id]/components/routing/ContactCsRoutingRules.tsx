@@ -20,6 +20,8 @@ import {
   type RoutingRule,
 } from './csRoutingMock';
 
+const NO_CS_VALUE = '__no_cs__';
+
 /**
  * R2 - CS-routing predicate rules editor for a contact. Extends the old
  * per-use_case pin table with an ORDERED (drag = priority) list of rules, each
@@ -61,7 +63,10 @@ export default function ContactCsRoutingRules({ contactId }: { contactId: string
   }, [fetchedRules]);
 
   const candidateOptions = useMemo(
-    () => candidates.map((c) => ({ value: c.id, label: c.name, description: c.email })),
+    () => [
+      { value: NO_CS_VALUE, label: 'No CS (finish at approval)' },
+      ...candidates.map((c) => ({ value: c.id, label: c.name, description: c.email })),
+    ],
     [candidates],
   );
 
@@ -76,6 +81,7 @@ export default function ContactCsRoutingRules({ contactId }: { contactId: string
         use_case: 'purchase_request',
         cs_pic_user_id: null,
         cs_pic_name: null,
+        no_cs: false,
         match_conditions: [],
         priority: prev.length,
       },
@@ -206,12 +212,13 @@ export default function ContactCsRoutingRules({ contactId }: { contactId: string
                       </span>
                       <div className="w-full sm:w-72">
                         <SearchableSelect
-                          value={rule.cs_pic_user_id ?? ''}
+                          value={rule.no_cs ? NO_CS_VALUE : (rule.cs_pic_user_id ?? '')}
                           onChange={(v) => {
                             const c = candidates.find((x) => x.id === v);
                             patchRule(rule.id, {
-                              cs_pic_user_id: v || null,
+                              cs_pic_user_id: v === NO_CS_VALUE ? null : v || null,
                               cs_pic_name: c?.name ?? null,
+                              no_cs: v === NO_CS_VALUE,
                             });
                           }}
                           options={candidateOptions}

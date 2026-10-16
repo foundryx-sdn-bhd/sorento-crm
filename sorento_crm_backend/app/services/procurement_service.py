@@ -8198,7 +8198,7 @@ class PurchaseRequestService:
             "contact_id",
             "space_id",
             "products",
-            "sales_type",  # project / cash_sales - required for PR (SF omits it); routes CS
+            "sales_type",  # project / cash_sales - required for PR (optional on SF); routes CS
         ),
         "sponsorship_form": (
             "sponsor_subject",
@@ -9307,6 +9307,19 @@ class PurchaseRequestService:
             "current_index": idx + 1,
         }
 
+    def _apply_customer_link(self, header, payload: dict) -> None:
+        """Validate a payload's customer_id in place (PC-3): "" unlinks, a link stores the
+        customer's own name as customer_name."""
+        if "customer_id" not in payload:
+            return
+        from app.services.debtor_type import link_customer
+
+        payload["customer_id"], linked_name = link_customer(
+            self.db, payload["customer_id"], current_id=getattr(header, "customer_id", None)
+        )
+        if linked_name:
+            payload["customer_name"] = linked_name
+
     def create_request(self, data: PurchaseRequestHeaderCreate):
         """Create purchase request header + lines (internal API)."""
         dump = data.model_dump(exclude={"products"})
@@ -9334,6 +9347,12 @@ class PurchaseRequestService:
         if respond_inbox_url is not None:
             dump["respond_inbox_url"] = respond_inbox_url
         requestor_value = dump.pop("requested_by_contact_id", None)
+        if "customer_id" in dump:
+            from app.services.debtor_type import link_customer
+
+            dump["customer_id"], linked_name = link_customer(self.db, dump["customer_id"])
+            if linked_name:
+                dump["customer_name"] = linked_name
         header = PurchaseRequestHeader(**{k: v for k, v in dump.items() if hasattr(PurchaseRequestHeader, k)})
         if requestor_value:
             # Validated + label-derived, never a bare setattr: the document, the
@@ -9406,6 +9425,7 @@ class PurchaseRequestService:
             payload["respond_inbox_url"] = None
         self._apply_sponsor_subject_to_payload(payload, header)
         requestor_value = payload.pop("requested_by_contact_id", _UNSET_REQUESTOR)
+        self._apply_customer_link(header, payload)
         for key, value in payload.items():
             if hasattr(header, key):
                 setattr(header, key, value)
@@ -9490,6 +9510,7 @@ class PurchaseRequestService:
             payload["respond_inbox_url"] = None
 
         self._apply_sponsor_subject_to_payload(payload, header)
+        self._apply_customer_link(header, payload)
         for key, value in payload.items():
             if hasattr(header, key):
                 setattr(header, key, value)

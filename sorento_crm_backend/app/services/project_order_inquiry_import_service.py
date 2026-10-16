@@ -2163,6 +2163,7 @@ def pair_needs(
     bought_rows: Optional[Tuple[List[Any], List[Any]]],
     *,
     book_targets_out: Optional[Dict[str, List[Tuple[str, dict]]]] = None,
+    excluded_targets: Optional[Dict[Any, set]] = None,
 ) -> Tuple[Dict[Any, _RowLinks], List[str]]:
     """What each need would be linked to, in the order the two sources rank.
 
@@ -2207,6 +2208,10 @@ def pair_needs(
     map` and its own re-derived, un-netted capacity query are retired in favour of it -
     PRINCIPLES "one copy"): a second walk of the same primitives could only ever answer the
     same question differently by accident.
+
+    `excluded_targets` (OI-RESERVE-RECEIVED, AC-RR-31/33): `{need.key: {target_id, ...}}` -
+    targets a need's own row released to a CS reserve; they are neither taken nor offered as
+    a book target (so displacement never reaches them). Absent or empty: no change.
     """
     links: Dict[Any, _RowLinks] = {}
     not_linkable: List[str] = []
@@ -2268,15 +2273,16 @@ def pair_needs(
         held = _RowLinks(need_left=_dec(need.need_qty))
         seen: set = set()
         book_targets: List[Tuple[str, dict]] = []
+        barred = {str(t) for t in (excluded_targets or {}).get(need.key, ())}
 
         def _record_book_target(target_id: str) -> None:
             fact = facts.get(str(target_id))
-            if fact is not None:
+            if fact is not None and str(target_id) not in barred:
                 book_targets.append((str(target_id), fact))
 
         def take(target_id: str, *, from_book: bool) -> bool:
             fact = facts.get(str(target_id))
-            if fact is None or str(target_id) in seen:
+            if fact is None or str(target_id) in seen or str(target_id) in barred:
                 return False
             free = fact["capacity"] - used.get(str(target_id), _ZERO)
             if free <= _ZERO:

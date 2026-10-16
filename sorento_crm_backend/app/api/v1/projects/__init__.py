@@ -21,6 +21,7 @@ from app.api.v1.projects import (
     so_line_attachments,
     status_graphs,
     stock_debt,
+    stock_debt_snapshots,
     tasks,
     types,
 )
@@ -80,6 +81,7 @@ router.include_router(planning_changes.router, tags=["project-planning-changes"]
 # Stock Debt (S2) is a cross-order READ addressed by product, never nested under a project,
 # so it is root-mounted for the same reason planning changes is - and ahead of the projects
 # router, or `/project-sales/stock-debt` is captured by `/projects/{project_id}`.
+router.include_router(stock_debt_snapshots.router, tags=["project-stock-debt-snapshots"])
 router.include_router(stock_debt.router, tags=["project-stock-debt"])
 # Sales-order-line attachments (#1312) address the CORE line directly, never nested
 # under a project, so it is root-mounted for the same reason stock debt is.

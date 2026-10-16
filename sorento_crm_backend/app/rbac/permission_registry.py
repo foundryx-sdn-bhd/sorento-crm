@@ -55,11 +55,11 @@ PERMISSION_REGISTRY.append({
     "name": "Get contact portal link",
     "description": "Generate or send a user-submission portal link for a respond contact.",
 })
-# Contact editing had no slug at all - every contact write is `get_current_user`
-# only, so today any authenticated user may change one. This names that authority
-# so the media gate can be enforced against something, and migration 357 grants it
-# to every existing role, which reproduces today's reach exactly rather than
-# silently narrowing it. Revoking it per role is now possible; it was not before.
+# Contact editing had no slug at all - every contact write was `get_current_user`
+# only. This names that authority, and migration 357 grants it to every role that
+# existed then, which reproduced the old reach rather than silently narrowing it.
+# It now gates every contact write in user_management/contacts.py and its sibling
+# /contacts routers (SEC-CONTACT-WRITE-PERMS), so it is revocable per role.
 PERMISSION_REGISTRY.append({
     "slug": "user_management.contacts.edit",
     "name": "Edit Contacts",

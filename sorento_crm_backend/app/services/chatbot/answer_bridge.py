@@ -665,13 +665,15 @@ def no_live_kind_reply(
     kind = " ".join([first, *[w.lower() for w in rest]])
     lines = [f"There is no {brand['brand_name']} {kind} right now."]
     names: list[str] = []
+    levels = [n for n in (tier_source or {}).get("name") or [] if isinstance(n, str) and n.strip()]
     try:
-        raw = mcp_call(
-            "crm_marketing_promotions_list",
-            {
-                "promotion_types": list(kinds),
-                "access_levels": list((tier_source or {}).get("name") or []),
-            },
+        # SEC-PROMO-ACCESS: no held level means no list. The MCP server drops an empty
+        # `access_levels`, and this call carries no `contact_id`, so the route would read
+        # it as "no access filter" and name every level's promotions.
+        raw = (
+            mcp_call("crm_marketing_promotions_list", {"promotion_types": list(kinds), "access_levels": levels})
+            if levels
+            else {}
         )
         body = json.loads(raw) if isinstance(raw, str) else raw
         for item in (body.get("data") or body.get("items") or []) if isinstance(body, dict) else []:

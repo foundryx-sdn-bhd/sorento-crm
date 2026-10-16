@@ -41,6 +41,11 @@ import { getUserListColumnConfig } from '@/lib/listing-column-preferences/listCo
 
 // R19: the Copy fallback is asserted against these spies, not real sonner DOM output -
 // no `<Toaster>` is mounted in this render tree.
+// The toolbar's <SavedViewsMenu> has its own tests (StockDebtClient.savedViews.test.tsx,
+// components/list/SavedViewsMenu.test.tsx); stubbed here so its session and per-user
+// default reads stay out of what this file asserts about the board.
+vi.mock('@/components/list/SavedViewsMenu', () => ({ SavedViewsMenu: () => null }));
+
 vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
@@ -108,6 +113,7 @@ function envelope(rows: StockDebtRow[] = [row()]): StockDebtListResponse {
     months: ['2026-08', '2026-09', '2026-10'],
     tba_month: '2030-01',
     groups: ['BB', 'IB'],
+    locations: [],
     totals: {
       months: totalsMonths,
       tba: rows.reduce((sum, r) => sum + r.tba, 0),
@@ -309,9 +315,9 @@ describe('StockDebtClient', () => {
       screen.getAllByRole('columnheader').map((cell) => cell.textContent?.trim()),
     ).toEqual([
       'Product',
-      'BRW On Hand Qty',
-      'BRW PO Qty',
-      'BRW Incoming Qty',
+      'BRW Retail On Hand Qty',
+      'BRW Retail PO Qty',
+      'BRW Retail Incoming Qty',
       'Dealer O/standing Qty',
       'Aug 26',
       'Sep 26',

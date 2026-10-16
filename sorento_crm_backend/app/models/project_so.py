@@ -1330,6 +1330,68 @@ class OrderInquirySuggestedLink(Base, CompanyScopedMixin):
     )
 
 
+class OrderInquiryReleasedLink(Base, CompanyScopedMixin):
+    """A received PO/SPO link given up when CS reserved the row's stock instead
+    (`PLAN-oi-reserve-received.md` item 1).
+
+    The link itself is deleted (the row's own sums never read this table); this is the
+    memory that the target's quantity was used by other orders, so `_linked_by_target`
+    keeps counting it and nothing re-links it. CASCADE on both targets: a row of a document
+    line that no longer exists means nothing.
+    """
+
+    __tablename__ = "order_inquiry_released_links"
+    __audit_skip__ = "link history table, one row per released received link"
+    __audit_entity_type__ = "project_order_inquiry_released_links"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    row_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.order_inquiry_rows.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    reserve_request_row_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey(
+            "projects.order_inquiry_reserve_request_rows.id",
+            ondelete="SET NULL",
+            name="fk_order_inquiry_released_links_reserve_request_row",
+        ),
+        nullable=True,
+    )
+    po_line_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("purchase_order_lines.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    spo_allocation_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey(
+            "spo_allocations.id",
+            ondelete="CASCADE",
+            name="fk_order_inquiry_released_links_spo_allocation",
+        ),
+        nullable=True,
+    )
+    document = Column(String(80), nullable=True)
+    qty = Column(Numeric(15, 4), nullable=False)
+    released_by = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    released_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "(po_line_id IS NOT NULL)::int + (spo_allocation_id IS NOT NULL)::int = 1",
+            name="ck_order_inquiry_released_links_one_target",
+        ),
+        CheckConstraint("qty > 0", name="ck_order_inquiry_released_links_qty_positive"),
+        Index("ix_order_inquiry_released_links_row", "row_id"),
+        Index("ix_order_inquiry_released_links_po_line", "po_line_id"),
+        Index("ix_order_inquiry_released_links_spo_allocation", "spo_allocation_id"),
+        {"schema": "projects"},
+    )
+
+
 #: PLAN-oi-request-cs-reserve.md (R1-R11): purchasing asks CS to cover part of a row from
 #: own or pool stock before buying the balance. Two tables: the REQUEST (one per ask,
 #: `OI-2609-0678 request #2`, addressed by ordinal within the inquiry rather than its own
@@ -1369,6 +1431,9 @@ class OrderInquiryReserveRequest(Base, CompanyScopedMixin):
     reserved_at = Column(DateTime(timezone=False), nullable=True)
     cancelled_by = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     cancelled_at = Column(DateTime(timezone=False), nullable=True)
+    # OI-STAGED-NOTIFY: set while the request is parked (saved, not yet mailed to CS);
+    # who parked it is `requested_by`. NULL = sent (legacy rows count as sent).
+    parked_at = Column(DateTime(timezone=False), nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -1379,6 +1444,11 @@ class OrderInquiryReserveRequest(Base, CompanyScopedMixin):
             "order_inquiry_id", "ordinal", name="uq_order_inquiry_reserve_requests_ordinal"
         ),
         Index("ix_order_inquiry_reserve_requests_inquiry", "order_inquiry_id"),
+        Index(
+            "ix_order_inquiry_reserve_requests_parked",
+            "parked_at",
+            postgresql_where=text("parked_at IS NOT NULL"),
+        ),
         {"schema": "projects"},
     )
 
@@ -1414,6 +1484,12 @@ class OrderInquiryReserveRequestRow(Base, CompanyScopedMixin):
     )
     qty_reserved = Column(Numeric(15, 4), nullable=True)
     reason = Column(Text, nullable=True)
+    # OI-STAGED-NOTIFY: a parked notice to purchasing (CS answered, not yet mailed).
+    # `notified_qty` is the figure purchasing was last told; a row is actionable while
+    # `qty_reserved` differs from it (NULL counts as different).
+    notice_parked_at = Column(DateTime(timezone=False), nullable=True)
+    notice_parked_by = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    notified_qty = Column(Numeric(15, 4), nullable=True)
 
     __table_args__ = (
         CheckConstraint("qty_requested > 0", name="ck_order_inquiry_reserve_rows_qty_positive"),
@@ -1422,6 +1498,11 @@ class OrderInquiryReserveRequestRow(Base, CompanyScopedMixin):
         ),
         Index("ix_order_inquiry_reserve_request_rows_request", "request_id"),
         Index("ix_order_inquiry_reserve_request_rows_row", "row_id"),
+        Index(
+            "ix_order_inquiry_reserve_request_rows_notice_parked",
+            "notice_parked_at",
+            postgresql_where=text("notice_parked_at IS NOT NULL"),
+        ),
         {"schema": "projects"},
     )
 

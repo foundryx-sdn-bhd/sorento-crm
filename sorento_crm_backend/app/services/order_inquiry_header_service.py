@@ -21,7 +21,7 @@ from typing import Any, List, Literal, Optional, get_args
 
 from sqlalchemy import Date, String, and_, case, cast, func, or_
 from sqlalchemy.dialects.postgresql import aggregate_order_by
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.models.order import Customer, SalesOrder, SalesOrderLine
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, SPOAllocation, Supplier
@@ -35,6 +35,8 @@ from app.models.project_so import (
     OrderInquiry,
     OrderInquiryLink,
     OrderInquiryRaise,
+    OrderInquiryReserveRequest,
+    OrderInquiryReserveRequestRow,
     OrderInquiryRow,
     ProjectSalesOrder,
     ProjectSalesOrderLine,
@@ -51,6 +53,7 @@ from app.schemas.project_order_inquiry import (
     OrderInquiryRelatedSPOOut,
 )
 from app.services.error_handler import AppException
+from app.services.order_inquiry_reserve_service import reserve_status_predicates
 from app.services.scm import spo_supply
 
 _ZERO = Decimal("0")
@@ -128,6 +131,8 @@ HeaderSort = Literal[
     "status",
 ]
 HeaderState = Literal["outstanding", "completed", "all"]
+
+ReserveStatus = Literal["parked", "needs_reserve", "notice_parked", "reserved"]
 
 DEFAULT_SORT_FIELD: HeaderSort = "raised_at"
 
@@ -234,10 +239,39 @@ class OrderInquiryHeaderService:
             .subquery()
         )
 
+    def _reserve_agg(self):
+        """OI-STAGED-NOTIFY (AC-SN-30): one row per header that has any reserve request row,
+        saying which of the four statuses its rows are in and who parked what. One aggregate
+        subquery joined to the page, never a query per header."""
+        pred = reserve_status_predicates()
+        return (
+            self.db.query(
+                OrderInquiryReserveRequest.order_inquiry_id.label("order_inquiry_id"),
+                func.bool_or(pred["parked"]).label("has_parked"),
+                func.bool_or(pred["needs_reserve"]).label("has_needs"),
+                func.bool_or(pred["notice_parked"]).label("has_notice"),
+                func.bool_or(pred["reserved"]).label("has_reserved"),
+                func.max(OrderInquiryReserveRequest.requested_by)
+                .filter(pred["parked"])
+                .label("parked_requester"),
+                func.max(OrderInquiryReserveRequestRow.notice_parked_by)
+                .filter(pred["notice_parked"])
+                .label("notice_parker"),
+            )
+            .select_from(OrderInquiryReserveRequestRow)
+            .join(
+                OrderInquiryReserveRequest,
+                OrderInquiryReserveRequest.id == OrderInquiryReserveRequestRow.request_id,
+            )
+            .group_by(OrderInquiryReserveRequest.order_inquiry_id)
+            .subquery()
+        )
+
     def _base(
         self,
         *,
         agg,
+        reserve: Optional[str] = None,
         query: Optional[str] = None,
         raised_by: Optional[str] = None,
         agent: Optional[str] = None,
@@ -254,10 +288,31 @@ class OrderInquiryHeaderService:
         lines_to_confirm = func.coalesce(agg.c.lines_to_confirm, 0)
         qty_total = func.coalesce(agg.c.qty_total, 0)
         status_expr = case((lines_to_confirm > 0, "outstanding"), else_="completed")
+        ragg = self._reserve_agg()
+        requester_user = aliased(User)
+        parker_user = aliased(User)
+        reserve_status = case(
+            (ragg.c.has_parked.is_(True), "parked"),
+            (ragg.c.has_needs.is_(True), "needs_reserve"),
+            (ragg.c.has_notice.is_(True), "notice_parked"),
+            (ragg.c.has_reserved.is_(True), "reserved"),
+            else_=None,
+        )
+        parked_by_name = case(
+            (ragg.c.has_parked.is_(True), requester_user.name),
+            (
+                and_(ragg.c.has_needs.isnot(True), ragg.c.has_notice.is_(True)),
+                parker_user.name,
+            ),
+            else_=None,
+        )
 
         base = (
             self._joined()
             .outerjoin(agg, agg.c.order_inquiry_id == OrderInquiry.id)
+            .outerjoin(ragg, ragg.c.order_inquiry_id == OrderInquiry.id)
+            .outerjoin(requester_user, requester_user.id == ragg.c.parked_requester)
+            .outerjoin(parker_user, parker_user.id == ragg.c.notice_parker)
             .add_columns(
                 User.name.label("raised_by_name"),
                 SalesOrder.id.label("sales_order_id"),
@@ -273,8 +328,25 @@ class OrderInquiryHeaderService:
                 lines_to_confirm.label("lines_to_confirm"),
                 qty_total.label("qty_total"),
                 status_expr.label("status"),
+                reserve_status.label("reserve_status"),
+                parked_by_name.label("parked_by_name"),
             )
         )
+
+        if reserve is not None:
+            flag = {
+                "parked": ragg.c.has_parked,
+                "needs_reserve": ragg.c.has_needs,
+                "notice_parked": ragg.c.has_notice,
+                "reserved": ragg.c.has_reserved,
+            }.get(reserve)
+            if flag is None:
+                raise AppException(
+                    422,
+                    f"'{reserve}' is not a reserve status.",
+                    code="invalid_reserve_filter",
+                )
+            base = base.filter(flag.is_(True))
 
         if state == "outstanding":
             base = base.filter(lines_to_confirm > 0)
@@ -350,6 +422,8 @@ class OrderInquiryHeaderService:
             lines_to_confirm=int(row.lines_to_confirm or 0),
             qty_total=_qty_str(row.qty_total),
             status=row.status,
+            reserve_status=row.reserve_status,
+            parked_by_name=row.parked_by_name,
         )
 
     # ------------------------------------------------------------------ reads
@@ -362,6 +436,7 @@ class OrderInquiryHeaderService:
         raised_by: Optional[str] = None,
         agent: Optional[str] = None,
         project: Optional[str] = None,
+        reserve: Optional[str] = None,
         sort: Optional[str] = None,
         direction: Optional[str] = "asc",
         page: int = 1,
@@ -404,7 +479,7 @@ class OrderInquiryHeaderService:
 
         base = self._base(
             agg=agg, state=state, query=query, raised_by=raised_by, agent=agent,
-            project=project,
+            project=project, reserve=reserve,
         )
         total = int(
             base.with_entities(func.count(OrderInquiry.id)).order_by(None).scalar() or 0

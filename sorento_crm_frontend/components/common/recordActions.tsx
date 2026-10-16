@@ -58,6 +58,8 @@ export interface RecordAction {
    * refusal - see `useCopyToClipboard`).
    */
   confirmLabel?: string;
+  /** A second, muted line under the label (where a download lands, why it is unavailable). */
+  description?: string;
 }
 
 /** What a `use<Entity>Actions` hook returns. */
@@ -146,7 +148,16 @@ function RecordActionItem({
       onSelect={handleSelect}
     >
       {Icon && <Icon className="size-4" />}
-      {confirmed ? action.confirmLabel : action.label}
+      {confirmed ? (
+        action.confirmLabel
+      ) : action.description ? (
+        <span className="min-w-0">
+          {action.label}
+          <span className="block text-xs text-muted-foreground">{action.description}</span>
+        </span>
+      ) : (
+        action.label
+      )}
     </DropdownMenuItem>
   );
 }

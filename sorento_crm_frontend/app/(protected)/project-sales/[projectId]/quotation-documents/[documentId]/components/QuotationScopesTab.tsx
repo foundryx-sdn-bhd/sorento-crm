@@ -11,6 +11,7 @@ import { OutcomePill } from '../../../../_shared/components/OutcomePill';
 import { QuotationOutcomeDialog } from '../../../components/QuotationOutcomeDialog';
 import { QuotationVersionEditor } from '../../../components/QuotationVersionEditor';
 import { useQuotationDocumentScreen } from './QuotationDocumentContext';
+import { isLockedForApproval } from '../../../../_shared/lib/quotationDecision';
 import { QuotationScopeTabs } from './QuotationScopeTabs';
 
 /**
@@ -115,6 +116,9 @@ export function QuotationScopesTab() {
               key={activeQuotation.id}
               project={project}
               quotation={activeQuotation}
+              // Pending or approved: the whole quotation is locked, and the way out is the
+              // header's Edit quotation (Revise with a reason), not a per-scope revise.
+              locked={isLockedForApproval(record)}
             />
           </CardContent>
         </Card>

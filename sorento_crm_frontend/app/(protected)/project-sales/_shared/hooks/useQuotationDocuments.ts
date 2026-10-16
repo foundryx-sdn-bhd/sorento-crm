@@ -22,6 +22,7 @@ import {
   queueQuotationIssuePdf,
   queueQuotationIssueXlsx,
   rejectQuotationDocument,
+  reviseQuotationApproval,
   signQuotationDocument,
   updateQuotationDocument,
   updateQuotationScope,
@@ -238,6 +239,15 @@ export function useQuotationDocumentMutations(projectId: string, documentId?: st
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const reviseApproval = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      reviseQuotationApproval(projectId, id, reason),
+    onSuccess: () => {
+      invalidate();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   /**
    * Mint (or reuse) the tokenised counter-sign link for one issue. The server hands back a
    * RELATIVE path; the caller decides which origin to put in front of it.
@@ -288,6 +298,7 @@ export function useQuotationDocumentMutations(projectId: string, documentId?: st
     submitForApproval,
     approve,
     reject,
+    reviseApproval,
     sign,
     signLink,
     issuePdf,

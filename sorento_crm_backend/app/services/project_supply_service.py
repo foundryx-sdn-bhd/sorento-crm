@@ -134,6 +134,7 @@ from app.services.scm.planning_predicate import (
     OUTSIDE_FULFILMENT_PLANNING,
     fulfilment_planning_predicate,
     outside_fulfilment_planning,
+    planned_at_own_bin,
 )
 from app.services.scm.front_planning_engine import (
     BORROW,
@@ -510,6 +511,9 @@ def plan_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
     `_open_of` keeps its own readers, all of which genuinely mean "what is still owed": the
     hold cap (S1), `project_line_draft_service`'s saved snapshot and `sales_order_service
     .is_stale`.
+
+    CONSIGN-PLAN Q3: a consignment line's `qty_returned` (0 on every sales order line) is
+    not planned either.
     """
     if core is None or (core.line_status or "open") == "cancelled":
         return _ZERO
@@ -517,7 +521,12 @@ def plan_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
     # AC-CANCEL-CRM (owner, 13 Oct): what AutoCount Cancel SO documents cancelled is not
     # planned. A partial cancel lowers the plan; a full one cancels the line (above).
     base = _dec(core.qty_ordered if required is None else required)
-    return max(base - _dec(getattr(core, "qty_cancelled", None)), _ZERO)
+    return max(
+        base
+        - _dec(getattr(core, "qty_cancelled", None))
+        - _dec(getattr(core, "qty_returned", None)),
+        _ZERO,
+    )
 
 
 def delivered_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
@@ -791,6 +800,9 @@ class _LineFacts:
     #: reconciled AutoCount line). Set, the line is read out with no components and no
     #: donors; it is never carried and cannot be named to a confirmation.
     unplannable_reason: Optional[str] = None
+    #: The order's doc type (CONSIGN-PLAN): a doc type in `PLANNED_AT_OWN_BIN_DOC_TYPES` owes
+    #: nothing back for goods taken from its own bin.
+    doc_type: Optional[str] = None
     #: Ladder v2 (`PLAN-demo-followups-19aug-ladder-v2.md` section E, section 8). The
     #: OWNERSHIP GROUP this line's own location belongs to - the suffix after the hyphen
     #: (`BRW-BB` -> `BB`) - or `None` for a location that carries no group (a bare pool
@@ -1873,6 +1885,23 @@ class ProjectSupplyService:
         for key, fact, unit_key in entries:
             if fact.unplannable_reason:
                 out[key] = ((), None, {}, None, (), {}, {}, {}, {})
+                continue
+            if planned_at_own_bin(fact.warehouse, fact.doc_type) and fact.open_qty > _ZERO:
+                # CONSIGN-PLAN (owner Q1): the goods are already at the own bin, so the
+                # proposal is a plain Borrow of the whole plan quantity from it - never a
+                # Buy, nothing to purchasing - and it draws on no shared pile.
+                own = fact.own_code
+                out[key] = (
+                    (
+                        Component(
+                            kind=BORROW,
+                            qty=fact.open_qty,
+                            reason=f"Consignment: the goods are at {own}",
+                            source_location=own,
+                        ),
+                    ),
+                    None, {}, None, (), {}, {}, {}, {},
+                )
                 continue
             if unit_key not in units:
                 units[unit_key] = []
@@ -3100,6 +3129,67 @@ class ProjectSupplyService:
             by_ref,
             self._oi_linked_landed_by_ref(refs, product_id=product_id, company_id=company_id),
         )
+
+    def _po_received_by_product(
+        self, refs_by_product: Mapping[str, Iterable[str]]
+    ) -> Dict[str, Dict[str, Tuple[Decimal, Optional[str]]]]:
+        """`product_id -> _po_received_by_so_line_ref(refs, product_id=..., company_id=None)`
+        for many products in two reads, not two per product (STOCK-DEBT-PERF: the Stock
+        Debt board asked once per product, 1,258 of its 1,288 statements on the dev DB).
+
+        The same two joins over every product and ref at once. A row is kept only for the
+        product it is for AND a ref asked about for that product, so each product's answer
+        is the single-key read's own: the receipt JOIN pairs the SPO row with the PO line's
+        product (the single-key read gets that by comparing both to one literal), and no
+        company is stated, as `company_id=None` states none.
+        """
+        wanted = {
+            str(product_id): {ref for ref in {str(r).strip() for r in refs if r} if ref}
+            for product_id, refs in refs_by_product.items()
+            if product_id
+        }
+        wanted = {product_id: refs for product_id, refs in wanted.items() if refs}
+        if not wanted:
+            return {}
+        all_refs = sorted(set().union(*wanted.values()))
+        product_ids = sorted(wanted)
+        received: Dict[str, Dict[str, Dict[str, Decimal]]] = {}
+        rows = (
+            self.db.query(
+                PurchaseOrderLine.from_so_line_ref,
+                SPOAllocation.quantity_received,
+                SPOAllocation.spo_number,
+                PurchaseOrderLine.product_id,
+            )
+            .join(
+                SPOAllocation,
+                (SPOAllocation.from_po_line_ref == PurchaseOrderLine.source_ref)
+                & (SPOAllocation.product_id == PurchaseOrderLine.product_id),
+            )
+            .filter(
+                PurchaseOrderLine.from_so_line_ref.in_(all_refs),
+                PurchaseOrderLine.product_id.in_(product_ids),
+            )
+            .all()
+        )
+        for ref, qty, spo_number, product_id in rows:
+            if str(ref) in wanted.get(str(product_id), ()):
+                _add_landed(received.setdefault(str(product_id), {}), str(ref), spo_number, qty)
+        linked: Dict[str, Dict[str, Dict[str, Decimal]]] = {}
+        for ref, product_id, _company, spo_number, placed, got in self._oi_placements(
+            all_refs, product_ids
+        ):
+            if str(ref) in wanted.get(str(product_id), ()):
+                _add_landed(
+                    linked.setdefault(str(product_id), {}), str(ref).strip(), spo_number,
+                    min(_dec(placed), _dec(got)),
+                )
+        return {
+            product_id: _landed_for_refs(
+                received.get(product_id, {}), linked.get(product_id, {})
+            )
+            for product_id in wanted
+        }
 
     def _oi_linked_landed_by_ref(
         self,
@@ -4773,6 +4863,7 @@ class ProjectSupplyService:
                 group_code=sales_agent_service.group_of_warehouse_code(
                     warehouse.warehouse_code if warehouse else None
                 ),
+                doc_type=row.get("so_doc_type"),
             )
             self._apply_group_nets(facts[str(row["key"])])
         return facts
@@ -8159,6 +8250,12 @@ class ProjectSupplyService:
                     continue
                 if getattr(item, "supply_key", None):
                     continue
+                if planned_at_own_bin(fact.warehouse, fact.doc_type) and str(
+                    item.warehouse_id
+                ) == str(fact.warehouse.id):
+                    # CONSIGN-PLAN: the goods ARE the consignment's own bin; nothing was
+                    # lent, so nothing is owed back and purchasing hears nothing.
+                    continue
                 if unnamed_order_borrows_only and (
                     not getattr(item, "donor_core_line_id", None)
                     or self._names_its_order(item)
@@ -9251,7 +9348,10 @@ class ProjectSupplyService:
                     # board itself no longer shows.
                     else OUTSIDE_FULFILMENT_PLANNING
                     if (
-                        outside_fulfilment_planning(warehouse)
+                        outside_fulfilment_planning(
+                            warehouse,
+                            getattr(core_orders.get(str(core.sales_order_id)), "doc_type", None),
+                        )
                         and str(core.id) not in decided_anywhere
                     )
                     else None
@@ -9259,6 +9359,9 @@ class ProjectSupplyService:
                 group_code=sales_agent_service.group_of_warehouse_code(
                     warehouse.warehouse_code if warehouse else None
                 ),
+                doc_type=getattr(core_orders.get(str(core.sales_order_id)), "doc_type", None)
+                if core
+                else None,
             )
             self._apply_group_nets(facts[str(line.id)])
         return facts

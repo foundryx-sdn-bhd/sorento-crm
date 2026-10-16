@@ -29,6 +29,11 @@ vi.mock('@/lib/listing-column-preferences/listColumnPreferencesService', () => (
   upsertUserListColumnConfig: vi.fn(),
   resetUserListColumnConfig: vi.fn(),
 }));
+// The toolbar's <SavedViewsMenu> has its own tests (StockDebtClient.savedViews.test.tsx,
+// components/list/SavedViewsMenu.test.tsx); stubbed here so its session and per-user
+// default reads stay out of what this file asserts about the board.
+vi.mock('@/components/list/SavedViewsMenu', () => ({ SavedViewsMenu: () => null }));
+
 vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
@@ -70,6 +75,7 @@ function envelope(): StockDebtListResponse {
     months: ['2026-12'],
     tba_month: '2029-01',
     groups: [],
+    locations: [],
     totals: {
       months: { '2026-12': -1436 },
       tba: 0,

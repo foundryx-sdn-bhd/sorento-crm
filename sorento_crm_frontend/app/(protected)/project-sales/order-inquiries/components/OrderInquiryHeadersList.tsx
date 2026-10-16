@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { Send } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   ColumnDef,
   PaginationState,
+  RowSelectionState,
   SortingState,
   getCoreRowModel,
   useReactTable,
@@ -18,6 +20,7 @@ import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridListToolbar } from '@/components/ui/data-grid-list-toolbar';
 import { DataGridPagination } from '@/components/ui/data-grid-pagination';
+import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,19 +28,28 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { useResetPageOnFilterChange } from '@/hooks/useResetPageOnFilterChange';
 import { buildDetailSearch } from '@/lib/listNavQuery';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { getUserLookup } from '@/services/userSelectService';
+import { toast } from '@/lib/toast';
 import {
   useOrderInquiryHeaders,
   useOrderInquiryWorklistSummary,
+  useReserveStatusSummary,
 } from '../../_shared/hooks/useOrderInquiry';
+import { HandoverResendDialog } from '../../_shared/components/HandoverResendDialog';
+import { useParkedSendActions } from '../../_shared/hooks/useParkedSendActions';
 import { formatInquiryQty } from '../../_shared/lib/orderInquiryWorklist';
 import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import {
+  ORDER_INQUIRY_RESERVE_STATUSES,
   orderInquiryHeaderStatusLabel,
   orderInquiryHeaderStatusVariant,
+  orderInquiryReserveStatusLabel,
+  orderInquiryReserveStatusVariant,
+  type OrderInquiryReserveStatus,
 } from '../../_shared/lib/orderInquiryHeaderStatus';
 import type {
   OrderInquiryHeader,
@@ -50,6 +62,16 @@ import type {
 const LISTING_KEY = 'projects.projects.view::order-inquiry-headers';
 
 type StateFilter = 'all' | 'outstanding' | 'completed';
+
+const ACTION_PERMISSION = 'projects.order_inquiry.action';
+/** The send route's own cap (`HandoverResendIn`). */
+const MAX_RESEND = 50;
+
+function reserveFrom(value: string | null): OrderInquiryReserveStatus | '' {
+  return (ORDER_INQUIRY_RESERVE_STATUSES as string[]).includes(value ?? '')
+    ? (value as OrderInquiryReserveStatus)
+    : '';
+}
 
 function stateFrom(value: string | null): StateFilter {
   return value === 'all' || value === 'completed' ? value : 'outstanding';
@@ -73,8 +95,15 @@ export function OrderInquiryHeadersList() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  const [reserveFilter, setReserveFilter] = useState<OrderInquiryReserveStatus | ''>(() =>
+    reserveFrom(searchParams.get('reserve')),
+  );
+  // A reserve status spans outstanding and completed documents, so landing on one (the
+  // email link) with no explicit state shows All.
   const [stateFilter, setStateFilter] = useState<StateFilter>(() =>
-    stateFrom(searchParams.get('state')),
+    searchParams.get('state') == null && reserveFrom(searchParams.get('reserve')) !== ''
+      ? 'all'
+      : stateFrom(searchParams.get('state')),
   );
   const [sorting, setSorting] = useState<SortingState>(() => {
     const sort = searchParams.get('sort');
@@ -115,6 +144,7 @@ export function OrderInquiryHeadersList() {
     if (raisedByFilter) next.set('raised_by', raisedByFilter);
     if (agentFilter) next.set('agent', agentFilter);
     if (projectFilter) next.set('project', projectFilter);
+    if (reserveFilter) next.set('reserve', reserveFilter);
     const nextQuery = next.toString();
     if (nextQuery === searchParams.toString()) return;
     router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
@@ -127,6 +157,7 @@ export function OrderInquiryHeadersList() {
     raisedByFilter,
     agentFilter,
     projectFilter,
+    reserveFilter,
     pathname,
     router,
     searchParams,
@@ -138,7 +169,15 @@ export function OrderInquiryHeadersList() {
     raisedByFilter,
     agentFilter,
     projectFilter,
+    reserveFilter,
   ]);
+  // A tick on a row the new filter excludes is not a selection any more.
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  useEffect(() => {
+    setRowSelection({});
+  }, [stateFilter, searchQuery, raisedByFilter, agentFilter, projectFilter, reserveFilter]);
+  const [resendIds, setResendIds] = useState<string[] | null>(null);
+  const closeResend = useCallback(() => setResendIds(null), []);
 
   const params = useMemo<OrderInquiryHeaderListParams>(
     () => ({
@@ -147,6 +186,7 @@ export function OrderInquiryHeadersList() {
       raised_by: raisedByFilter || undefined,
       agent: agentFilter || undefined,
       project: projectFilter || undefined,
+      reserve: reserveFilter || undefined,
       sort: sorting[0]?.id ?? 'raised_at',
       dir: sorting[0]?.desc ? 'desc' : 'asc',
       page: pagination.pageIndex + 1,
@@ -158,6 +198,7 @@ export function OrderInquiryHeadersList() {
       raisedByFilter,
       agentFilter,
       projectFilter,
+      reserveFilter,
       sorting,
       pagination.pageIndex,
       pagination.pageSize,
@@ -190,8 +231,16 @@ export function OrderInquiryHeadersList() {
   });
   const worklistSummary = useOrderInquiryWorklistSummary({});
 
+  const canAct = useHasPermission(ACTION_PERMISSION);
+  const reserveSummary = useReserveStatusSummary();
+  const { actions: sendActions, dialog: parkedSendDialog } = useParkedSendActions();
+
   const filterOptions = useMemo(
     () => ({
+      reserve: ORDER_INQUIRY_RESERVE_STATUSES.map((status) => ({
+        value: status,
+        label: `${orderInquiryReserveStatusLabel(status)} (${reserveSummary.data?.[status] ?? 0})`,
+      })),
       raisedBy: (usersQuery.data ?? []).map((user) => ({
         value: user.id,
         label: user.name || 'Unnamed user',
@@ -205,7 +254,7 @@ export function OrderInquiryHeadersList() {
         label: entry.label,
       })),
     }),
-    [usersQuery.data, worklistSummary.data],
+    [usersQuery.data, worklistSummary.data, reserveSummary.data],
   );
 
   const rows = useMemo<OrderInquiryHeader[]>(() => data?.data ?? [], [data]);
@@ -219,6 +268,7 @@ export function OrderInquiryHeadersList() {
           raised_by: raisedByFilter || undefined,
           agent: agentFilter || undefined,
           project: projectFilter || undefined,
+          reserve: reserveFilter || undefined,
         },
       ),
     [
@@ -230,6 +280,7 @@ export function OrderInquiryHeadersList() {
       raisedByFilter,
       agentFilter,
       projectFilter,
+      reserveFilter,
     ],
   );
   const detailHref = useCallback(
@@ -240,6 +291,9 @@ export function OrderInquiryHeadersList() {
 
   const columns = useMemo<ColumnDef<OrderInquiryHeader>[]>(
     () => [
+      ...(canAct
+        ? [buildSelectColumn<OrderInquiryHeader>({ rowLabel: (row) => `Select ${row.original.inquiry_no}` })]
+        : []),
       {
         accessorKey: 'raised_at',
         header: ({ column }) => <DataGridColumnHeader title="Raised at" column={column} />,
@@ -419,6 +473,33 @@ export function OrderInquiryHeadersList() {
           ),
       },
       {
+        id: 'reserve_status',
+        header: () => <span>Reserve</span>,
+        size: 190,
+        enableSorting: false,
+        meta: { headerTitle: 'Reserve' },
+        cell: ({ row }) => {
+          const { reserve_status, parked_by_name } = row.original;
+          if (!reserve_status) return <span className="text-muted-foreground">-</span>;
+          return (
+            <div className="flex min-w-0 flex-col items-start gap-0.5">
+              <Badge
+                variant={orderInquiryReserveStatusVariant(reserve_status)}
+                appearance="light"
+                size="md"
+              >
+                {orderInquiryReserveStatusLabel(reserve_status)}
+              </Badge>
+              {parked_by_name && reserve_status === 'parked' ? (
+                <span className="block max-w-full truncate text-xs text-muted-foreground" title={parked_by_name}>
+                  {parked_by_name}
+                </span>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
         accessorKey: 'status',
         header: ({ column }) => <DataGridColumnHeader title="Status" column={column} />,
         size: 130,
@@ -434,7 +515,7 @@ export function OrderInquiryHeadersList() {
         ),
       },
     ],
-    [],
+    [canAct],
   );
 
   const table = useReactTable({
@@ -442,7 +523,9 @@ export function OrderInquiryHeadersList() {
     data: rows,
     pageCount: Math.ceil((data?.total || 0) / pagination.pageSize),
     getRowId: (row) => row.id,
-    state: { pagination, sorting },
+    state: { pagination, sorting, rowSelection },
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: canAct,
     onPaginationChange: setPagination,
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
@@ -453,7 +536,10 @@ export function OrderInquiryHeadersList() {
   });
 
   const filtersActive =
-    (raisedByFilter ? 1 : 0) + (agentFilter ? 1 : 0) + (projectFilter ? 1 : 0);
+    (raisedByFilter ? 1 : 0) +
+    (agentFilter ? 1 : 0) +
+    (projectFilter ? 1 : 0) +
+    (reserveFilter ? 1 : 0);
   const isFiltered = Boolean(searchQuery) || filtersActive > 0;
 
   // AC-HL-07: Outstanding empty is a work-queue empty state with a way out; All empty is
@@ -511,12 +597,58 @@ export function OrderInquiryHeadersList() {
                 </ToggleGroup>
               </>
             }
+            secondaryActions={sendActions}
+            secondaryActionsAsMenu
+            bulkActions={
+              canAct
+                ? [
+                    {
+                      key: 'send-to-purchasing',
+                      label: 'Send to purchasing',
+                      icon: Send,
+                      onClick: () => {
+                        // Ids, not loaded rows: a tick on an earlier page still counts.
+                        const ids = Object.keys(rowSelection).filter((rowId) => rowSelection[rowId]);
+                        if (ids.length > MAX_RESEND) {
+                          toast.error(`Tick at most ${MAX_RESEND} order inquiries at a time.`);
+                          return;
+                        }
+                        setResendIds(ids);
+                      },
+                    },
+                  ]
+                : []
+            }
             filters={{
               kind: 'custom',
+              // The list stays readable (and the state toggle reachable) while a filter is set.
+              modal: false,
               active: filtersActive > 0,
               activeCount: filtersActive,
+              activeSummary: reserveFilter
+                ? {
+                    label: `Reserve: ${orderInquiryReserveStatusLabel(reserveFilter)}`,
+                    onClear: () => setReserveFilter(''),
+                  }
+                : undefined,
               content: (
                 <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="oi-header-reserve" className="mb-1 block">
+                      Reserve
+                    </Label>
+                    <SearchableSelect
+                      id="oi-header-reserve"
+                      value={reserveFilter}
+                      onChange={(value) => {
+                        setReserveFilter(reserveFrom(value));
+                        if (value) setStateFilter('all');
+                      }}
+                      options={filterOptions.reserve}
+                      placeholder="Any reserve status"
+                      clearable
+                    />
+                  </div>
                   <div>
                     <Label htmlFor="oi-header-raised-by" className="mb-1 block">
                       Raised by
@@ -567,6 +699,7 @@ export function OrderInquiryHeadersList() {
                           setRaisedByFilter('');
                           setAgentFilter('');
                           setProjectFilter('');
+                          setReserveFilter('');
                         }}
                       >
                         Clear filters
@@ -588,6 +721,12 @@ export function OrderInquiryHeadersList() {
           <DataGridPagination />
         </CardFooter>
       </Card>
+      <HandoverResendDialog
+        inquiryIds={resendIds}
+        onClose={closeResend}
+        onSent={() => setRowSelection({})}
+      />
+      {parkedSendDialog}
     </DataGrid>
   );
 }

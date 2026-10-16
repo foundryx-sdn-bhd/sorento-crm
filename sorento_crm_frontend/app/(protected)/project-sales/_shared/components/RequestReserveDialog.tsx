@@ -13,15 +13,16 @@ import {
 } from '@/components/ui/dialog';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridTable } from '@/components/ui/data-grid-table';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { formatDateInMalaysia } from '@/lib/helpers';
-import type {
-  CreateReserveRequestPayload,
-  OrderInquiryReserveRequest,
-} from '../../../_shared/services/orderInquiryReserveService';
+import { useCreateOrderInquiryReserveRequest } from '../hooks/useOrderInquiry';
+import { useReserveRowOptions } from '../hooks/useReserveRowOptions';
+import { rowRequestable } from '../lib/reserveEligibility';
+import type { OrderInquiryWorklistRow } from '../types/orderInquiry.types';
 
 /**
  * `PLAN-oi-request-cs-reserve.md` 3.7 (AC-RS-22/AC-RS-23): one line per selected row,
@@ -30,10 +31,9 @@ import type {
  * remaining / pool / stock-grid locations, since that resolution needs the same board
  * stock-detail read `OrderInquiryStockGrid` already makes.
  *
- * S5 (reviewer round): the write goes through `onSend`, a mutate function the caller
- * builds from `useCreateOrderInquiryReserveRequest` (`_shared/hooks/useOrderInquiry.ts`)
- * - this dialog no longer imports the feature service directly (UI -> hook -> service ->
- * api-client).
+ * STOCK-DEBT-SNAPSHOT: shared by the OI page and the snapshot drill. It takes the inquiry's
+ * live worklist rows and builds its own lines (`useReserveRowOptions` + `rowRequestable`), and
+ * writes through `useCreateOrderInquiryReserveRequest` (UI -> hook -> service -> api-client).
  *
  * G6 (`PLAN-oi-request-cs-reserve.md` section 6d, AC-RS-75, owner: "we should use
  * standard datagrid table in the system"): the body is ONE DataGrid, one row per
@@ -45,7 +45,7 @@ import type {
  * a `QueryClientProvider` ancestor. No `listingKey` is passed, so the hook's own
  * `useQuery` stays disabled and issues no network read.
  */
-export interface ReserveRequestDialogRow {
+interface RequestReserveDialogRow {
   id: string;
   item_code: string | null;
   delivery_date: string | null;
@@ -56,24 +56,67 @@ export interface ReserveRequestDialogRow {
   locationOptions: SearchableSelectOption[];
 }
 
-export function ReserveRequestDialog({
+export function RequestReserveDialog({
+  inquiryId,
+  rows: worklistRows,
+  defaultWarehouseId,
   open,
   onOpenChange,
-  rows,
-  onSend,
   onSent,
 }: {
+  inquiryId: string;
+  /** The inquiry's live worklist rows to name on the request. */
+  rows: OrderInquiryWorklistRow[];
+  /** Preferred Location for every row that offers it (e.g. a snapshot decision's pool). */
+  defaultWarehouseId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  rows: ReserveRequestDialogRow[];
-  /** S5: the caller's own mutation, already wired to toast + invalidate on success. */
-  onSend: (payload: CreateReserveRequestPayload) => Promise<OrderInquiryReserveRequest>;
   onSent?: () => void;
 }) {
+  const createMutation = useCreateOrderInquiryReserveRequest(inquiryId);
+  // Memoised on what the options depend on: the hook below registers queries from this
+  // array, so a fresh one on every dialog state change (the Park tickbox) kept it notifying.
+  const entriesSignature = worklistRows
+    .map((line) => `${line.id}~${line.product_id ?? ''}~${line.location ?? ''}`)
+    .join('|');
+  const entries = React.useMemo(
+    () =>
+      open
+        ? worklistRows.map((line) => ({
+            key: line.id,
+            productId: line.product_id ?? null,
+            location: line.location ?? null,
+          }))
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [open, entriesSignature],
+  );
+  const resolved = useReserveRowOptions(entries);
+  const rows = React.useMemo<RequestReserveDialogRow[]>(
+    () =>
+      worklistRows.map((line) => {
+        const own = resolved[line.id];
+        const options = own?.options ?? [];
+        const preferred =
+          defaultWarehouseId && options.some((option) => option.value === defaultWarehouseId)
+            ? defaultWarehouseId
+            : null;
+        return {
+          id: line.id,
+          item_code: line.item_code ?? null,
+          delivery_date: line.delivery_date ?? null,
+          remaining: String(Math.max(0, rowRequestable(line))),
+          defaultLocation: preferred ?? own?.defaultWarehouseId ?? '',
+          locationOptions: options,
+        };
+      }),
+    [worklistRows, resolved, defaultWarehouseId],
+  );
   const [requested, setRequested] = React.useState<Record<string, number>>({});
   const [location, setLocation] = React.useState<Record<string, string>>({});
   const [note, setNote] = React.useState('');
   const [sending, setSending] = React.useState(false);
+  const [park, setPark] = React.useState(false);
 
   // S4 (reviewer round): keyed on a SIGNATURE, not the `rows` array itself - the
   // caller's own `useReserveRowOptions` (`_shared/hooks/useReserveRowOptions.ts`)
@@ -91,6 +134,7 @@ export function ReserveRequestDialog({
     );
     setLocation(Object.fromEntries(rows.map((row) => [row.id, row.defaultLocation])));
     setNote('');
+    setPark(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, rowsSignature]);
 
@@ -113,7 +157,7 @@ export function ReserveRequestDialog({
   const stateRef = React.useRef({ requested, location });
   stateRef.current = { requested, location };
 
-  const columns = React.useMemo<ColumnDef<ReserveRequestDialogRow>[]>(
+  const columns = React.useMemo<ColumnDef<RequestReserveDialogRow>[]>(
     () => [
       {
         id: 'product',
@@ -221,13 +265,14 @@ export function ReserveRequestDialog({
   async function handleSend() {
     setSending(true);
     try {
-      await onSend({
+      await createMutation.mutateAsync({
         rows: rows.map((row) => ({
           row_id: row.id,
           qty_requested: requested[row.id] ?? Number(row.remaining || '0'),
           warehouse_id: location[row.id] ?? row.defaultLocation,
         })),
         note: note.trim() ? note.trim() : null,
+        park,
       });
       onOpenChange(false);
       onSent?.();
@@ -278,17 +323,28 @@ export function ReserveRequestDialog({
             />
           </div>
         </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
-            Cancel
-          </Button>
-          <Button onClick={handleSend} disabled={sending || rows.length === 0}>
-            Send request
-          </Button>
+        <DialogFooter className="flex-wrap items-center gap-2 sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="reserve-request-park"
+              checked={park}
+              onCheckedChange={(value) => setPark(value === true)}
+              disabled={sending}
+            />
+            <Label htmlFor="reserve-request-park">Park this first</Label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
+              Cancel
+            </Button>
+            <Button onClick={handleSend} disabled={sending || rows.length === 0}>
+              {park ? 'Park request' : 'Send request'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-export default ReserveRequestDialog;
+export default RequestReserveDialog;

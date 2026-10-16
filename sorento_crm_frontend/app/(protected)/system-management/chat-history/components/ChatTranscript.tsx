@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TurnAttachments } from '@/components/chatbot/TurnAttachments';
+import { WhatsAppText } from '@/components/chatbot/WhatsAppText';
 import AttachmentPreviewModal, {
   type AttachmentPreviewItem,
 } from '@/components/common/AttachmentPreviewModal';
@@ -14,6 +15,7 @@ import MessageBubbleActions from '@/components/common/conversation/MessageBubble
 import QuotedContextBlock from '@/components/common/conversation/QuotedContextBlock';
 import { formatDateTimeInMalaysia } from '@/lib/helpers';
 import { splitQuotedPrefix } from '@/lib/respondIoChatRender';
+import { stripWhatsAppMarkup } from '@/lib/whatsappText';
 import type { ChatMessageRow } from '../types/chatHistory.types';
 import type { ChatbotTurn, ChatbotTurnMedia } from '../types/chatbotTurn.types';
 import { isMediaDenied, mediaReadCount, turnAttachments } from '../turnPresentation';
@@ -42,26 +44,6 @@ function fmtLatency(seconds: number): string {
   return seconds < 1 ? `${Math.round(seconds * 1000)}ms` : `${seconds.toFixed(1)}s`;
 }
 
-/** Split a message into segments, marking the ones that match `term` (case-insensitive). */
-function highlight(text: string, term: string): { text: string; hit: boolean }[] {
-  if (!term) return [{ text, hit: false }];
-  const lower = text.toLowerCase();
-  const q = term.toLowerCase();
-  const out: { text: string; hit: boolean }[] = [];
-  let i = 0;
-  while (i < text.length) {
-    const found = lower.indexOf(q, i);
-    if (found === -1) {
-      out.push({ text: text.slice(i), hit: false });
-      break;
-    }
-    if (found > i) out.push({ text: text.slice(i, found), hit: false });
-    out.push({ text: text.slice(found, found + q.length), hit: true });
-    i = found + q.length;
-  }
-  return out;
-}
-
 export function ChatTranscript({
   messages,
   isLoading,
@@ -83,6 +65,25 @@ export function ChatTranscript({
    *  shown (AC-1846). */
   const mediaFor = (turn: ChatbotTurn | undefined): ChatbotTurnMedia | null =>
     turn?.media && !isMediaDenied(turn) ? turn.media : null;
+  /** What a bubble shows: its quoted block, its media and the text under them. */
+  const bubbleOf = (m: ChatMessageRow) => {
+    const outgoing = m.type === 'outgoing';
+    const turn = turnFor(m);
+    const media = !outgoing ? mediaFor(turn) : null;
+    // Voice notes carry no caption on WhatsApp - the transcript is shown instead,
+    // never alongside an already-identical caption (plan S1, "never duplicate the
+    // caption").
+    // #1317: our own reply-to carries its quote as a leading ">" line;
+    // only OUTGOING text is ours to split (a contact's ">" is theirs).
+    const { quoted, body } = outgoing
+      ? splitQuotedPrefix(m.message)
+      : { quoted: null, body: m.message };
+    const bubbleText =
+      media?.modality === 'voice' && !body.trim()
+        ? (media.transcript_or_rendered_text ?? '')
+        : body;
+    return { outgoing, turn, media, quoted, bubbleText };
+  };
 
   // AC-255. A failed turn is a PAIR the operator wants to read: what the customer sent
   // and what the bot sent back. Filtering the incoming message alone would leave the
@@ -117,11 +118,18 @@ export function ChatTranscript({
   const matchRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // Message ids that contain the term, in transcript order - the navigable match set.
+  // Matched against the bubble text as shown (WhatsApp markers stripped, quoted prefix
+  // split off, voice transcript in), so a search for `*` does not hit hidden markup. A
+  // term that spans two styled runs still counts but is not marked: the mark is split
+  // per run.
   const matches = useMemo(() => {
     const q = term.trim().toLowerCase();
     if (!q) return [] as number[];
-    return visible.filter((m) => m.message.toLowerCase().includes(q)).map((m) => m.id);
-  }, [visible, term]);
+    return visible
+      .filter((m) => stripWhatsAppMarkup(bubbleOf(m).bubbleText).toLowerCase().includes(q))
+      .map((m) => m.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, term, turnsByMessageId]);
 
   useEffect(() => {
     setActiveMatch(0);
@@ -222,25 +230,11 @@ export function ChatTranscript({
 
         {!isLoading &&
           visible.map((m) => {
-            const outgoing = m.type === 'outgoing';
             const isAnchor = m.id === anchorId;
             const matchIdx = matches.indexOf(m.id);
             const isMatch = matchIdx !== -1;
             const isActive = isMatch && matchIdx === activeMatch;
-            const turn = turnFor(m);
-            const media = !outgoing ? mediaFor(turn) : null;
-            // Voice notes carry no caption on WhatsApp - the transcript is shown instead,
-            // never alongside an already-identical caption (plan S1, "never duplicate the
-            // caption").
-            // #1317: our own reply-to carries its quote as a leading ">" line;
-            // only OUTGOING text is ours to split (a contact's ">" is theirs).
-            const { quoted, body } = outgoing
-              ? splitQuotedPrefix(m.message)
-              : { quoted: null, body: m.message };
-            const bubbleText =
-              media?.modality === 'voice' && !body.trim()
-                ? (media.transcript_or_rendered_text ?? '')
-                : body;
+            const { outgoing, turn, media, quoted, bubbleText } = bubbleOf(m);
             return (
               <div
                 key={m.id}
@@ -279,16 +273,10 @@ export function ChatTranscript({
                     />
                   )}
                   {media && <MediaBlock media={media} onOpenImage={setPreviewItem} />}
+                  {/* WhatsApp markup rendered as the handset shows it: bold labels,
+                      clickable links (CHAT-HISTORY-FORMAT). */}
                   <p className="whitespace-pre-wrap break-words">
-                    {highlight(bubbleText, term.trim()).map((seg, i) =>
-                      seg.hit ? (
-                        <mark key={i} className="bg-amber-200 text-inherit rounded-sm">
-                          {seg.text}
-                        </mark>
-                      ) : (
-                        <span key={i}>{seg.text}</span>
-                      ),
-                    )}
+                    <WhatsAppText text={bubbleText} term={term.trim()} />
                   </p>
                   {m.delivery_status && (
                     <span className="text-[11px] text-muted-foreground">{m.delivery_status}</span>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 // Mock the data hook so we can drive loading / empty / error / data states.
 const useLookupOptionsByBinding = vi.fn();
@@ -123,5 +123,53 @@ describe('LookupBoundField (sales_type) states', () => {
     // Give the effect a tick; it must not fire for a pre-filled field.
     await new Promise((r) => setTimeout(r, 20));
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('applyDefault={false} never applies the binding default, even on an empty value', async () => {
+    const onChange = vi.fn();
+    useLookupOptionsByBinding.mockReturnValue({ data: SALES_TYPE_DATA, isLoading: false });
+    render(
+      <LookupBoundField
+        table="purchase_requests"
+        column="sales_type"
+        value={null}
+        onChange={onChange}
+        applyDefault={false}
+        renderFallback={() => <Fallback />}
+      />,
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('clearable renders Clear selection and pointerDown on it calls onChange("")', () => {
+    const onChange = vi.fn();
+    useLookupOptionsByBinding.mockReturnValue({ data: SALES_TYPE_DATA, isLoading: false });
+    render(
+      <LookupBoundField
+        table="purchase_requests"
+        column="sales_type"
+        value="cash_sales"
+        onChange={onChange}
+        clearable
+        renderFallback={() => <Fallback />}
+      />,
+    );
+    fireEvent.pointerDown(screen.getByLabelText('Clear selection'));
+    expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('without clearable there is no clear control', () => {
+    useLookupOptionsByBinding.mockReturnValue({ data: SALES_TYPE_DATA, isLoading: false });
+    render(
+      <LookupBoundField
+        table="purchase_requests"
+        column="sales_type"
+        value="cash_sales"
+        onChange={vi.fn()}
+        renderFallback={() => <Fallback />}
+      />,
+    );
+    expect(screen.queryByLabelText('Clear selection')).toBeNull();
   });
 });

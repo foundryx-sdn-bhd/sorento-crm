@@ -288,6 +288,13 @@ async def list_all_promotion_products(
             "not come back at all."
         ),
     ),
+    contact_id: Optional[str] = Query(
+        None,
+        description=(
+            "Respond.io contact id when reading on behalf of a contact. With it, an empty or "
+            "absent access_levels reads the contact's own access levels, never every level."
+        ),
+    ),
     current_user: dict = Depends(require_any_permission_with_api_key(PROMOTION_PRODUCT_READERS)),
     db: Session = Depends(get_db)
 ):
@@ -296,7 +303,9 @@ async def list_all_promotion_products(
         from app.services.contact_access_type_service import ContactAccessTypeService
         from app.services.entity_filter_helpers import normalize_list_query_param
         access_levels = normalize_list_query_param(access_levels)
-        contact_codes = ContactAccessTypeService(db).translate_names_to_codes(access_levels)
+        contact_codes = ContactAccessTypeService(db).translate_names_to_codes_for_caller(
+            access_levels, contact_id=contact_id
+        )
         service = PromotionProductService(db)
         resolved_pid: Optional[str] = None
         resolved_pids: Optional[List[str]] = None

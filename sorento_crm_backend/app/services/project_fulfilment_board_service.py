@@ -96,6 +96,7 @@ from app.services.scm.supply_origin import buy_origin_by_product
 from app.services.scm.planning_predicate import (
     OUTSIDE_FULFILMENT_PLANNING,
     outside_fulfilment_planning,
+    planned_at_own_bin,
 )
 from app.services.scm.demand import (
     demand_qty,
@@ -1632,7 +1633,7 @@ class FulfilmentBoardService:
                 # from the one predicate rather than from two lookups that could disagree.
                 # ACTIVE and flagged off - an inactive bin keeps whatever verdict it carried
                 # before the flag existed (`outside_fulfilment_planning`).
-                outside_planning=outside_fulfilment_planning(warehouse),
+                outside_planning=outside_fulfilment_planning(warehouse, order.doc_type),
                 priority=line.priority,
                 demand_class=order.demand_class,
                 so_doc_type=order.doc_type,
@@ -2787,6 +2788,9 @@ class FulfilmentBoardService:
                     "sales_order_id": row.sales_order_id,
                     "source_ref": row.source_ref,
                     "company_id": row.company_id,
+                    # CONSIGN-PLAN: lets the fact carry its doc type, so the proposal for a
+                    # consignment is its own bin (`ProjectSupplyService.compose_lines`).
+                    "so_doc_type": row.so_doc_type,
                 }
                 for row in plannable
             ],
@@ -3286,7 +3290,9 @@ class FulfilmentBoardService:
         an earlier line had spent, and question 1 offered the 135 at BRW-BB to the 1,305
         line of the same unit that the 135 line had just taken.
 
-        FIVE ROWS, always, in the WALK's own order (v8, R-A): the site pool's share, our
+        ONE ROW for a line planned at its own off-planning bin (CONSIGN-PLAN: "Consignment:
+        the goods are at CON."), which walks no ladder. Otherwise FIVE ROWS, always, in the
+        WALK's own order (v8, R-A): the site pool's share, our
         own locations, borrowing on hand from a later order, borrowing what one is waiting
         on, Buy. The captain, walking SO381895: "our thought process is simpler now" - so
         the proof is the questions a planner would ask out loud, in the order the ladder
@@ -3404,6 +3410,21 @@ class FulfilmentBoardService:
                     "pool": pool,
                 }
             )
+
+        # CONSIGN-PLAN: a consignment planned at its own bin skipped the ladder
+        # (`compose_lines`), so the five questions would describe a walk that never happened
+        # and contradict its Borrow. One step states what was decided.
+        if planned_at_own_bin(fact.warehouse, getattr(fact, "doc_type", None)) and components:
+            add(
+                "own",
+                "Are the goods already at the line's own bin?",
+                taken=_dec(row.qty),
+                sources=[own_code] if own_code else None,
+                location=own_code,
+                warehouse_id=str(fact.warehouse.id),
+                why=lambda _outcome: f"Consignment: the goods are at {own_code}.",
+            )
+            return steps, []
 
         # The ATP reserve window verdict, read once and answered the same way by all four
         # questions. Under v5 NOTHING runs beyond it, incoming included, so every question

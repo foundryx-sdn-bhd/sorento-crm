@@ -68,18 +68,19 @@ ls -ld /opt/sorento-crm2 /opt/sorento-crm2/.deploy.lock 2>&1
 
 - **Check:** `/opt/sorento-crm2` is owned by root (or by the deploy user) and not writable by
   anyone else. If so, keep the default and do nothing.
-- **If `/opt/sorento-crm2` is not root-owned**, use the fallback from HA-BACKUP-CHECK's
-  `backups.md` step 0 (a root-owned directory the deploy user can write to), and set the SAME path
-  for both sides: for the deploy in `/opt/sorento-crm2/.deploy.env` (step 3), for the restore test
-  where its runbook says.
+- **If `/opt/sorento-crm2` is not root-owned** (or has a group/other write bit), follow
+  `backups.md` step 0b option (b) once; it serves both sides. The same commands:
 
   ```bash
-  sudo install -d -m 0755 -o root -g root /var/lib/sorento-deploy
-  sudo install -m 0664 -o <DEPLOY_USER> -g <DEPLOY_USER> /dev/null /var/lib/sorento-deploy/deploy.lock
-  echo 'DEPLOY_LOCK_PATH=/var/lib/sorento-deploy/deploy.lock' >> /opt/sorento-crm2/.deploy.env
+  sudo install -d -o <DEPLOY_USER> -g root -m 755 /var/lib/sorento-deploy
+  sudo install -m 644 -o <DEPLOY_USER> -g root /dev/null /var/lib/sorento-deploy/.deploy.lock
+  echo 'DEPLOY_LOCK_PATH=/var/lib/sorento-deploy/.deploy.lock' >> /opt/sorento-crm2/.deploy.env
   ```
 
-  `<DEPLOY_USER>` is the user GitHub Actions SSHes in as.
+  and set the SAME `DEPLOY_LOCK_PATH` in the restore-test env (`/etc/sorento-backup/backup.env`,
+  `backups.md` step 2). `<DEPLOY_USER>` is the user GitHub Actions SSHes in as (the
+  `SSH_USER` secret); `id -nG <DEPLOY_USER>` must list `docker`, or the restore test refuses the
+  lock folder.
 - **Check:** run as the deploy user while no deploy runs; it prints `lock-ok`:
 
   ```bash
@@ -311,6 +312,10 @@ shell instead (`SKIP_MIGRATIONS=1 docker compose ...`).
   the current colour keeps serving (safe, just not useful).
 
 ## 6. A monitor on `/health/deep`
+
+The outside uptime monitor itself (Uptime Kuma polling `/api/v1/health`, which checks the
+database only) is set up in `monitoring.md`. This step adds the deeper check, Redis and the
+scheduler, on top of it.
 
 `/health` stays the blue/green readiness probe and still answers 200 when only the database is up.
 Its body now also carries `"redis": "ok"|"down"|"timeout"|"error"` and
