@@ -5,6 +5,7 @@ import { LoaderCircleIcon, Plus, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -172,9 +173,8 @@ export default function ChatbotEntityKindModal({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="kind-roster-cap">Roster cap</Label>
-            <Input
+            <NumberInput
               id="kind-roster-cap"
-              type="number"
               min={ROSTER_CAP_MIN}
               max={ROSTER_CAP_MAX}
               aria-invalid={rosterCapInvalid}

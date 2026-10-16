@@ -11,6 +11,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -61,7 +63,9 @@ export default function AutomationForm({ open, onOpenChange, automation, onSaved
   const [description, setDescription] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [triggerType, setTriggerType] = useState<string>('');
-  const [daysBefore, setDaysBefore] = useState<number>(7);
+  const [daysBefore, setDaysBefore] = useState<number | null>(7);
+  // Set by a Save that found the days wrong; the sentence then follows the typing.
+  const [daysChecked, setDaysChecked] = useState(false);
   const [emailTemplateId, setEmailTemplateId] = useState<string>('');
   const [recipientConfig, setRecipientConfig] = useState<RecipientConfig>(emptyRecipients);
   const [groupMatches, setGroupMatches] = useState(true);
@@ -180,6 +184,13 @@ export default function AutomationForm({ open, onOpenChange, automation, onSaved
   };
 
   async function onSubmit() {
+    const daysError = daysBeforeSchema
+      ? numberFieldError(daysBefore, { min: 0, integer: true })
+      : undefined;
+    if (daysError) {
+      setDaysChecked(true);
+      return;
+    }
     if (!name.trim()) {
       toast.error('Name is required');
       return;
@@ -286,12 +297,14 @@ export default function AutomationForm({ open, onOpenChange, automation, onSaved
           {daysBeforeSchema && (
             <div className="space-y-1">
               <Label htmlFor="auto-days">{daysBeforeSchema.title || 'Days before'}</Label>
-              <Input
+              <NumberInput
                 id="auto-days"
-                type="number"
                 min={0}
                 value={daysBefore}
-                onChange={(e) => setDaysBefore(Number(e.target.value))}
+                onValueChange={setDaysBefore}
+                error={
+                  daysChecked ? numberFieldError(daysBefore, { min: 0, integer: true }) : undefined
+                }
               />
             </div>
           )}

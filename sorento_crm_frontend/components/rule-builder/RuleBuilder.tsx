@@ -14,7 +14,7 @@
  * SearchableSelect / SearchableMultiSelect (the repo's searchable-dropdown
  * standard - never `ui/select`).
  */
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { AlertTriangle, ArrowLeftRight, Loader2, Plus, Trash2, Undo2 } from 'lucide-react';
 import {
   CROSS_FACT_OPERATORS,
@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -594,6 +595,18 @@ function ConditionRow({
   );
 }
 
+/** A condition's typed value: the shared number field for numbers, a plain input otherwise. */
+function ValueInput({
+  inputType,
+  ...props
+}: { inputType: 'number' | 'date' | 'text' } & Omit<ComponentProps<typeof Input>, 'type'>) {
+  return inputType === 'number' ? (
+    <NumberInput {...props} />
+  ) : (
+    <Input type={inputType} {...props} />
+  );
+}
+
 function ConditionValue({
   condition,
   fact,
@@ -615,16 +628,16 @@ function ConditionValue({
     const v = Array.isArray(condition.value) ? (condition.value as string[]) : ['', ''];
     return (
       <div className="flex items-center gap-1">
-        <Input
-          type={inputType}
+        <ValueInput
+          inputType={inputType}
           className="h-8 w-32"
           value={v[0] ?? ''}
           disabled={disabled}
           onChange={(e) => onChange({ ...condition, value: [e.target.value, v[1] ?? ''] })}
         />
         <span className="text-xs text-muted-foreground">and</span>
-        <Input
-          type={inputType}
+        <ValueInput
+          inputType={inputType}
           className="h-8 w-32"
           value={v[1] ?? ''}
           disabled={disabled}
@@ -678,8 +691,8 @@ function ConditionValue({
   if (fact.type === 'boolean') return null;
 
   return (
-    <Input
-      type={inputType}
+    <ValueInput
+      inputType={inputType}
       className={cn('h-8', inputType === 'date' ? 'w-36' : 'w-40')}
       placeholder="Value"
       value={

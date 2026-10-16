@@ -148,34 +148,34 @@ describe('SystemHealthSettingsPage', () => {
     });
   });
 
-  it('clamps a blank threshold back to the seeded value on save (non-negative int fallback)', async () => {
+  it('keeps a blank threshold as typed and blocks the save with a sentence', () => {
     stubApiFetch();
     wrap(<SystemHealthSettingsPage />);
 
-    fireEvent.change(screen.getByTestId('health-integration-fail-threshold'), {
-      target: { value: '' },
-    });
+    const field = screen.getByTestId('health-integration-fail-threshold');
+    fireEvent.change(field, { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
 
-    await waitFor(() => expect(apiFetch).toHaveBeenCalledTimes(1));
-    const body = savedBody();
-    // blank -> NaN -> falls back to the seeded 10
-    expect(body.health_integration_fail_threshold).toBe(10);
+    expect(field).toHaveValue(null);
+    expect(screen.getByText('Enter a whole number of at least 0.')).toBeInTheDocument();
+    expect(
+      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+    ).toBeUndefined();
   });
 
-  it('clamps a negative audit floor back to the seeded value on save', async () => {
+  it('keeps a negative audit floor as typed and blocks the save with a sentence', () => {
     stubApiFetch();
     wrap(<SystemHealthSettingsPage />);
 
-    fireEvent.change(screen.getByTestId('health-audit-volume-floor'), {
-      target: { value: '-4' },
-    });
+    const field = screen.getByTestId('health-audit-volume-floor');
+    fireEvent.change(field, { target: { value: '-4' } });
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
 
-    await waitFor(() => expect(apiFetch).toHaveBeenCalledTimes(1));
-    const body = savedBody();
-    // negative -> falls back to the seeded 5
-    expect(body.health_audit_volume_floor).toBe(5);
+    expect(field).toHaveValue(-4);
+    expect(screen.getByText('Enter a whole number of at least 0.')).toBeInTheDocument();
+    expect(
+      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+    ).toBeUndefined();
   });
 
   it('persists a valid edited integer value', async () => {
@@ -242,7 +242,7 @@ describe('SystemHealthSettingsPage - WhatsApp round-trip latency (OBS-S4-21)', (
     expect(body.chat_latency_percentile).toBe(99);
   });
 
-  it('clamps a blank or zero duration back to the saved value', async () => {
+  it('keeps a blank or zero duration as typed and blocks the save with a sentence', () => {
     // 0 is not a meaningful duration here - it would either disable the check
     // silently or collapse the window, so it must not be persisted.
     wrap(<SystemHealthSettingsPage />);
@@ -250,10 +250,12 @@ describe('SystemHealthSettingsPage - WhatsApp round-trip latency (OBS-S4-21)', (
     fireEvent.change(screen.getByTestId('chat-latency-min-sample'), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
 
-    await waitFor(() => expect(apiFetch).toHaveBeenCalled());
-    const body = payload();
-    expect(body.chat_latency_p99_target_seconds).toBe(10);
-    expect(body.chat_latency_min_sample).toBe(30);
+    expect(screen.getByTestId('chat-latency-target')).toHaveValue(null);
+    expect(screen.getByTestId('chat-latency-min-sample')).toHaveValue(0);
+    expect(screen.getAllByText('Enter a whole number of at least 1.')).toHaveLength(2);
+    expect(
+      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+    ).toBeUndefined();
   });
 
   it('summarises all three triggers in plain language', () => {

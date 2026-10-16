@@ -91,8 +91,8 @@ describe('ExtendDueDialog', () => {
     });
   });
 
-  // UAC-9 (FE): 0 / blank days -> no preview + submit disabled.
-  it('blank/zero days does not call preview and disables submit', async () => {
+  // UAC-9 (FE): 0 / blank days -> no preview; Extend stays live and its click names the problem.
+  it('blank/zero days does not call preview; Extend says what is wrong and sends nothing', async () => {
     getExtendPreview.mockResolvedValue(preview3Days);
     renderDialog();
 
@@ -103,13 +103,19 @@ describe('ExtendDueDialog', () => {
     // give the debounce a chance - it must NOT fire for invalid input
     await new Promise((r) => setTimeout(r, 500));
     expect(getExtendPreview).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /extend deadline/i })).toBeDisabled();
+    expect(daysInput).toHaveValue(0);
+    fireEvent.click(screen.getByRole('button', { name: /extend deadline/i }));
+    expect(screen.getByText('Enter a whole number of at least 1.')).toBeInTheDocument();
+    expect(extendSLATracking).not.toHaveBeenCalled();
 
-    // blank
+    // blank: stays blank, same sentence
     fireEvent.change(daysInput, { target: { value: '' } });
     await new Promise((r) => setTimeout(r, 500));
     expect(getExtendPreview).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /extend deadline/i })).toBeDisabled();
+    expect(daysInput).toHaveValue(null);
+    fireEvent.click(screen.getByRole('button', { name: /extend deadline/i }));
+    expect(screen.getByText('Enter a whole number of at least 1.')).toBeInTheDocument();
+    expect(extendSLATracking).not.toHaveBeenCalled();
   });
 
   // UAC-17 (FE): empty reason -> submit disabled even with a valid preview.
