@@ -567,6 +567,47 @@ def _needless(row: dict[str, Any], gold: dict[str, Any], menu: bool = True,
     return [c for c in ((_menu_check(row, gold) if menu else None), _quantity_check(row, gold, followup), picker) if c]
 
 
+def _result_items(row: dict[str, Any]) -> list[dict[str, Any]]:
+    """The items of every full tool result (a dict or a JSON string), as dicts."""
+    out: list[dict[str, Any]] = []
+    for t in row.get("tool_results") or []:
+        result = t.get("result") if isinstance(t, dict) else None
+        if isinstance(result, str):
+            try:
+                result = json.loads(result)
+            except ValueError:
+                continue
+        if isinstance(result, dict):
+            out.extend(i for i in result.get("items") or [] if isinstance(i, dict))
+    return out
+
+
+def _item_code(item: dict[str, Any]) -> str:
+    for f in item.get("fields") or []:
+        if isinstance(f, dict) and (_norm(f.get("label")) == "product code" or f.get("key") == "product_code"):
+            return _key(f.get("value"))
+    return ""
+
+
+NONE_WORDS = r"(?:not defined|not on record|not recorded|not available|none|n/a)"
+
+
+def _attribute_answered(row: dict[str, Any], attr: str, code: Any) -> bool:
+    """An attribute ask is answered by a number after the attribute word (digits inside a product code do not count), or
+    by an honest none: the reply says the record has none and a tool result lists the gold code's item with no field
+    for that attribute."""
+    reply = reply_text(row)
+    word = re.escape(attr)
+    if re.search(word + r"[^\n]{0,40}\d", CODE_RE.sub(" ", reply), re.I):
+        return True
+    says_none = re.search(rf"\bno {word}\b|(?:don.?t|do not|does not|doesn.?t) have (?:the |a |any )?{word}\b"
+                          rf"|{word}\b[^\n]{{0,60}}?{NONE_WORDS}", reply, re.I)
+    items = [i for i in _result_items(row) if _item_code(i) == _key(code)] if code else []
+    names_attr = any(attr.lower() in _norm(f.get(k)).replace("_", " ")
+                     for i in items for f in i.get("fields") or [] if isinstance(f, dict) for k in ("label", "key"))
+    return bool(says_none and items and not names_attr)
+
+
 def _code_lookup(row, item):
     gold = item.get("gold") or {}
     code = _key(gold.get("code"))
@@ -577,7 +618,7 @@ def _code_lookup(row, item):
     checks.extend(_needless(row, gold))
     label = _norm(gold.get("fact_label"))
     if label and label not in KNOWN_FACT_LABELS:   # an attribute ask (weight, ...): the reply needs a value for it
-        checks.append(("attribute_value", bool(re.search(re.escape(label.replace("_", " ")) + r"[^\n]{0,40}\d", reply_text(row), re.I)),
+        checks.append(("attribute_value", _attribute_answered(row, label.replace("_", " "), gold.get("code")),
                        "The reply has no value for the attribute asked."))
     if gold.get("fact"):
         checks.append(("fact", _fact_ok(row, gold["fact"]), "The bot looked up a different fact than the one asked."))
@@ -932,8 +973,44 @@ def _scope(row, item):
 _SLICES = {"code_lookup": _code_lookup, "followup": _followup, "spec": _spec, "attachment": _attachment, "scope": _scope}
 
 
+SET_HEADER_RE = re.compile(r"\((\d+)(?:,[^)]*)?\)\s*$")
+SET_ENTRY_RE = re.compile(r"^\d+\. ", re.M)
+SET_CUT_RE = re.compile(r"showing\s+\d+\s+to\s+\d+", re.I)
+SEE_MORE_RE = re.compile(r"\bsee more\b|\breply\s+more\b", re.I)
+
+
+def _set_list_check(row: dict[str, Any]) -> tuple[str, bool, str] | None:
+    """A set reply (its first line ends with a count in parentheses) must list products, and a list cut short says how
+    to see more (the header's "showing A to B" or a see-more cue). None when the reply is not a set reply."""
+    reply = reply_text(row)
+    header = SET_HEADER_RE.search(reply.split("\n", 1)[0].strip())
+    if not header:
+        return None
+    entries = len(SET_ENTRY_RE.findall(reply))
+    if not entries:
+        return ("set_list", False, "The set reply showed no product.")
+    complete = entries >= int(header.group(1)) or SET_CUT_RE.search(reply) or SEE_MORE_RE.search(reply)
+    return ("set_list", bool(complete), "The list is cut short without saying how to see more.")
+
+
+def _tier_spec_check(row: dict[str, Any], item: dict[str, Any]) -> tuple[str, bool, str] | None:
+    """A price-tier ask on a spec item is fine only after products were found and all of them are in the spec: the
+    codes the tools were called for plus the codes their results list."""
+    spec_products = {_key(c) for c in (item.get("gold") or {}).get("spec_products") or []}
+    if item.get("slice") != "spec" or not spec_products:
+        return None
+    found = {c for t in _tools(row) for c in _args_codes(row, t.get("args") or {})}
+    found |= {c for c in (_item_code(i) for i in _result_items(row)) if c}
+    if not found:
+        return ("tier_spec", False, "The bot asked which price tier before finding any product.")
+    return ("tier_spec", found <= spec_products, "The products found do not match the spec asked.")
+
+
 def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     checks = _SLICES[item["slice"]](row, item)
+    set_list = _set_list_check(row)
+    if set_list:   # first, so a set reply with no product is reported as that, not as the slice's own miss
+        checks = [set_list, *checks]
     leaks = scope_leaks(row, item.get("asker"), item.get("watch_customer_names") or ())
     made_up = made_up_facts(row)
     # `class` is reported only; `old_dropped` is reported only on real traces (the old subject may stay in memory);
@@ -950,7 +1027,13 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
                   else "The reply shows a customer outside the asker's linked customers.")
     passed: bool | None = failed is None
     after_q = _oq(row)[1]
-    if isinstance(after_q, dict) and after_q.get("kind") == "tier_pick" and item.get("kind") != "escalation":
+    tier = after_q.get("kind") == "tier_pick" and item.get("kind") != "escalation" if isinstance(after_q, dict) else False
+    tier_spec = _tier_spec_check(row, item) if tier else None
+    if tier_spec:
+        checks.append(tier_spec)
+    if tier_spec and tier_spec[1] is False:
+        passed, failed = False, tier_spec[2]
+    elif tier:
         passed, failed = None, "The bot asked an access question (price tier); the bench cannot judge it."
     elif passed and checks and all(ok is None for _, ok, _ in checks):
         passed, failed = None, "The bench could not confirm what the bot understood."
