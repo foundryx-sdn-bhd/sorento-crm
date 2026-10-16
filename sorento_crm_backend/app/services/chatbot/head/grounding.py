@@ -634,7 +634,12 @@ def _as_typed(grounded: list[Grounded], entity: dict[str, Any], message: str | N
     unknown value of its key, said as the customer typed it (the message's words that
     nothing else in the turn and nothing in the catalogue's vocabulary accounts for).
     Left as grounded when the message is not known or holds no such word, and for an
-    entity carried from an earlier message."""
+    entity carried from an earlier message.
+
+    Reversed for a registry-valid value (owner ruling 16 Oct 2026, CHAT-FIX F4): when the
+    parser's key and value are among the registry's, that value binds whatever was typed
+    ("gunmetl" -> gunmetal), and it is said in the registry's words, never the typo. Only a
+    value the registry does not hold (value None) keeps the exact-only handling above."""
     if not message or not grounded or entity.get("current_message") is False:
         return grounded
     said = _words(message)
@@ -643,6 +648,10 @@ def _as_typed(grounded: list[Grounded], entity: dict[str, Any], message: str | N
     out: list[Grounded] = []
     for g in grounded:
         words = _words(g.said)
+        if g.value is not None:
+            spoken = words == _words(g.words or "")
+            out.append(g if spoken or not g.words else Grounded(g.key, g.label, g.words, g.value, g.unit, g.known, g.words))
+            continue
         if not words or any(any(_same(w, t) for t in said) for w in words):
             out.append(g)
             continue
@@ -770,7 +779,17 @@ def ground(
             keep = _covered_by_class(tokens, vocab)
             grounded, used = ground_words(raw, vocab, keep=keep)
             unheard, used = _unheard_words(db, raw, used, keep)
-            grounded = [*grounded, *(Grounded("", "", word) for word in unheard)]
+            bound = [
+                Grounded(g.key, g.label, g.words or g.said, g.value, g.unit, g.known, g.words)
+                for g in _validate(entity, vocab)
+                if entity.get("spec_key") and entity.get("spec_value") not in (None, "") and g.value is not None
+            ]
+            if unheard and bound:
+                # CHAT-FIX F4 (owner, 16 Oct 2026): the parser's registry-valid spec is what
+                # the unheard words were ("undrmount" -> under_counter), said in the registry's words.
+                grounded = [*grounded, *bound]
+            else:
+                grounded = [*grounded, *(Grounded("", "", word) for word in unheard)]
             if not grounded:
                 fixed = _corrected_class(db, raw, vocab)
                 if fixed != raw:
