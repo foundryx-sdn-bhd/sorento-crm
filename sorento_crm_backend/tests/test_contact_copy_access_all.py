@@ -302,3 +302,18 @@ def test_b4_inherited_portal_forms_and_spec_clear_the_target_overrides(client, d
     assert _forms_of(db, target.id) == {}
     assert _spec_of(db, target.id) is None
     assert _attachments_of(db, target.id) == []
+
+
+def test_b3_the_differs_filter_ignores_a_brand_the_actor_cannot_copy(db):  # noqa: F811
+    """`access_differs_from` must agree with the copy: a hidden source brand is not a difference."""
+    from app.services.contact_access_copy_service import contacts_differing_from
+
+    other = _company(db, "of")
+    hidden = Brand(id=str(uuid.uuid4()), brand_code=unique_code("zof")[:50], brand_name="ZZT hidden f", company_id=other.id)
+    db.add(hidden)
+    db.flush()
+    source, same, different = _contact(db, "f-src"), _contact(db, "f-same"), _contact(db, "f-diff")
+    source.brand_ids = [hidden.id]
+    different.notify_salesman = True
+    db.flush()
+    assert contacts_differing_from(db, source, [same, different]) == [different.id]

@@ -715,7 +715,8 @@ def summary(source: AccessSnapshot, names: Names, skip: frozenset[str] = frozens
             "label": FACET_LABELS[ATTACHMENTS_FACET],
             "value": ", ".join(
                 sorted(names.attachment_types.get(t, REMOVED_TYPE) for t in source.attachment_types)
-            ),
+            )
+            or "None",
         }
     )
     lines.append({"label": FACET_LABELS[PORTAL_FORMS_FACET], "value": portal_forms_text(source.portal_forms)})
