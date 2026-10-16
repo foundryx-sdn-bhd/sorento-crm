@@ -129,15 +129,15 @@ class LineFacts:
         if self.pending_from is not None:
             from_qty = self.pending_from.get("qty")
             if from_qty is None:
-                qty = self.now_qty
-            else:
-                qty = max(_dec(from_qty) - self.delivered_qty, _ZERO)
+                # A line AutoCount ADDED in the pending change (`from` is empty): it had
+                # nothing before, so it splits nothing of its own - only what moves in
+                # (SO424910, D1).
+                return _ZERO, None
+            qty = max(_dec(from_qty) - self.delivered_qty, _ZERO)
             when = _as_date(self.pending_from.get("required_date")) or self.now_date
             return qty, when
         return self.now_qty, self.now_date
 
-    @property
-    def splits_act(self) -> bool:
     @property
     def split_state(self) -> str:
         """`acting`, `applied` or `stale` for a split line (`acting` for an unsplit one).
@@ -165,6 +165,8 @@ class LineFacts:
                 return SPLIT_APPLIED
         return SPLIT_STALE
 
+    @property
+    def splits_act(self) -> bool:
         """Do this line's stored splits still describe the change in front of the planner?
 
         A split was made against a base (`base_qty`, `base_date`). It acts on Confirm (moves
@@ -277,8 +279,6 @@ class LineSplitService:
         facts = self._facts_for(ProjectSalesOrderLine.id.in_(wanted))
         return {line_id for line_id, f in facts.items() if f.splits_act}
 
-    def _facts_for(self, criterion: Any) -> Dict[str, LineFacts]:
-        rows = (
     def printable_origin_ids(self, line_ids: Iterable[str]) -> set:
         """Which of these ORIGIN lines print their saved splits as purchasing's record:
         `acting` or `applied`, never `stale` (Send to purchasing)."""
@@ -292,6 +292,8 @@ class LineSplitService:
             if f.splits and f.split_state in (SPLIT_ACTING, SPLIT_APPLIED)
         }
 
+    def _facts_for(self, criterion: Any) -> Dict[str, LineFacts]:
+        rows = (
             self.db.query(ProjectSalesOrderLine, SalesOrderLine)
             .outerjoin(
                 SalesOrderLine,

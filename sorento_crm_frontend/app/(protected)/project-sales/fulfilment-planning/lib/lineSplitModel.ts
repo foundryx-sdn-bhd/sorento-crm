@@ -72,6 +72,9 @@ export function implicitSplitId(lineId: string): string {
 
 export function splitsOf(line: SplitLine): SplitDraft[] {
   if (line.splits.length > 0) return line.splits;
+  // A line AutoCount ADDED in the pending change has base 0: nothing of its own to split,
+  // only what other lines' splits move onto it (D1, SO424910).
+  if (!line.baseQty) return [];
   return [
     {
       id: implicitSplitId(line.lineId),
@@ -418,12 +421,12 @@ export function fromPayload(payload: LineSplitsPayload): SplitLine[] {
     nowDate: line.now_date,
     pendingChange: Boolean(line.pending_change),
     acting: line.acting !== false,
-    deliveredQty: Number(line.delivered_qty) || 0,
-    splits: line.splits.map((split) => ({
-      id: split.id,
     stale: line.split_state
       ? line.split_state === 'stale'
       : line.acting === false,
+    deliveredQty: Number(line.delivered_qty) || 0,
+    splits: line.splits.map((split) => ({
+      id: split.id,
       qty: Number(split.qty) || 0,
       deliveryDate: split.is_cancel ? null : split.delivery_date,
       isCancel: split.is_cancel,
@@ -484,7 +487,9 @@ export function formatSplitDate(iso: string | null | undefined): string {
 
 /** `Line 20 · 417 on 20/10/2026`, or the qty and date alone when AutoCount gave no number. */
 export function lineLabel(line: SplitLine): string {
-  const base = `${line.baseQty} on ${formatSplitDate(line.baseDate)}`;
+  const base = line.baseDate
+    ? `${line.baseQty} on ${formatSplitDate(line.baseDate)}`
+    : `${line.baseQty}`;
   return line.lineNo != null ? `Line ${line.lineNo} · ${base}` : base;
 }
 

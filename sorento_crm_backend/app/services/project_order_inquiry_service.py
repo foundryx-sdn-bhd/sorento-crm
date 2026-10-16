@@ -4489,17 +4489,46 @@ class ProjectOrderInquiryService:
         if not expanding:
             return list(items)
         templates: Dict[str, Dict[str, Any]] = {}
+        netting_cancels: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         out: List[Dict[str, Any]] = []
         for item in items:
             line_id = str(item.get("so_line_id") or "")
             if line_id in expanding:
                 templates.setdefault(line_id, item)
                 if honoured is not None and IV_CANCEL_BALANCE in (item.get("verb_keys") or ()):
-                    # Inside a Confirm, the cancel the netting told for the line stands: it
-                    # is what the OI rows did with the qty no split explains.
-                    out.append(item)
+                    netting_cancels[line_id].append(item)
             else:
                 out.append(item)
+        # Inside a Confirm, the CANCEL the netting told for a split line stands for the part
+        # no printed split already says: the line's own cancel splits print as their own
+        # CANCEL BALANCE lines, so only the remainder is told again (never twice).
+        for line_id, told in netting_cancels.items():
+            netted = _ZERO
+            for told_item in told:
+                entry = told_item.get("line") or {}
+                was_qty = (entry.get("was") or {}).get("qty")
+                if was_qty is not None:
+                    netted += max(_dec(was_qty) - _dec(entry.get("qty")), _ZERO)
+            explained = sum(
+                (
+                    _dec((honoured or {}).get(line_id, {}).get(str(view.split.id)))
+                    for view in splits.by_origin.get(line_id, [])
+                    if view.split.is_cancel
+                ),
+                _ZERO,
+            )
+            remainder = netted - explained
+            if explained <= _ZERO or netted <= _ZERO:
+                out.extend(told)
+                continue
+            if remainder <= _ZERO:
+                continue
+            first = told[0]
+            entry = first.get("line") or {}
+            entry["remark"] = re.sub(
+                r"CANCEL [0-9.]+", f"CANCEL {_qty_str(remainder)}", entry.get("remark") or ""
+            )
+            out.append(first)
         if queued:
             items[:] = out
         for line_id, template in templates.items():
@@ -4677,6 +4706,14 @@ class ProjectOrderInquiryService:
             keys = list(keys or [])
         was: Dict[str, Any] = {}
         qty_now = _dec(now.get("open_qty"))
+        if before is None and not explicit:
+            # A line new to this decision (AutoCount ADDED it): what moved in from another
+            # line's split is already on order, so only the rest is an order (D1, SO424910).
+            _moved_out, moved_in = explained_by_splits(self.db, str(line.id))
+            if moved_in > _ZERO:
+                if qty_now - moved_in <= _ZERO:
+                    return
+                remark = f"ORDER {_qty_str(qty_now - moved_in)}"
         if before is not None:
             qty_before = _dec(before.get("open_qty"))
             date_before, date_now = before.get("required_date"), now.get("required_date")
