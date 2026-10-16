@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { STATUS_PILL_BASE, statusPillClass } from '@/lib/status-pill';
 import { formatDateInMalaysia } from '@/lib/helpers';
@@ -247,8 +247,7 @@ export function SupplyLineCard({
               {draft.reserve.map((row, index) => (
                 <div key={row.key} className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
+                    <NumberInput
                       min="0"
                       step="any"
                       value={row.qty}
@@ -282,8 +281,7 @@ export function SupplyLineCard({
                 draft.borrow.map((row, index) => (
                   <div key={row.key} className="space-y-1.5">
                     <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
+                      <NumberInput
                         min="0"
                         step="any"
                         value={row.qty}
@@ -360,8 +358,7 @@ export function SupplyLineCard({
           ) : (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <Input
-                  type="number"
+                <NumberInput
                   min="0"
                   step="any"
                   value={draft.buy_qty}

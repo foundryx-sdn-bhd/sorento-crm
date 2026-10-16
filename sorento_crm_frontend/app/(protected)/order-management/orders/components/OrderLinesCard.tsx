@@ -17,7 +17,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
+import { numberFieldError } from '@/lib/number-field';
 import { FileDropzone } from '@/components/common/FileDropzone';
 import { Trash2, Plus, Upload } from 'lucide-react';
 import { useBulkDeleteOrderLines, useCreateOrderLine } from '../hooks/useOrders';
@@ -49,6 +51,7 @@ export default function OrderLinesCard({ orderId, lines, readOnly = false }: Ord
   const [formProductId, setFormProductId] = useState('');
   const [formWarehouseId, setFormWarehouseId] = useState('');
   const [formQuantity, setFormQuantity] = useState('');
+  const [showErrors, setShowErrors] = useState(false);
   const [formUnitPrice, setFormUnitPrice] = useState('');
   const [formDiscount, setFormDiscount] = useState('');
   const [formTotal, setFormTotal] = useState('');
@@ -56,9 +59,16 @@ export default function OrderLinesCard({ orderId, lines, readOnly = false }: Ord
   const [formTotalExcl, setFormTotalExcl] = useState('');
   const [formTotalIncl, setFormTotalIncl] = useState('');
 
+  const quantityError = numberFieldError(formQuantity, { min: 0 });
+
   const handleAddLine = async () => {
     if (!formProductId.trim() || !formWarehouseId.trim()) {
       toast.error('Product and Warehouse are required');
+      return;
+    }
+    // A line without a quantity is not a line: checked here, never dropped silently.
+    if (quantityError) {
+      setShowErrors(true);
       return;
     }
     try {
@@ -67,7 +77,7 @@ export default function OrderLinesCard({ orderId, lines, readOnly = false }: Ord
         data: {
           product_id: formProductId.trim(),
           warehouse_id: formWarehouseId.trim(),
-          quantity: formQuantity ? Number(formQuantity) : undefined,
+          quantity: Number(formQuantity),
           unit_price: formUnitPrice ? Number(formUnitPrice) : undefined,
           discount: formDiscount ? Number(formDiscount) : undefined,
           total: formTotal ? Number(formTotal) : undefined,
@@ -80,6 +90,7 @@ export default function OrderLinesCard({ orderId, lines, readOnly = false }: Ord
       setFormProductId('');
       setFormWarehouseId('');
       setFormQuantity('');
+      setShowErrors(false);
       setFormUnitPrice('');
       setFormDiscount('');
       setFormTotal('');
@@ -315,7 +326,13 @@ export default function OrderLinesCard({ orderId, lines, readOnly = false }: Ord
         paginate={false}
       />
 
-      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+      <Dialog
+        open={addDialogOpen}
+        onOpenChange={(open) => {
+          setAddDialogOpen(open);
+          if (!open) setShowErrors(false);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Add delivery order line</DialogTitle>
@@ -333,40 +350,44 @@ export default function OrderLinesCard({ orderId, lines, readOnly = false }: Ord
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="grid gap-2">
                 <Label>Quantity</Label>
-                <Input type="number" value={formQuantity} onChange={(e) => setFormQuantity(e.target.value)} />
+                <NumberInput
+                  value={formQuantity}
+                  error={showErrors ? quantityError : undefined}
+                  onChange={(e) => setFormQuantity(e.target.value)}
+                />
               </div>
               <div className="grid gap-2">
                 <Label>Unit price</Label>
-                <Input type="number" value={formUnitPrice} onChange={(e) => setFormUnitPrice(e.target.value)} />
+                <NumberInput value={formUnitPrice} onChange={(e) => setFormUnitPrice(e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="grid gap-2">
                 <Label>Discount</Label>
-                <Input type="number" value={formDiscount} onChange={(e) => setFormDiscount(e.target.value)} />
+                <NumberInput value={formDiscount} onChange={(e) => setFormDiscount(e.target.value)} />
               </div>
               <div className="grid gap-2">
                 <Label>Total</Label>
-                <Input type="number" value={formTotal} onChange={(e) => setFormTotal(e.target.value)} />
+                <NumberInput value={formTotal} onChange={(e) => setFormTotal(e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
               <div className="grid gap-2">
                 <Label>Tax</Label>
-                <Input type="number" value={formTax} onChange={(e) => setFormTax(e.target.value)} />
+                <NumberInput value={formTax} onChange={(e) => setFormTax(e.target.value)} />
               </div>
               <div className="grid gap-2">
                 <Label>Total (excl)</Label>
-                <Input type="number" value={formTotalExcl} onChange={(e) => setFormTotalExcl(e.target.value)} />
+                <NumberInput value={formTotalExcl} onChange={(e) => setFormTotalExcl(e.target.value)} />
               </div>
               <div className="grid gap-2">
                 <Label>Total (incl)</Label>
-                <Input type="number" value={formTotalIncl} onChange={(e) => setFormTotalIncl(e.target.value)} />
+                <NumberInput value={formTotalIncl} onChange={(e) => setFormTotalIncl(e.target.value)} />
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setAddDialogOpen(false); setShowErrors(false); }}>Cancel</Button>
             <Button onClick={handleAddLine} disabled={createLineMutation.isPending}>Add</Button>
           </DialogFooter>
         </DialogContent>
