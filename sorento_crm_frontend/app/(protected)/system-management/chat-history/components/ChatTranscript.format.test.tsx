@@ -77,4 +77,16 @@ describe('ChatTranscript WhatsApp formatting', () => {
     expect(within(container).getByText('urgent').tagName).toBe('STRONG');
     expect(container.querySelector('b')).toBeNull();
   });
+
+  it('counts a hit only in what the bubble shows, not in a split-off quote', () => {
+    render(
+      <ChatTranscript
+        messages={[message({ id: 3, type: 'outgoing', message: '> quoteword here\nYes, 3 units.' })]}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText('Search in conversation'), {
+      target: { value: 'quoteword' },
+    });
+    expect(screen.getByText('0 / 0')).toBeInTheDocument();
+  });
 });
