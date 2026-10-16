@@ -591,9 +591,9 @@ def _remainder(raw: str, used: set[int]) -> str:
     return " ".join(kept)
 
 
-def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
-    """A `specification` entity the parser emitted, checked against the registry: a key
-    it knows and a value among that key's choices, else grounded from its raw words."""
+def _bound(entity: dict[str, Any], vocab: Vocabulary) -> Grounded | None:
+    """The parser's `spec_key`/`spec_value` as a registry-placed Grounded, or None when
+    the key is unknown or the value is not one of its choices, a number or a bool."""
     key_name = str(entity.get("spec_key") or "").strip()
     value = entity.get("spec_value")
     raw = str(entity.get("raw") or "").strip()
@@ -606,16 +606,29 @@ def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
             except (TypeError, ValueError, IndexError):
                 number = None
             if number is not None:
-                return [Grounded(entry.key, entry.label, said, int(number) if number.is_integer() else number, entry.unit)]
+                return Grounded(entry.key, entry.label, said, int(number) if number.is_integer() else number, entry.unit)
         else:
             spoken = " ".join(_words(value))
             if entry.data_type == "boolean" and isinstance(value, bool):
-                return [Grounded(entry.key, entry.label, said, value)]
+                return Grounded(entry.key, entry.label, said, value)
             if spoken in entry.phrases:
-                return [Grounded(entry.key, entry.label, said, entry.phrases[spoken], words=spoken)]
+                return Grounded(entry.key, entry.label, said, entry.phrases[spoken], words=spoken)
             for phrase, stored in entry.phrases.items():
                 if str(stored).lower() == str(value).strip().lower() or str(stored).replace("_", " ").lower() == spoken:
-                    return [Grounded(entry.key, entry.label, said, stored, words=phrase)]
+                    return Grounded(entry.key, entry.label, said, stored, words=phrase)
+    return None
+
+
+def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
+    """A `specification` entity the parser emitted, checked against the registry: a key
+    it knows and a value among that key's choices, else grounded from its raw words."""
+    key_name = str(entity.get("spec_key") or "").strip()
+    value = entity.get("spec_value")
+    raw = str(entity.get("raw") or "").strip()
+    entry = next((k for k in vocab.keys if k.key == key_name), None)
+    bound = _bound(entity, vocab)
+    if bound is not None:
+        return [bound]
     found, _ = ground_words(raw or str(value or ""), vocab)
     if found:
         return found
@@ -649,7 +662,9 @@ def _as_typed(grounded: list[Grounded], entity: dict[str, Any], message: str | N
     for g in grounded:
         words = _words(g.said)
         if g.value is not None:
-            spoken = words == _words(g.words or "")
+            entry = next((k for k in vocab.keys if k.key == g.key), None)
+            # a correctly typed synonym of the key keeps its words; only a typo is put right
+            spoken = words == _words(g.words or "") or (entry is not None and " ".join(words) in entry.phrases)
             out.append(g if spoken or not g.words else Grounded(g.key, g.label, g.words, g.value, g.unit, g.known, g.words))
             continue
         if not words or any(any(_same(w, t) for t in said) for w in words):
@@ -779,15 +794,13 @@ def ground(
             keep = _covered_by_class(tokens, vocab)
             grounded, used = ground_words(raw, vocab, keep=keep)
             unheard, used = _unheard_words(db, raw, used, keep)
-            bound = [
-                Grounded(g.key, g.label, g.words or g.said, g.value, g.unit, g.known, g.words)
-                for g in _validate(entity, vocab)
-                if entity.get("spec_key") and entity.get("spec_value") not in (None, "") and g.value is not None
-            ]
-            if unheard and bound:
-                # CHAT-FIX F4 (owner, 16 Oct 2026): the parser's registry-valid spec is what
-                # the unheard words were ("undrmount" -> under_counter), said in the registry's words.
-                grounded = [*grounded, *bound]
+            bound = _bound(entity, vocab)
+            if bound is not None and len(unheard) == 1 and not any(g.key == bound.key for g in grounded):
+                # CHAT-FIX F4 (owner, 16 Oct 2026): the parser's registry-valid spec is the one
+                # unheard word ("undrmount" -> under_counter), said in the registry's words.
+                entry = next((k for k in vocab.keys if k.key == bound.key), None)
+                said = bound.words or (_display(entry, bound.value) if entry is not None else bound.said)
+                grounded = [*grounded, Grounded(bound.key, bound.label, said, bound.value, bound.unit, bound.known, bound.words)]
             else:
                 grounded = [*grounded, *(Grounded("", "", word) for word in unheard)]
             if not grounded:
