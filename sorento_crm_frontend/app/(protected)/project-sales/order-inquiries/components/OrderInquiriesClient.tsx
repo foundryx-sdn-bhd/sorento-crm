@@ -66,13 +66,31 @@ import { STATE_LABEL } from '../../_shared/components/OrderInquiryVerbPill';
 import { UnlinkAllOrderInquiryDialog } from '../../_shared/components/UnlinkAllOrderInquiryDialog';
 import { OutstandingUploadDialog } from '../../../scm/reorder/components/OutstandingUploadDialog';
 import {
+  useCommitReserveAcrossInquiries,
   useOrderInquiryHandshake,
   useOrderInquiryMatrix,
   useOrderInquiryWorklist,
   useOrderInquiryWorklistSummary,
+  useReserveStatusSummary,
   useUnplaceAllPreview,
   useUploadedBook,
+  type InquiryCommitResult,
 } from '../../_shared/hooks/useOrderInquiry';
+import { useParkedSendActions } from '../../_shared/hooks/useParkedSendActions';
+import { useReserveRowOptions } from '../../_shared/hooks/useReserveRowOptions';
+import {
+  ORDER_INQUIRY_RESERVE_STATUSES,
+  orderInquiryReserveStatusLabel,
+  type OrderInquiryReserveStatus,
+} from '../../_shared/lib/orderInquiryHeaderStatus';
+import { bareLocationCode } from '../../_shared/lib/orderInquiryReserve';
+import type { CommitReservePayload } from '../../_shared/services/orderInquiryReserveService';
+import { BulkRejectReserveDialog } from '../[id]/components/BulkRejectReserveDialog';
+import { ReserveConfirmDialog } from '../[id]/components/ReserveConfirmDialog';
+import type { ReserveConfirmInquiry } from '../[id]/components/ReserveConfirmDialog';
+import { ReserveDecideControl } from '../[id]/components/ReserveDecideControl';
+import { ReserveLineForm } from '../[id]/components/ReserveLineForm';
+import type { StagedReserveEntry } from '../[id]/components/orderInquiryHeaderLinesColumns';
 import {
   ACK_ANY,
   ACK_FILTER_OPTIONS,
@@ -104,6 +122,7 @@ import type {
   OrderInquiryMatrixGranularity,
   OrderInquiryMatrixParams,
   OrderInquiryWorklistParams,
+  OrderInquiryWorklistRow,
 } from '../../_shared/types/orderInquiry.types';
 import { OrderInquiryMatrixCellDrilldown } from './OrderInquiryMatrixCellDrilldown';
 import { OrderInquiryMonthStrip } from './OrderInquiryMonthStrip';
@@ -118,6 +137,19 @@ import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { useListingViewPreferences } from '@/lib/listing-column-preferences/useListingViewPreferences';
 import { SupplyKindCard } from '../../_shared/components/SupplyKindCard';
+
+function reserveFilterFrom(value: string | null): OrderInquiryReserveStatus | '' {
+  return (ORDER_INQUIRY_RESERVE_STATUSES as string[]).includes(value ?? '')
+    ? (value as OrderInquiryReserveStatus)
+    : '';
+}
+
+/** OI-BULK-RESERVE v4: one drafted answer and the line it is for. The row is kept with the
+ * draft because the confirmation groups by order inquiry and a draft outlives its page. */
+interface ReserveDraft {
+  row: OrderInquiryWorklistRow;
+  entry: StagedReserveEntry;
+}
 
 /** "Link selected (2 of 3)", or "Link selected (3)" when every ticked row is eligible
  * (S4, AC-T2): the count is never "of n" when a === n, which would say the obvious. */
@@ -212,6 +244,8 @@ const ORDER_INQUIRY_ACTION_PERMISSION = 'projects.order_inquiry.action';
  * and the book uploads. CS holds the read and sees the column and the filter; taking an
  * instruction on is purchasing's, and they may not do it for themselves.
  */
+/** R1 (`PLAN-oi-request-cs-reserve.md`): only the CS head answers a reserve request. */
+const ORDER_INQUIRY_RESERVE_PERMISSION = 'projects.order_inquiries.reserve';
 const ORDER_INQUIRY_ACKNOWLEDGE_PERMISSION =
   'projects.order_inquiries.acknowledge';
 
@@ -303,6 +337,7 @@ export function OrderInquiriesClient({
     ORDER_INQUIRY_ACTION_PERMISSION,
   );
   const canAcknowledge = useHasPermission(ORDER_INQUIRY_ACKNOWLEDGE_PERMISSION);
+  const canReserve = useHasPermission(ORDER_INQUIRY_RESERVE_PERMISSION);
   const { linkNow, acknowledge, unacknowledge } = useOrderInquiryHandshake();
   const [unlinkingSelected, setUnlinkingSelected] = React.useState(false);
   const [linkingSelected, setLinkingSelected] = React.useState(false);
@@ -388,6 +423,12 @@ export function OrderInquiriesClient({
   const [stateFilter, setStateFilter] = React.useState(
     () => searchParams.get('state') ?? '',
   );
+  // OI-BULK-RESERVE v4 (F1): a line's own reserve status, the Documents view's four
+  // statuses. URL-seeded and synced like `state`.
+  const [reserveFilter, setReserveFilter] = React.useState<OrderInquiryReserveStatus | ''>(
+    () => reserveFilterFrom(searchParams.get('reserve')),
+  );
+  const reserveSummary = useReserveStatusSummary(canReserve);
   const {
     value: poNumberInput,
     setValue: setPoNumberInput,
@@ -530,6 +571,8 @@ export function OrderInquiriesClient({
       ['spo_number', spoNumberFilter],
       // AC-OH-61.
       ['state', stateFilter],
+      // OI-BULK-RESERVE v4.
+      ['reserve', reserveFilter],
     ] as const) {
       if (value) next.set(key, value);
       else next.delete(key);
@@ -566,6 +609,7 @@ export function OrderInquiriesClient({
     poNumberFilter,
     spoNumberFilter,
     stateFilter,
+    reserveFilter,
     linkUpTo,
     horizonCleared,
     pathname,
@@ -600,6 +644,7 @@ export function OrderInquiriesClient({
     poNumberFilter,
     spoNumberFilter,
     stateFilter,
+    reserveFilter,
   ]);
 
   // S6 (AC-CF-20): once, when the remembered view has resolved, every filter the URL did
@@ -729,6 +774,7 @@ export function OrderInquiriesClient({
       // AC-OH-61: the row's own state - the one field that can ask for `cancelled`
       // even though the list hides it by default otherwise (S5).
       state: stateFilter || undefined,
+      reserve: reserveFilter || undefined,
     }),
     [
       debounced,
@@ -745,6 +791,7 @@ export function OrderInquiriesClient({
       poNumberFilter,
       spoNumberFilter,
       stateFilter,
+      reserveFilter,
     ],
   );
 
@@ -863,7 +910,8 @@ export function OrderInquiriesClient({
     soMonthFilter ||
     poNumberFilter ||
     spoNumberFilter ||
-    stateFilter,
+    stateFilter ||
+    reserveFilter,
   );
 
   // S2/S3 (code review, 20 Aug 2026): what the confirm dialog names as the scope. `state`
@@ -925,8 +973,78 @@ export function OrderInquiriesClient({
   // Purchasing's page: the acknowledge grant is what marks purchasing, and CS (action
   // grant only) ticks nothing here.
   const canBulkLink = canAcknowledge && canActOnOrderInquiry;
+
+  // OI-BULK-RESERVE v4 (F3): CS's drafted answers, keyed by line. A draft keeps its row (it
+  // outlives a page change) and is lost on reload, like the OI Lines tab's own.
+  const [drafts, setDrafts] = React.useState<Record<string, ReserveDraft>>({});
+  const stagedByRowId = React.useMemo(
+    () => Object.fromEntries(Object.entries(drafts).map(([id, draft]) => [id, draft.entry])),
+    [drafts],
+  );
+  // `rows` = the Reject... dialog's lines: the strip's counted lines (ticks clear on Save)
+  // or one line's own x (ticks untouched). Kept after close so the title does not flash.
+  const [rejectTarget, setRejectTarget] = React.useState<{
+    rows: OrderInquiryWorklistRow[];
+    fromStrip: boolean;
+  } | null>(null);
+  const [reserveRejectOpen, setReserveRejectOpen] = React.useState(false);
+  const [editingRow, setEditingRow] = React.useState<OrderInquiryWorklistRow | null>(null);
+  const [reserveConfirmOpen, setReserveConfirmOpen] = React.useState(false);
+  // After a commit the dialog keeps its rows and shows each order inquiry's result.
+  const [commitOutcome, setCommitOutcome] = React.useState<{
+    inquiries: ReserveConfirmInquiry[];
+    results: InquiryCommitResult[];
+  } | null>(null);
+  const commitReserve = useCommitReserveAcrossInquiries();
+  const { actions: parkedSendActions, dialog: parkedSendDialog } = useParkedSendActions();
+
+  const stageAnswers = React.useCallback(
+    (targets: OrderInquiryWorklistRow[], reason: string | null) => {
+      if (targets.length === 0) return;
+      setDrafts((previous) => {
+        const next = { ...previous };
+        for (const row of targets) {
+          next[row.id] = {
+            row,
+            entry: {
+              kind: 'reserve',
+              qty: reason == null ? Number(row.requested_qty || '0') : 0,
+              warehouseId: row.reserve_warehouse_id ?? null,
+              locationLabel: row.reserve_location ?? null,
+              reason,
+            },
+          };
+        }
+        return next;
+      });
+    },
+    [],
+  );
+  const reserveControls = React.useMemo(
+    () =>
+      canReserve
+        ? {
+            stagedByRowId,
+            onTickReserve: (row: OrderInquiryWorklistRow) => stageAnswers([row], null),
+            onRejectReserve: (row: OrderInquiryWorklistRow) => {
+              setRejectTarget({ rows: [row], fromStrip: false });
+              setReserveRejectOpen(true);
+            },
+            onEditReserve: (row: OrderInquiryWorklistRow) => setEditingRow(row),
+            onUndoStaged: (rowId: string) =>
+              setDrafts((previous) => {
+                if (!(rowId in previous)) return previous;
+                const next = { ...previous };
+                delete next[rowId];
+                return next;
+              }),
+          }
+        : undefined,
+    [canReserve, stagedByRowId, stageAnswers],
+  );
   const columns = useOrderInquiryWorklistColumns({
-    selectable: canAcknowledge,
+    selectable: canAcknowledge || canReserve,
+    reserveControls,
   });
 
   const table = useReactTable({
@@ -967,6 +1085,9 @@ export function OrderInquiriesClient({
   const selectedRows = table
     .getSelectedRowModel()
     .rows.map((row) => row.original);
+  // Decide (N) counts the ticked lines that still need a reserve.
+  const decideRows = selectedRows.filter((row) => row.reserve_state === 'requested');
+  const draftCount = Object.keys(drafts).length;
   const selectedLinked = selectedRows.filter(
     (row) => row.state === 'placed' || row.state === 'partly_linked',
   );
@@ -1009,6 +1130,122 @@ export function OrderInquiriesClient({
   const confirmCount = selectAllMatchingActive
     ? (summary.data?.ack?.to_confirm ?? 0)
     : selectedConfirmable.length;
+
+  function reserveTickedAsRequested() {
+    stageAnswers(decideRows, null);
+    setRowSelection({});
+  }
+
+  function stageReject(reason: string) {
+    if (!reserveRejectOpen || !rejectTarget) return;
+    stageAnswers(rejectTarget.rows, reason);
+    if (rejectTarget.fromStrip) setRowSelection({});
+    setReserveRejectOpen(false);
+  }
+
+  // The pen's pools, resolved for that ONE row while the form is open.
+  const editingOptionsEntries = React.useMemo(
+    () =>
+      editingRow
+        ? [
+            {
+              key: editingRow.id,
+              productId: editingRow.product_id ?? null,
+              location: editingRow.location ?? null,
+            },
+          ]
+        : [],
+    [editingRow],
+  );
+  const editingOptionsResolved = useReserveRowOptions(editingOptionsEntries);
+  const editingOptions = editingRow ? editingOptionsResolved[editingRow.id] : undefined;
+
+  function saveEditedReserve(payload: {
+    warehouse_id?: string;
+    qty_reserved: number;
+    reason: string | null;
+  }) {
+    if (!editingRow) return;
+    const locationOption = (editingOptions?.options ?? []).find(
+      (option) => option.value === payload.warehouse_id,
+    );
+    setDrafts((previous) => ({
+      ...previous,
+      [editingRow.id]: {
+        row: editingRow,
+        entry: {
+          kind: 'reserve',
+          qty: payload.qty_reserved,
+          warehouseId: payload.warehouse_id ?? null,
+          locationLabel: locationOption ? bareLocationCode(locationOption.label) : null,
+          reason: payload.reason,
+        },
+      },
+    }));
+    setEditingRow(null);
+  }
+
+  // One line per draft, grouped by order inquiry for the confirmation and the commits.
+  const draftInquiries = React.useMemo(() => {
+    const byInquiry = new Map<string, ReserveConfirmInquiry>();
+    for (const { row, entry } of Object.values(drafts)) {
+      const id = row.order_inquiry_id as string;
+      const current = byInquiry.get(id) ?? {
+        inquiry_id: id,
+        inquiry_no: row.inquiry_no ?? '',
+        reserve_count: 0,
+        reject_count: 0,
+      };
+      if (entry.qty > 0) current.reserve_count += 1;
+      else current.reject_count += 1;
+      byInquiry.set(id, current);
+    }
+    return [...byInquiry.values()].sort((a, b) => a.inquiry_no.localeCompare(b.inquiry_no));
+  }, [drafts]);
+
+  function closeReserveConfirm(next: boolean) {
+    setReserveConfirmOpen(next);
+    if (!next) setCommitOutcome(null);
+  }
+
+  /** F9: one commit per order inquiry; saved ones drop their drafts, failed ones keep them. */
+  async function commitDrafts(parkNotice: boolean) {
+    const groups = new Map<string, CommitReservePayload['reserves']>();
+    for (const { row, entry } of Object.values(drafts)) {
+      const id = row.order_inquiry_id as string;
+      const reserves = groups.get(id) ?? [];
+      reserves.push({
+        row_id: row.id,
+        ...(entry.warehouseId ? { warehouse_id: entry.warehouseId } : {}),
+        qty_reserved: entry.qty,
+        reason: entry.reason ?? null,
+      });
+      groups.set(id, reserves);
+    }
+    const results = await commitReserve.mutateAsync(
+      [...groups].map(([inquiryId, reserves]) => ({
+        inquiryId,
+        payload: { reserves, amendments: [], park_notice: parkNotice },
+      })),
+    );
+    const saved = new Set(results.filter((result) => result.ok).map((result) => result.inquiryId));
+    setCommitOutcome({ inquiries: draftInquiries, results });
+    setDrafts((previous) =>
+      Object.fromEntries(
+        Object.entries(previous).filter(
+          ([, draft]) => !saved.has(draft.row.order_inquiry_id as string),
+        ),
+      ),
+    );
+  }
+  const confirmInquiries: ReserveConfirmInquiry[] = (
+    commitOutcome?.inquiries ?? draftInquiries
+  ).map((inquiry) => {
+    const result = commitOutcome?.results.find(
+      (candidate) => candidate.inquiryId === inquiry.inquiry_id,
+    );
+    return result ? { ...inquiry, result: { ok: result.ok, message: result.message } } : inquiry;
+  });
 
   /** Confirm (N) (AC-CF-5/7/8): ticked rows by id, or the whole matching scope by
    * `filter` once "Select all N matching" is taken - the endpoint accepts exactly one. */
@@ -1132,7 +1369,8 @@ export function OrderInquiriesClient({
     (soMonthFilter ? 1 : 0) +
     (poNumberFilter ? 1 : 0) +
     (spoNumberFilter ? 1 : 0) +
-    (stateFilter ? 1 : 0);
+    (stateFilter ? 1 : 0) +
+    (reserveFilter ? 1 : 0);
 
   // S3: the cell already carries its own axis label; only the bucket's granularity-aware
   // reading (`buildOrderInquiryMatrix`'s own label) still has to be looked up.
@@ -1291,6 +1529,21 @@ export function OrderInquiriesClient({
           placeholder="Every state"
         />
       </div>
+      {canReserve ? (
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Reserve</Label>
+          <SearchableSelect
+            value={reserveFilter}
+            onChange={(next) => setReserveFilter(reserveFilterFrom(next))}
+            clearable
+            options={ORDER_INQUIRY_RESERVE_STATUSES.map((status) => ({
+              value: status,
+              label: `${orderInquiryReserveStatusLabel(status)} (${reserveSummary.data?.[status] ?? 0})`,
+            }))}
+            placeholder="Any"
+          />
+        </div>
+      ) : null}
       <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Supplier</Label>
         <SearchableSelect
@@ -1369,6 +1622,7 @@ export function OrderInquiriesClient({
             setPoNumberInput('');
             setSpoNumberInput('');
             setStateFilter('');
+            setReserveFilter('');
             // Counted above, so it is cleared here: "Clear filters" that
             // left a card pressed would leave the screen still narrowed.
             setKindFilter(null);
@@ -1542,6 +1796,7 @@ export function OrderInquiriesClient({
           disabled: exporting,
           onClick: () => void handleExport(),
         },
+        ...parkedSendActions,
       ]}
       // AC-CF-7: the header tick is the current page only - this is what offers the
       // WHOLE matching set once every loaded row is ticked. Purchasing's own affordance;
@@ -1565,21 +1820,45 @@ export function OrderInquiriesClient({
       // "Select all N matching" is taken. Disabled at 0, with the reason as its title
       // (D3): a dead button with nothing beside it to say why reads as broken.
       primaryAction={
-        canAcknowledge ? (
-          <Button
-            type="button"
-            size="sm"
-            disabled={confirmCount === 0 || acknowledge.isPending}
-            title={
-              confirmCount === 0
-                ? 'Tick rows still to confirm, or Select all matching.'
-                : undefined
-            }
-            onClick={() => setConfirmingOpen(true)}
-          >
-            {`Confirm (${confirmCount})`}
-          </Button>
-        ) : null
+        <>
+          {/* OI-BULK-RESERVE v4 (F4): Decide while lines are ticked, then Reserve (N) once
+              answers are drafted - the OI Lines tab's own pair. */}
+          {canReserve && selectedRows.length > 0 ? (
+            <ReserveDecideControl
+              count={decideRows.length}
+              onReserveAsRequested={reserveTickedAsRequested}
+              onReject={() => {
+                setRejectTarget({ rows: decideRows, fromStrip: true });
+                setReserveRejectOpen(true);
+              }}
+            />
+          ) : null}
+          {canReserve && draftCount > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              disabled={commitReserve.isPending}
+              onClick={() => setReserveConfirmOpen(true)}
+            >
+              {`Reserve (${draftCount})`}
+            </Button>
+          ) : null}
+          {canAcknowledge ? (
+            <Button
+              type="button"
+              size="sm"
+              disabled={confirmCount === 0 || acknowledge.isPending}
+              title={
+                confirmCount === 0
+                  ? 'Tick rows still to confirm, or Select all matching.'
+                  : undefined
+              }
+              onClick={() => setConfirmingOpen(true)}
+            >
+              {`Confirm (${confirmCount})`}
+            </Button>
+          ) : null}
+        </>
       }
       onRefresh={() => {
         if (view === 'list') void list.refetch();
@@ -1893,6 +2172,40 @@ export function OrderInquiriesClient({
           setHorizonCleared(cleared);
         }}
       />
+      {parkedSendDialog}
+      <BulkRejectReserveDialog
+        open={reserveRejectOpen}
+        count={rejectTarget?.rows.length ?? 0}
+        onOpenChange={setReserveRejectOpen}
+        onConfirm={stageReject}
+      />
+      {/* Multi-OI mode: `lines` / `inquiryNo` / recipients belong to the single-OI mode. */}
+      <ReserveConfirmDialog
+        open={reserveConfirmOpen}
+        onOpenChange={closeReserveConfirm}
+        inquiryNo=""
+        lines={[]}
+        inquiries={confirmInquiries}
+        done={commitOutcome != null}
+        onConfirm={commitDrafts}
+        isPending={commitReserve.isPending}
+      />
+      {/* Mounted once the row's pool options have loaded, so the default location is real. */}
+      {editingRow && editingOptions && !editingOptions.isLoading ? (
+        <ReserveLineForm
+          open
+          onOpenChange={(next) => {
+            if (!next) setEditingRow(null);
+          }}
+          itemCode={editingRow.item_code ?? null}
+          mode="reserve"
+          requestedQty={editingRow.requested_qty ?? '0'}
+          locationOptions={editingOptions.options}
+          availableQtyByLocation={editingOptions.availableQtyByWarehouseId}
+          defaultLocationId={editingRow.reserve_warehouse_id ?? editingOptions.defaultWarehouseId}
+          onStage={saveEditedReserve}
+        />
+      ) : null}
       {/* One reason for the batch (item 15/AC-D6). */}
       <BulkRejectOrderInquiryDialog
         open={rejectingSelected}
