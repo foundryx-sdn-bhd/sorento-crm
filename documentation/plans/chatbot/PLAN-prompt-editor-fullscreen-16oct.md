@@ -25,6 +25,7 @@ without losing anything.
   closing Find, a Radix popover or a dialog no longer also drops you out of full screen. This
   applies to the dealer-kit hosts too (Esc with a popover open, or while editing a text layer,
   now takes two presses to leave full screen: one to close, one to exit).
+  Crew decision 16 Oct: keep it shared (standard: Esc closes the innermost thing first).
 - Fill-height chain: the editor, its wrappers and the Preview grow from a zero basis
   (`grow basis-0`) with explicit floors (scroll box 320px, editor + toolbar 360px), and the Card
   sizes to its content (`flex-auto`). Without the zero basis the chip editor grew to the prompt's
