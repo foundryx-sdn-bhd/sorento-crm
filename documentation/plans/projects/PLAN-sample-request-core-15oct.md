@@ -1,7 +1,7 @@
 # PLAN: SR-CORE - Sample Request (consignment requisition) in project management
 
-Status: Waiting on owner - card SETTLED (owner Q1 16 Oct 00:21, crew Q2-Q5 = (a)); mock
-(`mockups/sample-request-core.html`) awaiting owner OK; UAC drafted; this plan drafted 16 Oct. No product code until
+Status: Waiting on owner - card SETTLED (owner Q1 16 Oct 00:21, crew Q2-Q5 = (a)); mock v2
+(`mockups/sample-request-core.html`, rebuilt from existing components after owner notes 16 Oct 08:54) awaiting owner OK; UAC drafted; this plan drafted 16 Oct. No product code until
 crew relays the owner's mock OK. Track: full (migration, new permissions, portal ingest). Slice 1 of 3 (SR-STOCK,
 SR-RETURN follow).
 
@@ -86,9 +86,21 @@ abstraction. Every surface copies an existing sibling and names it below, with t
 ### S5 FE staff
 - `app/(protected)/project-sales/sample-requests/services/sampleRequestService.ts` (through `lib/api-client`,
   `extractApiError`, `buildDataGridParams`), hooks `useSampleRequestQuery` / `useSampleRequestMutations`.
-- Queue page `app/(protected)/project-sales/sample-requests/page.tsx` (DataGrid, fixed layout, resizable,
-  `rowHref`); detail `[id]/page.tsx` (PageHeader, status `Badge`, `RecordNavigation`, every section with empty
-  states, view = edit layout); create/edit is a modal from the tab and the queue (`SampleRequestDialog`).
+- Mock v2 (owner notes 16 Oct 08:54): staff pages copy Purchase Request / Sponsorship Form / Stock Inquiry exactly;
+  current status pill only, no flow visual. Each element maps to its component in `mockups/sample-request-core.html`.
+- List `app/(protected)/project-sales/sample-requests/page.tsx`: Container + `PageHeader` title only, then the
+  `PurchaseRequestsList` build (`procurement-management/purchase-requests/components/PurchaseRequestsList.tsx:467-606`):
+  DataGrid + `DataGridListToolbar` (ListSearchInput, custom Filters popover, export, Create as `primaryAction`),
+  status column `STATUS_PILL_BASE` + `statusPillClass` (`lib/status-pill.ts:97`), `rowHref`. Fixed layout + resizable
+  per CLAUDE.md.
+- Detail `[id]/page.tsx`: `PageHeader` + `BackToList`, `FormDetailWithSLATabs` (Details / Comments / SLA Tracking;
+  `sample_request` added to the comment + SLA kinds, BE `services/form_comment_service.py:38`,
+  `form_sla_service.py:33-42`), inner header as `PurchaseRequestDetail.tsx:596-614` with the pill in the subtitle
+  like `StockInquiryDetail.tsx:378-396`, `DetailActions` (ListPager, gear `DetailActionsMenu` with Print, one plain
+  button per allowed move, Edit last), document card as `PurchaseRequestDetail.tsx:1207-1345`, lines via
+  `PanelDataGrid` (as `PurchaseRequestLineItemsGrid`), `AuditTrail` below.
+- New / Edit are full pages (`new/page.tsx`, `[id]/edit/page.tsx`) like New Purchase Request, owner note 4/5 "reuse
+  our system component"; same fields in the same order as the detail card.
 - Lines editor: `SearchableSelect` per line over `products/select`; zero hits shows the card rule 5 sentence
   (AC-SR-12); "or" alternative is a second clearable `SearchableSelect`.
 - Each line row expands `OrderInquiryStockGrid({productId, location: 'BRW'})` (AC-SR-53).
@@ -98,7 +110,12 @@ abstraction. Every surface copies an existing sibling and names it below, with t
 
 ### S6 FE portal
 - `app/(auth)/portal/c/[slug]/sample_request/{page.tsx,new/page.tsx,[id]/page.tsx}` copied from the
-  `price_tag_request` folder layout; read-only detail with status and Cancel while Submitted (AC-SR-43).
+  `price_tag_request` folder layout. `SampleRequestForm` copies `PriceTagRequestForm.tsx` structure: plain shell
+  (`:2573-2640`, no branded header), collapsible `components/common/FormSection.tsx` sections (Customer & project,
+  Lines, Delivery, Additional Information), project picker = portal `AsyncCombobox` + `lookupProjects` as
+  `SubmissionForm.tsx:3031`, line table + `SearchableSelect` item picker (`:2725`, `:3324`) with the not-in-list
+  sentence as `emptyMessage`, segmented control (`:2844`), footer Save Draft / Submit (`:2983`). Read-only view:
+  same sections, "Status:" pill (`:2066`), gear menu with Print and Cancel while Submitted (AC-SR-43).
 
 ### S7 Print
 - `templates/sample_request.html` (or inline HTML like the stock-inquiry PDF) rendered by `render_html`; board row

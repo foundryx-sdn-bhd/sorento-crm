@@ -1,6 +1,6 @@
 # Behaviour card: Sample Request (consignment requisition) in project management (SR-CORE)
 
-Status: card + mock filed for owner approval (15 Oct 2026); card SETTLED (owner Q1 16 Oct 00:21, crew Q2-Q5 = (a)); mock awaiting owner OK. Size L, slice 1 of 3 (SR-STOCK, SR-RETURN follow).
+Status: card + mock filed for owner approval (15 Oct 2026); card SETTLED (owner Q1 16 Oct 00:21, crew Q2-Q5 = (a)); mock v2 (16 Oct, rebuilt from existing components after owner notes 08:54) awaiting owner OK. Size L, slice 1 of 3 (SR-STOCK, SR-RETURN follow).
 Mock: `mockups/sample-request-core.html` (open the file in a browser; every element names its component + path).
 Sources: crew discovery `state/reports/SAMPLE-REQUEST-DISCOVERY-15oct.md` sections 1-4, owner rulings 16 Oct 00:10.
 Paths: BE = `sorento_crm_backend/app/`, FE = `sorento_crm_frontend/`.
