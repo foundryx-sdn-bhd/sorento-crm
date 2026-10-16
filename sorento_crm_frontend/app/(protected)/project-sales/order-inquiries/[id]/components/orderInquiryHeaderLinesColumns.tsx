@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { ColumnDef } from '@tanstack/react-table';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
@@ -47,7 +48,10 @@ import {
   SupplierCell,
   WorklistPill,
 } from '../../components/orderInquiryWorklistColumns';
-import type { OrderInquiryWorklistRow } from '../../../_shared/types/orderInquiry.types';
+import type {
+  OrderInquiryLineSplit,
+  OrderInquiryWorklistRow,
+} from '../../../_shared/types/orderInquiry.types';
 import { OrderInquiryDocumentLink, ViaSpoPoNumber } from '../../components/OrderInquiryDocumentDialog';
 import { SoLineAttachmentsButton } from '../../../_shared/components/SoLineAttachmentsButton';
 import type { SoLineAttachmentsByLine } from '../../../_shared/services/soLineAttachmentService';
@@ -205,6 +209,73 @@ function DocumentCell({
         </WorklistPill>
       ) : null}
     </span>
+  );
+}
+
+/** `20/10/2026`. */
+function splitDate(iso: string | null): string {
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '';
+}
+
+/** OI-LINE-SPLIT (UAC D3): the row of a split line carries "Split N". */
+function SplitChip({ row }: { row: OrderInquiryWorklistRow }) {
+  const count = row.splits?.length ?? 0;
+  if (count === 0) return null;
+  return (
+    <Badge variant="secondary" appearance="light" size="sm" className="shrink-0">
+      {`Split ${count}`}
+    </Badge>
+  );
+}
+
+/** OI-LINE-SPLIT (UAC D3): the splits of the line, read-only: Qty, Date, Change, Sits on,
+ * Remark. Nothing when the line is not split. */
+function LineSplitsList({ splits }: { splits: OrderInquiryLineSplit[] }) {
+  if (splits.length === 0) return null;
+  return (
+    <table className="mb-2 w-full max-w-3xl table-fixed border-collapse text-xs">
+      <colgroup>
+        <col style={{ width: 80 }} />
+        <col style={{ width: 110 }} />
+        <col style={{ width: 150 }} />
+        <col style={{ width: 120 }} />
+        <col />
+      </colgroup>
+      <thead>
+        <tr className="text-left text-muted-foreground">
+          <th className="border-b border-border px-2 py-1.5 text-right font-medium">Qty</th>
+          <th className="border-b border-border px-2 py-1.5 font-medium">Date</th>
+          <th className="border-b border-border px-2 py-1.5 font-medium">Change</th>
+          <th className="border-b border-border px-2 py-1.5 font-medium">Sits on</th>
+          <th className="border-b border-border px-2 py-1.5 font-medium">Remark</th>
+        </tr>
+      </thead>
+      <tbody>
+        {splits.map((split) => (
+          <tr key={split.id}>
+            <td className="border-b border-border px-2 py-1.5 text-right tabular-nums">
+              {formatInquiryQty(split.qty)}
+            </td>
+            <td className="border-b border-border px-2 py-1.5">{splitDate(split.delivery_date)}</td>
+            <td className="border-b border-border px-2 py-1.5">
+              <OrderInquiryVerbPill
+                verb={split.change === 'CANCEL BALANCE' ? 'CANCEL_BALANCE' : split.change}
+              />
+            </td>
+            <td className="truncate border-b border-border px-2 py-1.5 text-muted-foreground">
+              {split.is_cancel
+                ? ''
+                : split.sits_on_line_no != null
+                  ? `line ${split.sits_on_line_no}`
+                  : 'New line (not in AutoCount yet)'}
+            </td>
+            <td className="truncate border-b border-border px-2 py-1.5" title={split.remark}>
+              {split.remark}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -469,6 +540,7 @@ export function useOrderInquiryHeaderLinesColumns({
           headerTitle: 'Expand',
           expandedContent: (line: OrderInquiryLineRow) => (
             <div className="px-3 py-2">
+              <LineSplitsList splits={line.splits ?? []} />
               {line.product_id ? (
                 <OrderInquiryStockGrid
                   productId={line.product_id}
@@ -510,7 +582,15 @@ export function useOrderInquiryHeaderLinesColumns({
         meta: { headerTitle: 'Product', skeleton: <Skeleton className="h-4 w-32" /> },
         // AC-DP-03, owner ruling 21 Sep: code only, one line - never the second
         // `product_name` line the worklist's own cell prints for a real row.
-        cell: ({ row }) => <ItemCodeCell row={row.original} codeOnly />,
+        // OI-LINE-SPLIT (UAC D3): a split line reads "Split N" beside its code.
+        cell: ({ row }) => (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="min-w-0 truncate">
+              <ItemCodeCell row={row.original} codeOnly />
+            </span>
+            <SplitChip row={row.original} />
+          </span>
+        ),
       },
       // W1 (PR #1266, owner hand test 26 Sep): the line's own confirmed mark, in the gap
       // the owner boxed between Product and SO Qty. Not sortable: no other icon column on
