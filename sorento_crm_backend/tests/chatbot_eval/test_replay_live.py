@@ -37,7 +37,7 @@ PROV_KEYS = {"code_sha", "prompt_sha256", "prompt_version", "model", "reasoning_
 @pytest.fixture()
 def live_env(monkeypatch):
     """Test-level stubs the runner must leave alone: the parser, the MCP client and the provider's `chat`."""
-    seen = {"parse_calls": [], "mcp_calls": [], "envelopes": []}
+    seen = {"parse_calls": [], "mcp_calls": [], "envelopes": [], "kwargs": []}
 
     def fake_chat(self, messages, **kw):
         return llm_provider.ChatResult(content="{}", prompt_tokens=1000, completion_tokens=100, total_tokens=1100,
@@ -56,6 +56,7 @@ def live_env(monkeypatch):
 
     def spy(envelope, **kw):
         seen["envelopes"].append(envelope)
+        seen["kwargs"].append(kw)
         return real_run(envelope, **kw)
 
     monkeypatch.setattr(llm_provider.OpenAIProvider, "chat", fake_chat)
@@ -181,3 +182,132 @@ def test_output_row_carries_every_tool_call_with_its_full_result_and_restores_th
     text = results[0]["result"] if isinstance(results[0]["result"], str) else json.dumps(results[0]["result"])
     assert len(text) > 8192 and "123456" in text and text.count("x") >= 9000, "the result was capped"
     assert MCPRuntimeClient.call_tool is big_tool, "the capture wrapper was left installed"
+
+
+# ------------------------------------------------------------------ review round 1
+def test_live_network_guard_allows_the_model_host_and_the_ip_it_resolved_to_only(monkeypatch):
+    import contextlib
+    import socket
+
+    reached = []
+
+    def sentinel_connect(self, addr):
+        reached.append(addr[0])
+        raise OSError("sentinel: reached the real connect")
+
+    monkeypatch.setattr(socket.socket, "connect", sentinel_connect)
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("203.0.113.7", 443))])
+    misses = []
+    with contextlib.ExitStack() as stack:
+        replay_mod._guard_network(stack, misses, replay_mod.MODEL_HOSTS)
+        assert socket.getaddrinfo("api.openai.com", 443)
+        s = socket.socket()
+        try:
+            with pytest.raises(OSError, match="sentinel"):
+                s.connect(("203.0.113.7", 443))            # the IP the model host resolved to: allowed
+            with pytest.raises(OSError, match="network_blocked"):
+                s.connect(("198.51.100.5", 443))           # another public IP: blocked
+        finally:
+            s.close()
+    assert reached == ["203.0.113.7"]
+
+
+def test_live_mode_blocks_the_ideation_tool_and_runs_the_engine_without_offload(session_factory, recorded, live_env, monkeypatch):
+    from app.services.chatbot.lanes import ideate
+
+    reached, caught = [], []
+    monkeypatch.setattr(ideate, "call_ideation_tool", lambda **kw: reached.append(kw) or {})
+    real_parse = parser_mod.parse
+
+    def parse_then_ideate(config, user_block):
+        out = real_parse(config, user_block)
+        try:
+            ideate.call_ideation_tool(text="x")
+        except Exception as exc:  # noqa: BLE001
+            caught.append(str(exc))
+        return out
+
+    monkeypatch.setattr(parser_mod, "parse", parse_then_ideate)
+    out = go(session_factory, recorded)[0]
+    assert reached == [] and caught and caught[0].startswith("llm_blocked")
+    assert {"llm_blocked": "ideate"} in out.get("misses", [])
+    assert live_env["kwargs"][0].get("offload") is False
+
+
+def _parse_with(monkeypatch, model, calls_per_turn=1):
+    def fake_parse(config, user_block):
+        for _ in range(calls_per_turn):
+            llm_provider.OpenAIProvider.chat(object(), [{"role": "user", "content": "x"}], model=model)
+        return _parser_output()
+
+    monkeypatch.setattr(parser_mod, "parse", fake_parse)
+
+
+def test_a_model_with_no_price_row_stops_the_run(session_factory, recorded, live_env, monkeypatch):
+    _parse_with(monkeypatch, "mystery-model")
+    out = go(session_factory, recorded, n=3)
+    assert out[1]["stopped"] == "unpriced_model" and out[2]["stopped"] == "unpriced_model"
+
+
+def test_llm_model_override_is_the_priced_model_when_set(session_factory, recorded, live_env, monkeypatch):
+    monkeypatch.setenv("LLM_MODEL_OVERRIDE", "gpt-5.4-mini")
+    _parse_with(monkeypatch, "mystery-model")
+    out = go(session_factory, recorded, n=2)
+    assert "turn" in out[0] and "turn" in out[1] and "stopped" not in out[1]
+    assert out[0]["usage"]["usd"] == pytest.approx(PER_CALL)
+
+
+def test_usd_is_never_negative_when_cached_exceeds_prompt(session_factory, recorded, live_env, monkeypatch):
+    monkeypatch.setattr(llm_provider.OpenAIProvider, "chat", lambda self, messages, **kw: llm_provider.ChatResult(
+        content="{}", prompt_tokens=100, completion_tokens=0, total_tokens=100, cached_tokens=500))
+    out = go(session_factory, recorded)[0]
+    assert out["usage"]["usd"] >= 0
+
+
+def test_the_cap_is_checked_before_each_model_call_not_only_between_items(session_factory, recorded, live_env, monkeypatch):
+    actual = []
+    monkeypatch.setattr(llm_provider.OpenAIProvider, "chat", lambda self, messages, **kw: actual.append(1) or llm_provider.ChatResult(
+        content="{}", prompt_tokens=1000, completion_tokens=100, total_tokens=1100, cached_tokens=800))
+    _parse_with(monkeypatch, "gpt-5.4-mini", calls_per_turn=2)
+    out = go(session_factory, recorded, n=1, max_calls=1)
+    assert len(actual) == 1, "a second model call went out after the cap"
+    assert out[0].get("stopped") == "max_calls"
+
+
+def test_an_item_that_raises_is_recorded_by_type_and_the_run_continues(session_factory, recorded, live_env, monkeypatch, capsys):
+    real = engine_mod.run_turn
+    calls = []
+
+    def flaky(envelope, **kw):
+        calls.append(1)
+        if len(calls) == 1:
+            raise ValueError(f"boom with {VARIANT}")
+        return real(envelope, **kw)
+
+    monkeypatch.setattr(engine_mod, "run_turn", flaky)
+    out = go(session_factory, recorded, n=2)
+    assert out[0]["item_id"] == "it-0" and out[0]["error"] == "ValueError" and "turn" not in out[0]
+    assert "turn" in out[1]
+    cap = capsys.readouterr()
+    assert VARIANT not in cap.out + cap.err and "boom" not in cap.out + cap.err
+
+
+def test_a_recorded_envelope_without_a_text_slot_is_skipped(session_factory, recorded, live_env):
+    row = copy.deepcopy(recorded)
+    node = row["envelope"]
+    while isinstance(node, dict):
+        if "text" in node:
+            node.pop("text")
+            break
+        node = node.get("message")
+    out = replay_mod.live_rows(items_for(row), [row], session_factory=session_factory, max_calls=5, max_usd=5)
+    assert out[0].get("skipped") == "no_text_slot"
+
+
+def test_recorded_prompt_overrides_and_result_set_keys_are_stripped(session_factory, recorded, live_env):
+    row = copy.deepcopy(recorded)
+    row["envelope"]["prompt_overrides"] = {"parser": "some-version"}
+    row["envelope"]["referenced_result_set"] = {"rows": [1]}
+    replay_mod.live_rows(items_for(row), [row], session_factory=session_factory, max_calls=5, max_usd=5)
+    extras = live_env["envelopes"][0].model_extra or {}
+    assert "prompt_overrides" not in extras and "referenced_result_set" not in extras

@@ -113,7 +113,8 @@ def test_pick_via_reference_positions_when_there_is_no_engine_pick():
 def test_answer_via_memory_open_question_change_without_a_mode():
     q = {"question": "which colour", "options": ["white", "black"]}
     v = {"entities": [], "reference_positions": [], "open_question_answer": {"mode": None, "items": [], "picked": []}}
-    ok = row2(verdict=v, state_oq=q, oq={"before": q, "after": None, "writer": "engine"})
+    # a cleared question reads as answered only when the apply payload was omitted (lead sign-off: narrowed)
+    ok = row2(apply_omitted=True, state_oq=q, oq={"before": q, "after": None, "writer": "engine"})
     check(grade_turn(ok, item("followup", "answer", option="white")), True)
     bad = row2(verdict=v, state_oq=q, oq={"before": q, "after": q, "writer": "engine"})
     check(grade_turn(bad, item("followup", "answer", option="white")), False, "again")
@@ -434,3 +435,77 @@ def test_pick_followed_by_a_question_passes_with_tool_target_unknown():
     other_tool["uuid_codes"] = {UB: "SRTB200"}
     res2 = grade_turn(other_tool, item("followup", "pick", **gold))
     assert res2["passed"] is False and res2["checks"]["tool_target"] is False
+
+
+# ------------------------------------------------------------------ review round 1 (grader)
+def test_state_subject_is_used_only_when_memory_has_no_after_focus():
+    # memory.after exists and is EMPTY (the bot dropped the subject); the subject lives only in the state event
+    base = dict(state_products=[prod("SRTA100", UA)], mem_before=[prod("SRTA100", UA)], mem_after=[], tools=[TOOL_A])
+    and_x = row2(message="and the price?", **base)
+    check(grade_turn(and_x, item("followup", "and_x", variant="new_fact", fact="inventory", subject_after=["SRTA100"])),
+          False, "subject")
+    v = {"entities": [{"raw": "sorento", "hint": "brand", "canonical_code": "Sorento"}], "reference_positions": []}
+    refine = row2(verdict=v, mem_brands=["Sorento"], **base)
+    check(grade_turn(refine, item("followup", "refine", subject_after=["SRTA100"],
+                                  filter={"kind": "brand", "value": "Sorento"})), False, "subject")
+    pv = {"entities": [], "reference_positions": [], "open_question_answer": {"mode": None, "items": [], "picked": []}}
+    pick = _asking(row2(verdict=pv, state_products=[prod("SRTA200", UA)], mem_after=[], tools=[]), "period_pick")
+    check(grade_turn(pick, item("followup", "pick", position=2, code="SRTA200")), False, "position")
+
+
+def test_a_non_product_switch_still_passes_when_memory_after_is_empty():
+    r = _do_row([DO], mem_before=[prod("SRTA100", UA)], mem_after=[], state_products=[prod("SRTA100", UA)])
+    check(grade_turn(r, item("followup", "switch", subject_after=[DO])), True)
+
+
+def test_answer_needs_a_real_answer_not_a_cancel_or_an_arm_that_clears_the_question():
+    q = {"question": "which colour", "options": ["white", "black"]}
+    cancel = {"entities": [], "reference_positions": [],
+              "open_question_answer": {"mode": "cancel", "items": [], "picked": []}}
+    r = row2(verdict=cancel, state_oq=q, oq={"before": q, "after": None, "writer": "engine"})
+    res = grade_turn(r, item("followup", "answer", option="white"))
+    assert res["passed"] is False and "answer" in res["reason"].lower()
+    null = {"entities": [], "reference_positions": [],
+            "open_question_answer": {"mode": None, "items": [], "picked": []}}
+    smalltalk = row2(verdict=null, state_oq=q, oq={"before": q, "after": None, "writer": "casual"}, reply="Hello there!")
+    res2 = grade_turn(smalltalk, item("followup", "answer", option="white"))
+    assert res2["passed"] is False and "answer" in res2["reason"].lower()
+
+
+def test_made_up_with_an_omitted_apply_payload_is_unverifiable_unless_results_were_recorded():
+    import json
+
+    r = row2(apply_omitted=True, reply="SRTA100 has 4321 pcs.", tools=[])
+    found = made_up_facts(r)
+    assert found and all(f.startswith("unverifiable:") for f in found), found
+    r["tool_results"] = [{"name": "crm_inventory_list", "args": {}, "result": json.dumps({"qty": 5})}]
+    assert any("4321" in f and not f.startswith("unverifiable:") for f in made_up_facts(r))
+
+
+def test_a_turn_whose_checks_are_all_unknown_is_passed_none():
+    r = row2(verdict={"entities": [], "reference_positions": []})
+    res = grade_turn(r, item("spec", spec=[{"key": "class", "value": "basin"}]))
+    assert res["passed"] is None
+    assert res["reason"] == "The bench could not confirm what the bot understood."
+    assert all(v is None for v in res["checks"].values())
+
+
+def test_summarise_counts_unknowns_apart_and_keeps_them_out_of_the_rate():
+    from scripts.chatbot_eval.targets import summarise
+
+    def res(passed):
+        return {"item_id": "x", "slice": "spec", "kind": None, "passed": passed, "reason": "r", "checks": {},
+                "leaks": [], "made_up": []}
+
+    runs = [[res(True)] * 8 + [res(None)] * 2 for _ in range(3)]
+    s = summarise(runs, {"spec": 0.9})
+    assert s["slices"]["spec"]["rate"] == 1.0 and s["slices"]["spec"]["unknown"] == 2
+
+
+def test_the_named_check_matches_codes_on_word_boundaries():
+    base = dict(mem_after=[prod("SRT10", UA)], tools=[TOOL_A])
+    gold = dict(code="srt10", fact="inventory")
+    ok = grade_turn(row2(reply="SRT10 has 40 pcs.", **base), item("code_lookup", **gold))
+    assert ok["checks"]["named"] is True
+    longer = grade_turn(row2(reply="SRT105 has 40 pcs.", **base), item("code_lookup", **gold))
+    assert longer["checks"]["named"] is False
