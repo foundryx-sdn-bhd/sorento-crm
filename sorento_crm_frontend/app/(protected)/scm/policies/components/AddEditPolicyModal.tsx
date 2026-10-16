@@ -253,9 +253,8 @@ export function AddEditPolicyModal({
 
     // Overrides are optional but never negative.
     for (const key of ['min_override', 'max_override'] as const) {
-      if (numberFieldError(form[key], { min: 0, optional: true })) {
-        errs[key] = 'Must be 0 or more.';
-      }
+      const problem = numberFieldError(form[key], { min: 0, optional: true });
+      if (problem) errs[key] = problem;
     }
 
     // Min ≤ Max when both provided (AC-VAL-5).

@@ -21,6 +21,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
 import { requiredNumber } from '@/lib/number-field-schema';
+import { numberFieldError } from '@/lib/number-field';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,9 @@ import { useCreateCategory, useUpdateCategory, useCategory } from '../hooks/useP
 // rules live with the rest of that policy and are only surfaced here.
 import { PriceFloorPanel } from '@/app/(protected)/project-sales/_shared/components/PriceFloorPanel';
 import type { CategoryFormData, CategoryTreeItem } from '../types/category.types';
+
+// The shared sentence for an optional whole count (zero or more).
+const COUNT_OR_BLANK = numberFieldError(-1, { min: 0, integer: true, optional: true }) as string;
 
 const CategorySchema = z.object({
   category_code: z.string().min(1, 'Category code is required').max(50),
@@ -42,8 +46,8 @@ const CategorySchema = z.object({
   // input (which this form's onChange already turns into null, never '')
   // stays null instead of coercing to 0 (R2: unset must stay unset so a
   // category opts in, not out, by default).
-  chatbot_max_qty: z.coerce.number().int({ message: 'Enter a whole number, or leave it blank.' }).min(0, { message: 'Max quantity cannot be negative.' }).nullable(),
-  chatbot_eta_offset_days: z.coerce.number().int({ message: 'Enter a whole number, or leave it blank.' }).min(0, { message: 'ETA offset cannot be negative.' }).nullable(),
+  chatbot_max_qty: z.coerce.number().int({ message: COUNT_OR_BLANK }).min(0, { message: COUNT_OR_BLANK }).nullable(),
+  chatbot_eta_offset_days: z.coerce.number().int({ message: COUNT_OR_BLANK }).min(0, { message: COUNT_OR_BLANK }).nullable(),
 });
 
 type CategorySchemaType = z.infer<typeof CategorySchema>;

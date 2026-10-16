@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { requiredNumber } from '@/lib/number-field-schema';
+import { numberFieldError } from '@/lib/number-field';
+
+const FREE_DAYS_SENTENCE = numberFieldError(-1, { min: 0, integer: true, optional: true }) as string;
 
 export const shipmentLineSchema = z.object({
   /**
@@ -53,7 +56,7 @@ export const clearanceSchema = z.object({
   coa_permit_no: z.string().optional(),
   // Empty string when cleared, so coerce would turn "" into 0 - a real "0 free
   // days" and "not recorded" must stay distinguishable.
-  free_days_available: z.union([z.literal(''), z.coerce.number().int().min(0, { message: 'Enter a whole number of at least 0, or leave it blank.' })]).optional(),
+  free_days_available: z.union([z.literal(''), z.coerce.number().int({ message: FREE_DAYS_SENTENCE }).min(0, { message: FREE_DAYS_SENTENCE })]).optional(),
 });
 
 export type ClearanceSchemaType = z.infer<typeof clearanceSchema>;
