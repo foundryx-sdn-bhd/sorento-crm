@@ -40,6 +40,8 @@
       "parameters": {
         "method": "POST",
         "url": "REPLACE_WITH_THE_MCP_URL_THE_BOT_USES",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -66,7 +68,13 @@
       "name": "MCP call",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, 0]
+      "position": [440, 0],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_WITH_SORENTO_MCP_BEARER_CREDENTIAL_ID",
+          "name": "sorento-mcp-bearer"
+        }
+      }
     },
     {
       "parameters": {

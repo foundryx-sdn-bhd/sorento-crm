@@ -598,7 +598,13 @@ def _nothing_live_of_kind(
 
     text = no_live_kind_reply(
         db,
-        {"promotion_types": semantic_input["promotion_types"], "brand_ids": semantic_input["brand_ids"]},
+        {
+            "promotion_types": semantic_input["promotion_types"],
+            "brand_ids": semantic_input["brand_ids"],
+            # SEC-MCP-AUTH: the MCP server refuses a company-scoped tool without the contact.
+            "contact_id": semantic_input.get("contact_id"),
+            "space_id": semantic_input.get("space_id"),
+        },
         tier_source,
         services.mcp_call,
     )

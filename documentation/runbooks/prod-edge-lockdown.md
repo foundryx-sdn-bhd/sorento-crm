@@ -269,9 +269,10 @@ direct to the origin.
 3. Run `sudo nginx -t && sudo nginx -s reload`.
 
 - Check: from the n8n box,
-  `curl -s -o /dev/null -w '%{http_code}\n' http://<CRM_ORIGIN>:8765/mcp` prints `200`, `405` or
-  `406`. MCP wants an SSE Accept header, so any of those means it was reached; the release check
-  accepts the same three (`deploy.yml:2117-2121`).
+  `curl -s -o /dev/null -w '%{http_code}\n' http://<CRM_ORIGIN>:8765/mcp` prints `401`: the
+  MCP bearer gate answered (SEC-MCP-AUTH), so MCP was reached. Before that release it printed
+  `200`, `405` or `406`. The release check sends a wrong token and accepts only `401`
+  (`.github/workflows/deploy.yml`, "Verify public endpoints").
 - Check: step 7's `/mcp` lines do not reach MCP.
 - Rollback: delete the five lines (and restore any removed `location` from
   `~/nginx-T-before.txt`), then reload nginx.

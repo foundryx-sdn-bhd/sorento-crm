@@ -668,13 +668,18 @@ def no_live_kind_reply(
     levels = [n for n in (tier_source or {}).get("name") or [] if isinstance(n, str) and n.strip()]
     try:
         # SEC-PROMO-ACCESS: no held level means no list. The MCP server drops an empty
-        # `access_levels`, and this call carries no `contact_id`, so the route would read
-        # it as "no access filter" and name every level's promotions.
-        raw = (
-            mcp_call("crm_marketing_promotions_list", {"promotion_types": list(kinds), "access_levels": levels})
-            if levels
-            else {}
-        )
+        # `access_levels`, so the route would read it as "no access filter" and name every
+        # level's promotions. SEC-MCP-AUTH: the call carries the turn's contact, because the
+        # MCP server refuses a company-scoped tool without one (it used to read every company).
+        from app.services.chatbot.lanes.business.fetch import space_id_or_default
+
+        args = {
+            "promotion_types": list(kinds),
+            "access_levels": levels,
+            "contact_id": str(narrow.get("contact_id") or "").strip(),
+            "space_id": space_id_or_default(narrow.get("space_id")),
+        }
+        raw = mcp_call("crm_marketing_promotions_list", args) if levels else {}
         body = json.loads(raw) if isinstance(raw, str) else raw
         for item in (body.get("data") or body.get("items") or []) if isinstance(body, dict) else []:
             name = str((item or {}).get("description") or "").strip()

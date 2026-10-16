@@ -319,6 +319,53 @@ class TestNoLiveKindReplyNeverListsWithoutALevel:
         assert calls == [], calls
         assert text == "There is no Cabana A3 flyer right now.", text
 
+    def test_the_other_kinds_call_carries_the_contact(self, monkeypatch):
+        """SEC-MCP-AUTH: the MCP server answers `scope_required` to a company-scoped tool
+        without the contact, which silently dropped the `Other <kind>s:` list."""
+        from app.services.chatbot import turn_runtime
+        from app.services.chatbot.answer_bridge import no_live_kind_reply
+        from app.services.chatbot.lanes.business import _nothing_live_of_kind
+
+        class _Row:
+            type_name = "A3 Flyer"
+
+        class _Query:
+            def filter(self, *_a):
+                return self
+
+            def first(self):
+                return _Row()
+
+        class _Db:
+            def query(self, *_a):
+                return _Query()
+
+        monkeypatch.setattr(turn_runtime, "active_brands", lambda db: [{"id": "b1", "brand_name": "Cabana"}])
+        calls: list[Any] = []
+
+        def mcp_call(name, args):
+            calls.append((name, args))
+            return {"data": [{"description": "ZZT OTHER FLYER"}]}
+
+        text = no_live_kind_reply(
+            _Db(),
+            {"promotion_types": ["a3_flyer"], "brand_ids": ["b1"], "contact_id": " 900000008 ", "space_id": "364817"},
+            {"name": ["Cabana Dealer"]},
+            mcp_call,
+        )
+        assert calls[0][1]["contact_id"] == "900000008"
+        assert calls[0][1]["space_id"] == "364817"
+        assert text.endswith("Other A3 flyers:\nZZT OTHER FLYER"), text
+
+        calls.clear()
+        services = type("S", (), {"mcp_call": staticmethod(mcp_call)})()
+        _nothing_live_of_kind(
+            {"promotion_types": ["a3_flyer"], "brand_ids": ["b1"], "contact_id": "900000008", "space_id": "364817"},
+            _Db(), services, {"name": ["Cabana Dealer"]},
+        )
+        assert calls[0][1]["contact_id"] == "900000008"
+        assert calls[0][1]["space_id"] == "364817"
+
 
 # --------------------------------------------------------------------------- #
 # Security review round 1
