@@ -350,6 +350,8 @@ def test_r6_nit_resolve_config_reads_the_prompt_once_so_gate_and_text_come_from_
         reads.append(1)
         return real(*a, **k)
 
+    # `render` reads through the registry's own name; `parser` imported the function by name.
     monkeypatch.setattr(ai_prompt_registry, "get_prompt", counting)
+    monkeypatch.setattr(parser_mod, "get_prompt", counting)
     _resolve(monkeypatch, session_factory, f"Rules {{{{current_date}}}}\n{HEADING_LINE}\n")
-    assert len(reads) == 1, len(reads)
+    assert len(reads) == 1, f"the prompt was read {len(reads)} times"

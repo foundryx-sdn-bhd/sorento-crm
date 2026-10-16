@@ -770,3 +770,23 @@ def test_r6_nit_the_hand_over_after_a_second_unclear_reuses_the_existing_offer_p
     offer = out.state.slot_ask
     assert offer.kind == "team_pick" and offer.team and offer.expects == "yes_no"
     assert "offer_text" not in (offer.payload.get("filters") or {}), "no new English-only text"
+
+
+@pytest.mark.parametrize("slot", ["keep", "skip", "unclear"])
+def test_r6_nit_a_lone_slot_op_next_to_a_stated_period_is_dropped_into_ignored(slot):
+    focus = Focus(customers=[_customer()], domains=["order"], date_window=dict(WINDOW))
+    v = verdict(domain_hint="order", date_mode="range", date_filter_start="2026-09-01",
+                date_filter_end="2026-09-30", state_changes=[_op(slot, "period")])
+    out = _apply(State(focus=focus, turn_no=3), v)
+    assert out.valid is True, out.log.get("rejected")
+    assert out.verdict["date_filter_start"] == "2026-09-01"
+    assert any(i.get("axis") == "period" for i in out.log.get("ignored") or []), out.log.get("ignored")
+    assert out.state.slot_ask is None
+
+
+def test_r6_nit_customer_shells_with_no_code_and_no_uuid_are_dropped_from_the_state():
+    shell = {"hint": "customer", "current_message": False}
+    out = _apply(State(focus=Focus(customers=[shell, _customer()], domains=["order"]), turn_no=3),
+                 verdict(domain_hint="order", state_changes=[_op("keep")]))
+    assert out.valid is True
+    assert [c.get("canonical_code") for c in out.state.focus.customers] == ["C0001"]

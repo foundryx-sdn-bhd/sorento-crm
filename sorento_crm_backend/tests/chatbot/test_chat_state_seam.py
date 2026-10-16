@@ -683,10 +683,12 @@ def test_r6_security_a_skipped_customer_is_not_trusted_by_its_stored_uuid_after_
     assert CUSTOMER_UUID not in _blob(seam), "the stored uuid reached a tool call after the scope changed"
 
 
-def test_r6_nit_the_tail_restores_set_aside_slots_before_the_live_state_is_carried():
-    import types as _t
+def test_r6_nit_a_canned_lane_on_a_quoted_reply_keeps_the_live_focus_without_the_set_aside_customer():
+    """The quoted turn skipped a customer (set aside); the live focus never had it. A canned
+    lane keeps the WHOLE live focus, so the set-aside row must not be restored onto it."""
     from dataclasses import replace
 
+    from app.services.chatbot.turn import chat_state
     from app.services.chatbot.turn import tail as tail_mod
 
     row = {"raw": "Customer X", "canonical_code": "C0001", "hint": "customer", "uuid": CUSTOMER_UUID}
@@ -694,8 +696,157 @@ def test_r6_nit_the_tail_restores_set_aside_slots_before_the_live_state_is_carri
     state = replace(
         State(focus=Focus(domains=["order"]), turn_no=4), held_aside={"customers": [row]}, quoted_live=live
     )
-    payload = tail_mod.session_payload(
-        state, _t.SimpleNamespace(question=None, sections=[]),
-        _t.SimpleNamespace(ideation=None, access_levels=[], contains_flyer=False, reply_language="en"),
+    carried = tail_mod.carry_live_state(state, False, live, non_answer=True)
+    assert chat_state.restored(carried).focus.customers == []
+
+
+# --------------------------------------------------------------------------- #
+# S7: a carried customer the contact can no longer read is dropped on the state path
+# --------------------------------------------------------------------------- #
+
+COMPANY_A = SORENTO
+
+
+def _seed_real_customer(seam: Seam, *, company_id: str = COMPANY_A, name: str = "Customer X") -> str:
+    from app.models.order import Customer
+
+    db = seam.session_factory()
+    db.info["company_scope"] = frozenset({company_id})
+    row = Customer(
+        id=str(uuid.uuid4()), customer_code=f"ZZT-{uuid.uuid4().hex[:8]}"[:30],
+        customer_name=name, company_id=company_id,
     )
-    assert [c.get("canonical_code") for c in payload["focus"]["customers"]] == ["C0001"]
+    db.add(row)
+    db.commit()
+    return row.id
+
+
+def _code_of(seam: Seam, customer_id: str) -> str:
+    from sqlalchemy import text
+
+    return seam.session_factory().execute(
+        text("SELECT customer_code FROM customers WHERE id = :i"), {"i": customer_id}
+    ).scalar()
+
+
+def _held_real_customer_state(customer_id: str, code: str = "C0001") -> dict[str, Any]:
+    row = {
+        "raw": "Customer X", "name": "Customer X", "canonical_code": code,
+        "hint": "customer", "uuid": customer_id, "current_message": False,
+    }
+    return {
+        "focus": focus_to_wire(Focus(customers=[row], domains=["order"], date_window=dict(HELD_WINDOW))),
+        "open_question": None,
+    }
+
+
+def _contact_pk(db) -> str:
+    from sqlalchemy import text
+
+    return db.execute(
+        text("SELECT id FROM respond_contacts WHERE respond_io_id = :c"), {"c": str(CONTACT_ID)}
+    ).scalar()
+
+
+def _swap_company(seam: Seam, *, add_b: bool) -> None:
+    from sqlalchemy import text
+
+    from app.models.company import Company
+
+    db = seam.session_factory()
+    pk = _contact_pk(db)
+    db.execute(text("DELETE FROM respond_contact_companies WHERE respond_contact_id = :p"), {"p": pk})
+    if add_b:
+        company_b = str(uuid.uuid4())
+        db.add(Company(id=company_b, name="ZZT Other Co", code=f"ZZ{uuid.uuid4().hex[:6]}"))
+        db.flush()
+        db.execute(
+            text("INSERT INTO respond_contact_companies (id, respond_contact_id, company_id) "
+                 "VALUES (gen_random_uuid(), :p, :c)"),
+            {"p": pk, "c": company_b},
+        )
+    db.commit()
+
+
+def _order_keep(seam: Seam, prev: dict[str, Any]) -> Any:
+    return seam.say("delivery?", _order_ask(_op("keep")), previous=prev)
+
+
+def test_s7_a_held_customer_whose_company_link_was_removed_is_dropped(seam):
+    cid = _seed_real_customer(seam)
+    prev = _held_real_customer_state(cid, _code_of(seam, cid))
+    _swap_company(seam, add_b=False)
+    _order_keep(seam, prev)
+    assert cid not in _blob(seam), "the stale customer uuid reached a tool call"
+    assert seam.state["focus"]["customers"] == []
+
+
+def test_s7_a_contact_moved_to_another_company_loses_the_held_customer_of_the_old_one(seam):
+    cid = _seed_real_customer(seam)
+    prev = _held_real_customer_state(cid, _code_of(seam, cid))
+    _swap_company(seam, add_b=True)
+    _order_keep(seam, prev)
+    assert cid not in _blob(seam)
+    assert seam.state["focus"]["customers"] == []
+
+
+def test_s7_an_enforced_contact_loses_a_held_customer_whose_own_link_was_removed(seam):
+    from app.models.access import RespondContactCustomer
+
+    held = _seed_real_customer(seam)
+    other = _seed_real_customer(seam, name="Customer Y")
+    db = seam.session_factory()
+    db.info["company_scope"] = frozenset({COMPANY_A})
+    pk = _contact_pk(db)
+    db.add(RespondContactCustomer(contact_id=pk, customer_id=other, company_id=COMPANY_A, is_primary=True))
+    db.commit()  # the contact keeps its company and has a link to Customer Y only
+    prev = _held_real_customer_state(held, _code_of(seam, held))
+    _order_keep(seam, prev)
+    assert held not in _blob(seam)
+    assert [c for c in seam.state["focus"]["customers"] if c.get("uuid") == held] == []
+    assert [c for c in seam.state["focus"]["customers"] if c.get("canonical_code") == _code_of(seam, held)] == []
+
+
+def test_s7_a_still_readable_held_customer_is_kept_with_its_uuid_and_applied(seam):
+    cid = _seed_real_customer(seam)
+    prev = _held_real_customer_state(cid, _code_of(seam, cid))
+    _order_keep(seam, prev)
+    assert cid in _blob(seam), _blob(seam)[:300]
+    assert [c.get("uuid") for c in seam.state["focus"]["customers"]] == [cid]
+
+
+def test_s7_with_the_state_path_off_the_stale_customer_is_untouched_as_on_main(seam, monkeypatch):
+    """Pin of the gate-off path: no state_changes key on a normal parse, behaviour as main."""
+    from app.services.chatbot import engine as engine_mod
+    from app.services.chatbot.head import parser as parser_mod
+    from tests.chatbot.test_engine import _envelope
+
+    cid = _seed_real_customer(seam)
+    prev = _held_real_customer_state(cid, _code_of(seam, cid))
+    _swap_company(seam, add_b=False)
+    emission = _order_ask()
+    emission.pop("state_changes", None)
+    monkeypatch.setattr(parser_mod, "parse", lambda config, user_block: emission)
+    out = engine_mod.run_turn(
+        _envelope(
+            is_test=True, previous_conversation_state=prev,
+            message={
+                "event_type": "message.received", "contact": {"id": CONTACT_ID},
+                "message": {"messageId": f"ZZT-s7-{uuid.uuid4().hex[:8]}", "contactId": CONTACT_ID,
+                            "channelId": "whatsapp", "traffic": "incoming",
+                            "message": {"type": "text", "text": "delivery?"}},
+            },
+        ),
+        session_factory=seam.session_factory,
+    )
+    stored = [c.get("uuid") for c in (out.session_patch or {}).get("focus", {}).get("customers", [])]
+    assert stored == [cid], "main keeps the stored row untouched"
+    assert any(n.startswith("crm_order") for n, _ in seam.tool_calls)
+    assert [r for r in seam.trace_rows(out) if r.get("kind") == "memory" and "state" in r] == []
+
+
+def test_s7_b_carried_customer_shells_with_no_code_and_no_uuid_are_not_persisted(seam):
+    shell = {"hint": "customer", "current_message": False}
+    prev = {"focus": focus_to_wire(Focus(customers=[shell], domains=["order"])), "open_question": None}
+    seam.say("delivery?", _order_ask(_op("keep")), previous=prev)
+    assert [c for c in seam.state["focus"]["customers"] if not c.get("canonical_code") and not c.get("uuid")] == []
