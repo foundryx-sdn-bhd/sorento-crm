@@ -592,6 +592,12 @@ class TestSecurityReviewRound2:
 # nothing). Unlinked, a salesperson sees any customer's DO / SO as main does today; linked, it
 # is lifted only on the in-process number lookups. Anyone else unlinked and not staff stays
 # blocked. A customer PO ref keeps the tier rule (`ref_staff`) everywhere.
+#
+# Owner ruling 16 Oct: ANY ACTIVE, not trashed CRM user linked to the contact is staff, whatever
+# its role (crew's prod-copy check found real customer service, warehouse, purchasing, project
+# and marketing staff BLOCKED). Not a portal login: a role outside the codebase's non-staff
+# roles (`user_service.NON_STAFF_ROLE_SLUGS`: portal_user, guest) is required, because a dealer's
+# WhatsApp contact is linked to its portal user (`user_contact_link.suggested_role_slug`).
 
 
 def _contact(db):
@@ -605,16 +611,18 @@ def _make_salesperson(
     *,
     status: str = "ACTIVE",
     trashed: bool = False,
-    role: str = "salesperson",
+    role: str | None = "salesperson",
     role_trashed: bool = False,
 ) -> None:
-    """Link a CRM user holding `role` to the seeded contact (`CONTACT_ID`). The defaults make
-    the one salesperson that has document access: ACTIVE, not trashed, role `salesperson`."""
+    """Link a CRM user holding `role` (None: no role at all) to the seeded contact
+    (`CONTACT_ID`). The defaults make a staff user with document access: ACTIVE, not trashed,
+    a staff role."""
     from tests._chat_asker_seed import give_role, link_user
 
     db = session_factory()
     user = link_user(db, _contact(db), status=status, trashed=trashed, name="ZZT Sales User")
-    give_role(db, user, role, role_trashed=role_trashed)
+    if role is not None:
+        give_role(db, user, role, role_trashed=role_trashed)
     db.commit()
 
 
@@ -737,16 +745,62 @@ _NOT_A_SALESPERSON = {
     "agent_link_only": lambda sf: _link_agent(sf),
     "inactive_user_and_agent_link": lambda sf: (_make_salesperson(sf, status="INACTIVE"), _link_agent(sf)),
     "trashed_user_and_agent_link": lambda sf: (_make_salesperson(sf, trashed=True), _link_agent(sf)),
-    "other_role_user_and_agent_link": lambda sf: (_make_salesperson(sf, role="warehouse_manager"), _link_agent(sf)),
+    "inactive_customer_service_user": lambda sf: _make_salesperson(sf, status="INACTIVE", role="customer_service"),
     "inactive_user": lambda sf: _make_salesperson(sf, status="INACTIVE"),
     "trashed_role": lambda sf: _make_salesperson(sf, role_trashed=True),
+    "portal_user_only": lambda sf: _make_salesperson(sf, role="portal_user"),
+    "guest_only": lambda sf: _make_salesperson(sf, role="guest"),
+    "no_role": lambda sf: _make_salesperson(sf, role=None),
 }
+
+#: Owner ruling 16 Oct: any staff role makes an ACTIVE, not trashed linked user staff (the roles
+#: the prod-copy check found BLOCKED; dev's `user_roles` slugs).
+_STAFF_ROLES = ["customer_service", "project.customer.service", "warehouse_manager", "purchasing_manager",
+                "project_sales_manager", "marketing_executive", "technical_executive", "salesperson"]
+
+
+class TestAnyActiveCrmUserIsStaff:
+    @pytest.mark.parametrize("role", _STAFF_ROLES)
+    def test_unlinked_contact_with_an_active_staff_user_lists_dos_unscoped(self, session_factory, monkeypatch, role) -> None:
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory, role=role)
+
+        reply, captured = _turn(session_factory, monkeypatch, _list_ask(), "deliveries this month")
+
+        (args,) = _calls(captured, ORDERS)
+        assert not args.get("customer_ids"), args
+        assert reply.strip() != NO_LINK_REFUSAL, reply
+
+    def test_customer_service_user_counts_as_staff(self, session_factory) -> None:
+        from app.services.chatbot.lanes.business import services
+
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory, role="customer_service")
+
+        _scope, staff = services.customer_scope_and_staff(session_factory(), CONTACT_ID, None)
+
+        assert staff is True
+
+    def test_a_dealer_with_a_portal_login_stays_a_dealer(self, session_factory) -> None:
+        """A dealer's WhatsApp contact linked to its portal user (`portal_user`, the role the Add
+        user form pre-selects for a non-salesperson contact) gains nothing: still enforced to its
+        links, not document staff."""
+        from app.services.chatbot.lanes.business import services
+
+        _seed_contact(session_factory, variables={})
+        _link_customers(session_factory, OWN)
+        _make_salesperson(session_factory, role="portal_user")
+
+        scope, staff = services.customer_scope_and_staff(session_factory(), CONTACT_ID, None)
+
+        assert staff is False
+        assert scope is not None and scope["enforced"] is True and scope["staff"] is False, scope
 
 
 class TestNotASalespersonStaysBlocked:
-    """Only an ACTIVE, not trashed user holding the not trashed role `salesperson` lifts the
-    block (crew ruling (a), 14 Oct): deactivating or trashing the user revokes it, and a
-    sales agent link grants nothing."""
+    """Not staff: no CRM user (a sales agent link grants nothing), an inactive or trashed user
+    (deactivating revokes it), or a user whose only live roles are the non-staff ones
+    (portal_user, guest) or none at all, as a dealer's portal login is."""
 
     @pytest.mark.parametrize("make", list(_NOT_A_SALESPERSON), ids=list(_NOT_A_SALESPERSON))
     def test_unlinked_lists_nothing(self, session_factory, monkeypatch, make) -> None:
