@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { numberFieldError } from '@/lib/number-field';
 import type {
   ProductSupplier,
   ProductSupplierSourcingTerms,
@@ -70,6 +71,10 @@ export function draftToPatch(d: SupplierTermsDraft): Partial<ProductSupplierSour
 export function termsError(d: SupplierTermsDraft): string | null {
   const lead = numOrNull(d.standard_lead_time_days);
   if (lead === null || lead < 0) return 'Enter a lead time in days.';
+  // A typed figure that cannot be read (bad input) is never taken as "nothing on file".
+  for (const raw of [d.unit_cost, d.moq, d.order_multiple]) {
+    if (raw.trim() !== '' && numOrNull(raw) === null) return numberFieldError(raw, { min: 0, optional: true }) ?? null;
+  }
   const cost = numOrNull(d.unit_cost);
   if (cost !== null && cost < 0) return 'A price cannot be negative.';
   if (cost !== null && !d.currency.trim()) return 'Choose the currency this price is in.';
