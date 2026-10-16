@@ -5075,7 +5075,8 @@ def _run_stages_body(  # noqa: PLR0915
 
         linked_verdict, seat_link_lines = find_lane.as_linked_products(
             db,
-            verdict,
+            # Only the resolution sets the link fields (AC-18): a parser entity's own are dropped.
+            find_lane.without_link_fields(verdict),
             [
                 str(c)
                 for p in state_in.focus.products
@@ -5091,7 +5092,9 @@ def _run_stages_body(  # noqa: PLR0915
         # message names a code of its own that links nothing, or asks its own question (a
         # domain word); else the carried one stays (a follow-up naming nothing).
         linked_as = [
-            e["linked_as"] for e in linked_verdict.get("entities") or [] if isinstance(e, dict) and e.get("linked_as")
+            find_lane.relation_of(e.get("linked_kind") or find_lane.KIND_SEAT_COVER, e["linked_as"])
+            for e in linked_verdict.get("entities") or []
+            if isinstance(e, dict) and e.get("linked_as")
         ]
         if linked_as:
             seat_relation = linked_as[0]
@@ -6021,7 +6024,13 @@ def _run_stages_body(  # noqa: PLR0915
         # at all is answered with its line here, ahead of every lane and with nothing
         # fetched or armed, whatever domain the parser gave it (a bare code's null domain
         # included). A refused access keeps its refusal; an escalation keeps its arm.
-        if seat_link_lines and branch_kind not in ("access_denied", "out_of_scope"):
+        if (
+            seat_link_lines
+            and branch_kind not in ("access_denied", "out_of_scope", "stock_denied")
+            # AC-23: a refusal goes out instead of a no-link line.
+            and not sales_report_grant_refused
+            and not customer_scope_refused
+        ):
             return _run_answer(
                 turn_id=turn_id,
                 ctx=ctx,
@@ -6071,6 +6080,8 @@ def _run_stages_body(  # noqa: PLR0915
                 # turn (no outcome ran here at all - S3), which still needs this arm's
                 # own lead.
                 media_prefixed=bool(media_box.get("outcome")),
+                # AC-23: a contact refused the agent gets no fit line on the arm's reply.
+                refused=branch_kind == "access_denied",
             )
 
         # D9: no engine switch. The re-architected turn IS the engine, so a lane the
@@ -6312,8 +6323,16 @@ def _run_stages_body(  # noqa: PLR0915
             and isinstance(resolver_payload, dict)
             and (answer_parse_output or {}).get("domain_hint") == "promotion"
         ):
+            # The levels the promotions read is made at; a contact with tiers whose list the
+            # tier gate emptied (a dealer lacking the asked brand) is an empty list, never
+            # "no filter" (reviewer R1). No tier at all (staff) is None.
+            tier = resolver_payload.get("tier_gate")
+            entitled = isinstance(tier, dict) and bool(tier.get("entitled_tiers") or tier.get("entitled_unknown"))
             ask_back = turn_runtime.promo_subject_ask_back(
-                answer_parse_output or {}, db, resolver_payload.get("gate")
+                answer_parse_output or {},
+                db,
+                resolver_payload.get("gate"),
+                access_levels=list(tier.get("access_levels_recomposed") or []) if entitled else None,
             )
             if ask_back:
                 from app.services.chatbot.turn import pending as pending_mod
@@ -7311,6 +7330,12 @@ def _run_stages_body(  # noqa: PLR0915
                 "message_text": latest_user_message,
             },
             chat_console=_chat_console(envelope),
+            # AC-23: a refusal (stock, sales report, customer scope, a denied domain) is sent
+            # exactly as it is, with no fit line.
+            refused=branch_kind == "stock_denied"
+            or sales_report_grant_refused
+            or customer_scope_refused
+            or any(isinstance(e, dict) and (e.get("denied") or e.get("refused")) for e in envelopes or []),
         )
 
     with _session(session_factory) as db:
@@ -7475,6 +7500,7 @@ def _run_stages_body(  # noqa: PLR0915
             verdict=verdict,
             recalled=recalled,
             chat_console=_chat_console(envelope),
+            refused=True,
         )
 
     if branch_kind == "out_of_scope" and completes_here:
@@ -7800,6 +7826,7 @@ def _run_answer(
     stock_ask_entries: list[dict[str, Any]] | None = None,
     chat_console: bool = False,
     refer_context: dict[str, Any] | None = None,
+    refused: bool = False,
 ) -> TurnResult:
     """G TAIL for a turn the composer answered: persist, record, hand the actions back.
 
@@ -7818,6 +7845,21 @@ def _run_answer(
     carried = remembered_before.get("_carried_line")
     if carried and (getattr(answer, "text", "") or "").strip():
         answer = dataclasses_replace(answer, text=f"{carried}\n\n{answer.text}")
+    # CHAT-FIT-LINE: a reply reached through a product link opens with the line naming the fit,
+    # then the usual answer unchanged. Read from the resolution (`find.as_linked_products` tagged
+    # the entities), never from the message; nothing linked, no line.
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    if not refused and isinstance(verdict, dict) and (getattr(answer, "text", "") or "").strip():
+        lang = item.get("reply_language") if isinstance(item, dict) else None
+        localizer = None
+        if lang not in (None, "en") and find_lane.fit_lines(verdict.get("entities") or []):
+            with _session(session_factory) as db:
+                localizer = label_catalog.resolve(db, lang, dry_run=dry_run)
+            localizer = None if localizer is label_catalog.IDENTITY else localizer
+        fit_lines = find_lane.fit_lines(verdict.get("entities") or [], localizer)
+        if fit_lines:
+            answer = dataclasses_replace(answer, text="\n".join(fit_lines) + f"\n\n{answer.text}")
     stage[0] = "replied"
     # Review S2: the A/B readout counts the files the turn delivered, before link mode
     # empties the list.
@@ -8061,6 +8103,7 @@ def _run_entities_only_arm(
     recalled: list[dict[str, Any]],
     from_photo: bool,
     media_prefixed: bool = False,
+    refused: bool = False,
 ) -> TurnResult:
     """S3 (PLAN-chatbot-media-into-turn.md): bare entities, no domain, no carried
     focus (AC-1822 to AC-1832). Resolved directly against the SAME resolver seam
@@ -8224,6 +8267,7 @@ def _run_entities_only_arm(
         contact_respond_id=contact_respond_id,
         verdict=verdict,
         recalled=recalled,
+        refused=refused,
     )
 
 
@@ -9075,6 +9119,17 @@ def _run_escalation_arm(
                     a["quick_replies"]
                     for a in all_actions
                     if a.get("kind") == "send_message" and jsc.truthy(a.get("quick_replies"))
+                ),
+                None,
+            ),
+            # The lane's own customer message, for the same reason: the tail composes no
+            # text on this arm, and the persisted reply must not be blank while the
+            # action carries the handover (owner rule, never a blank reply).
+            "lane_text": next(
+                (
+                    a["text"]
+                    for a in all_actions
+                    if a.get("kind") == "send_message" and jsc.truthy(a.get("text"))
                 ),
                 None,
             ),
@@ -10022,6 +10077,7 @@ def run_tail(
     turn_trace: trace_mod.TurnTrace,
     write_session: bool = True,
     lane_quick_replies: Any = None,
+    lane_text: Any = None,
     state: Any = None,
     question: Any = None,
     remembered_before: Mapping[str, Any] | None = None,
@@ -10110,6 +10166,13 @@ def run_tail(
     composed = reply_ladder.compose_reply(outcome)
     if question is None:
         question = _question_offered(ctx, values, outcome, composed)
+    if isinstance(lane_text, str) and lane_text.strip() and not jsc.truthy(composed.get("text")):
+        # Owner rule, never a blank reply (crew eval, 12 Oct 2026): the `out_of_scope` arm
+        # composes no text here (`escalate-catalog`'s `includeResponse: false`), but its
+        # lane already built the one message the customer is sent. Without this the turn's
+        # reply, which the console, the next turn's `Previous response:` and the
+        # chat-history link read, is null while the action carries the handover.
+        composed = {**composed, "text": lane_text}
     # QUICK-REPLY-NAMES: the one seam every tail-composed set leaves through - at most
     # three buttons, none over 20 characters, no duplicates. Guarded BEFORE the lane
     # fallback is chosen, so a set the guard drops falls back the same way an absent one
@@ -10748,6 +10811,8 @@ def complete_turn(  # noqa: PLR0915 - one linear pipeline, and the order IS the 
                 # from, and this is one value the tail could not have composed for itself
                 # - what the lane already decided the customer can tap.
                 lane_quick_replies=fragments.get("lane_quick_replies"),
+                # Same reason: the text of the message the lane already built.
+                lane_text=fragments.get("lane_text"),
                 # ESCALATION-CONTROL (security review S1): n8n's `/complete` hands over no
                 # APPLY state, so the contact's own profile is read here, or a blocked
                 # contact would be offered the team and the CS roster on this path.

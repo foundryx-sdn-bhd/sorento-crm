@@ -1243,7 +1243,7 @@ class PurchaseRequestHeaderBase(BaseModel):
     total_project_value_text: Optional[str] = None  # sponsorship form (e.g. 800K)
     sponsor_subject: Optional[str] = None  # sponsorship: showroom/mockup/others (lookup-bound)
     sponsor_subject_other: Optional[str] = None  # sponsorship: free-text detail when sponsor_subject='others'
-    sales_type: Optional[str] = None  # PR: project/cash_sales (lookup-bound); required for PR at service layer; SF ignores
+    sales_type: Optional[str] = None  # project/cash_sales (lookup-bound); required for PR at service layer, optional on SF
     expected_delivery_date: Optional[date] = None
     expected_po_date: Optional[date] = None
     expected_po_date_text: Optional[str] = None
@@ -1316,7 +1316,7 @@ class PurchaseRequestHeaderUpdate(BaseModel):
     total_project_value_text: Optional[str] = None
     sponsor_subject: Optional[str] = None
     sponsor_subject_other: Optional[str] = None
-    sales_type: Optional[str] = None  # PR sales type (project/cash_sales)
+    sales_type: Optional[str] = None  # PR / SF sales type (project/cash_sales)
     expected_delivery_date: Optional[date] = None
     expected_po_date: Optional[date] = None
     expected_po_date_text: Optional[str] = None
@@ -1515,7 +1515,7 @@ class PublicApprovalSummaryResponse(BaseModel):
     total_project_value: Optional[Decimal] = None  # sponsorship form (numeric)
     total_project_value_text: Optional[str] = None  # sponsorship form (descriptive)
     sponsor_subject: Optional[str] = None  # sponsorship form
-    sales_type: Optional[str] = None  # PR sales type (project/cash_sales); null for SF
+    sales_type: Optional[str] = None  # PR / SF sales type (project/cash_sales); optional on SF
     sponsor_subject_other: Optional[str] = None  # sponsorship form: free-text when 'others'
     requested_by: Optional[str] = None
     requested_by_contact_id: Optional[str] = None

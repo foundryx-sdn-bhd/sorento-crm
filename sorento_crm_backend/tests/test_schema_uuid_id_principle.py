@@ -43,6 +43,7 @@ from app.database import Base
 EXEMPTIONS: dict[str, str] = {
     # --- JUNCTION (composite PK, pure association) ---
     "respond_contact_access_types": "JUNCTION (contact_id + access_type_code)",
+    "respond_contact_tags": "JUNCTION (contact_id + tag_id)",
     "respond_contact_market_segments": "JUNCTION (contact_id + segment_code)",
     "team_member_market_segments": "JUNCTION (team_member_id + segment_code)",
     "team_member_brands": "JUNCTION (team_member_id + brand_code), mirrors team_member_market_segments",

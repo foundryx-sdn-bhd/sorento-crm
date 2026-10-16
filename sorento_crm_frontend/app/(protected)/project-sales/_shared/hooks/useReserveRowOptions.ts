@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import type { SearchableSelectOption } from '@/components/common/SearchableSelect';
@@ -92,52 +93,72 @@ export function useReserveRowOptions(
 ): Record<string, ReserveRowOptionsResult> {
   const configuredDefaultPoolId = useConfiguredDefaultPoolId();
 
+  // One query per DISTINCT product, mapped back to every entry that names it: six rows of
+  // one product used to register six identical query keys, which `QueriesObserver` flags as
+  // duplicates and keeps notifying on (a freeze in the Request CS to reserve dialog).
+  const productIds = useMemo(
+    () => [...new Set(entries.map((entry) => entry.productId).filter((id): id is string => Boolean(id)))],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entries.map((entry) => entry.productId ?? '').join('|')],
+  );
   const poolsQueries = useQueries({
-    queries: entries.map((entry) => ({
-      queryKey: [STOCK_DETAIL_KEY, entry.productId, 'pools', 'reserve-row-options'],
-      queryFn: () => getStockDetail(entry.productId as string, null, [], 'pools'),
-      enabled: Boolean(entry.productId),
+    queries: productIds.map((productId) => ({
+      queryKey: [STOCK_DETAIL_KEY, productId, 'pools', 'reserve-row-options'],
+      queryFn: () => getStockDetail(productId, null, [], 'pools'),
     })),
   });
 
-  const result: Record<string, ReserveRowOptionsResult> = {};
-  entries.forEach((entry, index) => {
-    if (!entry.productId) {
-      result[entry.key] = EMPTY_RESULT;
-      return;
-    }
-    const query = poolsQueries[index];
-    const poolLocations = query?.data?.locations ?? [];
+  // Stable while nothing underneath changed, so a caller's unrelated state change (a tickbox)
+  // does not hand its grid a fresh record every render.
+  const dataSignature = poolsQueries
+    .map((query) => `${query.dataUpdatedAt}:${query.isLoading ? 1 : 0}`)
+    .join('|');
+  const entriesSignature = entries
+    .map((entry) => `${entry.key}~${entry.productId ?? ''}~${entry.location ?? ''}`)
+    .join('|');
+  return useMemo(() => {
+    const queryByProduct = new Map(productIds.map((id, index) => [id, poolsQueries[index]]));
+    const result: Record<string, ReserveRowOptionsResult> = {};
+    entries.forEach((entry) => {
+      if (!entry.productId) {
+        result[entry.key] = EMPTY_RESULT;
+        return;
+      }
+      const query = queryByProduct.get(entry.productId);
+      const poolLocations = query?.data?.locations ?? [];
 
-    const options: SearchableSelectOption[] = [];
-    const availableQtyByWarehouseId: Record<string, number> = {};
-    for (const loc of poolLocations) {
-      if (!loc.warehouse_id) continue;
-      const available = loc.available_qty != null ? Number(loc.available_qty) : null;
-      if (available != null) availableQtyByWarehouseId[loc.warehouse_id] = available;
-      options.push({
-        value: loc.warehouse_id,
-        label: available != null ? `${loc.location ?? ''}  available ${available}` : (loc.location ?? ''),
-      });
-    }
+      const options: SearchableSelectOption[] = [];
+      const availableQtyByWarehouseId: Record<string, number> = {};
+      for (const loc of poolLocations) {
+        if (!loc.warehouse_id) continue;
+        const available = loc.available_qty != null ? Number(loc.available_qty) : null;
+        if (available != null) availableQtyByWarehouseId[loc.warehouse_id] = available;
+        options.push({
+          value: loc.warehouse_id,
+          label: available != null ? `${loc.location ?? ''}  available ${available}` : (loc.location ?? ''),
+        });
+      }
 
-    const siteCode = siteCodeOf(entry.location);
-    const rowSitePoolId =
-      poolLocations.find((loc) => loc.location === siteCode)?.warehouse_id ?? null;
-    const configuredIsOffered =
-      configuredDefaultPoolId != null &&
-      options.some((option) => option.value === configuredDefaultPoolId);
+      const siteCode = siteCodeOf(entry.location);
+      const rowSitePoolId =
+        poolLocations.find((loc) => loc.location === siteCode)?.warehouse_id ?? null;
+      const configuredIsOffered =
+        configuredDefaultPoolId != null &&
+        options.some((option) => option.value === configuredDefaultPoolId);
 
-    result[entry.key] = {
-      isLoading: Boolean(query?.isLoading),
-      defaultWarehouseId:
-        (configuredIsOffered ? configuredDefaultPoolId : null) ??
-        rowSitePoolId ??
-        options[0]?.value ??
-        null,
-      options,
-      availableQtyByWarehouseId,
-    };
-  });
-  return result;
+      result[entry.key] = {
+        isLoading: Boolean(query?.isLoading),
+        defaultWarehouseId:
+          (configuredIsOffered ? configuredDefaultPoolId : null) ??
+          rowSitePoolId ??
+          options[0]?.value ??
+          null,
+        options,
+        availableQtyByWarehouseId,
+      };
+    });
+    return result;
+    // `entries` and `poolsQueries` are rebuilt every render; their signatures are what matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entriesSignature, dataSignature, configuredDefaultPoolId]);
 }

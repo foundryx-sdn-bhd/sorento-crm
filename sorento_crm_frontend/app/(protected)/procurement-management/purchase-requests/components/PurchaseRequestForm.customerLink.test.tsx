@@ -74,11 +74,11 @@ vi.mock('./PurchaseRequestAttachmentsSection', () => ({ __esModule: true, defaul
 
 import PurchaseRequestForm from './PurchaseRequestForm';
 
-function renderForm() {
+function renderForm(kind: 'purchase_request' | 'sponsorship_form' = 'purchase_request') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <PurchaseRequestForm defaultRequestType="purchase_request" />
+      <PurchaseRequestForm defaultRequestType={kind} />
     </QueryClientProvider>,
   );
 }
@@ -126,5 +126,39 @@ describe('PurchaseRequestForm customer picker (PC-6)', () => {
       expect((payload as { customer_id?: unknown }).customer_id ?? null).toBeNull();
     }
     expect((screen.getByLabelText('Customer Name') as HTMLInputElement).value).toBe('WALK-IN BUYER');
+  });
+});
+
+describe('PurchaseRequestForm customer picker on a sponsorship form (SF-SALES-TYPE)', () => {
+  function fillLine() {
+    fireEvent.change(screen.getByPlaceholderText('Item code'), { target: { value: 'ITEM-A' } });
+    const qty = document.querySelector('input[name$=".quantity"]') as HTMLInputElement | null;
+    if (qty) fireEvent.change(qty, { target: { value: '2' } });
+    const up = document.querySelector('input[name$=".unit_price"]') as HTMLInputElement | null;
+    if (up) fireEvent.change(up, { target: { value: '10' } });
+  }
+
+  it('picking a customer submits its mapped sales_type', async () => {
+    renderForm('sponsorship_form');
+    await pickCustomer(/CUSTOMER A SDN BHD/);
+    fillLine();
+    fireEvent.click(screen.getByRole('button', { name: /Create/i }));
+
+    await waitFor(() => expect(createMutateAsync).toHaveBeenCalled(), { timeout: 3000 });
+    expect(createMutateAsync.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ customer_id: 'cust-302', sales_type: 'cash_sales' }),
+    );
+  });
+
+  it('a free-text customer with no sales type is not blocked and shows no sales_type error', async () => {
+    renderForm('sponsorship_form');
+    fireEvent.change(screen.getByLabelText('Customer Name'), { target: { value: 'WALK-IN BUYER' } });
+    fillLine();
+    fireEvent.click(screen.getByRole('button', { name: /Create/i }));
+
+    await waitFor(() => expect(createMutateAsync).toHaveBeenCalled(), { timeout: 3000 });
+    const payload = createMutateAsync.mock.calls[0][0] as { sales_type?: unknown };
+    expect(payload.sales_type ?? null).toBeNull();
+    expect(screen.getByText(/^Sales Type/)).toBeInTheDocument();
   });
 });

@@ -30,6 +30,7 @@ from typing import Any
 
 from app.services import product_find
 from app.services.chatbot import jsc
+from app.services.product_compatibility_service import KIND_SEAT_COVER, KINDS
 
 #: Q1 (a), wording approved by the owner (13 Oct): the reply when no named code has a link.
 #: One constant, with its ms / zh in `product_find`'s labels.
@@ -54,6 +55,54 @@ def filter_items(parse_output: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def filter_keys(parse_output: dict[str, Any]) -> list[str]:
     return list(filter_items(parse_output))
+
+
+#: The entity keys only `as_linked_products` sets (the fit line reads them).
+LINK_FIELDS = ("linked_from", "linked_as", "linked_kind")
+
+
+def without_link_fields(verdict: dict[str, Any]) -> dict[str, Any]:
+    """`verdict` with the link fields dropped from every entity: a parser that echoes (or a message
+    that crafts) them must never print a fit line, so only the resolution sets them (AC-18)."""
+    entities = verdict.get("entities") if isinstance(verdict, dict) else None
+    if not any(isinstance(e, dict) and any(k in e for k in LINK_FIELDS) for e in jsc.array(entities)):
+        return verdict
+    return {
+        **verdict,
+        "entities": [
+            {k: v for k, v in e.items() if k not in LINK_FIELDS} if isinstance(e, dict) else e
+            for e in jsc.array(entities)
+        ],
+    }
+
+
+def fit_kinds(parse_output: dict[str, Any]) -> list[str | None]:
+    """The link kind of every `fits` filter the parse carries, in order, one per kind: a key of
+    `KINDS`, or None (the message names no particular kind; an unknown word is none). The parse
+    names the kind, never the message's own words (CHAT-FIT-LINE AC-7)."""
+    find = parse_output.get("find") if isinstance(parse_output, dict) else None
+    out: list[str | None] = []
+    for item in jsc.array(find.get("filters") if isinstance(find, dict) else None):
+        if not isinstance(item, dict) or item.get("key") != "fits":
+            continue
+        kind = item.get("kind")
+        kind = kind if isinstance(kind, str) and kind in KINDS else None
+        if kind not in out:
+            out.append(kind)
+    return out
+
+
+def split_relation(relation: str | None) -> tuple[str, str | None]:
+    """`focus.relation` as (kind, side). A seat cover relation is the bare side ("covers" /
+    "wcs"), as stored before kinds existed; another kind is `"<kind>:<side>"`."""
+    if relation and ":" in relation:
+        kind, _, side = relation.partition(":")
+        return (kind, side) if kind in KINDS else (KIND_SEAT_COVER, side)
+    return KIND_SEAT_COVER, relation
+
+
+def relation_of(kind: str, side: str) -> str:
+    return side if kind == KIND_SEAT_COVER else f"{kind}:{side}"
 
 
 def entity_code(entity: Any) -> str:
@@ -83,16 +132,14 @@ def _bare_continuation(verdict: dict[str, Any], entities: list[Any]) -> bool:
 MAX_FAMILY = 8
 
 
-def _linked_codes_holding(db: Any, token: str) -> list[Any]:
-    """The products on a seat-cover link whose model segment is, or ends in, `token`; [] when
+def _linked_codes_holding(db: Any, token: str, kinds: Any = (KIND_SEAT_COVER,)) -> list[Any]:
+    """The products on a link of `kinds` whose model segment is, or ends in, `token`; [] when
     none, or when they link to more than `MAX_FAMILY` codes (no one model's answer)."""
     from sqlalchemy import or_
 
     from app.models.product import Product
     from app.models.product_compatibility import ProductCompatibility
     from app.services.product_alternative_service import _norm_sql, normalize_code
-    from app.services.product_compatibility_service import KIND_SEAT_COVER
-
     if len(token) < 3:
         return []
     escaped = token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -100,7 +147,7 @@ def _linked_codes_holding(db: Any, token: str) -> list[Any]:
         db.query(Product)
         .join(
             ProductCompatibility,
-            (ProductCompatibility.kind == KIND_SEAT_COVER)
+            ProductCompatibility.kind.in_(kinds)
             & or_(ProductCompatibility.wc_product_id == Product.id, ProductCompatibility.seat_cover_product_id == Product.id),
         )
         .filter(_norm_sql(Product.product_code).like(f"%{escaped}%", escape="\\"))
@@ -110,10 +157,16 @@ def _linked_codes_holding(db: Any, token: str) -> list[Any]:
     # The token names the model: the code's first segment is it, or ends in it ("8152" ->
     # SRTWC8152-BL), never a shorter stem of another model ("SRTWC83" is not SRTWC8383).
     rows = [r for r in rows if normalize_code(r.product_code).split("-")[0].endswith(token)]
-    from app.services.product_compatibility_service import covers_for, wcs_for
+    from app.services.product_compatibility_service import accessories_for, hosts_for
 
     ids = [str(r.id) for r in rows]
-    answer = {p.product_code for found in (covers_for(db, ids), wcs_for(db, ids)) for ps in found.values() for p in ps}
+    answer = {
+        p.product_code
+        for kind in kinds
+        for found in (accessories_for(db, ids, kind), hosts_for(db, ids, kind))
+        for ps in found.values()
+        for p in ps
+    }
     return [] if len(answer) > MAX_FAMILY else rows
 
 
@@ -132,7 +185,7 @@ def as_linked_products(
 
     `carried_codes` are the conversation's product codes (`focus.products`): the subject of
     "which seat cover fits it?", whose parse names no code. With neither, the reply asks for
-    the code (#1601 card rule 6). `carried_relation` (`focus.relation`, "covers" or "wcs")
+    the code (#1601 card rule 6). `carried_relation` (`focus.relation`, "covers" or "wcs", or "<kind>:<side>" for a kind other than seat cover)
     says those codes answered a fit ask, and which side they are (crew v94 check and carry
     ruling, 13 Oct; the #1626 pattern):
 
@@ -202,12 +255,33 @@ def as_linked_products(
 
     from app.models.product import Product
     from app.services.product_alternative_service import _norm_sql
-    from app.services.product_compatibility_service import covers_for, wcs_for
+    from app.services.product_compatibility_service import accessories_for, hosts_for
+
+    # CHAT-FIT-LINE: the kind(s) asked come from the parse. One filter with no kind (the message
+    # names no particular kind) is every kind the code holds (AC-3b); a carried ask with no kind of
+    # its own keeps the carried one (a relation stored before kinds read as seat cover, AC-6).
+    parsed = fit_kinds(verdict)
+    carried_kind, carried_side = split_relation(carried_relation)
+    if said:
+        every = None in parsed or not parsed
+        kinds = list(KINDS) if every else [k for k in parsed if k]
+    else:
+        every = False
+        kinds = [k for k in parsed if k] or [carried_kind]
+    side_ok = {"covers": said or carried_side != "wcs", "wcs": said or carried_side != "covers"}
 
     wanted = {normalize_code(entity_code(entities[i])) for i in anchors}
     # The typed code against the catalogue's codes, both normalised (dashes, spaces, case):
     # data against data. Read on the turn's company-scoped session, as every product read is.
-    rows = db.query(Product).filter(_norm_sql(Product.product_code).in_(wanted)).all()
+    # AC-22: a product the chatbot may not answer with is no anchor either (the rule every resolver
+    # tier applies); a hidden code is read as typed, never as a link, a line or a claim.
+    from app.services.entity_resolver import _chat_visible_product_ids
+
+    def _visible(found: list[Any]) -> list[Any]:
+        ok = _chat_visible_product_ids(db, {str(r.id) for r in found})
+        return [r for r in found if str(r.id) in ok]
+
+    rows = _visible(db.query(Product).filter(_norm_sql(Product.product_code).in_(wanted)).all())
     by_code: dict[str, list[Any]] = {}
     for row in rows:
         by_code.setdefault(normalize_code(row.product_code), []).append(row)
@@ -216,31 +290,49 @@ def as_linked_products(
         # the linked SKUs whose code holds it, codes against codes and links only (the
         # containment fallback #1601's find lane used). More than a model's SKUs is no reading.
         for token in wanted - set(by_code):
-            family = _linked_codes_holding(db, token)
+            family = _visible(_linked_codes_holding(db, token, kinds))
             if family:
                 by_code[token] = family
     rows = [r for group in by_code.values() for r in group]
     ids = [str(r.id) for r in rows]
-    covers = covers_for(db, ids) if said or carried_relation != "wcs" else {}
-    wcs = wcs_for(db, ids) if said or carried_relation != "covers" else {}
+    # kind -> side ("covers": the accessories of a host, "wcs": the hosts of an accessory) -> reads.
+    # AC-24: the parsed kind picks the links of a HOST (a forward ask); a code on the ACCESSORY end
+    # follows its own links, whichever kind the parse guessed ("which cabinet fits <mirror>").
+    reads = {
+        kind: {
+            "covers": accessories_for(db, ids, kind) if side_ok["covers"] and kind in kinds else {},
+            "wcs": hosts_for(db, ids, kind) if side_ok["wcs"] else {},
+        }
+        for kind in KINDS
+    }
 
-    replaced: dict[int, tuple[str, list[str]]] = {}
+    # AC-19: a linked product the chatbot may not answer with is never named (the same rule every
+    # resolver tier applies, `chat_searchable_products()` and the contact's brand scope).
+    visible = _chat_visible_product_ids(
+        db, {str(o.id) for by_side in reads.values() for found in by_side.values() for others in found.values() for o in others}
+    )
+
+    replaced: dict[int, list[tuple[str, str, str]]] = {}  # (code, kind, side) per anchor
     unlinked: list[Any] = []  # the products named, on no link
     unknown: list[str] = []  # the codes named that are no product's, as typed
     for i in anchors:
         products = by_code.get(normalize_code(entity_code(entities[i])), [])
-        linked: list[str] = []
-        side = ""
+        linked: list[tuple[str, str, str]] = []
+        hidden = False
         for p in products:
-            for listed, others in (("covers", covers.get(str(p.id), [])), ("wcs", wcs.get(str(p.id), []))):
-                for other in others:
-                    if other.product_code and other.product_code not in linked:
-                        linked.append(other.product_code)
-                        side = side or listed
+            for kind in KINDS:
+                for side, found in reads[kind].items():
+                    for other in found.get(str(p.id), []):
+                        if str(other.id) not in visible:
+                            hidden = True
+                        elif other.product_code and all(other.product_code != c for c, _k, _s in linked):
+                            linked.append((other.product_code, kind, side))
         if linked:
-            # Code order, the same on every database: `covers_for` orders by the column's
+            # Code order, the same on every database: `accessories_for` orders by the column's
             # collation, and en_US puts SRTSCBD333A-UF before SRTSCBD333-UF where C does not.
-            replaced[i] = (side, sorted(linked, key=normalize_code))
+            replaced[i] = sorted(linked, key=lambda t: normalize_code(t[0]))
+        elif hidden:
+            unknown.append(entity_code(entities[i]))  # links that are all hidden: as typed
         elif products:
             unlinked.append(products[0])
         else:
@@ -255,11 +347,18 @@ def as_linked_products(
             # Q3 (a): a named code that is no product's exact code (a family prefix, a typo)
             # is the resolver's to place, picker or miss, so the turn runs on as typed.
             return verdict, []
-        seat_covers = product_find._seat_covers(db, unlinked)
-        lines = [
-            (NO_WC_LINE if str(p.id) in seat_covers else NO_SEAT_COVER_LINE).format(code=p.product_code)
-            for p in unlinked
-        ]
+        accessory_of = {kind: product_find._accessories(db, unlinked, kind) for kind in kinds}
+        lines: list[str] = []
+        for p in unlinked:
+            # An accessory of the kind has no host on record, any other product no accessory. With
+            # no kind named, one line: the first kind the product is an accessory of, else the
+            # first kind (a seat cover, as before kinds existed).
+            held = [k for k in kinds if str(p.id) in accessory_of[k]]
+            for kind in (held[:1] or kinds[:1]) if every else kinds:
+                template = product_find.no_host_line(kind) if str(p.id) in accessory_of[kind] else product_find.none_line(kind)
+                line = template.format(code=p.product_code)
+                if line not in lines:
+                    lines.append(line)
         return verdict, lines
     out: list[Any] = []
     for i, entity in enumerate(entities):
@@ -268,11 +367,10 @@ def as_linked_products(
             continue
         # The customer typed these codes: every other field the entity carries (a quantity,
         # its confidence) rides on each.
-        side, codes = replaced[i]
         out += [
             {**entity, "raw": code, "canonical_code": code, "current_message": True,
-             "linked_from": entity_code(entity), "linked_as": side}
-            for code in codes
+             "linked_from": entity_code(entity), "linked_as": side, "linked_kind": kind}
+            for code, kind, side in replaced[i]
         ]
     linked = {**verdict, "entities": out}
     fits_item = items.get("fits") or {}
@@ -302,3 +400,43 @@ def as_linked_products(
             linked["domain_hint"] = None
             linked["intent_hint"] = None
     return linked, []
+
+
+def fit_lines(entities: list[Any], localizer: Any = None) -> list[str]:
+    """CHAT-FIT-LINE: the lines that open a reply reached through a link, one per anchor and kind,
+    in the order the answer lists the codes. Read from the resolution (`linked_from` /
+    `linked_as` / `linked_kind` on the entities `as_linked_products` made), never from the
+    message. Forward (the accessory side listed): `Mirror for <host> is <code>.` or `Mirror for
+    <host>: <a>, <b>`; reverse: `<code> fits <host>.` or `<code> fits these cabinets: <a>, <b>`.
+    With a `localizer` each line is its catalogued sentence filled directly (the templates are
+    `DIRECT_ONLY`: running text is never matched against them)."""
+
+    def say(template: str, **values: str) -> str:
+        return localizer.fill(template, **values) if localizer is not None else template.format(**values)
+
+    groups: dict[tuple[str, str, str], list[str]] = {}
+    for e in entities:
+        if not isinstance(e, dict) or not e.get("linked_from") or e.get("linked_kind") not in KINDS:
+            continue
+        code = entity_code(e)
+        codes = groups.setdefault((str(e["linked_from"]), e["linked_kind"], str(e.get("linked_as"))), [])
+        if code and code not in codes:
+            codes.append(code)
+    lines: list[str] = []
+    for (anchor, kind, side), codes in groups.items():
+        if not codes:
+            continue
+        if side == "wcs":
+            line = (
+                say(product_find.FIT_ONE_REVERSE, code=anchor, host=codes[0])
+                if len(codes) == 1
+                else say(product_find.fit_many_reverse(kind), code=anchor, codes=", ".join(codes))
+            )
+        else:
+            line = (
+                say(product_find.fit_one_forward(kind), code=anchor, linked=codes[0])
+                if len(codes) == 1
+                else say(product_find.fit_many_forward(kind), code=anchor, codes=", ".join(codes))
+            )
+        lines.append(line)
+    return lines

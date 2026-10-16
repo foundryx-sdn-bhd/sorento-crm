@@ -13,7 +13,9 @@
 ONE definition, exposed twice: `sql_expr` for the chat dataset (computed at query time from the
 links as they are now, so linking a contact reclassifies its history) and `classify` for the
 route, which runs the same expression for one contact. `is_staff_user` (an active user holding
-a staff role), not this classification, decides chatbot document access (V1-DOC-SCOPE).
+a staff role), not this classification, decides chatbot document access (V1-DOC-SCOPE);
+`is_salesperson_user` (the role arm alone) decides whether a `salesperson` asker keeps the chat
+report's relaxed scope (`chat_report.asker_of`, V1-CHATREPORT-REVOKE).
 Core code: it never imports the chatbot package (tests/chatbot/test_import_boundary.py).
 """
 from __future__ import annotations
@@ -118,6 +120,16 @@ def is_staff_user(db: Session, contact_id: str) -> bool:
         roles.c.is_trashed.is_(False),
     )
     return bool(db.execute(sa.select(held)).scalar())
+
+
+def is_salesperson_user(db: Session, contact_id: str) -> bool:
+    """True when an ACTIVE, not trashed CRM user linked to the contact (INTERNAL
+    `respond_contacts.id`) holds the not trashed role `salesperson`: the role arm alone.
+    `chat_report.asker_of` reads it so a `salesperson` asker keeps the chat report's relaxed
+    scope only while such a user is live (V1-CHATREPORT-REVOKE): deactivating or trashing the
+    user revokes it, and a `sales_agents.contact_id` link (master data) grants nothing.
+    Document access is `is_staff_user`."""
+    return bool(db.execute(sa.select(sa.exists().where(*_salesperson_user_clauses(str(contact_id))))).scalar())
 
 
 def classify(db: Session, contact_id: str) -> str:

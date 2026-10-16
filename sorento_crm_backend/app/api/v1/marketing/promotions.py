@@ -163,6 +163,13 @@ async def get_promotions(
             "Rows carry `promotion_type_code` / `promotion_type_name`."
         ),
     ),
+    contact_id: Optional[str] = Query(
+        None,
+        description=(
+            "Respond.io contact id when reading on behalf of a contact. With it, an empty or "
+            "absent access_levels reads the contact's own access levels, never every level."
+        ),
+    ),
     current_user: dict = Depends(require_any_permission_with_api_key(PROMOTION_LIST_READERS)),
     db: Session = Depends(get_db)
 ):
@@ -179,7 +186,9 @@ async def get_promotions(
         scope_terms = normalize_list_query_param(scope_terms)
         promotion_types = normalize_list_query_param(promotion_types)
         brand_ids = parse_uuid_list(brand_ids, param_name="brand_ids")
-        contact_codes = ContactAccessTypeService(db).translate_names_to_codes(access_levels)
+        contact_codes = ContactAccessTypeService(db).translate_names_to_codes_for_caller(
+            access_levels, contact_id=contact_id
+        )
         service = PromotionService(db)
         # Strip domain-noise tokens ("promotion", "promo", ...) from caller-supplied
         # search text. The chatbot routes user phrases like "kitchen sink promotion"
@@ -265,6 +274,13 @@ async def get_promotion(
         False,
         description="When true, include promotion product lines and nested Product details. When false, groups only (no lines).",
     ),
+    contact_id: Optional[str] = Query(
+        None,
+        description=(
+            "Respond.io contact id when reading on behalf of a contact. With it, an empty or "
+            "absent access_levels reads the contact's own access levels, never every level."
+        ),
+    ),
     current_user: dict = Depends(require_permission_with_api_key("marketing.promotions.view")),
     db: Session = Depends(get_db)
 ):
@@ -274,7 +290,9 @@ async def get_promotion(
         from app.services.contact_access_type_service import ContactAccessTypeService
         from app.services.entity_filter_helpers import normalize_list_query_param
         access_levels = normalize_list_query_param(access_levels)
-        contact_codes = ContactAccessTypeService(db).translate_names_to_codes(access_levels)
+        contact_codes = ContactAccessTypeService(db).translate_names_to_codes_for_caller(
+            access_levels, contact_id=contact_id
+        )
         service = PromotionService(db)
         promotion = service.get_promotion(
             promotion_id,
@@ -545,6 +563,13 @@ async def get_promotion_products_nested(
             "contact_access_types.name; intersection with promotion.access_levels)."
         ),
     ),
+    contact_id: Optional[str] = Query(
+        None,
+        description=(
+            "Respond.io contact id when reading on behalf of a contact. With it, an empty or "
+            "absent access_levels reads the contact's own access levels, never every level."
+        ),
+    ),
     current_user: dict = Depends(require_permission_with_api_key("marketing.promotions.view")),
     db: Session = Depends(get_db)
 ):
@@ -557,7 +582,9 @@ async def get_promotion_products_nested(
         from app.services.contact_access_type_service import ContactAccessTypeService
         from app.services.entity_filter_helpers import normalize_list_query_param
         access_levels = normalize_list_query_param(access_levels)
-        contact_codes = ContactAccessTypeService(db).translate_names_to_codes(access_levels)
+        contact_codes = ContactAccessTypeService(db).translate_names_to_codes_for_caller(
+            access_levels, contact_id=contact_id
+        )
         service = PromotionProductService(db)
         result = service.list_promotion_products(
             promotion_id,

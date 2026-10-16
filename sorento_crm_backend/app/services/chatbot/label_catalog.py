@@ -488,6 +488,7 @@ LABELS: dict[str, dict[str, str]] = {
 # (`app/services/product_find.py`), so a filter registered there is translated with no edit
 # here. A label already catalogued above keeps its own wording.
 from app.services.product_find import catalog_labels as _find_labels  # noqa: E402
+from app.services.product_find import fit_keys as _find_fit_keys  # noqa: E402
 
 for _english, _entry in _find_labels().items():
     LABELS.setdefault(_english, _entry)
@@ -761,7 +762,7 @@ _SUB_ASK_KEYS = frozenset(
         "{date} ({qty}, {spo})", "{qty}, ETA {date}",
     }
 )
-DIRECT_ONLY = frozenset({"I have {names}.", "{code} has no {types}."}) | _SUB_ASK_KEYS
+DIRECT_ONLY = frozenset({"I have {names}.", "{code} has no {types}."}) | _SUB_ASK_KEYS | _find_fit_keys()
 
 #: Report value words `Localizer.lines` translates after a catalogued label. An explicit set, never
 #: "any catalog key", so data that happens to read like a label (a status named "Status") is safe.

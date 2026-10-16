@@ -39,6 +39,7 @@ export function useSaveContactChatbotProfile(contactId: string) {
       // finding N9).
       queryClient.setQueryData(contactChatbotQueryKey(contactId), profile);
       queryClient.invalidateQueries({ queryKey: contactChatbotQueryKey(contactId) });
+      queryClient.invalidateQueries({ queryKey: ['contact-tag-settings', contactId] });
       // The memory context level is the same underlying value the memory card
       // displays (own/system default) - a profile save has to refresh that read too.
       queryClient.invalidateQueries({ queryKey: contactChatbotMemoryQueryKey(contactId) });
@@ -59,6 +60,7 @@ export function useSaveContactEscalation(contactId: string) {
     onSuccess: (profile) => {
       queryClient.setQueryData(contactChatbotQueryKey(contactId), profile);
       queryClient.invalidateQueries({ queryKey: contactChatbotQueryKey(contactId) });
+      queryClient.invalidateQueries({ queryKey: ['contact-tag-settings', contactId] });
       toast.success('Chatbot settings saved');
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to save'),
@@ -96,6 +98,7 @@ export function useSaveContactChatbotAllowed(contactId: string) {
     onSuccess: (profile) => {
       queryClient.setQueryData(contactChatbotQueryKey(contactId), profile);
       queryClient.invalidateQueries({ queryKey: contactChatbotQueryKey(contactId) });
+      queryClient.invalidateQueries({ queryKey: ['contact-tag-settings', contactId] });
       toast.success('Chatbot settings saved');
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to save'),

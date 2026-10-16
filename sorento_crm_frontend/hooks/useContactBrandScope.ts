@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
+import { invalidateContactTagSettings } from '@/app/(protected)/user-management/contacts/[id]/hooks/useContactTagSettings';
 
 import {
   contactBrandScopeKey,
@@ -26,6 +27,7 @@ export function useContactBrandScopeMutations(contactId: string) {
       queryClient.setQueryData(contactBrandScopeKey(contactId), data);
       // The contacts list carries the same brands in its Brands column.
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      invalidateContactTagSettings(queryClient, contactId);
       toast.success('Brands saved');
     },
     onError: (error) => toast.error(error.message || 'Failed to save the contact brands'),

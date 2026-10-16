@@ -72,7 +72,7 @@ const TIER_LABEL: Record<string, string> = { dealer: 'Dealer', office: 'Office',
 const STOCK_FACETS = new Set(['stock_check_mode', 'stock_locations']);
 
 /** Shown when an older backend sends no `not_copied`. */
-const DEFAULT_NOT_COPIED = ['Linked customers', 'CS routing', 'Media limits', 'Memory'];
+const DEFAULT_NOT_COPIED = ['Linked customers', 'CS routing', 'Memory'];
 
 function scalarText(value: unknown, facet?: string): string {
   if (value === true) return 'on';

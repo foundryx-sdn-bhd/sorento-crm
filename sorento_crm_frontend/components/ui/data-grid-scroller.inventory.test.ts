@@ -156,7 +156,7 @@ const SCROLLER_MAX_HEIGHT_FALSE_SITES = new Map<string, number>([
     1, // the original site this rule copies - its own maxHeightClassName ScrollArea
   ],
   [
-    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveRequestDialog.tsx',
+    'app/(protected)/project-sales/_shared/components/RequestReserveDialog.tsx',
     // G6 (PLAN-oi-request-cs-reserve.md section 6d): one DataGrid, one row per
     // selected line, inside its own DialogBody (overflow-y-auto).
     1,
@@ -185,6 +185,10 @@ const SCROLLER_MAX_HEIGHT_FALSE_SITES = new Map<string, number>([
   [
     'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx',
     2, // two PanelDataGrid tabs (Demand, Supply) inside one DialogBody
+  ],
+  [
+    'app/(protected)/project-sales/stock-debt/components/SnapshotDrillDialog.tsx',
+    1, // the per-OI PanelDataGrid inside the drill's DialogBody
   ],
   [
     'app/(protected)/project-sales/fulfilment-planning/components/BoardCellBreakdownDialog.tsx',

@@ -1159,6 +1159,22 @@ def _delete_market_segment(db: Session, payload: dict):
     return MarketSegmentService(db).delete_segment(_entity_id(payload))
 
 
+def _delete_contact_tag(db: Session, payload: dict):
+    from app.services.contact_tag_service import ContactTagService
+
+    from app.api.v1.system.companies import _is_superadmin
+    from app.services.user_service import UserPermissionService
+
+    # Same gates as clearing the tag's gated sections by PATCH. The actor is the requester.
+    actor = payload.get("requested_by_id")
+    perms = UserPermissionService(db)
+    gates = (
+        (lambda slug: bool(actor) and perms.check_user_has_permission(str(actor), slug)),
+        (lambda: bool(actor) and _is_superadmin(db, str(actor))),
+    )
+    return ContactTagService(db).delete_tag(_entity_id(payload), gates=gates)
+
+
 def _delete_onboarding_request(db: Session, payload: dict):
     from app.services import onboarding_service
 
@@ -1469,6 +1485,17 @@ register(
         # at all (issue #402).
         permission="user_management.reference_data.manage",
         label="Delete market segment",
+    )
+)
+
+register(
+    FormAction(
+        key="contact_tag.delete",
+        entity_types=("contact_tag",),
+        execute=_delete_contact_tag,
+        window=WINDOW_DESTRUCTIVE,
+        permission="user_management.contacts.edit",
+        label="Delete contact tag",
     )
 )
 
@@ -2103,6 +2130,30 @@ register(
         window=WINDOW_DESTRUCTIVE,
         permission=OWN_RECORD,
         label="Delete view",
+    )
+)
+
+
+def _delete_stock_debt_snapshot(db: Session, payload: dict):
+    from app.services.scm.stock_debt_snapshot_service import StockDebtSnapshotService
+
+    # `delete` answers 404 for a snapshot that is not the requester's own, so ownership IS
+    # the check - the same shape `saved_view.delete` above uses.
+    StockDebtSnapshotService(db).delete(
+        _entity_id(payload), str(payload.get("requested_by_id") or "")
+    )
+    return {"message": "Deleted"}
+
+
+register(
+    FormAction(
+        key="stock_debt_snapshot.delete",
+        entity_types=("stock_debt_snapshot",),
+        execute=_delete_stock_debt_snapshot,
+        # Destructive: the snapshot carries other people's decisions on its rows.
+        window=WINDOW_DESTRUCTIVE,
+        permission=OWN_RECORD,
+        label="Delete snapshot",
     )
 )
 

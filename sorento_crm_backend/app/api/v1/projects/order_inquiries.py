@@ -31,6 +31,9 @@ from app.schemas.project_order_inquiry import (
     AutoPlaceRequest,
     AutoPlaceResult,
     CommitReserveRequestIn,
+    HandoverResendIn,
+    HandoverResendPreviewOut,
+    HandoverResendSendOut,
     ParkedPreviewOut,
     ParkedSendOut,
     ReserveNoticeRecipientsOut,
@@ -205,6 +208,8 @@ def _worklist_filters(
     project: Optional[str] = None,
     # S3 (`PLAN-oi-header-list-detail.md`): the OI detail page's own Lines tab.
     inquiry_id: Optional[str] = None,
+    # OI-BULK-RESERVE v4: the Lines page's Reserve facet, one request row's own status.
+    reserve: Optional[str] = None,
 ) -> dict:
     filters = {
         "query": query,
@@ -227,6 +232,7 @@ def _worklist_filters(
         "delivery_from": delivery_from,
         "delivery_to": delivery_to,
         "inquiry_id": inquiry_id,
+        "reserve": reserve,
     }
     _validate_worklist_filter_uuids(filters)
     # `axis_key` is NOT validated here: it is compared against a UUID column on every
@@ -388,6 +394,13 @@ def list_order_inquiry_worklist(
             "by `order_inquiries.id`."
         ),
     ),
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = Query(
+        None,
+        description=(
+            "OI-BULK-RESERVE: keep a line when one of its own reserve request rows is in "
+            "this status (the Documents view's four statuses)."
+        ),
+    ),
     include_history: bool = Query(
         False,
         description=(
@@ -438,6 +451,7 @@ def list_order_inquiry_worklist(
                 axis_key=axis_key,
                 inquiry_id=inquiry_id,
                 project=project,
+                reserve=reserve,
             ),
         )
     except Exception as exc:
@@ -479,6 +493,7 @@ def order_inquiry_worklist_summary(
     spo_number: Optional[str] = Query(None, max_length=_MAX_FILTER_LENGTH),
     delivery_from: Optional[str] = Query(None),
     delivery_to: Optional[str] = Query(None),
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = Query(None),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -504,6 +519,7 @@ def order_inquiry_worklist_summary(
                 delivery_from,
                 delivery_to,
                 project=project,
+                reserve=reserve,
             ),
         )
     except Exception as exc:
@@ -537,6 +553,7 @@ def export_order_inquiry_worklist(
             "Excel - exactly this header's own rows."
         ),
     ),
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = Query(None),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -568,6 +585,7 @@ def export_order_inquiry_worklist(
                 delivery_to,
                 project=project,
                 inquiry_id=inquiry_id,
+                reserve=reserve,
             )
         )
         return Response(
@@ -731,6 +749,7 @@ def order_inquiry_worklist_matrix(
     spo_number: Optional[str] = Query(None, max_length=_MAX_FILTER_LENGTH),
     delivery_from: Optional[str] = Query(None),
     delivery_to: Optional[str] = Query(None),
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = Query(None),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -765,6 +784,7 @@ def order_inquiry_worklist_matrix(
                 delivery_from,
                 delivery_to,
                 project=project,
+                reserve=reserve,
             ),
         )
         return {"data": cells}
@@ -1331,6 +1351,45 @@ def order_inquiry_reserve_status_summary(
             actor_user_id=current_user["id"]
         )
     except Exception as exc:
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.post(
+    "/order-inquiries/handover-resend/preview", response_model=HandoverResendPreviewOut
+)
+def preview_handover_resend(
+    payload: HandoverResendIn,
+    current_user: dict = Depends(require_permission(ACTION)),
+    db: Session = Depends(get_db),
+):
+    """OI-RESEND-PURCHASING: the handover email "Send to purchasing" would send, one per
+    order inquiry, rendered by the handover automation's own template. Writes nothing."""
+    from app.services.oi_handover_resend import OrderInquiryHandoverResend
+
+    try:
+        return OrderInquiryHandoverResend(db).preview(
+            payload.inquiry_ids, actor_user_id=current_user["id"], row_ids=payload.row_ids
+        )
+    except Exception as exc:
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.post("/order-inquiries/handover-resend/send", response_model=HandoverResendSendOut)
+def send_handover_resend(
+    payload: HandoverResendIn,
+    current_user: dict = Depends(require_permission(ACTION)),
+    db: Session = Depends(get_db),
+):
+    """OI-RESEND-PURCHASING: send each order inquiry's open rows to purchasing again, even
+    while the automatic handover is switched off. Each email is its own recorded run."""
+    from app.services.oi_handover_resend import OrderInquiryHandoverResend
+
+    try:
+        return OrderInquiryHandoverResend(db).send(
+            payload.inquiry_ids, actor_user_id=current_user["id"], row_ids=payload.row_ids
+        )
+    except Exception as exc:
+        db.rollback()
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
 
 

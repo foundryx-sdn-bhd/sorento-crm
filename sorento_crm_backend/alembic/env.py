@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from app.database import Base
 from app.config import settings
 from app.models import *  # Import all models
+from app.utils.migration_timeouts import apply_migration_timeouts, reset_after_migration
 
 # this is the Alembic Config object
 config = context.config
@@ -106,9 +107,15 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             include_schemas=True,
             include_name=include_name,
+            # Every migration starts from the default lock/statement limits, whatever the
+            # previous one set (app/utils/migration_timeouts.py).
+            on_version_apply=reset_after_migration,
         )
 
         with context.begin_transaction():
+            # Inside the transaction: a statement before begin_transaction() would autobegin
+            # one alembic then treats as external and never commits.
+            apply_migration_timeouts(connection)
             context.run_migrations()
 
 

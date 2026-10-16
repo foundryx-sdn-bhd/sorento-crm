@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional, Union
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -41,6 +41,15 @@ def _not_found() -> AppException:
     return AppException(status_code=404, message="Sales opportunity not found.", code="NOT_FOUND")
 
 
+#: One agent id (the CRM) or every active agent a portal contact is linked to
+#: (PORTAL-MULTI-AGENT, owner 16 Oct 2026: the portal answers for all of them together).
+AgentIds = Union[str, Iterable[str]]
+
+
+def _agent_id_list(agent_ids: AgentIds) -> List[str]:
+    return [agent_ids] if isinstance(agent_ids, str) else list(agent_ids)
+
+
 def _normalize(value: Optional[str]) -> str:
     """Lower-cased, runs of whitespace collapsed, ends trimmed (section 16, S2-15)."""
     return " ".join((value or "").split()).lower()
@@ -57,8 +66,8 @@ def _normalize_expr(column):
 # --------------------------------------------------------------------------------------
 
 
-def customer_options(db: Session, *, q: Optional[str], sales_agent_id: Optional[str] = None) -> dict:
-    """Portal: `sales_agent_id` restricts `items` to that agent's own customers (S2-5).
+def customer_options(db: Session, *, q: Optional[str], sales_agent_id: Optional[AgentIds] = None) -> dict:
+    """Portal: `sales_agent_id` restricts `items` to the contact's agents' own customers (S2-5).
     CRM: `sales_agent_id` is None, so every customer of the company is offered.
 
     `prospect`/`blocked` always search ALL customers of the company, never just the
@@ -66,9 +75,10 @@ def customer_options(db: Session, *, q: Optional[str], sales_agent_id: Optional[
     somebody else's customer (S2-15), which the agent-scoped `items` list would hide.
     """
     q = (q or "").strip()
+    agent_ids = None if sales_agent_id is None else _agent_id_list(sales_agent_id)
     query = db.query(Customer)
-    if sales_agent_id is not None:
-        query = query.filter(Customer.sales_agent_id == sales_agent_id)
+    if agent_ids is not None:
+        query = query.filter(Customer.sales_agent_id.in_(agent_ids))
     if q:
         # Normalised on both sides (S2-15): a typed run of extra spaces or a case
         # difference must still find "Seri Indah Renovation", the same tolerance the
@@ -95,8 +105,8 @@ def customer_options(db: Session, *, q: Optional[str], sales_agent_id: Optional[
         )
         if not exact_matches:
             prospect = {"name": q}
-        elif sales_agent_id is not None and not any(
-            c.sales_agent_id == sales_agent_id for c in exact_matches
+        elif agent_ids is not None and not any(
+            c.sales_agent_id in agent_ids for c in exact_matches
         ):
             # Nit (Phase 3): blocked only when the exact name belongs to NO customer of
             # THIS agent's own - two customers can share a normalized name (a real prod
@@ -137,11 +147,37 @@ def _validate_customer_or_prospect(
 
 
 def _assert_customer_is_agents_own(
-    db: Session, *, customer_id: str, sales_agent_id: str
+    db: Session, *, customer_id: str, sales_agent_id: AgentIds
 ) -> None:
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
-    if customer is None or customer.sales_agent_id != sales_agent_id:
+    if customer is None or customer.sales_agent_id not in _agent_id_list(sales_agent_id):
         raise _unprocessable("That customer is not yours.", "CUSTOMER_NOT_YOURS")
+
+
+def agent_owning_customer(
+    db: Session, agents: List[SalesAgent], customer_id: Optional[str]
+) -> Optional[SalesAgent]:
+    """Portal: the linked agent whose customer this is, or ``None`` (no customer, or
+    somebody else's - `CUSTOMER_NOT_YOURS` answers that one)."""
+    if not customer_id:
+        return None
+    owner_id = db.query(Customer.sales_agent_id).filter(Customer.id == customer_id).scalar()
+    return next((agent for agent in agents if agent.id == owner_id), None)
+
+
+def default_portal_agent(db: Session, agents: List[SalesAgent]) -> SalesAgent:
+    """Portal: the agent a prospect (no customer) goes to - the first by code that the
+    request's company scope can see (shared, or in the scope), else the first by code."""
+    from app.models.base import get_company_scope
+
+    scope = get_company_scope(db)
+
+    def visible(agent: SalesAgent) -> bool:
+        if agent.company_id is None or scope is None:
+            return True
+        return isinstance(scope, frozenset) and agent.company_id in scope
+
+    return next((agent for agent in agents if visible(agent)), agents[0])
 
 
 def _assert_customer_exists(db: Session, customer_id: str) -> None:
@@ -255,13 +291,13 @@ def create_opportunity(
     source: str,
     created_by_user_id: Optional[str] = None,
     created_by_contact_id: Optional[str] = None,
-    restrict_customer_to_agent_id: Optional[str] = None,
+    restrict_customer_to_agent_id: Optional[AgentIds] = None,
     stamp_agent_from_customer: bool = False,
 ) -> SalesOpportunity:
     customer_id = payload.get("customer_id")
     prospect_name = payload.get("prospect_name")
     _validate_customer_or_prospect(db, customer_id=customer_id, prospect_name=prospect_name)
-    if restrict_customer_to_agent_id and customer_id:
+    if restrict_customer_to_agent_id is not None and customer_id:
         _assert_customer_is_agents_own(
             db, customer_id=customer_id, sales_agent_id=restrict_customer_to_agent_id
         )
@@ -402,7 +438,7 @@ def update_opportunity(
     opportunity: SalesOpportunity,
     payload: dict,
     *,
-    restrict_customer_to_agent_id: Optional[str] = None,
+    restrict_customer_to_agent_id: Optional[AgentIds] = None,
 ) -> SalesOpportunity:
     # N7 (Phase 3): once an opportunity is Won or Lost, nothing about it moves again -
     # not a field, not another stage - on either side. A stage move away from a terminal
@@ -417,7 +453,7 @@ def update_opportunity(
         customer_id = payload.get("customer_id", opportunity.customer_id)
         prospect_name = payload.get("prospect_name", opportunity.prospect_name)
         _validate_customer_or_prospect(db, customer_id=customer_id, prospect_name=prospect_name)
-        if restrict_customer_to_agent_id and customer_id:
+        if restrict_customer_to_agent_id is not None and customer_id:
             _assert_customer_is_agents_own(
                 db, customer_id=customer_id, sales_agent_id=restrict_customer_to_agent_id
             )
@@ -479,13 +515,13 @@ def get_opportunity_or_404(db: Session, opportunity_id: str) -> SalesOpportunity
 
 
 def get_opportunity_for_agent_or_404(
-    db: Session, opportunity_id: str, sales_agent_id: str
+    db: Session, opportunity_id: str, sales_agent_id: AgentIds
 ) -> SalesOpportunity:
     opportunity = (
         db.query(SalesOpportunity)
         .filter(
             SalesOpportunity.id == opportunity_id,
-            SalesOpportunity.sales_agent_id == sales_agent_id,
+            SalesOpportunity.sales_agent_id.in_(_agent_id_list(sales_agent_id)),
         )
         .first()
     )
@@ -504,7 +540,7 @@ def list_opportunities(
     *,
     query: Optional[str] = None,
     status_id: Optional[str] = None,
-    sales_agent_id: Optional[str] = None,
+    sales_agent_id: Optional[AgentIds] = None,
     customer_id: Optional[str] = None,
     close_from=None,
     close_to=None,
@@ -535,8 +571,12 @@ def list_opportunities(
         )
     if status_id:
         q = q.filter(SalesOpportunity.status_id == status_id)
-    if sales_agent_id:
-        q = q.filter(SalesOpportunity.sales_agent_id == sales_agent_id)
+    if isinstance(sales_agent_id, str):
+        if sales_agent_id:
+            q = q.filter(SalesOpportunity.sales_agent_id == sales_agent_id)
+    elif sales_agent_id is not None:
+        # A list (the portal's linked agents) filters even when empty: it matches nothing.
+        q = q.filter(SalesOpportunity.sales_agent_id.in_(list(sales_agent_id)))
     if customer_id:
         q = q.filter(SalesOpportunity.customer_id == customer_id)
     if close_from:

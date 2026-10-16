@@ -208,7 +208,7 @@ describe('BulkCopyAccessDialog selection (review S1)', () => {
     withCompanies.source = {
       ...withCompanies.source,
       summary: [...summary, { label: 'Companies', value: 'Sorento' }, { label: 'Market segments', value: 'Retail' }],
-      not_copied: ['Linked customers', 'CS routing', 'Media limits', 'Memory'],
+      not_copied: ['Linked customers', 'CS routing', 'Memory'],
     } as typeof withCompanies.source;
     copySvc.bulkCopyContactAccess.mockResolvedValueOnce(withCompanies);
     renderDialog();
@@ -216,14 +216,14 @@ describe('BulkCopyAccessDialog selection (review S1)', () => {
     const summaryEl = await screen.findByTestId('copy-access-source-summary');
     expect(summaryEl).toHaveTextContent('Market segments');
     expect(summaryEl).toHaveTextContent('Retail');
-    expect(screen.getByTestId('copy-access-not-copied')).toHaveTextContent('Linked customers, CS routing, Media limits, Memory');
+    expect(screen.getByTestId('copy-access-not-copied')).toHaveTextContent('Linked customers, CS routing, Memory');
     expect(screen.getByTestId('copy-access-not-copied')).not.toHaveTextContent('Companies');
     cleanup();
 
     const withoutCompanies = response(true);
     withoutCompanies.source = {
       ...withoutCompanies.source,
-      not_copied: ['Linked customers', 'CS routing', 'Media limits', 'Memory', 'Companies'],
+      not_copied: ['Linked customers', 'CS routing', 'Memory', 'Companies'],
     } as typeof withoutCompanies.source;
     copySvc.bulkCopyContactAccess.mockResolvedValueOnce(withoutCompanies);
     renderDialog();

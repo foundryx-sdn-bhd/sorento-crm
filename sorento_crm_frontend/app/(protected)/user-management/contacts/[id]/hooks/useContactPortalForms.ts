@@ -21,6 +21,7 @@ export function useUpdateContactPortalForm(contactId: string) {
       updateContactPortalForm(contactId, formType, isEnabled),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: contactPortalFormsKey(contactId) });
+      queryClient.invalidateQueries({ queryKey: ['contact-tag-settings', contactId] });
       toast.success('Portal forms updated');
     },
     onError: (error: Error) => toast.error(error.message || 'Failed to save portal forms'),

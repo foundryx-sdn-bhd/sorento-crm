@@ -290,9 +290,9 @@ def _customer_texts(body: dict[str, Any]) -> tuple[str, list[str]]:
 
     `actions` carries every `send_message` the turn composed, and on most lanes the first
     one is the SAME text as `reply.text` (the tail builds one from the other) - rendering
-    both would show a customer's answer twice. The escalation lane is the exception
-    (`includeResponse: false`): `reply.text` is empty and the two sentences live only in
-    `actions`, so nothing is dropped there.
+    both would show a customer's answer twice. The escalation lane builds its own message
+    (`includeResponse: false`) and the tail copies it into `reply.text` (CHAT-SPARSE,
+    never a blank reply), so it is the same case.
     """
     reply = body.get("reply") or {}
     reply_text = reply.get("text") or ""

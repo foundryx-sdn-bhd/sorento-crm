@@ -12,9 +12,16 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from app.services.uuid_path_param import UUID_PATTERN
 
@@ -346,6 +353,8 @@ class OrderInquiryWorklistRow(BaseModel):
     """
 
     id: str
+    #: OI-BULK-RESERVE v4: the header this row belongs to, for the Lines page's per-inquiry commit.
+    order_inquiry_id: Optional[str] = None
     #: `OI-000123` - the number of the inquiry this row belongs to, off its own header.
     #: Optional only so a record written before the column existed still reads; every
     #: inquiry raised since carries one. The S/O no beside it does not answer the same
@@ -535,6 +544,15 @@ class OrderInquiryWorklistRow(BaseModel):
     #: read N off this, not off a second lookup. Declared here because `response_model`
     #: silently drops a field it has not been told about.
     requested_qty: str = "0"
+    #: OI-BULK-RESERVE v4 (B2): the open request row's warehouse id and code, null when no
+    #: request is open. Declared here because `response_model` drops undeclared fields.
+    reserve_warehouse_id: Optional[str] = None
+    reserve_location: Optional[str] = None
+    #: OI-RESERVE-RECEIVED (AC-RR-5): what a reserve request may still ask for - a NUMBER (AC-RR-5): qty less
+    #: open links, reserve links and the bundle; links on a fully received PO/SPO line do
+    #: not count. The screen never re-derives "received". Declared here because
+    #: `response_model` silently drops a field it has not been told about.
+    reserve_requestable_qty: float = 0
 
 
 class OrderInquiryMonthTotal(BaseModel):
@@ -724,6 +742,8 @@ class AcknowledgeFilter(BaseModel):
     #: md`): "Select all N matching" narrowed to one header, so pressing Confirm with
     #: nothing ticked means exactly that OI and nothing else.
     inquiry_id: Optional[str] = Field(None, pattern=UUID_PATTERN)
+    #: OI-BULK-RESERVE v4: keep a line when one of its own request rows is in this status.
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = None
 
 
 class AcknowledgeRowsRequest(BaseModel):
@@ -1171,6 +1191,8 @@ class OrderInquiryWorklistExportRequest(BaseModel):
     spo_number: Optional[str] = Field(None, max_length=WORKLIST_FILTER_MAX_LENGTH)
     delivery_from: Optional[str] = None
     delivery_to: Optional[str] = None
+    #: OI-BULK-RESERVE v4: keep a line when one of its own request rows is in this status.
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = None
 
 
 class UnplaceAllResult(BaseModel):
@@ -1600,6 +1622,65 @@ class ParkedSendOut(BaseModel):
     emails_sent: int
     items_sent: int
     unresolved: List[ParkedUnresolvedOut] = []
+
+
+class HandoverResendIn(BaseModel):
+    """OI-RESEND-PURCHASING: the order inquiries to send to purchasing again."""
+
+    inquiry_ids: List[Annotated[str, StringConstraints(pattern=UUID_PATTERN)]] = Field(
+        ..., min_length=1, max_length=50
+    )
+    #: The ticked lines of ONE order inquiry; omitted means every open line.
+    row_ids: Optional[List[Annotated[str, StringConstraints(pattern=UUID_PATTERN)]]] = Field(
+        None, max_length=500
+    )
+
+
+class HandoverResendLineOut(BaseModel):
+    row_id: str
+    item_code: Optional[str] = None
+    qty: str
+    location: Optional[str] = None
+    delivery_date: Optional[date] = None
+    selected: bool
+    #: The newest earlier handover email of this OI that names the line's item code.
+    sent_at: Optional[datetime] = None
+
+
+class HandoverLastSentOut(BaseModel):
+    at: datetime
+    kind: Literal["automatic", "resent"]
+    by: Optional[str] = None
+
+
+class HandoverResendEmailOut(ParkedEmailOut):
+    inquiry_id: str
+    inquiry_no: Optional[str] = None
+    last_sent: Optional[HandoverLastSentOut] = None
+    #: The OI Excel the send attaches (names only; a preview stores nothing).
+    attachments: List[str] = []
+    #: Single-OI preview only: every open line, for the per-line ticks.
+    lines: List[HandoverResendLineOut] = []
+
+
+class HandoverResendSkipOut(BaseModel):
+    inquiry_id: str
+    inquiry_no: Optional[str] = None
+    reason: Literal["nothing_open", "no_recipient", "failed"]
+
+
+class HandoverResendPreviewOut(BaseModel):
+    emails: List[HandoverResendEmailOut] = []
+    inquiry_total: int = 0
+    unresolved: List[ParkedUnresolvedOut] = []
+    skipped: List[HandoverResendSkipOut] = []
+    automation_enabled: bool
+
+
+class HandoverResendSendOut(BaseModel):
+    emails_sent: int
+    items_sent: int
+    skipped: List[HandoverResendSkipOut] = []
 
 
 class ReserveStatusSummaryOut(BaseModel):

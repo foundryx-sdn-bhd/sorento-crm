@@ -194,6 +194,8 @@ const BODY_ONLY_SEGMENTS: Record<string, string> = {
     "headerless - no PageHeader anywhere; McpToolsList titles itself with a CardTitle, not a route header",
   'user-management/settings/notifications':
     'parent layout.tsx renders PageHeader ("Settings") for every settings page',
+  'project-sales/[projectId]/quotation-documents/[documentId]/(view)/lines':
+    'parent (view)/layout.tsx renders QuotationDocumentPageHeader for every tab of this quotation',
 };
 
 /**
@@ -284,7 +286,18 @@ describe('every DataGrid list segment has a loading.tsx (M5-01)', () => {
     // BODY_ONLY_SEGMENTS entry needed. Total: 152.
     // CA-2 (#1551): `system-management/topic-audit` is a new DataGrid segment (Topic audit)
     // with its own `loading.tsx` (ListPageSkeleton), found by the walk itself. Total: 153.
-    expect(requiredSegmentNames.length).toBe(153);
+    // MODEL-PRICES (#1636): `system-management/ai-assistant/model-prices` and
+    // STOCK-DEBT-SNAPSHOT (#1705): `project-sales/stock-debt/snapshots` are new DataGrid list
+    // segments with their own `loading.tsx` (ListPageSkeleton), found by the walk. Total: 155.
+    // AC-CONSIGN-CRM (#1654): `scm/consignments` is a new DataGrid list segment, found by the
+    // walk; its `loading.tsx` (ListPageSkeleton) came in RELEASE-FIX-PROD-EDGE. Total: 156.
+    // QUOTATION-UX (#1643): `QuotationLinesGrid` became a DataGrid, so the walk now finds the
+    // three quotation-documents segments that reach it through `QuotationVersionEditor`:
+    // `new` and `[documentId]/edit` (the quotation form, `SectionSkeleton` like the
+    // purchase-request form precedent) and `[documentId]/(view)/lines` (bodyOnly, see
+    // BODY_ONLY_SEGMENTS). Their `loading.tsx` files came in RELEASE-FIX-PROD-EDGE. Total: 159.
+    // CONTACT-TAGS (#1736): `user-management/contact-tags` is a new DataGrid list segment with its own `loading.tsx`, found by the walk. Total: 160.
+    expect(requiredSegmentNames.length).toBe(160);
 
     for (const name of requiredSegmentNames) {
       const dir = path.join(PROTECTED_ROOT, name);

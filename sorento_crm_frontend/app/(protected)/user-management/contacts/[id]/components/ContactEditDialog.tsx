@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { invalidateContactTagSettings } from '@/app/(protected)/user-management/contacts/[id]/hooks/useContactTagSettings';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { RiCheckboxCircleFill, RiErrorWarningFill } from '@remixicon/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -41,6 +42,7 @@ import { Switch } from '@/components/ui/switch';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { listRespondWorkspaceSelect } from '@/app/(protected)/system-management/respond-workspaces/services/respondWorkspaceService';
 import { useContactAccessTypes } from '@/app/(protected)/user-management/contact-access-types/hooks/useContactAccessTypes';
+import { useContactTagOptions, useSetContactTags } from '@/app/(protected)/user-management/contact-tags/hooks/useContactTags';
 import type { RespondContact } from '../../types/contact.types';
 import {
   ContactEditSchema,
@@ -62,6 +64,15 @@ export default function ContactEditDialog({
   const { data: session } = useSession();
   const isSuperadmin = isSuperadminUser(session?.user);
   const { data: accessTypes = [] } = useContactAccessTypes();
+  // CONTACT-TAGS: saved through its own route (PUT /contacts/{id}/tags) after the contact itself.
+  const { data: tagOptions = [] } = useContactTagOptions(open);
+  const [tagIds, setTagIds] = useState<string[]>([]);
+  const setTags = useSetContactTags();
+  const heldTags = useMemo(() => contact?.tags ?? [], [contact?.tags]);
+  const tagSelectOptions = useMemo(() => {
+    const known = new Set(tagOptions.map((o) => o.value));
+    return [...tagOptions, ...heldTags.filter((t) => !known.has(t.id)).map((t) => ({ value: t.id, label: t.name }))];
+  }, [tagOptions, heldTags]);
 
   const { data: companyOptions = [] } = useQuery({
     queryKey: ['companies-select'],
@@ -106,6 +117,7 @@ export default function ContactEditDialog({
         requires_registered_project: contact.requires_registered_project ?? false,
       });
     }
+    if (open && contact) setTagIds((contact.tags ?? []).map((t) => t.id));
     if (!open) {
       companiesResetRef.current = null;
     }
@@ -166,6 +178,11 @@ export default function ContactEditDialog({
 
       const updated = await response.json();
 
+      const heldIds = heldTags.map((t) => t.id);
+      const tagsChanged =
+        tagIds.length !== heldIds.length || tagIds.some((id) => !heldIds.includes(id));
+      if (tagsChanged) await setTags.mutateAsync({ contactId: contact.id, tagIds });
+
       // Superadmin-only: sync company grants (delete-all-then-reinsert server-side).
       if (isSuperadmin) {
         const companiesResponse = await apiFetch(`/api/user-management/contacts/${contact.id}/companies`, {
@@ -200,6 +217,7 @@ export default function ContactEditDialog({
       queryClient.invalidateQueries({ queryKey: ['respond-contact', contact.id] });
       queryClient.invalidateQueries({ queryKey: ['respond-contacts'] });
       queryClient.invalidateQueries({ queryKey: ['contact-companies', contact.id] });
+      invalidateContactTagSettings(queryClient, contact.id);
 
       closeDialog();
     },
@@ -330,6 +348,18 @@ export default function ContactEditDialog({
                 );
               }}
             />
+
+            <FormItem>
+              <FormLabel>Tags</FormLabel>
+              <SearchableMultiSelect
+                value={tagIds}
+                onChange={setTagIds}
+                options={tagSelectOptions}
+                placeholder="Select tags"
+                emptyMessage="No tags."
+                disabled={mutation.isPending}
+              />
+            </FormItem>
 
             {isSuperadmin && (
               <FormField

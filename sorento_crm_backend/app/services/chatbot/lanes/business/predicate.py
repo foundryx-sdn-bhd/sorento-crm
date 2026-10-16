@@ -317,13 +317,16 @@ def derive_require(
 
 
 def _describes_a_set(parser_output: dict[str, Any]) -> bool:
-    """A specification entity this turn (`head/grounding.py`), known value or not, and no
+    """A specification entity this turn (`head/grounding.py`), known value or not, or a
+    class or product type word (chat fix PR-A fix round 1 F3, W12 "Do you have any
+    bathtub?": the reply states how many there are, not a page of looked-up codes), and no
     product named: the ask is about products described by what they are and have."""
     entities = [e for e in parser_output.get("entities") or [] if isinstance(e, dict)]
     if any(str(e.get("hint") or "").strip().lower() == "product" for e in entities):
         return False
     return any(
-        str(e.get("hint") or "").strip().lower() in ("specification", "spec") and e.get("current_message") is not False
+        str(e.get("hint") or "").strip().lower() in ("specification", "spec", "category", "product_type")
+        and e.get("current_message") is not False
         for e in entities
     )
 

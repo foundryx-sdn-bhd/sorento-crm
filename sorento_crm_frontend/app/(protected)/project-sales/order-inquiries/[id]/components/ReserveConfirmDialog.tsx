@@ -27,6 +27,12 @@ export interface ReserveConfirmLine {
   balance: number | string | null;
   location: string | null;
   reason: string | null;
+  /** Multi-OI mode (the cross-OI Lines page): the product's name, muted under the code. */
+  description?: string | null;
+  /** Multi-OI mode: the order inquiry this line belongs to. */
+  inquiry_no?: string | null;
+  /** Multi-OI mode: set once the commit has answered for this line's order inquiry. */
+  result?: { ok: boolean; message?: string } | null;
 }
 
 const cell = (value: number | string | null | undefined) => (
@@ -40,14 +46,24 @@ const COLUMNS: ColumnDef<ReserveConfirmLine>[] = [
     id: 'product',
     header: 'Product',
     cell: ({ row }) => (
-      <span
-        className="block truncate text-sm font-medium"
-        title={row.original.item_code ?? undefined}
-      >
-        {row.original.item_code}
-      </span>
+      <div className="min-w-0">
+        <span
+          className="block truncate text-sm font-medium"
+          title={row.original.item_code ?? undefined}
+        >
+          {row.original.item_code}
+        </span>
+        {row.original.description ? (
+          <span
+            className="block truncate text-xs text-muted-foreground"
+            title={row.original.description}
+          >
+            {row.original.description}
+          </span>
+        ) : null}
+      </div>
     ),
-    size: 160,
+    size: 180,
     enableSorting: false,
     meta: { headerTitle: 'Product' },
   },
@@ -101,10 +117,67 @@ const COLUMNS: ColumnDef<ReserveConfirmLine>[] = [
   },
 ];
 
+/** OI-BULK-RESERVE v4 (F8): one order inquiry's share of a cross-OI confirmation. */
+export interface ReserveConfirmInquiry {
+  inquiry_id: string;
+  inquiry_no: string;
+  reserve_count: number;
+  reject_count: number;
+  /** Set once the commit has answered for this order inquiry. */
+  result?: { ok: boolean; message?: string };
+}
+
+const MULTI_SIZES: Record<string, number> = {
+  product: 185,
+  requested: 105,
+  reserve: 100,
+  balance: 135,
+  location: 105,
+  reason: 155,
+};
+
+/** Multi-OI mode: the line columns, with the order inquiry first and the commit result last. */
+const MULTI_COLUMNS: ColumnDef<ReserveConfirmLine>[] = [
+  {
+    id: 'inquiry_no',
+    header: 'OI no',
+    cell: ({ row }) => (
+      <span className="block truncate text-sm" title={row.original.inquiry_no ?? undefined}>
+        {row.original.inquiry_no}
+      </span>
+    ),
+    size: 140,
+    enableSorting: false,
+    meta: { headerTitle: 'OI no' },
+  },
+  // Widths that fit all eight columns in the wider dialog at 1280 without a sideways scroll.
+  ...COLUMNS.map((column) => ({ ...column, size: MULTI_SIZES[column.id as string] ?? column.size })),
+  {
+    id: 'result',
+    header: 'Result',
+    cell: ({ row }) => {
+      const result = row.original.result;
+      const text = result ? (result.ok ? 'Saved' : (result.message ?? 'Failed')) : '';
+      return (
+        <span className="block truncate" title={text || undefined}>
+          {text}
+        </span>
+      );
+    },
+    size: 155,
+    enableSorting: false,
+    meta: { headerTitle: 'Result' },
+  },
+];
+
 /**
  * AC-SN-41: the confirmation Reserve (N) opens. The footer is the request lightbox's
  * (tickbox left, Cancel, one primary button); the tickbox is unticked on every open and
  * the primary button's label follows it. `onConfirm(park)` does the commit.
+ *
+ * OI-BULK-RESERVE v4 (F8): with `inquiries` it is the cross-OI Lines page's confirmation -
+ * one grid row per LINE (`lines`, each with its OI no and result), a summary above it, no
+ * recipient line, and once `done` only Close. `inquiries.length` is the order inquiry count.
  */
 export function ReserveConfirmDialog({
   open,
@@ -114,6 +187,8 @@ export function ReserveConfirmDialog({
   recipients,
   onConfirm,
   isPending = false,
+  inquiries,
+  done = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -122,6 +197,8 @@ export function ReserveConfirmDialog({
   recipients?: ReserveNoticeRecipients | null;
   onConfirm: (park: boolean) => Promise<unknown> | void;
   isPending?: boolean;
+  inquiries?: ReserveConfirmInquiry[];
+  done?: boolean;
 }) {
   const [park, setPark] = React.useState(false);
   React.useEffect(() => {
@@ -129,7 +206,7 @@ export function ReserveConfirmDialog({
   }, [open]);
 
   const table = useReactTable({
-    columns: COLUMNS,
+    columns: inquiries ? MULTI_COLUMNS : COLUMNS,
     data: lines,
     getRowId: (line) => line.row_id,
     getCoreRowModel: getCoreRowModel(),
@@ -137,11 +214,20 @@ export function ReserveConfirmDialog({
     enableColumnResizing: true,
   });
 
-  const toName = recipients?.to?.name ?? null;
+  const toName = inquiries ? null : recipients?.to?.name ?? null;
   const ccNames = (recipients?.cc ?? []).map((person) => person.name);
   const noticeLine = toName
     ? `Notice to purchasing: To ${toName}${ccNames.length ? `, Cc ${ccNames.join(', ')}` : ''}`
     : 'Notice to purchasing: no recipient';
+
+  const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
+  const inquiryCount = inquiries?.length ?? 0;
+  const lineNoun = plural(lines.length, 'line', 'lines');
+  const title = inquiries
+    ? `Reserve ${lines.length} ${lineNoun} on ${inquiryCount} ${plural(inquiryCount, 'order inquiry', 'order inquiries')}`
+    : `Reserve ${lines.length} ${lineNoun} on ${inquiryNo}`;
+  const rejectCount = lines.filter((line) => Number(line.qty_reserved) === 0).length;
+  const summary = `${lines.length} ${lineNoun} on ${inquiryCount} ${plural(inquiryCount, 'order inquiry', 'order inquiries')} \u00b7 Reserve ${lines.length - rejectCount} \u00b7 Reject ${rejectCount}`;
 
   async function handleConfirm() {
     await onConfirm(park);
@@ -149,11 +235,15 @@ export function ReserveConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-4xl">
+      <DialogContent
+        showCloseButton={!done}
+        className={`flex max-h-[85dvh] flex-col ${inquiries ? 'sm:max-w-6xl' : 'sm:max-w-4xl'}`}
+      >
         <DialogHeader>
-          <DialogTitle>{`Reserve ${lines.length} ${lines.length === 1 ? 'line' : 'lines'} on ${inquiryNo}`}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <DialogBody className="flex-1 space-y-4 overflow-y-auto">
+          {inquiries ? <p className="text-sm font-medium">{summary}</p> : null}
           <DataGrid
             table={table}
             recordCount={lines.length}
@@ -161,37 +251,49 @@ export function ReserveConfirmDialog({
               width: 'fixed',
               columnsResizable: true,
               columnsDraggable: false,
-              // The DialogBody above already owns the scroll viewport.
-              scrollerMaxHeight: false,
+              // The DialogBody above owns the scroll viewport, except for a cross-OI list,
+              // which can run to hundreds of lines: its own bounded scroller keeps the
+              // header in view while the body scrolls.
+              ...(inquiries
+                ? { headerSticky: true, scrollerMaxHeight: 'max-h-[50dvh] overflow-y-auto' }
+                : { scrollerMaxHeight: false }),
             }}
           >
             <DataGridTable />
           </DataGrid>
-          <p className="text-sm text-muted-foreground">{noticeLine}</p>
+          {inquiries ? null : <p className="text-sm text-muted-foreground">{noticeLine}</p>}
         </DialogBody>
-        <DialogFooter className="flex-wrap items-center gap-2 sm:justify-between">
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="reserve-confirm-park"
-              checked={park}
-              onCheckedChange={(value) => setPark(value === true)}
-              disabled={isPending}
-            />
-            <Label htmlFor="reserve-confirm-park">Park notice first</Label>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
-              Cancel
+        {done ? (
+          <DialogFooter>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Close
             </Button>
-            <Button onClick={handleConfirm} disabled={isPending || lines.length === 0}>
-              {park
-                ? 'Reserve and park notice'
-                : toName
-                  ? `Reserve and send to ${toName}`
-                  : 'Reserve and send'}
-            </Button>
-          </div>
-        </DialogFooter>
+          </DialogFooter>
+        ) : (
+          <DialogFooter className="flex-wrap items-center gap-2 sm:justify-between">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="reserve-confirm-park"
+                checked={park}
+                onCheckedChange={(value) => setPark(value === true)}
+                disabled={isPending}
+              />
+              <Label htmlFor="reserve-confirm-park">Park notice first</Label>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
+                Cancel
+              </Button>
+              <Button onClick={handleConfirm} disabled={isPending || lines.length === 0}>
+                {park
+                  ? 'Reserve and park notice'
+                  : toName
+                    ? `Reserve and send to ${toName}`
+                    : 'Reserve and send'}
+              </Button>
+            </div>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

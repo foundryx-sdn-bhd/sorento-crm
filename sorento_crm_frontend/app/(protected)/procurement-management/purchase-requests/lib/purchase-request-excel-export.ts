@@ -169,7 +169,10 @@ const SORENTO_HEADER = [
  * The Project Sales Sponsorship Form document as a row array (see
  * `buildPurchaseRequestAoa` for why this is split out).
  */
-export function buildSponsorshipFormAoa(request: PurchaseRequest): (string | number)[][] {
+export function buildSponsorshipFormAoa(
+  request: PurchaseRequest,
+  salesTypeLabel?: string | null,
+): (string | number)[][] {
   const lines = request.lines ?? [];
   // Single submission date shown at the top "Date"; no separate footer date.
   const requestDate = formatDateForSponsorship(request.submitted_at);
@@ -196,6 +199,7 @@ export function buildSponsorshipFormAoa(request: PurchaseRequest): (string | num
     ['Project Title:', str(request.project_title)],
     ['Total Project Value:', tpv],
     ['Sponsor Subject:', str(request.sponsor_subject)],
+    ['Sales Type:', salesTypeLabel ?? str(request.sales_type)],
     ['Date of Delivery:', deliveryDate],
     [],
     ['NO.', 'Item Code', 'Qty', 'U/P', 'Total', 'Remark'],
@@ -235,11 +239,14 @@ export function buildSponsorshipFormAoa(request: PurchaseRequest): (string | num
 /**
  * Export a sponsorship form to Excel in the Project Sales Sponsorship Form format:
  * Company header, Sponsorship form number, Date, Customer, Delivery Address, Project Title,
- * Total Project Value, Sponsor Subject, Date of Delivery, line items (NO., Item Code, Qty, U/P, Total), Grand Total, Requested/Approved by.
+ * Total Project Value, Sponsor Subject, Sales Type, Date of Delivery, line items (NO., Item Code, Qty, U/P, Total), Grand Total, Requested/Approved by.
  */
-export async function exportSponsorshipFormToExcel(request: PurchaseRequest): Promise<void> {
+export async function exportSponsorshipFormToExcel(
+  request: PurchaseRequest,
+  salesTypeLabel?: string | null,
+): Promise<void> {
   const xlsx = await getXLSX();
-  const ws = xlsx.utils.aoa_to_sheet(buildSponsorshipFormAoa(request));
+  const ws = xlsx.utils.aoa_to_sheet(buildSponsorshipFormAoa(request, salesTypeLabel));
   ws['!cols'] = SPONSORSHIP_COL_WIDTHS;
   const wb = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(wb, ws, 'Sponsorship Form');
@@ -251,14 +258,13 @@ function isSponsorship(request: PurchaseRequest): boolean {
   return request.request_type === 'sponsorship_form';
 }
 
-/** The document for this type, as rows. Sponsorship forms have no sales type -
- *  the field is Purchase Request only. */
+/** The document for this type, as rows. Both carry the sales type (SF-SALES-TYPE). */
 export function buildPurchaseRequestOrSponsorshipAoa(
   request: PurchaseRequest,
   salesTypeLabel?: string | null,
 ): (string | number)[][] {
   return isSponsorship(request)
-    ? buildSponsorshipFormAoa(request)
+    ? buildSponsorshipFormAoa(request, salesTypeLabel)
     : buildPurchaseRequestAoa(request, salesTypeLabel);
 }
 
@@ -270,7 +276,7 @@ export async function exportPurchaseRequestOrSponsorshipToExcel(
   salesTypeLabel?: string | null,
 ): Promise<void> {
   if (isSponsorship(request)) {
-    await exportSponsorshipFormToExcel(request);
+    await exportSponsorshipFormToExcel(request, salesTypeLabel);
   } else {
     await exportPurchaseRequestToExcel(request, salesTypeLabel);
   }

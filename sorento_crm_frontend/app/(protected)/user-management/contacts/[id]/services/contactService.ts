@@ -33,7 +33,10 @@ export async function getContacts(
   params: DataGridParamsInput,
   filters: Record<string, string> = {},
 ): Promise<RespondContactListResponse> {
-  const query = buildDataGridParams(params, filters);
+  const { tag, ...rest } = filters;
+  const query = buildDataGridParams(params, rest);
+  // CONTACT-TAGS: the tag ids travel as one comma-joined filter value, the API takes `tag=` repeated.
+  for (const id of (tag ?? '').split(',').filter(Boolean)) query.append('tag', id);
   const response = await apiFetch(`/api/user-management/contacts?${query.toString()}`);
   if (!response.ok) {
     throw new Error(await extractApiError(response, 'Failed to load contacts'));

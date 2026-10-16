@@ -42,7 +42,7 @@ from app.models.ticket_comment import ConversationTicketComment
 from app.models.message_snippet import MessageSnippet
 from app.models.resources import Attachment, AttachmentType
 from app.models.certificate import Certificate, CertificateRevision, CertificateProduct
-from app.models.access import AccessAgent, ContactAgentAccess, ContactAccessType, RespondContact, RespondContactCustomer, StockVisibilityPolicy, respond_contact_access_types, MarketSegment, respond_contact_market_segments, team_member_market_segments, team_member_brands
+from app.models.access import AccessAgent, ContactAgentAccess, ContactAccessType, ContactTag, respond_contact_tags, RespondContact, RespondContactCustomer, StockVisibilityPolicy, respond_contact_access_types, MarketSegment, respond_contact_market_segments, team_member_market_segments, team_member_brands
 from app.models.respond_workspace import RespondWorkspace
 from app.models.respond_template import (
     RespondChannel,
@@ -76,6 +76,7 @@ from app.models.job import ImportJob, ImportJobRow
 from app.models.download import UserDownload, DownloadStatus
 from app.models.report_view import ReportView
 from app.models.saved_view import SavedView
+from app.models.stock_debt_snapshot import StockDebtSnapshot, StockDebtSnapshotRow
 from app.models.audit import AuditLog, AuditTrailGap
 from app.models.notification import Notification, NotificationDelivery, PushSubscription
 from app.models.scheduled_task import ScheduledTask, ScheduledTaskRun
@@ -286,6 +287,7 @@ __all__ = [
     "AccessAgent",
     "ContactAgentAccess",
     "ContactAccessType",
+    "ContactTag",
     "RespondContact",
     "RespondContactCustomer",
     "respond_contact_access_types",

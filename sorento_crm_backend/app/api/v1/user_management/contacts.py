@@ -109,6 +109,10 @@ async def get_contacts(
     stock: Optional[Literal["yes", "no"]] = Query(None),
     region: Optional[Literal["west", "east"]] = Query(None),
     customer_id: Optional[uuid.UUID] = Query(None),
+    # CONTACT-TAGS: `tag` repeats (any-of); `tags=none` lists contacts holding no tag.
+    tag: Optional[list[uuid.UUID]] = Query(None),
+    tags: Optional[Literal["none"]] = Query(None),
+    tag_settings: Optional[Literal["differs", "matches"]] = Query(None),
     access_differs_from: Optional[str] = Query(None),
     current_user: dict = Depends(require_permission("user_management.contacts.view")),
     db: Session = Depends(get_db)
@@ -121,7 +125,11 @@ async def get_contacts(
         can_view_users = UserPermissionService(db).check_user_has_permission(
             current_user["id"], "user_management.users.view"
         )
+        from app.api.v1.user_management.contact_tags import _gates
+        from app.services.contact_tag_settings import unreadable_sections
+
         result = service.list_contacts(
+            redact_sections=unreadable_sections(*_gates(db, current_user)),
             page=page,
             limit=limit,
             query=query,
@@ -140,6 +148,9 @@ async def get_contacts(
                 "stock": stock,
                 "region": region,
                 "customer_id": str(customer_id) if customer_id else None,
+                "tag_ids": [str(t) for t in tag] if tag else None,
+                "no_tags": tags == "none",
+                "tag_settings": tag_settings,
                 "access_differs_from": access_differs_from,
                 # What this viewer's copy would leave alone is not a difference to them.
                 "access_differs_skip": (
@@ -246,7 +257,7 @@ def bulk_copy_contact_access(
 @router.post("/bulk-sync", status_code=status.HTTP_200_OK)
 async def bulk_sync_contacts(
     body: BulkSyncContactsRequest = Body(...),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
     db: Session = Depends(get_db),
 ):
     """Sync multiple contacts from Respond.io (name, first/last name, respond_io_id)."""
@@ -264,7 +275,7 @@ async def bulk_sync_contacts(
 @router.delete("/bulk", status_code=status.HTTP_200_OK)
 async def bulk_delete_contacts(
     body: BulkDeleteContactsRequest = Body(...),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
     db: Session = Depends(get_db),
 ):
     """Bulk delete contacts by ID. Related access records are removed."""
@@ -309,7 +320,7 @@ async def get_contact(
 @router.post("/", response_model=RespondContactResponse, status_code=status.HTTP_201_CREATED)
 async def create_contact(
     contact_data: RespondContactCreate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
     db: Session = Depends(get_db)
 ):
     """Create a new respond contact."""
@@ -582,7 +593,7 @@ async def set_contact_companies(
 @router.delete("/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_contact(
     contact_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
     db: Session = Depends(get_db)
 ):
     """Delete a respond contact. Related access records are cascade-deleted; SLA tracking references are set to null."""
@@ -600,7 +611,7 @@ async def delete_contact(
 @router.post("/{contact_id}/sync", response_model=RespondContactResponse)
 async def sync_contact(
     contact_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
     db: Session = Depends(get_db)
 ):
     """Sync contact name from Respond.io API."""
@@ -853,7 +864,7 @@ async def get_contact_market_segments(
 async def set_contact_market_segments(
     contact_id: str,
     payload: MarketSegmentCodesUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
     db: Session = Depends(get_db),
 ):
     """Replace a contact's market segments with the supplied set (empty = clear → matches all)."""
@@ -929,7 +940,7 @@ async def get_contact_attachment_types(
 async def set_contact_attachment_types(
     contact_id: str,
     payload: ContactAttachmentTypesUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
     db: Session = Depends(get_db),
 ):
     """Replace this contact's attachment-type grants (empty = baseline only)."""

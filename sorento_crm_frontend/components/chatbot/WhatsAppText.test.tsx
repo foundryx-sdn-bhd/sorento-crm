@@ -46,4 +46,68 @@ describe('WhatsAppText', () => {
     expect(link.getAttribute('href')).toBe(url);
     expect(link.getAttribute('target')).toBe('_blank');
   });
+
+  // CHAT-HISTORY-FORMAT (owner, 16 Oct 2026): the exact stock reply from the
+  // owner's screenshot, which the Chat History drawer showed with literal
+  // asterisks and a dead URL.
+  const STOCK_REPLY = [
+    '1. *Product Code:* SRTSC07',
+    '*ETA:* 2026-10-07',
+    '*Link:* https://fe-sorento.foundryx.my/f/R6E6GC49A42JCC65',
+    '🚩 *(PENDING ALLOCATION)*',
+  ].join('\n');
+
+  it('renders the owner\'s stock reply with bold labels, a live link and no asterisks', () => {
+    const { container } = render(<WhatsAppText text={STOCK_REPLY} />);
+
+    for (const label of ['Product Code:', 'ETA:', 'Link:', '(PENDING ALLOCATION)']) {
+      expect(screen.getByText(label).tagName).toBe('STRONG');
+    }
+    const url = 'https://fe-sorento.foundryx.my/f/R6E6GC49A42JCC65';
+    const link = screen.getByRole('link', { name: url });
+    expect(link.getAttribute('href')).toBe(url);
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(container.textContent).not.toContain('*');
+    // Line breaks and the list numbering survive (the bubble is pre-wrap).
+    expect(container.textContent).toBe(
+      '1. Product Code: SRTSC07\nETA: 2026-10-07\nLink: https://fe-sorento.foundryx.my/f/R6E6GC49A42JCC65\n🚩 (PENDING ALLOCATION)',
+    );
+  });
+
+  it('renders italic, strike and a monospace fence', () => {
+    render(<WhatsAppText text={'_soon_ ~old~ ```SKU-1```'} />);
+    expect(screen.getByText('soon').tagName).toBe('EM');
+    expect(screen.getByText('old').tagName).toBe('S');
+    expect(screen.getByText('SKU-1').tagName).toBe('CODE');
+  });
+
+  it('escapes HTML inside formatting and never links a non-http scheme', () => {
+    const { container } = render(
+      <WhatsAppText
+        text={
+          '*<img src=x onerror="alert(1)">* _<script>alert(2)</script>_ ' +
+          'javascript:alert(3) https://x.test/a"><script>alert(4)</script>'
+        }
+      />,
+    );
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('script')).toBeNull();
+    expect(container.textContent).toContain('<img src=x onerror="alert(1)">');
+    const hrefs = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) expect(href).toMatch(/^https:\/\//);
+  });
+
+  it('marks a search term inside a styled run without breaking the style', () => {
+    render(<WhatsAppText text={'*ETA:* 2026-10-07'} term="eta" />);
+    const mark = screen.getByText('ETA');
+    expect(mark.tagName).toBe('MARK');
+    expect(mark.closest('strong')).not.toBeNull();
+  });
+
+  it('marks nothing when the term is empty', () => {
+    const { container } = render(<WhatsAppText text={'*ETA:* soon'} term="  " />);
+    expect(container.querySelector('mark')).toBeNull();
+  });
 });
