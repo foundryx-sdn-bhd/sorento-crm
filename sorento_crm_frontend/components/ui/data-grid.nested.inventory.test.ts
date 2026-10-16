@@ -179,7 +179,7 @@ const GRID_IN_FLOATING_SURFACE_SITES = new Map<string, string>([
     'Supply tab, same dialog. (Line moved 666 -> 619, same round; 619 -> 667 in R42, same as above; 715 -> 753 in #1594.)',
   ],
   [
-    'app/(protected)/scm/proforma-invoices/components/ConvertToPackingListDialog.tsx:460',
+    'app/(protected)/scm/proforma-invoices/components/ConvertToPackingListDialog.tsx:486',
     "What goes in the container, in a dialog opened as a sibling of the invoice list or the invoice's own detail - no grid context. It KEEPS the default `--grid-max-h` bound rather than turning it off: the dialog body does not scroll, so the table is what scrolls, with its header sticking inside that window while the container size select and Convert stay put",
   ],
   [
@@ -195,11 +195,11 @@ const GRID_IN_FLOATING_SURFACE_SITES = new Map<string, string>([
     'The DataGridTable of the same grid, not a second one',
   ],
   [
-    'app/(protected)/project-sales/_shared/components/LinkDocumentDialog.tsx:343',
+    'app/(protected)/project-sales/_shared/components/LinkDocumentDialog.tsx:348',
     "S8's candidate DataGrid, in a dialog opened as a sibling of the worklist. Already scrollerMaxHeight={false}",
   ],
   [
-    'app/(protected)/project-sales/_shared/components/LinkDocumentDialog.tsx:349',
+    'app/(protected)/project-sales/_shared/components/LinkDocumentDialog.tsx:354',
     'The DataGridTable of the same grid, not a second one',
   ],
   [
