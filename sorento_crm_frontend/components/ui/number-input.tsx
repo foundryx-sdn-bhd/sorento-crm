@@ -60,7 +60,7 @@ function NumberInput({ value, onValueChange, onChange, error, errorClassName, cl
         aria-describedby={error ? messageId : props['aria-describedby']}
       />
       {error ? (
-        <div id={messageId} data-slot="number-input-error" className={cn('mt-1 text-xs font-normal text-destructive', errorClassName)}>
+        <div id={messageId} data-slot="number-input-error" className={cn('mt-1 text-xs font-normal text-destructive whitespace-normal break-words', errorClassName)}>
           {error}
         </div>
       ) : null}
