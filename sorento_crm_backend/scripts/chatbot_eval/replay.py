@@ -22,6 +22,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import sys
 from typing import Any, Callable, Iterator
 
@@ -416,6 +417,20 @@ def _tool_capture(into: list[dict[str, Any]]) -> Iterator[None]:
         yield
 
 
+_UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def _uuid_codes(db: Any, args_list: list[Any]) -> dict[str, str]:
+    """product uuid -> product_code for the uuids in the tool args (read-only, inside the rolled-back session)."""
+    from sqlalchemy import text
+
+    ids = sorted({u.lower() for a in args_list for u in _UUID_RE.findall(json.dumps(a, default=str))})
+    if not ids:
+        return {}
+    rows = db.execute(text("select id::text, product_code from products where id::text = any(:ids)"), {"ids": ids})
+    return {r[0]: r[1] for r in rows}
+
+
 def _new_usage() -> dict[str, Any]:
     return {"calls": 0, "prompt_tokens": 0, "cached_tokens": 0, "completion_tokens": 0, "usd": 0.0}
 
@@ -456,10 +471,12 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
     db = factory()
     turn = db.query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
     trace = list(turn.trace or []) if turn is not None else []
+    uuid_codes = _uuid_codes(db, [t.get("args") for t in trace if isinstance(t, dict) and t.get("kind") == "tool"]
+                             + [t.get("args") for t in tool_results])
     understood = next(((r.get("facts") or {}) for r in trace if isinstance(r, dict) and r.get("stage") == "understood"), {})
     out.update(
         provenance={k: understood.get(k) for k in PROVENANCE_KEYS},
-        usage=usage, tool_results=tool_results,
+        usage=usage, tool_results=tool_results, uuid_codes=uuid_codes,
         turn={"envelope": copy.deepcopy(turn.envelope) if turn is not None else None, "trace": trace,
               "response": copy.deepcopy(turn.response) if turn is not None else None,
               "branch_kind": result.branch_kind},
