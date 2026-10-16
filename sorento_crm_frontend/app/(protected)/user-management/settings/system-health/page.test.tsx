@@ -159,7 +159,7 @@ describe('SystemHealthSettingsPage', () => {
     expect(field).toHaveValue(null);
     expect(screen.getByText('Enter a whole number between 1 and 100000.')).toBeInTheDocument();
     expect(
-      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+      apiFetch.mock.calls.find(([url]: unknown[]) => String(url).includes('/settings/general')),
     ).toBeUndefined();
   });
 
@@ -174,7 +174,7 @@ describe('SystemHealthSettingsPage', () => {
     expect(field).toHaveValue(-4);
     expect(screen.getByText('Enter a whole number between 0 and 1000000.')).toBeInTheDocument();
     expect(
-      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+      apiFetch.mock.calls.find(([url]: unknown[]) => String(url).includes('/settings/general')),
     ).toBeUndefined();
   });
 
@@ -255,7 +255,7 @@ describe('SystemHealthSettingsPage - WhatsApp round-trip latency (OBS-S4-21)', (
     expect(screen.getByText('Enter a whole number between 1 and 3600.')).toBeInTheDocument();
     expect(screen.getByText('Enter a whole number between 1 and 100000.')).toBeInTheDocument();
     expect(
-      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+      apiFetch.mock.calls.find(([url]: unknown[]) => String(url).includes('/settings/general')),
     ).toBeUndefined();
   });
 
@@ -298,7 +298,7 @@ describe('system-health field rules equal the backend bounds (S6)', () => {
     expect(field).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('Enter a whole number between 1 and 100000.')).toBeInTheDocument();
     expect(
-      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+      apiFetch.mock.calls.find(([url]: unknown[]) => String(url).includes('/settings/general')),
     ).toBeUndefined();
   });
 
@@ -311,7 +311,7 @@ describe('system-health field rules equal the backend bounds (S6)', () => {
     expect(field).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('Enter a whole number between 1 and 3600.')).toBeInTheDocument();
     expect(
-      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+      apiFetch.mock.calls.find(([url]: unknown[]) => String(url).includes('/settings/general')),
     ).toBeUndefined();
   });
 });

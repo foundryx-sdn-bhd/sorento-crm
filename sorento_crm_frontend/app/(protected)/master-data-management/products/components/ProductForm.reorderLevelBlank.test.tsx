@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 
 if (!window.matchMedia) {
   (window as unknown as { matchMedia: unknown }).matchMedia = () => ({
@@ -94,16 +94,8 @@ vi.mock('@/components/common/ListPager', () => ({
 
 import ProductForm from './ProductForm';
 
-function selectCategory() {
-  fireEvent.change(screen.getByLabelText('Search category...'), { target: { value: CAT_ID } });
-}
-
 function goToSpecificationsTab() {
   fireEvent.mouseDown(screen.getByRole('tab', { name: /Specifications/i }));
-}
-
-function selectBaseUom() {
-  fireEvent.change(screen.getByLabelText('Select base UOM'), { target: { value: UOM_ID } });
 }
 
 beforeEach(() => {
