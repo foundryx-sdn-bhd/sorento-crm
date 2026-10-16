@@ -191,7 +191,7 @@ def test_close_question_closes_the_pending():
     assert out.state.focus.products == state.focus.products
 
 
-def test_switch_domain_drops_status_period_sort_report_frame_and_keeps_products_and_customers():
+def test_switch_domain_drops_status_sort_report_frame_and_keeps_products_customers_and_the_period():
     focus = Focus(
         products=[_held("SRT5733")],
         customers=[_customer()],
@@ -210,7 +210,7 @@ def test_switch_domain_drops_status_period_sort_report_frame_and_keeps_products_
     assert kept.products == focus.products
     assert kept.customers == focus.customers
     assert kept.status is None
-    assert kept.date_window is None
+    assert kept.date_window == focus.date_window
     assert kept.sort is None
     assert kept.sales_ranking_frame is None
 
@@ -507,11 +507,12 @@ def test_s8c_an_implied_domain_switch_under_keep_drops_the_domain_bound_axes_inc
     assert [p["canonical_code"] for p in out.state.focus.products] == ["SRT5733"]
 
 
-def test_s8d_a_stated_period_survives_only_with_a_set_period():
+def test_s8d_a_stated_period_applies_across_a_domain_switch_with_or_without_a_set_period():
     focus = Focus(products=[_held("SRT5733")], domains=["order"])
     period = dict(date_mode="range", date_filter_start="2026-10-01", date_filter_end="2026-10-07", domain_hint="inventory")
     dropped = _apply(State(focus=focus, turn_no=3), verdict(state_changes=[_op("switch_domain")], **period))
-    assert dropped.verdict["date_filter_start"] is None and dropped.verdict["date_mode"] is None
+    assert dropped.valid is True and dropped.verdict["date_filter_start"] == "2026-10-01"
+    assert dropped.verdict["date_mode"] == "range"
     kept = _apply(
         State(focus=focus, turn_no=3), verdict(state_changes=[_op("switch_domain"), _op("set", "period")], **period)
     )
@@ -637,3 +638,135 @@ def test_r5_an_unknown_op_or_a_truly_unknown_axis_still_invalidates_with_a_reaso
         out = _apply(state, verdict(entities=[entity("X1")], state_changes=[change]))
         assert out.valid is False, change
         assert out.log["rejected"]
+
+
+# --------------------------------------------------------------------------- #
+# Round 6 (reviewer delta): the period across switches, slot-question loops, lenient nits
+# --------------------------------------------------------------------------- #
+
+from app.services.chatbot.turn import question as _qm  # noqa: E402
+
+
+def _ops(*pairs):
+    return [_op(o, a) if isinstance(o, str) else o for o, a in pairs]
+
+
+def test_r6_b2_an_explicit_switch_keeps_the_held_period_and_drops_the_other_domain_bound_axes():
+    focus = Focus(customers=[_customer()], domains=["order"], status="open", date_window=dict(WINDOW),
+                  sort={"by": "date", "dir": "asc"}, sales_ranking_frame={"basis": "qty_sold"})
+    out = _apply(State(focus=focus, turn_no=3), verdict(domain_hint="incoming", state_changes=[_op("switch_domain")]))
+    assert out.valid is True, out.log.get("rejected")
+    assert out.state.focus.date_window == WINDOW
+    assert out.state.focus.status is None and out.state.focus.sort is None
+    assert out.state.focus.sales_ranking_frame is None
+
+
+def test_r6_b2_an_implied_switch_under_keep_keeps_the_held_period():
+    focus = Focus(customers=[_customer()], domains=["sales"], date_window=dict(WINDOW))
+    out = _apply(State(focus=focus, turn_no=3), verdict(domain_hint="order", state_changes=[_op("keep")]))
+    assert out.valid is True
+    assert out.state.focus.date_window == WINDOW
+
+
+@pytest.mark.parametrize("slot", ["skip", "clear"])
+def test_r6_b2_skip_or_clear_period_still_leaves_the_switch_without_it(slot):
+    focus = Focus(customers=[_customer()], domains=["order"], date_window=dict(WINDOW))
+    out = _apply(
+        State(focus=focus, turn_no=3),
+        verdict(domain_hint="incoming", state_changes=[_op("switch_domain"), _op(slot, "period")]),
+    )
+    assert out.valid is True, out.log.get("rejected")
+    if slot == "clear":
+        assert out.state.focus.date_window is None
+
+
+def test_r6_b2_a_period_the_message_states_replaces_the_held_one_without_a_set_op():
+    focus = Focus(customers=[_customer()], domains=["order"], date_window=dict(WINDOW))
+    v = verdict(domain_hint="order", date_mode="range", date_filter_start="2026-11-01",
+                date_filter_end="2026-11-07", state_changes=[_op("keep")])
+    out = _apply(State(focus=focus, turn_no=3), v)
+    assert out.valid is True
+    assert out.verdict["date_filter_start"] == "2026-11-01"
+
+
+def test_r6_b2_example_5_an_unclear_customer_runs_as_order_with_the_held_period():
+    focus = Focus(customers=[_customer()], domains=["order"], date_window=dict(WINDOW))
+    v = verdict(domain_hint="incoming", entities=[entity("SRT391-GM")],
+                state_changes=[_op("keep"), _op("unclear", "customer")])
+    out = _apply(State(focus=focus, turn_no=3), v)
+    assert out.valid is True, out.log.get("rejected")
+    assert out.verdict["domain_hint"] == "order"
+    assert out.state.focus.domains == ["order"]
+    assert out.state.focus.date_window == WINDOW
+
+
+def test_r6_nit_the_type_step_also_sets_the_domain_when_the_parse_carries_asks():
+    focus = Focus(customers=[_customer()], domains=["order"], date_window=dict(WINDOW))
+    v = verdict(domain_hint="incoming", asks=[{"domain": "incoming", "intent": None}],
+                state_changes=[_op("keep"), _op("unclear", "customer")])
+    out = _apply(State(focus=focus, turn_no=3), v)
+    assert out.valid is True
+    assert [a["domain"] for a in out.verdict.get("asks") or []] in ([], ["order"])
+    assert out.verdict["domain_hint"] == "order"
+
+
+def _slot_question(state_focus=None):
+    first = _apply(
+        State(focus=state_focus or Focus(customers=[_customer()], domains=["order"], date_window=dict(WINDOW)), turn_no=3),
+        verdict(domain_hint="order", state_changes=[_op("keep"), _op("unclear", "period")]),
+    )
+    pend = first.state.slot_ask
+    assert pend is not None, "the first unclear must ask"
+    state = State(focus=first.state.focus, turn_no=4, pending=pend)
+    return state, _qm.open_question(pend, [], None)
+
+
+@pytest.mark.parametrize("second", [[("close_question", None), ("unclear", "period")],
+                                    [("new_subject", None), ("unclear", "period")]])
+def test_r6_sf1_a_second_unclear_with_close_or_new_subject_offers_the_hand_over(second):
+    state, oq = _slot_question()
+    out = _apply(state, verdict(domain_hint="order", state_changes=[_op(o, a) for o, a in second]), open_question=oq)
+    assert out.valid is True, out.log.get("rejected")
+    assert out.state.slot_ask is not None and out.state.slot_ask.kind == "team_pick", out.state.slot_ask
+
+
+def test_r6_sf2_a_pick_of_another_period_behaves_exactly_like_answering_option_2():
+    state, oq = _slot_question()
+    answer = {"mode": "pick", "picked": [2], "items": [], "qty_for_all": None}
+    via_answer = _apply(
+        state, verdict(domain_hint="order", reference_positions=[2], open_question_answer=answer,
+                       state_changes=[_op("answer")]), open_question=oq)
+    via_pick = _apply(state, verdict(domain_hint="order", state_changes=[_op("pick", position=2)]), open_question=oq)
+    assert via_pick.valid is True, via_pick.log.get("rejected")
+    assert via_pick.state.focus.date_window == via_answer.state.focus.date_window
+    assert via_pick.state.pending == via_answer.state.pending
+    assert via_pick.verdict.get("open_question_answer") == via_answer.verdict.get("open_question_answer")
+    assert not [e for e in via_pick.verdict["entities"] if e.get("hint") == "period"]
+
+
+@pytest.mark.parametrize("slot", ["keep", "skip", "unclear"])
+def test_r6_sf4_a_slot_op_next_to_set_period_is_dropped_and_logged_not_rejected(slot):
+    focus = Focus(customers=[_customer()], domains=["order"], date_window=dict(WINDOW))
+    v = verdict(domain_hint="order", date_mode="range", date_filter_start="2026-11-01",
+                date_filter_end="2026-11-07", state_changes=[_op("set", "period"), _op(slot, "period")])
+    out = _apply(State(focus=focus, turn_no=3), v)
+    assert out.valid is True, out.log.get("rejected")
+    assert out.verdict["date_filter_start"] == "2026-11-01"
+    assert any(i.get("axis") == "period" for i in out.log.get("ignored") or []), out.log.get("ignored")
+    assert out.state.slot_ask is None
+
+
+def test_r6_nit_clearing_an_axis_with_nothing_held_is_a_logged_noop_and_the_rest_applies():
+    focus = Focus(customers=[_customer()], domains=["order"])
+    out = _apply(State(focus=focus, turn_no=3), verdict(state_changes=[_op("keep", "customer"), _op("clear", "period")]))
+    assert out.valid is True, out.log.get("rejected")
+    assert out.log["slots"] == {"customer": "keep"}
+    assert any(i.get("axis") == "period" for i in out.log.get("ignored") or []), out.log.get("ignored")
+
+
+def test_r6_nit_the_hand_over_after_a_second_unclear_reuses_the_existing_offer_path():
+    state, oq = _slot_question()
+    out = _apply(state, verdict(domain_hint="order", state_changes=[_op("keep"), _op("unclear", "period")]), open_question=oq)
+    offer = out.state.slot_ask
+    assert offer.kind == "team_pick" and offer.team and offer.expects == "yes_no"
+    assert "offer_text" not in (offer.payload.get("filters") or {}), "no new English-only text"

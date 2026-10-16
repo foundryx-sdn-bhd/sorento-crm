@@ -223,9 +223,7 @@ def test_an_emission_without_state_changes_runs_as_on_main_and_records_no_list(s
     assert seam.rules_fired == ["reuse_alive", "domains_from_asks"]
     assert seam.stock_ids(seam.turn_calls[-1]) == [seam.uuid_of["SRT1"]]
     assert seam.state["focus"].get("last_list") is None
-    state = _mem_state(seam, out)
-    assert not state.get("changes")
-    assert set(state) >= {"shown", "before", "changes", "after"}
+    assert "state" not in seam.memory(out), "a mock emission without state_changes is not on the state path"
 
 
 # --------------------------------------------------------------------------- #
@@ -502,7 +500,7 @@ def test_a_stored_list_pick_in_scope_resolves_the_code_fresh(seam):
         previous=prev,
     )
     picked = [e for e in out.ctx["parse"]["output"]["entities"] if e.get("canonical_code") == "SRT1"]
-    assert picked and all(not e.get("uuid") or e.get("resolved_fresh", True) for e in picked)
+    assert picked and all(not e.get("uuid") for e in picked)
     assert [e for e in picked if e.get("uuids")] == [], "the stored uuids must not ride along"
     assert seam.stock_ids(seam.turn_calls[-1]) == [seam.uuid_of["SRT1"]], "still found, by a fresh resolve"
 
@@ -633,3 +631,71 @@ def test_r5_a_replaced_product_is_not_brought_back_by_a_code_that_cannot_be_sett
     )
     assert seam.uuid_of["SRT1"] not in json.dumps(seam.turn_calls[-1], default=str), "the old product answered"
     assert "ZZQ9999" in ((out.reply or {}).get("text") or "").upper()
+
+
+# --------------------------------------------------------------------------- #
+# Round 6 (reviewer delta)
+# --------------------------------------------------------------------------- #
+
+
+def test_r6_a_mock_emission_without_the_state_changes_key_is_off_and_with_a_null_key_is_on(seam):
+    off = seam.say("check stock STWC2867", _stock("STWC2867"), previous={})
+    assert "state" not in seam.memory(off)
+    assert seam.state["focus"].get("last_list") is None
+    v = _stock("STWC2867")
+    v["state_changes"] = None
+    on = seam.say("check stock STWC2867", v, previous={})
+    assert "state" in seam.memory(on)
+    assert seam.state["focus"].get("last_list"), "the list shown is recorded on the state path"
+
+
+def test_r6_b2_example_5_the_ask_runs_as_order_for_the_customer_with_the_held_period(seam):
+    prev = _held_customer_state(window=HELD_WINDOW)
+    seam.say(
+        "SRT391-GM delivery?",
+        _emit(domain_hint="incoming", intent_hint="check_incoming", domain_in_message=True,
+              entities=[_product("SRT391-GM")], state_changes=[_op("keep"), _op("unclear", "customer")]),
+        previous=prev,
+    )
+    assert seam.state["focus"]["domains"] == ["order"], seam.state["focus"]["domains"]
+    assert "2026-10-01" in _blob(seam)
+    assert CUSTOMER_UUID in _blob(seam)
+
+
+def test_r6_the_hand_over_after_a_second_unclear_customer_is_the_ordinary_offer_not_a_period_question(seam, monkeypatch):
+    from app.services.chatbot.turn import chat_state
+
+    monkeypatch.setattr(chat_state, "KIND_DOMAIN", {})
+    prev = _held_customer_state(window=HELD_WINDOW)
+    seam.say("delivery?", _order_ask(_op("keep"), _op("unclear", "customer")), previous=prev)
+    out = seam.say("delivery??", _order_ask(_op("keep"), _op("unclear", "customer")))
+    reply = ((out.reply or {}).get("text") or "").lower()
+    assert "which period" not in reply, reply
+    assert "escalate" in reply or "customer service" in reply, reply
+
+
+def test_r6_security_a_skipped_customer_is_not_trusted_by_its_stored_uuid_after_the_scope_changes(seam):
+    prev = _held_customer_state(window=HELD_WINDOW)
+    seam.say("SRT391-GM eta", _incoming_ask(_op("skip", "customer")), previous=prev)
+    assert _held_codes(seam) == ["C0001"]
+    _drop_company_scope(seam)
+    seam.say("delivery?", _order_ask(_op("switch_domain"), _op("keep", "customer"), _op("keep", "period")))
+    assert CUSTOMER_UUID not in _blob(seam), "the stored uuid reached a tool call after the scope changed"
+
+
+def test_r6_nit_the_tail_restores_set_aside_slots_before_the_live_state_is_carried():
+    import types as _t
+    from dataclasses import replace
+
+    from app.services.chatbot.turn import tail as tail_mod
+
+    row = {"raw": "Customer X", "canonical_code": "C0001", "hint": "customer", "uuid": CUSTOMER_UUID}
+    live = {"focus": Focus(domains=["order"]), "pending": None, "quoted_open": None}
+    state = replace(
+        State(focus=Focus(domains=["order"]), turn_no=4), held_aside={"customers": [row]}, quoted_live=live
+    )
+    payload = tail_mod.session_payload(
+        state, _t.SimpleNamespace(question=None, sections=[]),
+        _t.SimpleNamespace(ideation=None, access_levels=[], contains_flyer=False, reply_language="en"),
+    )
+    assert [c.get("canonical_code") for c in payload["focus"]["customers"]] == ["C0001"]

@@ -327,3 +327,29 @@ def test_publishing_twice_does_not_create_a_second_identical_version(session_fac
     second = _publish(session, from_version=None)
     assert len(_versions(session)) == count == 2
     assert second in (first, None)
+
+
+def test_r6_sf3_the_prompt_says_the_held_period_carries_on_a_new_subject():
+    import re
+
+    from app.services.chatbot.head.chat_state_prompt import STATE_SECTION
+
+    text = " ".join(STATE_SECTION.split())
+    assert "channel or period carries" not in text, "a line still says the period does not carry"
+    assert re.search(r"new_subject[^|]*\bperiod\b[^|]*(carr|kept|keeps|stays)", text), text
+    assert re.search(r"(skip|clear) period", text)
+
+
+def test_r6_nit_resolve_config_reads_the_prompt_once_so_gate_and_text_come_from_one_version(monkeypatch, session_factory):
+    from app.services import ai_prompt_registry
+
+    reads = []
+    real = ai_prompt_registry.get_prompt
+
+    def counting(*a, **k):
+        reads.append(1)
+        return real(*a, **k)
+
+    monkeypatch.setattr(ai_prompt_registry, "get_prompt", counting)
+    _resolve(monkeypatch, session_factory, f"Rules {{{{current_date}}}}\n{HEADING_LINE}\n")
+    assert len(reads) == 1, len(reads)
