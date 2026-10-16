@@ -12,14 +12,14 @@ them.
 Plan: documentation/plans/projects/PLAN-sample-request-core-15oct.md.
 
 Revision ID: sr_0001_sample_requests
-Revises: sds_0001_stock_debt_snapshots
+Revises: ctg_0001_contact_tags
 """
 import sqlalchemy as sa
 from alembic import op
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "sr_0001_sample_requests"
-down_revision = "sds_0001_stock_debt_snapshots"
+down_revision = "ctg_0001_contact_tags"
 branch_labels = None
 depends_on = None
 
