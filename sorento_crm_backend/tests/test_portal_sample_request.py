@@ -6,6 +6,7 @@ Pattern: tests/test_portal_price_tag_routes.py.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -69,6 +70,18 @@ def portal():
         granted = _contact(db, granted=True)
         granted_b = _contact(db, granted=True)
         ungranted = _contact(db, granted=False)
+        # A real row: the company-scope resolver reads portal_tokens by the header value, and
+        # without one it falls back to the default company, which hides a missing scope wrap.
+        db.add(
+            PortalToken(
+                id=uid(),
+                token="zzt-token",
+                contact_id=granted,
+                space_id="zzt-space",
+                expires_at=datetime.utcnow() + timedelta(days=30),
+                verified_at=datetime.utcnow() - timedelta(minutes=5),
+            )
+        )
         db.commit()
 
         state = {"contact": granted}
