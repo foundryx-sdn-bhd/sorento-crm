@@ -546,6 +546,10 @@ class OrderInquiryWorklistRow(BaseModel):
     #: Purchased/Incoming still count it when it holds a link. Declared here because
     #: `response_model` silently drops a field it has not been told about.
     line_cancelled: bool = False
+    #: OI-LINE-SPLIT (UAC D3): the splits of this row's SO line, for the OI Lines tab's
+    #: read-only expand; empty when not split. Declared because `response_model` drops a
+    #: field it has not been told about.
+    splits: List[OrderInquiryLineSplitOut] = []
     #: PLAN-oi-request-cs-reserve.md 3.5 (AC-RS-20): `requested` while an open reserve
     #: request row exists, `reserved` once something has actually been reserved (and no
     #: open request), `declined` when the latest answer was 0 (6e.4, AC-RS-78c), else
