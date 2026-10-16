@@ -32,7 +32,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .inp.focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(59,130,246,.15)}
 .inp.bad{border-color:rgba(220,38,38,.6);box-shadow:0 0 0 3px rgba(220,38,38,.1)}
 .caret{display:inline-block;width:1px;height:14px;background:var(--foreground);vertical-align:-2px}
-.msg{margin-top:4px;font-size:12px;color:var(--destructive);white-space:normal;max-width:120px}
+.msg{margin-top:4px;font-size:12px;color:var(--destructive);white-space:normal;max-width:140px}
 .sel{display:inline-flex;align-items:center;justify-content:space-between;width:150px;height:32px;border:1px solid var(--input);border-radius:6px;padding:0 8px;font-size:13px}
 .lbl{font-size:13px;font-weight:500;margin:12px 0 6px}
 .ta{border:1px solid var(--input);border-radius:6px;min-height:52px}
@@ -77,7 +77,7 @@ code{font-size:12px;background:var(--muted);padding:1px 4px;border-radius:4px}
   <div class="dh">Request CS to reserve <span class="x">&#x2715;</span></div>
   <div class="db"><div class="scroll"><table>
    <tr><th>Product</th><th>Delivery date</th><th class="num">Remaining</th><th>Requested</th><th>Location</th></tr>
-   <tr><td>CB6638</td><td>15/12/2026</td><td class="num">212</td><td><span class="inp bad"></span><div class="msg">Enter a quantity</div></td><td><span class="sel">BRW available 3594 <span>&#x2304;</span></span></td></tr>
+   <tr><td>CB6638</td><td>15/12/2026</td><td class="num">212</td><td><span class="inp bad"></span><div class="msg">Enter a whole number between 1 and 212.</div></td><td><span class="sel">BRW available 3594 <span>&#x2304;</span></span></td></tr>
   </table></div>
   <div class="lbl">Note (optional)</div><div class="ta"></div>
   <div class="foot"><span class="chk"><span class="cb"></span>Park this first</span><span><span class="btn">Cancel</span> <span class="btn pri">Park request</span></span></div>
@@ -88,7 +88,7 @@ code{font-size:12px;background:var(--muted);padding:1px 4px;border-radius:4px}
    <div class="dh">Request CS to reserve <span class="x">&#x2715;</span></div>
    <div class="db"><div class="scroll"><table>
     <tr><th>Product</th><th>Delivery date</th><th class="num">Remaining</th><th>Requested</th><th>Location</th></tr>
-    <tr><td>CB6638</td><td>15/12/2026</td><td class="num">212</td><td><span class="inp bad"></span><div class="msg">Enter a quantity</div></td><td><span class="sel">BRW available 3594</span></td></tr>
+    <tr><td>CB6638</td><td>15/12/2026</td><td class="num">212</td><td><span class="inp bad"></span><div class="msg">Enter a whole number between 1 and 212.</div></td><td><span class="sel">BRW available 3594</span></td></tr>
    </table></div>
    <p class="state">375px: the grid scrolls sideways inside the dialog, as today.</p>
    <div class="foot"><span class="chk"><span class="cb"></span>Park this first</span><span><span class="btn">Cancel</span> <span class="btn pri">Park request</span></span></div>
@@ -100,13 +100,13 @@ code{font-size:12px;background:var(--muted);padding:1px 4px;border-radius:4px}
 
 <section>
 <h2><span class="nb">3</span>Over the limit: the typed number stays, the message names the limit</h2>
-<p class="why">300 is typed while 212 remain. The field keeps 300 (today it is cut to 212 on the keystroke). On confirm: nothing sent, message "Max 212". Same shape for below-min ("Min 1") and fractions on whole-number fields ("Whole numbers only").</p>
+<p class="why">300 is typed while 212 remain. The field keeps 300 (today it is cut to 212 on the keystroke). On confirm: nothing sent, the same one-sentence message names the whole rule. Empty, 0, 300 and 2.5 all get that one sentence, so the reader always sees what is allowed.</p>
 <div class="row">
  <div class="dlg">
   <div class="dh">Request CS to reserve <span class="x">&#x2715;</span></div>
   <div class="db"><div class="scroll"><table>
    <tr><th>Product</th><th>Delivery date</th><th class="num">Remaining</th><th>Requested</th><th>Location</th></tr>
-   <tr><td>CB6638</td><td>15/12/2026</td><td class="num">212</td><td><span class="inp bad">300</span><div class="msg">Max 212</div></td><td><span class="sel">BRW available 3594 <span>&#x2304;</span></span></td></tr>
+   <tr><td>CB6638</td><td>15/12/2026</td><td class="num">212</td><td><span class="inp bad">300</span><div class="msg">Enter a whole number between 1 and 212.</div></td><td><span class="sel">BRW available 3594 <span>&#x2304;</span></span></td></tr>
   </table></div>
   <div class="lbl">Note (optional)</div><div class="ta"></div>
   <div class="foot"><span class="chk"><span class="cb"></span>Park this first</span><span><span class="btn">Cancel</span> <span class="btn pri">Park request</span></span></div>
@@ -123,7 +123,7 @@ code{font-size:12px;background:var(--muted);padding:1px 4px;border-radius:4px}
  <tr><td>Number field</td><td><code>components/ui/input.tsx</code> <code>Input type="number"</code> wrapped by one new shared number field (keeps the typed text, hands the screen a number or "no value")</td></tr>
  <tr><td>Red outline</td><td>Existing <code>aria-invalid</code> styles already in <code>components/ui/input.tsx</code> (inputVariants)</td></tr>
  <tr><td>Message under the field</td><td>Same text style as <code>FormMessage</code> in <code>components/ui/form.tsx:130</code> (<code>text-xs text-destructive</code>)</td></tr>
- <tr><td>Message wording</td><td>"Enter a quantity" (empty), "Enter a number" (not a number), "Min 1", "Max 212", "Whole numbers only"</td></tr>
+ <tr><td>Message wording</td><td>One sentence per field, the family <code>lib/whole-number-range.ts</code> already uses on the chatbot media settings: "Enter a whole number between 1 and 212." / "Enter a number between 0 and 100." / "Enter a number of at least 0." / "Enter a number." Optional fields add ", or leave it blank."</td></tr>
 </table>
 </section>
 </div>

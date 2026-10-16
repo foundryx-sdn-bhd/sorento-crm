@@ -14,9 +14,9 @@ After this lane, on every number field in the app:
 
 1. The salesperson clears the 1. The field stays empty. They type 2. The field shows 2.
 2. They clear it and press "Park request" with the field empty. Nothing is sent. The field shows a
-   red outline and a short message under it ("Enter a quantity"). The dialog stays open.
-3. They type 300 (more than the 212 remaining) and confirm. Nothing is sent; the message says the
-   most allowed ("Max 212").
+   red outline and a short message under it ("Enter a whole number between 1 and 212."). The dialog stays open.
+3. They type 300 (more than the 212 remaining) and confirm. Nothing is sent; the same message names
+   the allowed range.
 4. They type 4 and confirm. The request is sent with 4.
 
 ## Shared component
