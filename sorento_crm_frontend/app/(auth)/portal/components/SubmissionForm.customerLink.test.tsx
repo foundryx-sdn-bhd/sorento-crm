@@ -198,14 +198,31 @@ describe('SubmissionForm customer picker (PC-5)', () => {
     expect(fields.sales_type).toBe('project');
   });
 
-  it('a sponsorship form has no Sales type, so a pick never writes one', async () => {
+  it('on an SF a customer with sales_type cash_sales sets Sales type to cash_sales', async () => {
     const { container } = await renderForm('sponsorship_form');
 
     await pick(container, PROJECT_CASH.debtor_name);
     const fields = await savedFields();
 
     expect(fields.customer_id).toBe(PROJECT_CASH.customer_id);
-    expect(fields.sales_type ?? null).toBeNull();
+    expect(fields.sales_type).toBe('cash_sales');
+  });
+
+  it('on an SF a customer with a null sales_type leaves Sales type as it was', async () => {
+    const { container } = await renderForm('sponsorship_form');
+    await pick(container, PROJECT.debtor_name);
+    await pick(container, WALKIN.debtor_name);
+    const fields = await savedFields();
+
+    expect(fields.customer_id).toBe(WALKIN.customer_id);
+    expect(fields.sales_type).toBe('project');
+  });
+
+  it('the SF form renders a Sales type field that is not required', async () => {
+    await renderForm('sponsorship_form');
+
+    const label = await screen.findByText(/^Sales type/);
+    expect(label.textContent).not.toMatch(/\*/);
   });
 
   it('shows the customer code as meta next to the name in the dropdown', async () => {
