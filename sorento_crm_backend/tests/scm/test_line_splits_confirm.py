@@ -506,3 +506,77 @@ def test_demand_rows_subtract_the_moved_qty_when_the_origin_is_not_settled_in_pl
     assert not [r for _q, r in sent if "CANCEL 60" in r or "CANCEL 40" in r], sent
     written = [Decimal(str(r.qty)) for r in _live(s, s.no[2][1], IV_CANCEL_BALANCE)]
     assert written in ([], [Decimal("10")]), written
+
+
+# ---------------------------------------------------------------------------
+# D1 email pins (3a99b8a5a): assert on the SENT handover
+# ---------------------------------------------------------------------------
+
+
+def _so424910(api):
+    """Line 16 76 -> 2 (pending qty_down) and lines 32 (4) / 48 (10) ADDED by AutoCount; line 16
+    splits 2 own + 4 + 10 moved in + 60 cancel (adds up to 76)."""
+    from app.services.scm.outstanding_diff import ADDED, Change, Line
+
+    client, world = api
+    db = world.db
+    d16, d32, d48 = date(2026, 10, 7), date(2026, 10, 16), date(2026, 11, 15)
+    core_so = _core_so(db, world.company_id)
+    order = _project_so(db, world.project, so_id=core_so.id, autocount_doc_no=core_so.so_number)
+    c16 = _core_line(db, core_so, world.product, world.own_wh, qty_ordered="76", required_date=d16)
+    l16 = _project_line(db, order, line_no=16, product=world.product, core_line=c16)
+    db.commit()
+    r = _confirm(client, order.id, [_line_payload(l16.id, buy_qty="76")])
+    assert r.status_code == 200, r.text
+    c16.qty_ordered, l16.qty = Decimal("2"), Decimal("2")
+    mirrors = {}
+    for no, qty, when in ((32, "4", d32), (48, "10", d48)):
+        core = _core_line(db, core_so, world.product, world.own_wh, qty_ordered=qty,
+                          required_date=when)
+        mirrors[no] = (core, _project_line(db, order, line_no=no, product=world.product,
+                                           core_line=core), qty, when)
+    db.commit()
+    code, loc = world.product.product_code, world.own_wh.warehouse_code
+    added = lambda qty, when: Change(  # noqa: E731
+        ADDED, core_so.so_number, code, loc, before=None,
+        after=Line(doc_number=core_so.so_number, item_code=code, location=loc,
+                   qty=float(qty), required_date=when, row_ref="1"))
+    batch = _build(world, [
+        _change(QTY_CHANGED, c16, so_number=core_so.so_number, old_date=d16, new_date=d16,
+                old_qty="76", new_qty="2"),
+        added(4, d32), added(10, d48),
+    ], core_so, [str(c16.id), str(mirrors[32][0].id), str(mirrors[48][0].id)])
+    assert batch is not None, "premise: the pending change batch exists"
+    s = _S()
+    s.client, s.world, s.db, s.order, s.batch = client, world, db, order, batch
+    s.l16, s.m = l16, mirrors
+    r = _put(s, [{"line_id": str(l16.id), "splits": [
+        _sp(2, d16, on=str(l16.id)),
+        _sp(4, d32, on=str(mirrors[32][1].id)),
+        _sp(10, d48, on=str(mirrors[48][1].id)),
+        _sp(60, None, on=str(l16.id), cancel=True),
+    ]}])
+    assert r.status_code == 200, f"premise: the splits save ({r.status_code}) {r.text}"
+    r = _confirm(client, order.id, [
+        _line_payload(l16.id, buy_qty="2"),
+        _line_payload(mirrors[32][1].id, buy_qty="4"),
+        _line_payload(mirrors[48][1].id, buy_qty="10"),
+    ], batch_id=str(batch.id))
+    assert r.status_code == 200, r.text
+    db.commit()
+    return s
+
+
+def test_sent_email_tells_no_order_for_added_lines_whose_qty_moved_in(api, emails):
+    _so424910(api)
+    sent = [(ln["qty"], ln["remark"]) for ctx in emails for ln in ctx["lines"]]
+    assert not [t for t in sent if t[0] in ("4", "10") and t[1].startswith("ORDER")], sent
+    assert not [r for _q, r in sent if r in ("ORDER 4", "ORDER 10")], sent
+
+
+def test_sent_email_tells_a_cancel_split_once(api, emails):
+    _so424910(api)
+    sent = [(ln["qty"], ln["remark"]) for ctx in emails for ln in ctx["lines"]]
+    cancel_splits = [t for t in sent if t[0] == "60" and "CANCEL BALANCE" in t[1]]
+    assert len(cancel_splits) == 1, sent
+    assert not [r for _q, r in sent if "CANCEL 60" in r], ("no separate netting cancel", sent)
