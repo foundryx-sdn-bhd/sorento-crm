@@ -86,3 +86,6 @@ found"; the others still apply.
 - Writers: the contact-page service functions that commit inside (`set_field_access`,
   `set_contact_outbound`) would end the per-contact savepoint, so apply writes the same rows with ORM /
   Core inside the savepoint, keeping the same validation. Reviewer checks parity with those services.
+- Stock / spec conflict holds the whole section back for that contact: its other differing keys are
+  listed under `not_applied` ("Held back: another setting in this group has a conflict."), because the
+  policy row is one unit (accepted 16 Oct).
