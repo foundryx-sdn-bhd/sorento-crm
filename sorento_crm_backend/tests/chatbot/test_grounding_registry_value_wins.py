@@ -235,20 +235,34 @@ def test_guard_d_a_non_registry_adjective_is_handled_as_before(vdb):
     assert ("specification", "cheap", "", None) in shape, shape
 
 
-def test_guard_e_a_boolean_spec_on_a_class_entity_is_said_in_the_registrys_words(vdb):
+def test_guard_e_a_boolean_spec_on_a_class_entity_is_said_with_the_keys_registry_phrase(vdb):
     entity = _e("rimles basin", "category", spec_key="is_rimless", spec_value=True)
     out = _ground(vdb, "any rimles basin", entity)["entities"]
     [spec] = [e for e in _specs(out) if e["spec_key"] == "is_rimless"]
     assert spec["spec_value"] is True, out
-    assert spec["raw"] != "rimles basin" and "rimles" not in spec["raw"].replace("rimless", ""), spec
+    assert spec["raw"] == "rimless", spec
 
 
-def test_guard_e_a_numeric_spec_on_a_class_entity_is_said_as_the_displayed_value(vdb):
+def test_guard_e_a_numeric_spec_whose_number_is_in_the_message_takes_mains_path(vdb):
     entity = _e("600mm wdth basin", "category", spec_key="dim_width", spec_value=600)
-    out = _ground(vdb, "any 600mm wdth basin", entity)["entities"]
-    [spec] = [e for e in _specs(out) if e["spec_key"] == "dim_width"]
-    assert spec["spec_value"] == 600, out
-    assert spec["raw"] != "600mm wdth basin" and "wdth" not in spec["raw"] and "600" in spec["raw"], spec
+    shape = _shape(_ground(vdb, "any 600mm wdth basin", entity))
+    assert not [s for s in shape if s[2] == "dim_width" and s[3] is not None and s[1] != "600mm"], shape
+    assert ("specification", "wdth", "", None) in shape, shape
+
+
+@pytest.mark.parametrize(
+    "message,raw,key,value",
+    [
+        ("any 600mm pnk basin", "600mm pnk basin", "dim_width", 600),
+        ("any undermount pnk basin", "pnk basin", "mounting", "under_counter"),
+        ("any rimless pnk basin", "pnk basin", "is_rimless", True),
+    ],
+    ids=["number-in-message", "mounting-word-in-message", "boolean-word-in-message"],
+)
+def test_guard_g_a_spec_whose_words_are_in_the_message_never_replaces_another_typed_word(vdb, message, raw, key, value):
+    entity = _e(raw, "category", spec_key=key, spec_value=value)
+    shape = _shape(_ground(vdb, message, entity))
+    assert ("specification", "pnk", "", None) in shape, shape
 
 
 def test_guard_f_a_correctly_typed_synonym_keeps_its_own_words(vdb):
