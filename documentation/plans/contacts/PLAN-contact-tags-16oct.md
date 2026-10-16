@@ -100,3 +100,8 @@ chat language erased on Chatbot card save (`contactChatbotService.ts:218`).
 1. Phase 1 = the approved Lavish mock v2 (deviation: FE is built in Phase 2 AFTER each slice's red tests, so the crew red-first proof precedes any product code).
 2. Tester red tests from UAC -> coder green; migration on dev copy.
 3. Reviewer + security-reviewer + browser 1280/375; hand test.
+
+## Follow-ups (after hand test)
+
+- Add `contact_tags.contact_router` routes (bulk-tags, bulk-apply-tag-settings, PUT /contacts/{id}/tags) to #1734's route sweep in `sorento_crm_backend/tests/test_contact_write_gates.py:325-346` (crew, 16 Oct).
+- Shared dropdown (components/ui/dropdown-menu.tsx): move the max-h + overflow onto the inner motion.div so the panel shadow is not clipped (reviewer nit, 16 Oct).
