@@ -57,7 +57,7 @@ label of G005 and its siblings changes rather than the text.
 - Ablation, 6 fit items x 4 reps: A (R9 sentence) and B (A + no negated file-word list) tie: right 11/24 each, file
   readings 13/24 each (main 10/12). B dropped (crew: remove the list only if the outputs show it causes the docs
   reading; they do not).
-- TRAIN x2 on A: 102/137 both runs (main 101/137 both). Stable fixes G001, G008. Stable break G125 "MWC7625 cost"
+- TRAIN x2 on A: 102/137 both runs (main 101/137 both). Stable fixes G001, G008. Stable break G125
   (a code with its own fact word, gold purchase_cost): main right 3/4, A wrong 6/6. The explicit "domain_hint
   master_products, intent_hint check_product" wording primes code + fact asks. Gate rule fails.
 - A2 (same meaning, no domain tokens), 5 items x 3 reps: fixes gone (G001 file reading 3/3), G125 1/3 wrong. Text
