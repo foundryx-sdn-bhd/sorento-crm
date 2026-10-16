@@ -1,8 +1,8 @@
 # PLAN: CHAT-STATE - one explicit conversation state for follow-ups
 
-**Status:** Build: S1-S4 green (66bc3b6cf, c7d17f8c7), replay gate clean; S5 next (prompt base waits for the
-00:30 prod-copy swap). Card answered: crew Q1/Q2/Q5, owner Q4(a), owner ETA ruling (R14); Q3 working rule (b),
-period-on-new-ask code held. Track: L, LEAD pattern.
+**Status:** Build round 5. S1-S5 + round 4 (held slots, R16 period, R15 unclear by type, review + security fixes)
+green at d1e042d63, kill-proofs posted on #1747. Live TRAIN x3 (17 Oct ~00:30): lane 82.7/117 (70.7%) vs main
+80.0 (68.4%), below the 80% bar; root-cause classes next. Track: L, LEAD pattern.
 **Lane:** CHAT-STATE, branch `crew/chat-state`. Step 1 of the 16 Oct chatbot scale design
 (`crew/state/reports/CHATBOT-SCALE-DESIGN-16oct.html`, sections 2, 3, 4 rows B/C/G, 8 step 1).
 **Docs:** card `chat-state-behaviour-card.md` (rules R1-R13), UAC `chat-state-acceptance-criteria.md`, coder-facing
