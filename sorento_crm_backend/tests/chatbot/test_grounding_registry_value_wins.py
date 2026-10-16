@@ -391,3 +391,66 @@ def test_stu_a_spec_entity_that_is_not_a_correction_leaves_the_typed_word_said_b
     word = "pnk" if "pnk" in message else "undrmount"
     out = _ground(vdb, message, _e(raw, "category"), spec)
     assert ("specification", word, "", None) in _shape(out), out
+
+
+# --------------------------------------------------------------------------- #
+# Round 7: a spec W3 dropped (a carried entity) can account for the class typo     #
+# --------------------------------------------------------------------------- #
+
+
+def _carried_under_counter() -> dict[str, Any]:
+    return {**_spec_entity("under counter", "mounting", "under_counter"), "current_message": False}
+
+
+def _ground_carried(db, message, entities, carried):
+    from app.services.chatbot.head.grounding import ground
+
+    verdict, _notes = ground(db, _verdict(*entities), message=message, carried_specs=carried)
+    return verdict
+
+
+def test_v_a_dropped_carried_spec_accounts_for_the_one_typed_word_and_binds(vdb):
+    """Behaviour test: the third parse shape of the owner's probe."""
+    message = "i mean any stock for sorento undrmount basin"
+    out = _ground_carried(vdb, message, [_e("sorento", "brand"), _e("undrmount basin", "category")], [_carried_under_counter()])["entities"]
+    assert any(e["hint"] == "category" and e["raw"] == "basin" for e in out), out
+    assert [(e["spec_key"], e["spec_value"], e["raw"]) for e in _specs(out) if e["spec_key"] == "mounting"] == [("mounting", "under_counter", "under counter")], out
+    assert "undrmount" not in repr(out), out
+
+
+def test_w_a_carried_spec_that_accounts_for_nothing_changes_nothing(vdb):
+    entities = [_e("basin", "category"), _e("pink", "specification", spec_key="finish", spec_value=None)]
+    message = "any pnk basin"
+    baseline = _ground(vdb, message, *entities)
+    carried = _ground_carried(vdb, message, entities, [_carried_under_counter()])
+    assert carried == baseline, (carried, baseline)
+    assert not [e for e in carried["entities"] if e.get("spec_key") == "mounting"], carried
+
+
+def test_x_no_unheard_word_means_the_dropped_spec_is_not_added(vdb):
+    entities = [_e("basin", "category")]
+    baseline = _ground(vdb, "any basin", *entities)
+    carried = _ground_carried(vdb, "any basin", entities, [_carried_under_counter()])
+    assert carried == baseline, (carried, baseline)
+
+
+def test_y_two_unheard_words_take_mains_path_whatever_was_carried(vdb):
+    entities = [_e("undrmount pnk basin", "category")]
+    message = "any undrmount pnk basin"
+    baseline = _ground(vdb, message, *entities)
+    carried = _ground_carried(vdb, message, entities, [_carried_under_counter()])
+    assert carried == baseline, (carried, baseline)
+    shape = _shape(carried)
+    assert ("specification", "undrmount", "", None) in shape and ("specification", "pnk", "", None) in shape, shape
+
+
+def test_z_dropped_set_specs_is_exactly_what_w3_removed(vdb):
+    from app.services.chatbot.turn_runtime import dropped_set_specs, with_new_set_words
+
+    carried = _carried_under_counter()
+    before = {"entities": [_e("sorento", "brand"), _e("undrmount basin", "category"), carried]}
+    after = with_new_set_words(before)
+    assert carried not in after["entities"], after
+    assert dropped_set_specs(before, after) == [carried]
+    untouched = {"entities": [_e("undrmount basin", "category"), _e("under counter", "specification", spec_key="mounting", spec_value="under_counter")]}
+    assert dropped_set_specs(untouched, with_new_set_words(untouched)) == []
