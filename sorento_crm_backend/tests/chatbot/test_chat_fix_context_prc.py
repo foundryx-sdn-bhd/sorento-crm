@@ -61,7 +61,8 @@ def _layers(*, vocabulary: bool = True, subject: str | None = "product SRTWC286-
         profile_facts=None, summaries=None, earlier_messages=None,
         previous_response=previous,
         current_subject=subject,
-        pending_kind=pending.kind if pending else None,
+        # mirrors engine.py: no waiting line when the open question owes nothing
+        pending_kind=pending.kind if pending and oq and oq["owed"] else None,
         pending_options=[o["label"] for o in pending.options] if pending else None,
         settings_profile_line=None,
         current_message=message, reply_to=None, media_line=None,
