@@ -147,13 +147,14 @@ def test_ac8_bare_number_vs_typed_code() -> None:
     assert "A CODE OR NAME FROM THE LIST IS ITS POSITION" in out
     assert "reference_positions AND the code or name in entities as usual" in out
     start = out.index("A CODE OR NAME FROM THE LIST IS ITS POSITION")
-    section = out[start : out.index("\n== ", start + 10)].lower()
+    raw_section = out[start : out.index("\n== ", start + 10)]
+    section = raw_section.lower()
     assert "bare number" in section
     assert "reference_positions" in section
     assert (
         "A bare number reply (no code or name typed) gives reference_positions only "
         "and never also copies the picked option into entities."
-    ) in out
+    ) in raw_section
 
 
 # ---- AC9 ----
