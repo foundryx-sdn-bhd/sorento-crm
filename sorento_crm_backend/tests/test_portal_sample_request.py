@@ -262,13 +262,13 @@ def test_ac_sr_41_list_only_shows_own_requests(portal):
 
 def test_ac_sr_54_portal_list_rows_carry_no_phone_or_address(portal):
     """AC-SR-54: portal list rows never carry the personal-data keys; detail does."""
-    d = _create(portal, site_contact_phone="+60111222333", ship_to_address="9 Jalan Zzt")
+    d = _create(portal, site_contact_phone="+60100000001", ship_to_address="9 Jalan Zzt")
     c = _as(portal, portal.granted)
     res = c.get(BASE)
-    assert "+60111222333" not in res.text and "Jalan Zzt" not in res.text
+    assert "+60100000001" not in res.text and "Jalan Zzt" not in res.text
     for row in res.json()["data"]:
         assert "site_contact_phone" not in row and "ship_to_address" not in row
-    assert c.get(f"{BASE}/{d['id']}").json()["site_contact_phone"] == "+60111222333"
+    assert c.get(f"{BASE}/{d['id']}").json()["site_contact_phone"] == "+60100000001"
 
 
 # ------------------------------------------------------------------ AC-SR-42
