@@ -1,6 +1,6 @@
 # CARD: contact tags + tag access settings (CONTACT-TAGS, 16 Oct)
 
-Status: filed to owner 16 Oct, awaiting answers Q1-Q5. Facts measured on origin/main 68e0e036 and the
+Status: owner answered 16 Oct ~11:30 (rulings below). Mock v1 feedback: tidy the filter row. Mock v2 next. Facts measured on origin/main 68e0e036 and the
 dev copy `sorento_cagent_stack` (read-only, 104 contacts). Phones masked to last 3 digits.
 
 ## What exists today
@@ -94,3 +94,16 @@ Recommend (a): same rule the stock policy already uses across access types
 untick to only label.
 (b) Tagging only labels; the contact shows Differs until "Apply tag settings" is run.
 Recommend (a): one action instead of two, and the preview still shows every change before it writes.
+
+## Owner rulings (16 Oct ~11:30, verbatim: "1 tag, 2 a, 3 everything, 4 a, 5 a i can choose to apply or not apply, and I can indiciually apply also after selecting not apply, like got an action to apply")
+
+- Q1 (a): new tag list; market segments untouched.
+- Q2 (a): settings stored on the tag; apply with preview; no live link.
+- Q3 EVERYTHING: a tag may carry every per-contact setting, incl. access types, brands, companies,
+  regions, tier. Any item that makes no sense on a tag (e.g. linked customers) is flagged in the mock,
+  never dropped silently.
+- Q4 (a): most restrictive wins.
+- Q5 (a) with a choice: the tag dialog offers apply / don't apply; after "don't apply" the owner can apply
+  later per contact and for selected contacts via an "Apply tag settings" action.
+- Mock v1: filter row "too messy": a few primary filters + "More filters" (existing component); bulk
+  actions under the Actions dropdown (CONTACT-ACTIONS-COPY #1732 builds it).

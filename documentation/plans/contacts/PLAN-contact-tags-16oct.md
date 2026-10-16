@@ -1,6 +1,6 @@
 # PLAN: contact tags + tag access settings (CONTACT-TAGS, 16 Oct)
 
-Status: Plan - card + mock v1 filed to owner 16 Oct, awaiting answers; UAC drafted on recommended answers. Track: full (size L: migration, access writes, new list surface). No code yet.
+Status: Plan - owner answered card 16 Oct; mock v2 filed (filters tidy, every setting on a tag), awaiting owner OK; UAC v2 drafted. Track: full (size L: migration, access writes, new list surface). No code yet.
 
 Lane: `crew/contact-tags`. Rebases on CONTACT-ACTIONS-COPY (branch `claude/contact-actions-copy-ufwe9b`) once it lands.
 
@@ -36,7 +36,8 @@ inquiry, no purchase request"); cannot cross-check who has what.
 
 ## Decision log
 
-(filled from owner answers)
+- 16 Oct owner: Q1a, Q2a, Q3 everything (flag nonsense items), Q4a, Q5a with apply / don't apply
+  choice + later per-contact and bulk "Apply tag settings". Filters: primary + More filters. See card.
 
 ## Phases
 

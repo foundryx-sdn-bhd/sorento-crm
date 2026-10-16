@@ -1,18 +1,42 @@
 # UAC contact-tags-16oct
 
-Status: DRAFT on the card's recommended answers (Q1a Q2a Q3 Q4a Q5a); revised when the owner answers.
-Card: `CARD-contact-tags-16oct.md`. Mock: `documentation/mockups/CONTACT-TAGS/index.html`.
+Status: DRAFT v2 on owner rulings 16 Oct (Q1a, Q2a, Q3 everything, Q4a, Q5a with apply / don't apply).
+Card: `CARD-contact-tags-16oct.md`. Mock: `documentation/mockups/CONTACT-TAGS/index.html` (v2 pending owner).
 
-"Tag setting" below = one of: a portal form kind On/Off (complaint, stock_inquiry, purchase_request,
-sponsorship_form, price_tag_request, sales_opportunity, conversation, customer_asks); a contact switch
-On/Off (AI replies `chatbot_allowed`, stock checks, escalation, packing list, notify salesman); cost
-visible (`purchase_orders.cost` reveal); a chatbot agent Allow/Deny; image access On/Off; voice note
-access On/Off. A tag stores only the settings ticked on it ("set"); every other setting is "not set".
+"Tag setting" = any per-contact setting below. A tag stores only the settings switched on for it ("set");
+every other setting is "not set" and never touched by apply.
 
-"Expected value" of a setting for a contact = the value set by its tags; when two of its tags set
-different values, the restrictive one wins (Off / Hidden / Deny), and the result names that tag.
-"Current value" = what the runtime reads today for that contact (portal form visibility resolver,
-the contact row, the reveal row, the agent grant, the media limit row).
+| Setting | Stored in | Merge across tags (most restrictive) |
+|---|---|---|
+| Access types | `respond_contact_access_types` | intersection |
+| Brands | `respond_contacts.brand_ids` (empty = all) | intersection of non-empty sets |
+| Companies | `respond_contact_companies` (admin only) | intersection |
+| Market segments | `respond_contact_market_segments` | intersection |
+| Regions | `respond_contacts.regions` (at least one) | intersection; empty = conflict |
+| AI replies, stock checks, escalation, packing list, notify salesman | `respond_contacts` columns | Off wins |
+| ETA buffer | `chatbot_eta_offset_applied` | On wins |
+| Skip period questions, files as links | `respond_contacts` columns | no order: conflict |
+| Memory level | `chatbot_memory_level` | lowest wins |
+| Tier | `chatbot_profile.tier` | Office loses to Dealer / End user; Dealer vs End user = conflict |
+| Portal forms (8 kinds) | `contact_portal_form_overrides` | Off wins |
+| Requires registered project | `respond_contacts.requires_registered_project` | On wins |
+| Field reveals (incl. cost) | `contact_field_reveals` | Hidden wins |
+| Chatbot agents (allow / deny) | `contact_agent_access` | Deny wins |
+| Agent field access | `agent_field_access` (contact rows) | Deny wins |
+| Image / voice access, monthly limit, clip length, languages | `contact_media_limit` | Off wins; lowest limit; languages intersection |
+| Attachment types | `contact_attachment_types` | intersection |
+| Stock visibility | `stock_visibility_policies` (contact row) | existing resolver rule (`stock_visibility.py:159-200`) |
+| Spec visibility | `spec_visibility_policies` (contact row) | show intersection, hide union |
+| Messaging (outbound) | `respond_contacts.outbound_enabled` | Off wins |
+
+Never on a tag (identity or per person): linked customers, linked staff user, linked sales agent, CS
+routing, memory facts, language, default ledgers, agent grant dates, media usage counters, session vars,
+phone / name / workspace / portal slug.
+
+"Expected value" of a setting for a contact = the merge of the values its tags set. A "conflict" (no
+stricter value exists, or the merge is empty where empty is not allowed) is never applied: the preview and
+the list name it as Conflict with the tags involved. "Current value" = what the runtime reads today for
+that contact.
 
 ## T1 Tag list (catalog)
 - T1.1 `GET /api/v1/user-management/contact-tags` lists tags with name, description, active, sort order,
@@ -27,6 +51,8 @@ the contact row, the reveal row, the agent grant, the media limit row).
 ## T2 Tagging contacts
 - T2.1 `POST /api/v1/user-management/contacts/bulk-tags` `{contact_ids, add_tag_ids, remove_tag_ids,
   apply_settings, dry_run}`; max 500 contacts (422 above); needs `user_management.contacts.edit`.
+  `apply_settings` is the owner's explicit choice in the dialog ("Apply tag settings now" / "Don't apply
+  now"); with "Don't apply now" no setting is written.
 - T2.2 `dry_run: true` writes nothing and returns, per contact, tags before/after and (when
   `apply_settings`) the setting changes apply would make.
 - T2.3 `dry_run: false` adds/removes tags; with `apply_settings: true` it also writes the expected
@@ -37,18 +63,21 @@ the contact row, the reveal row, the agent grant, the media limit row).
   asked).
 
 ## T3 Apply tag settings
-- T3.1 `POST /api/v1/user-management/contacts/bulk-apply-tag-settings` `{contact_ids, dry_run}` and
+- T3.1 `POST /api/v1/user-management/contacts/bulk-apply-tag-settings` `{contact_ids, dry_run}` (bulk
+  Actions, the row "..." menu and the contact detail Tags section all call it; one id for a single contact) and
   `POST /api/v1/user-management/contact-tags/{id}/apply` `{dry_run}` (every holder of that tag) answer one
   row per contact: changed / unchanged / skipped / failed, with change rows (setting label, before,
   after, deciding tag). No ids in labels.
 - T3.2 `dry_run: true` writes nothing.
-- T3.3 `dry_run: false` makes every set setting's current value equal its expected value, and touches
-  nothing else: not-set settings, access types, brands, customers, companies, segments, regions, tier,
-  stock override, memory are unchanged.
+- T3.3 `dry_run: false` makes every set setting's current value equal its expected value (set-valued
+  settings are replaced exactly, removals shown red), and touches nothing else: not-set settings and every
+  "never on a tag" item are unchanged.
 - T3.4 A contact with two tags that disagree gets the restrictive value; the change row names the tag
-  that decided.
-- T3.5 A setting the actor may not write (agents need `user_management.access_agents.edit`) is skipped
-  and listed as not applied; the rest still apply.
+  that decided. A conflict is not applied and is listed as Conflict with the tags involved.
+- T3.5 A setting the actor may not write is skipped and listed as not applied; the rest still apply.
+  Gates match the contact page: agents and agent field access need `user_management.access_agents.edit`,
+  stock visibility needs `inventory.stock.edit`, companies need superadmin; the same gates apply to
+  setting them on a tag.
 - T3.6 Per-contact transaction: one contact's write failure answers `failed` for it and leaves its
   values untouched; the others apply.
 - T3.7 Portal form apply writes a `contact_portal_form_overrides` row only where the resolved form
@@ -58,7 +87,8 @@ the contact row, the reveal row, the agent grant, the media limit row).
 
 ## T4 Cross-check (list)
 - T4.1 Contacts list rows carry `tags` (names) and `tag_settings` = `matches` | `differs` | `none`
-  (no tag sets anything), plus the differing settings (label, current, expected, deciding tag).
+  (no tag sets anything), plus the differing settings (label, current, expected, deciding tag) and
+  conflicts. A conflict alone counts as `differs`.
 - T4.2 Filters: `tag=<id>` (one or several, any-of), `tags=none`, `tag_settings=differs|matches`;
   each combines with the existing filters.
 - T4.3 A hand edit after apply makes the contact show `differs` naming that setting.
@@ -73,10 +103,14 @@ the contact row, the reveal row, the agent grant, the media limit row).
   Off (agents Not set / Allow / Deny); Contacts section; header CTA "Apply to N contacts" opens the
   preview; prev/next navigation; empty states heading + hint.
 - T5.3 Contacts list: Tags column (pills with +N), Tag settings column (Matches / Differs: n with the
-  settings named on hover), Tag + Tag settings filters, No tags checkbox; bulk Actions gets Add tag,
-  Remove tag, Apply tag settings.
-- T5.4 Add tag dialog: pick tag(s), then preview with "Apply tag settings too" ticked; untick = labels
-  only. Every failure ends in a visible error with the dialog still usable.
+  settings named on hover); toolbar shows search, Tag and Tag settings as primary filters and every other
+  filter (incl. No customers linked, No tags) inside the toolbar "Filters" popover with a count and active
+  chips (`components/ui/data-grid-list-toolbar.tsx` filters kind custom); bulk Actions dropdown gets Add
+  tag, Remove tag, Apply tag settings; row "..." menu gets Apply tag settings.
+- T5.4 Add tag dialog: pick tag(s), then choose "Apply tag settings now" (preview shown) or "Don't apply
+  now". Every failure ends in a visible error with the dialog still usable.
+- T5.6 Contact detail page: Tags section lists the contact's tags, every differing setting and conflict,
+  and an "Apply tag settings" action with preview.
 - T5.5 Usable and not clipped at 375px and 1280px.
 
 ## T6 Migration
