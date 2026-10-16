@@ -47,25 +47,17 @@ async def get_products_select(
     """
     try:
         with widen_if_requested(db, request, current_user, company_scope):
-            from sqlalchemy import func, or_
+            from sqlalchemy import or_
             q = db.query(Product).filter(Product.is_active == True)
 
             if query:
                 needle = f"%{query.strip()}%"
-                clauses = [
-                    Product.product_code.ilike(needle),
-                    Product.product_name.ilike(needle),
-                ]
-                # Dash, space and case blind code match (SR-CORE AC-SR-11): "tpe9101" finds
-                # "TPE-9101". It only widens the hits, so every existing caller keeps its results.
-                folded = "".join(ch for ch in query if ch.isalnum()).upper()
-                if folded:
-                    clauses.append(
-                        func.upper(
-                            func.regexp_replace(Product.product_code, "[^A-Za-z0-9]", "", "g")
-                        ).like(f"%{folded}%")
+                q = q.filter(
+                    or_(
+                        Product.product_code.ilike(needle),
+                        Product.product_name.ilike(needle)
                     )
-                q = q.filter(or_(*clauses))
+                )
 
             if category_id:
                 # Narrowing by category is what turns a 22,000-product dropdown
