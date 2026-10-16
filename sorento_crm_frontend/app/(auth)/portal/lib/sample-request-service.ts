@@ -41,6 +41,20 @@ async function unwrapNamingField<T>(res: Response, fallback: string): Promise<T>
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
+/** A debtor the contact may pick: exactly the set submit accepts (their agent's book). */
+export interface SampleRequestCustomerHit {
+  customer_id: string;
+  customer_code: string;
+  debtor_name: string;
+}
+
+export async function lookupSampleRequestCustomers(q: string): Promise<SampleRequestCustomerHit[]> {
+  const res = await portalFetch(
+    `/api/v1/public/portal/sample-request/customers?q=${encodeURIComponent(q)}`,
+  );
+  return unwrapNamingField<SampleRequestCustomerHit[]>(res, 'Failed to load customers');
+}
+
 export async function searchSampleRequestProducts(
   q: string,
 ): Promise<SampleRequestProductHit[]> {

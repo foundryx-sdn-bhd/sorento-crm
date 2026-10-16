@@ -255,18 +255,31 @@ def assert_portal_project_allowed(db: Session, *, contact, project_id: Optional[
         )
 
 
-def assert_portal_customer_allowed(db: Session, *, contact_id: str, customer_id: Optional[str]) -> None:
-    """A debtor picked in the portal must be one of the contact's `debtors-for-agent` (the
-    same set the picker lists); anything else is refused. A typed name needs no check."""
-    if not customer_id:
-        return
+def portal_customers(db: Session, contact_id: str, q: str = "") -> List[Dict[str, Any]]:
+    """The debtors a portal contact may pick: their `debtors-for-agent` that carry a customer
+    id. The portal picker lists exactly this and `assert_portal_customer_allowed` accepts
+    exactly this, so a picked debtor can never be refused on submit."""
     from app.services.price_tag_request_service import PriceTagRequestService
 
-    allowed = {
-        str(d["customer_id"])
-        for d in PriceTagRequestService.lookup_debtors_for_agent(db, str(contact_id))
-        if d.get("customer_id")
-    }
+    needle = (q or "").strip().lower()
+    rows = []
+    for d in PriceTagRequestService.lookup_debtors_for_agent(db, str(contact_id)):
+        if not d.get("customer_id"):
+            continue
+        code = d.get("customer_code") or d.get("debtor_code") or ""
+        name = d.get("customer_name") or d.get("debtor_name") or ""
+        if needle and needle not in code.lower() and needle not in name.lower():
+            continue
+        rows.append({"customer_id": str(d["customer_id"]), "customer_code": code, "debtor_name": name})
+    return rows
+
+
+def assert_portal_customer_allowed(db: Session, *, contact_id: str, customer_id: Optional[str]) -> None:
+    """A debtor picked in the portal must be one of `portal_customers` (the set the picker
+    lists); anything else is refused. A typed name needs no check."""
+    if not customer_id:
+        return
+    allowed = {row["customer_id"] for row in portal_customers(db, contact_id)}
     if str(customer_id) not in allowed:
         raise AppException(
             status_code=422,

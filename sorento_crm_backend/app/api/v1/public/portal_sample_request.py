@@ -63,6 +63,16 @@ def portal_search_products(
         return svc.search_products(db, q)
 
 
+@router.get("/sample-request/customers")
+def portal_search_customers(
+    q: str = Query(""),
+    token: PortalToken = Depends(get_portal_token),
+    db: Session = Depends(get_db),
+):
+    _assert_visible(db, token.contact_id)
+    return svc.portal_customers(db, str(token.contact_id), q)
+
+
 @router.get("/submissions/sample_request")
 def portal_list(
     q: Optional[str] = Query(None),

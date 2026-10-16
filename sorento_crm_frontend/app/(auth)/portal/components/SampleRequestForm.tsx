@@ -34,14 +34,11 @@ import {
 import { cn } from '@/lib/utils';
 import { SampleRequestError, type SampleRequestDetail } from '@/types/sampleRequest';
 import { portalBase } from '../lib/portal-paths';
-import {
-  lookupDebtors,
-  lookupProjects,
-  type DebtorLookupItem,
-  type ProjectLookupItem,
-} from '../lib/portal-client';
+import { lookupProjects, type ProjectLookupItem } from '../lib/portal-client';
 import {
   cancelSampleRequest,
+  lookupSampleRequestCustomers,
+  type SampleRequestCustomerHit,
   createSampleRequest,
   downloadSampleRequestPdf,
   getSampleRequest,
@@ -259,7 +256,7 @@ export default function SampleRequestForm({
                 className="sm:col-span-2"
                 error={errors.customer_id}
               >
-                <AsyncCombobox<DebtorLookupItem>
+                <AsyncCombobox<SampleRequestCustomerHit>
                   id="sr-customer"
                   disabled={readOnly}
                   value={state.customer_id ? state.customer_label : state.customer_name}
@@ -274,7 +271,7 @@ export default function SampleRequestForm({
                       patch({ customer_id: '', customer_label: '', customer_name: v });
                     }
                   }}
-                  fetchOptions={(q) => lookupDebtors(q)}
+                  fetchOptions={(q) => lookupSampleRequestCustomers(q)}
                   optionValue={(o) => o.debtor_name}
                   optionLabel={(o) => o.debtor_name}
                   optionMeta={(o) => o.customer_code}

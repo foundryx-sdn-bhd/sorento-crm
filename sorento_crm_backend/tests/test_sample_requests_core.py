@@ -337,6 +337,10 @@ def test_ac_sr_03_removed_keys_are_not_in_the_detail(world):
             assert "alt_product_id" not in line, sorted(line)
             assert "alt_product_code" not in line, sorted(line)
             assert "alt_product_name" not in line, sorted(line)
+    rows = world.api.as_(world.sales).get(SR, params={"status": "draft"}).json()["data"]
+    row = next(r for r in rows if r["id"] == d["id"])
+    for key in ("quotation_version_id", "deliver_immediately"):
+        assert key not in row, sorted(row)
 
 
 # ------------------------------------------------------------------ AC-SR-04
