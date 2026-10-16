@@ -56,6 +56,9 @@ def _mapped_classes():
 # type at birth and are pinned by their own test below, not by the rename contract.
 BORN_AFTER_THE_MOVE = frozenset({
     "so_supply_decisions",
+    # OI-LINE-SPLIT (migration ols_0001_so_line_splits): the delivery splits staff plan for one
+    # SO line, born straight into `projects` beside `sales_order_lines`.
+    "so_line_splits",
     # PLAN-so-book-diff-replanning.md (migration 29d85dc3ccc3), same reason as above.
     "planning_change_batches",
     "planning_change_rows",
