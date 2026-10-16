@@ -405,7 +405,8 @@ def test_w2_a_count_after_a_listed_page_continues_the_same_set(chat, world, smal
     head = "Here's what you want: P trap water closets with stock (6"
     assert one_line_header(page1) == f"{head}, showing 4 to 5)", page1
     assert [b[0].split(".")[0] for b in _blocks(page1)] == ["4", "5"], page1
-    assert one_line_header(page2) == f"{head})", page2
+    # SET-STOCK-RENDER (SSR-14): a continuation page says its range, the last page too.
+    assert one_line_header(page2) == f"{head}, showing 6 to 6)", page2
     assert "Stock summary for the requested products" not in page2, page2
     assert [b[0].split(".")[0] for b in _blocks(page2)] == ["6"], page2
     zero, one, two = _listed(ask), _listed(page1), _listed(page2)
@@ -434,7 +435,8 @@ def test_w2_the_owner_sequence_30_then_10_lists_31_to_40(chat, world, monkeypatc
     # SET-STOCK-RENDER (SSR-5/6): the ask lists 1 to 3, "3" lists 4 to 6 (all shown, bare
     # count), and "10" has nothing left.
     first3 = chat.say("3", _bare(top_n=3))
-    assert one_line_header(first3).endswith("P trap water closets with stock (6)"), first3
+    # SET-STOCK-RENDER (SSR-14): a continuation page says its range, the last page too.
+    assert one_line_header(first3).endswith("P trap water closets with stock (6, showing 4 to 6)"), first3
     assert len(_blocks(first3)) == 3, first3
     page = chat.say("10", _bare(top_n=10))
     assert one_line_header(page).endswith("P trap water closets with stock (6). That is all 6."), page

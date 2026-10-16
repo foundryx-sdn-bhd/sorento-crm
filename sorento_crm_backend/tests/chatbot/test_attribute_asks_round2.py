@@ -440,7 +440,8 @@ def test_w4_a_bare_count_after_the_count_question_keeps_the_brand_set(chat, worl
 
     # The last 2 of the 5: every product now shown, so the count is bare.
     first = one_line_header(page)
-    assert first == f"Here's what you want: {_display(brand)} wash basins with stock (5)", page
+    # SET-STOCK-RENDER (SSR-14): a continuation page says its range, the last page too.
+    assert first == f"Here's what you want: {_display(brand)} wash basins with stock (5, showing 4 to 5)", page
     listed = _listed(page, world)
     assert len(listed) == 2 and set(listed) <= _codes(world["srt_basins"][:3] + world["srt_wall"]), page
     assert not set(listed) & set(_listed(ask, world)), (ask, page)
@@ -467,7 +468,8 @@ def test_w4_another_n_continues_from_where_the_list_stopped(chat, world, small_l
     page2 = chat.say("can give another 2?", _bare(top_n=parser_top_n))
 
     first = one_line_header(page2)
-    assert first == f"Here's what you want: {_display(brand)} wash basins with stock (5)", page2
+    # SET-STOCK-RENDER (SSR-14): a continuation page says its range, the last page too.
+    assert first == f"Here's what you want: {_display(brand)} wash basins with stock (5, showing 4 to 5)", page2
     # The rows are numbered where the list stands, 4 and 5, not 1 and 2 again.
     assert [ln.split(".")[0] for ln in page2.splitlines()[1:] if re.match(r"^\d+\. ", ln)] == ["4", "5"], page2
     one, two = _listed(page1, world), _listed(page2, world)

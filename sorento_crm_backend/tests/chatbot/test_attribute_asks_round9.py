@@ -213,9 +213,10 @@ def test_turns3_and_4_pink_water_closet_breaks_the_water_closets_down_by_finish(
     # "pink" (`_v3`, spk_0002); grounding reads the customer's own word back
     # (`grounding._as_typed`). Turn 4 typed "pink" and is unchanged.
     said, other = ("pnk", "pink") if turn == "pnk" else ("pink", "pnk")
-    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the word is listed.
-    assert lines[0].startswith("Here's what you want: "), text
+    # SET-STOCK-RENDER (SSR-7): the typed header, no breakdown line, no rows, then the miss line.
+    assert lines[0] == f"Here's what you want: {said} water closets", text
     assert not [ln for ln in lines if ln.startswith("• ")], text
+    assert "*Product Code:*" not in text, text
     assert f"Couldn't find: {said} (finish or colour). Would you like me to escalate to" in text, text
     assert other not in text, text
     _plain(text, world)
@@ -279,8 +280,9 @@ def test_the_five_turns_in_order(chat, world):
     assert replies[0].endswith("But no incoming matched these. Would you like me to escalate to purchasing team?"), replies[0]
     assert replies[1].startswith("Here's what you want: gunmetal wash basins with certificates (2)"), replies[1]
     # Amended to fix round 10 on PR #833: turn 3 says "pnk" as typed.
-    # SET-STOCK-RENDER (SSR-7): no breakdown lines under either.
-    assert replies[2].startswith("Here's what you want: ") and "• " not in replies[2], replies[2]
-    assert replies[3].startswith("Here's what you want: ") and "• " not in replies[3], replies[3]
+    # SET-STOCK-RENDER (SSR-7): the typed header, no breakdown line, no rows under either.
+    assert replies[2].split("\n", 1)[0] == "Here's what you want: pnk water closets", replies[2]
+    assert replies[3].split("\n", 1)[0] == "Here's what you want: pink water closets", replies[3]
+    assert "• " not in replies[2] + replies[3] and "*Product Code:*" not in replies[2] + replies[3], replies
     assert replies[4].startswith("Here's what you want: kitchen sinks with thickness 1.2 mm (2)"), replies[4]
     assert _codes(replies[4], world) == {p.product_code for p in world["thick12"]}, replies[4]

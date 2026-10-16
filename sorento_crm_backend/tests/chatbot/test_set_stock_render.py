@@ -115,6 +115,12 @@ def _stock_tool(db, calls: list[dict[str, Any]]):
             return json.dumps({"items": [], "has_result": False})
         scope = getattr(db, "_ssr_scope", None) or frozenset({DEFAULT_COMPANY_ID})
         set_company_scope(db, scope)
+        # The request-entry scope a contact call gets in production: its brand allow-list.
+        from app.models.base import set_brand_scope
+        from app.services.contact_brand_scope import contact_brand_scope
+
+        if args.get("contact_id"):
+            set_brand_scope(db, contact_brand_scope(db, str(args["contact_id"]), args.get("space_id")))
         result = get_stock_balance(
             **_route_kwargs(get_stock_balance, args), current_user={"id": str(uuid.uuid4())}, db=db
         )
@@ -547,72 +553,184 @@ def test_ssr_10_code_answer_still_prints_empty_locations(
     assert sorted(_on_hand_lines(reply)) == [0, 8], reply
 
 
-def test_ssr_11_same_code_in_two_companies_lists_both_rows_counts_once(
-    session_factory, monkeypatch, stub_parser, stub_access, world
-):
-    """SSR-11: one product code in two companies, both qualifying: both companies' rows are
-    listed (as the code answer does) and the header counts the code once."""
-    from sqlalchemy import text as sa_text
-
+def _add_mocha_twin(world: World, twin, *, brand_id, on_hand: int = 9):
+    """The same product code as `twin` in the Mocha company, with its own warehouse and stock.
+    Call AFTER every Sorento-company row is seeded (a two-company scope refuses an unstamped
+    insert). Returns the Mocha-company product."""
     from app.models.base import set_company_scope
     from app.models.company import Company
     from app.models.inventory import Stock, Warehouse
     from app.models.product import Product
     from app.services.company_scope import DEFAULT_COMPANY_ID
+    from app.services.product_spec_derivation import derive_for_code
     from tests._mc_lookup_seed import MOCHA_ID
 
     db = world.db
-    twin = world.basin(world.sorento, "ZZTW", 6)
-    world.basin(world.sorento, "ZZTX", 4)
     if not db.query(Company).filter(Company.id == MOCHA_ID).first():
         db.add(Company(id=MOCHA_ID, name="Mocha", code=f"MCH{uuid.uuid4().hex[:5]}"))
         db.flush()
     set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
-    mocha_wh = Warehouse(
+    wh = Warehouse(
         id=str(uuid.uuid4()), warehouse_code=f"ZZMW{uuid.uuid4().hex[:4]}", warehouse_name="ZZT Mocha WH",
         is_active=True, company_id=MOCHA_ID,
     )
-    db.add(mocha_wh)
+    db.add(wh)
     db.flush()
-    twin_mocha = Product(
+    row = Product(
         id=str(uuid.uuid4()), product_code=twin.product_code, product_name=twin.product_name,
         description=twin.description, category_id=twin.category_id, base_uom_id=twin.base_uom_id,
-        brand_id=twin.brand_id, list_price=10, is_active=True, company_id=MOCHA_ID,
+        brand_id=brand_id, list_price=10, is_active=True, company_id=MOCHA_ID,
     )
-    db.add(twin_mocha)
+    db.add(row)
     db.flush()
-    from app.services.product_spec_derivation import derive_for_code
-
     derive_for_code(db, twin.product_code)
     db.add(
         Stock(
-            id=str(uuid.uuid4()), product_id=twin_mocha.id, warehouse_id=mocha_wh.id,
-            quantity_on_hand=9, quantity_reserved=0, company_id=MOCHA_ID,
+            id=str(uuid.uuid4()), product_id=row.id, warehouse_id=wh.id,
+            quantity_on_hand=on_hand, quantity_reserved=0, company_id=MOCHA_ID,
         )
     )
     db.flush()
     world.commit()
     db._ssr_scope = frozenset({DEFAULT_COMPANY_ID, MOCHA_ID})
+    return row
+
+
+def _dual_chat(session_factory, monkeypatch, stub_parser, stub_access, world, *, brand_scope=None):
+    """A detailed-policy contact linked to both companies (and, when given, scoped to brands)."""
+    from sqlalchemy import text as sa_text
+
+    from tests._mc_lookup_seed import MOCHA_ID
+
     chat = make_chat(session_factory, monkeypatch, stub_parser, stub_access, world, mode="detailed")
-    internal = session_factory().execute(
+    s = session_factory()
+    internal = s.execute(
         sa_text("SELECT id FROM respond_contacts WHERE respond_io_id = :c"), {"c": chat.contact_id}
     ).scalar()
-    s = session_factory()
     s.execute(
         sa_text("INSERT INTO respond_contact_companies (id, respond_contact_id, company_id) VALUES (gen_random_uuid(), :r, :c)"),
         {"r": internal, "c": MOCHA_ID},
     )
+    if brand_scope:
+        s.execute(
+            sa_text("UPDATE respond_contacts SET brand_ids = CAST(:b AS uuid[]) WHERE id = :r"),
+            {"b": "{" + ",".join(brand_scope) + "}", "r": internal},
+        )
     s.commit()
+    return chat
+
+
+def test_ssr_11_same_code_in_two_companies_lists_both_rows_counts_once(
+    session_factory, monkeypatch, stub_parser, stub_access, world
+):
+    """SSR-11: one product code in two companies, both qualifying: both companies' rows are
+    listed (as the code answer does) and the header counts the code once."""
+    twin = world.basin(world.sorento, "ZZTW", 6)
+    world.basin(world.sorento, "ZZTX", 4)
+    _add_mocha_twin(world, twin, brand_id=twin.brand_id)
+    chat = _dual_chat(session_factory, monkeypatch, stub_parser, stub_access, world)
 
     reply = chat.say("any wash basin has stock", _set_ask())
 
-    twin_blocks = [
-        ln for ln in reply.split("\n") if ln.endswith(f"*Product Code:* {twin.product_code}")
-    ]
+    twin_blocks = [ln for ln in reply.split("\n") if ln.endswith(f"*Product Code:* {twin.product_code}")]
     assert len(twin_blocks) == 2, reply
     assert one_line_header(reply) == "Here's what you want: wash basins with stock (2)", reply
     assert sorted(_on_hand_lines(reply)) == [4, 6, 9], reply
     _clean(reply)
+
+
+def _twin_world(world: World, *, other_brand_code: bool = False):
+    """Codes A (twin in the Mocha company), B, C, D, all Sorento brand, in code order; with
+    `other_brand_code` one more code of the Mocha brand."""
+    if other_brand_code:
+        world.basin(world.mocha, "ZZB9", 3)
+    a = world.basin(world.sorento, "ZZA0", 6)
+    rest = [world.basin(world.sorento, f"ZZA{i}", 4) for i in (1, 2, 3)]
+    _add_mocha_twin(world, a, brand_id=a.brand_id)
+    return a, rest
+
+
+def test_ssr_11b_next_page_after_a_twin_starts_at_the_next_code(
+    session_factory, monkeypatch, stub_parser, stub_access, world
+):
+    """SSR-11 + SSR-14: with a list limit of 3, the first page holds A, its twin A' and B
+    ("(4, showing 1 to 3)"); the next page starts at the next CODE: no code repeated or
+    skipped across the pages."""
+    from app.services.chatbot.lanes.business import answer as answer_mod
+    from tests.chatbot.test_attribute_asks_round3 import _bare
+
+    monkeypatch.setattr(answer_mod, "SET_LIST_MAX", 3)
+    _twin_world(world)
+    chat = _dual_chat(session_factory, monkeypatch, stub_parser, stub_access, world)
+
+    first = chat.say("any wash basin has stock", _set_ask())
+    page = chat.say("3", _bare(top_n=3))
+
+    assert one_line_header(first).endswith("(4, showing 1 to 3)"), first
+    shown_first, shown_page = _codes_shown(first), _codes_shown(page)
+    assert len(shown_first) == 3, first
+    assert not set(shown_first) & set(shown_page), ("page repeats a code", shown_first, shown_page)
+    assert set(shown_first) | set(shown_page) == world.codes, (shown_first, shown_page)
+
+
+def test_ssr_11b_brand_follow_up_over_a_set_with_twins_lists_every_code_of_the_brand(
+    session_factory, monkeypatch, stub_parser, stub_access, world
+):
+    """SSR-11 + SSR-12: the brand word after a set whose codes include a twin lists every
+    code of that brand (the twin's rows included), none dropped."""
+    a, rest = _twin_world(world, other_brand_code=True)
+    chat = _dual_chat(session_factory, monkeypatch, stub_parser, stub_access, world)
+    chat.say("any wash basin has stock", _set_ask())
+    brand = world.sorento.brand_name.lower()
+
+    reply = chat.say(
+        brand, _stock_verdict([{"raw": brand, "hint": "brand"}], f"{brand} wash basins with stock", entity_op="reuse")
+    )
+
+    assert set(_codes_shown(reply)) == {a.product_code, *(p.product_code for p in rest)}, reply
+    assert len([ln for ln in reply.split("\n") if ln.endswith(f"*Product Code:* {a.product_code}")]) == 2, reply
+    assert one_line_header(reply).endswith("(4)"), reply
+
+
+def test_ssr_11c_a_brand_scoped_contact_sees_only_the_in_scope_company_row(
+    session_factory, monkeypatch, stub_parser, stub_access, world
+):
+    """SSR-11 scope guard: a dual-company contact scoped to the Sorento brand. The code exists
+    as a Mocha-company row (no brand) and a Sorento-company row branded Mocha (out of scope):
+    the set answer shows ONE block, the Mocha-company row, never two."""
+    out_of_scope = world.basin(world.mocha, "ZZSC", 6)  # Sorento-company row, brand MOCHA
+    _add_mocha_twin(world, out_of_scope, brand_id=None, on_hand=9)
+    chat = _dual_chat(
+        session_factory, monkeypatch, stub_parser, stub_access, world, brand_scope=[world.sorento.id]
+    )
+
+    reply = chat.say("any wash basin has stock", _set_ask())
+
+    blocks = [ln for ln in reply.split("\n") if ln.endswith(f"*Product Code:* {out_of_scope.product_code}")]
+    assert len(blocks) == 1, reply
+    assert _on_hand_lines(reply) == [9], reply
+    _clean(reply)
+
+
+def test_ssr_14_every_continuation_page_says_its_range_including_the_last(
+    session_factory, monkeypatch, stub_parser, stub_access, world
+):
+    """SSR-14: a page after the first says "(<total>, showing X to Y)", the last page too; a
+    bare "(total)" only when the whole set is on one page."""
+    from app.services.chatbot.lanes.business import answer as answer_mod
+    from tests.chatbot.test_attribute_asks_round3 import _bare
+
+    monkeypatch.setattr(answer_mod, "SET_LIST_MAX", 3)
+    for i in range(4):
+        world.basin(world.sorento, f"ZZP{i}", 5)
+    world.commit()
+    chat = make_chat(session_factory, monkeypatch, stub_parser, stub_access, world, mode="detailed")
+
+    first = chat.say("any wash basin has stock", _set_ask())
+    last = chat.say("3", _bare(top_n=3))
+
+    assert one_line_header(first) == "Here's what you want: wash basins with stock (4, showing 1 to 3)", first
+    assert one_line_header(last) == "Here's what you want: wash basins with stock (4, showing 4 to 4)", last
 
 
 # --------------------------------------------------------------------------- #
@@ -628,11 +746,12 @@ def test_ssr_12_brand_word_after_a_listed_set_answers_the_narrowed_set_like_the_
     srt = [world.basin(world.sorento, "ZZFA", 9, 3), world.basin(world.sorento, "ZZFB", 4, 2)]
     world.basin(world.mocha, "ZZFC", 7, 1)
     world.commit()
+    code_chat = make_chat(session_factory, monkeypatch, stub_parser, stub_access, world, mode="detailed")
+    code_reply = code_chat.say("stock for the sorento ones", _code_ask(srt))
     chat = make_chat(session_factory, monkeypatch, stub_parser, stub_access, world, mode="detailed")
     first = chat.say("any wash basin has stock", _set_ask())
     assert one_line_header(first) == "Here's what you want: wash basins with stock (3)", first
     brand = world.sorento.brand_name.lower()
-    code_reply = chat.say("stock for the sorento ones", _code_ask(srt))
 
     second = chat.say(
         brand,

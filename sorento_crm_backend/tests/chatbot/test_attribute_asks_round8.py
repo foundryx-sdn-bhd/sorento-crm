@@ -430,10 +430,10 @@ def test_a_one_word_stock_follow_up_answers_as_the_described_set(compact, world)
 def test_item3_f_trap_is_an_unknown_trap(compact, world):
     text = compact.say(M3, _v3())
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): the one reply structure, broken down by the key.
-    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the unknown word is listed
-    # above the Couldn't find line.
-    assert text.startswith("Here's what you want: "), text
+    # SET-STOCK-RENDER (SSR-7): the typed header, no breakdown line, no rows, then the miss line.
+    assert text.split("\n", 1)[0] == "Here's what you want: f trap water closets", text
     assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
+    assert "*Product Code:*" not in text, text
     assert "Couldn't find: f trap (trap). Would you like me to escalate to" in text, text
     assert "document type" not in text.lower(), text
 
@@ -441,10 +441,10 @@ def test_item3_f_trap_is_an_unknown_trap(compact, world):
 def test_item4_pink_colour_is_an_unknown_finish_or_colour_never_a_document_type(compact, world):
     text = compact.say(M4, _v4())
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): no list of known choices; what the set does come in.
-    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the unknown word is listed
-    # above the Couldn't find line.
-    assert text.startswith("Here's what you want: "), text
+    # SET-STOCK-RENDER (SSR-7): the typed header, no breakdown line, no rows, then the miss line.
+    assert text.split("\n", 1)[0] == "Here's what you want: pink water closets", text
     assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
+    assert "*Product Code:*" not in text, text
     assert "Couldn't find: pink (finish or colour)." in text, text
     assert "document type" not in text.lower(), text
 
