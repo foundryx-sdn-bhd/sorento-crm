@@ -173,3 +173,10 @@ distinct parses (hidden 4,057, dev 1,504), 1,480 distinct core parses (case, mes
   blocked, so it costs $0.
 - The corpus is rebuilt from the restored prod DB (`sorento_prod_20261015`, adds 18 Sep-15 Oct) once crew says
   it is live.
+
+## Scope decision (crew, 16 Oct)
+
+PR #1743 = step-0 foundations (D1 provenance, D2 L1 replay, D3 error bars, CP0 target grader + crew tooling). It
+changes nothing the owner sees: crew merges on reviewer READY + green CI, no owner hand test. CP0 (seed items from
+the restored prod DB, gold label passes, paraphrase variants, recorded-state runner, baseline runs 1-3, the 30-card
+page) is built on a follow-up PR from a new branch stacked on #1743, with the spend posted per step.
