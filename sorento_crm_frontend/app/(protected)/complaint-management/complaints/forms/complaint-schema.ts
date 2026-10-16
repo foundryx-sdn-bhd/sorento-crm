@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { numberFieldError } from '@/lib/number-field';
 
 export const ComplaintSchema = z.object({
   delivery_order_number: z
@@ -22,7 +23,15 @@ export const ComplaintSchema = z.object({
     .array(
       z.object({
         product_code: z.string().min(1, { message: 'Product code is required.' }),
-        quantity: z.string().max(255).optional().nullable(),
+        quantity: z
+          .string()
+          .max(255)
+          .optional()
+          .nullable()
+          .superRefine((value, ctx) => {
+            const message = numberFieldError(value, { min: 0, optional: true });
+            if (message) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+          }),
         product_type: z.string().max(255).optional().nullable(),
       }),
     )
