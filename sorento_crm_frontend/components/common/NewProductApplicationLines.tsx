@@ -12,11 +12,17 @@ import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
-import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from '@/components/common/SearchableSelect';
 import { numberFieldError } from '@/lib/number-field';
 import type { DraftLine } from '@/lib/new-product-application-form';
 
-export type LookupFetcher = (query: string, pageIndex: number) => Promise<SearchableSelectOption[]>;
+export type LookupFetcher = (
+  query: string,
+  pageIndex: number,
+) => Promise<SearchableSelectOption[]>;
 
 export interface NewProductApplicationLookups {
   itemGroups: LookupFetcher;
@@ -76,10 +82,18 @@ export function NewProductApplicationLines({
         pageSize={paginated ? SUPPLIER_PAGE_SIZE : undefined}
         selectedOption={id ? { value: id, label: shown } : undefined}
         onChange={(v) => {
-          if (!v) patchLine(line.key, { [`${field}_id`]: '', [`${field}_label`]: '' });
+          if (!v)
+            patchLine(line.key, {
+              [`${field}_id`]: '',
+              [`${field}_label`]: '',
+            });
         }}
         onOptionChange={(opt) =>
-          opt && patchLine(line.key, { [`${field}_id`]: opt.value, [`${field}_label`]: opt.label })
+          opt &&
+          patchLine(line.key, {
+            [`${field}_id`]: opt.value,
+            [`${field}_label`]: opt.label,
+          })
         }
       />
     );
@@ -97,7 +111,11 @@ export function NewProductApplicationLines({
       aria-label={label}
       disabled={disabled}
       value={line[field]}
-      error={errors[`${field}_${line.key}`] ? numberFieldError(line[field], rules) : undefined}
+      error={
+        errors[`${field}_${line.key}`]
+          ? numberFieldError(line[field], rules)
+          : undefined
+      }
       onChange={(e) => patchLine(line.key, { [field]: e.target.value })}
     />
   );
@@ -127,9 +145,15 @@ export function NewProductApplicationLines({
               <th className={`${th} w-28`}>Base UOM *</th>
               <th className={`${th} w-36`}>Brand</th>
               <th className={`${th} w-36`}>Item type</th>
-              {!hideSupplierAndCost && <th className={`${th} w-44`}>Supplier</th>}
-              {!hideSupplierAndCost && <th className={`${th} w-36`}>Supplier model no</th>}
-              {!hideSupplierAndCost && <th className={`${th} w-28`}>Cost (MYR)</th>}
+              {!hideSupplierAndCost && (
+                <th className={`${th} w-44`}>Supplier</th>
+              )}
+              {!hideSupplierAndCost && (
+                <th className={`${th} w-36`}>Supplier model no</th>
+              )}
+              {!hideSupplierAndCost && (
+                <th className={`${th} w-28`}>Cost (MYR)</th>
+              )}
               <th className={`${th} w-28`}>Selling (MYR)</th>
               <th className={`${th} w-24`}>Exp. qty</th>
               <th className={`${th} w-48`}>Further description</th>
@@ -141,17 +165,39 @@ export function NewProductApplicationLines({
           </thead>
           <tbody>
             {lines.map((line, index) => (
-              <tr key={line.key} data-testid="npa-line" className="border-t align-top">
+              <tr
+                key={line.key}
+                data-testid="npa-line"
+                className="border-t align-top"
+              >
                 <td className="px-2 py-2 text-muted-foreground">{index + 1}</td>
-                <td className="px-2 py-2">{text(line, 'proposed_code', 'Proposed code')}</td>
-                <td className="px-2 py-2">{text(line, 'description', 'Description')}</td>
-                <td className="px-2 py-2">{pick(line, 'category', 'Item group', lookups.itemGroups)}</td>
-                <td className="px-2 py-2">{pick(line, 'base_uom', 'Base UOM', lookups.uoms)}</td>
-                <td className="px-2 py-2">{pick(line, 'brand', 'Brand', lookups.brands)}</td>
-                <td className="px-2 py-2">{pick(line, 'item_type', 'Item type', lookups.itemTypes)}</td>
+                <td className="px-2 py-2">
+                  {text(line, 'proposed_code', 'Proposed code')}
+                </td>
+                <td className="px-2 py-2">
+                  {text(line, 'description', 'Description')}
+                </td>
+                <td className="px-2 py-2">
+                  {pick(line, 'category', 'Item group', lookups.itemGroups)}
+                </td>
+                <td className="px-2 py-2">
+                  {pick(line, 'base_uom', 'Base UOM', lookups.uoms)}
+                </td>
+                <td className="px-2 py-2">
+                  {pick(line, 'brand', 'Brand', lookups.brands)}
+                </td>
+                <td className="px-2 py-2">
+                  {pick(line, 'item_type', 'Item type', lookups.itemTypes)}
+                </td>
                 {!hideSupplierAndCost && (
                   <td className="px-2 py-2">
-                    {pick(line, 'supplier', 'Supplier', lookups.suppliers, true)}
+                    {pick(
+                      line,
+                      'supplier',
+                      'Supplier',
+                      lookups.suppliers,
+                      true,
+                    )}
                   </td>
                 )}
                 {!hideSupplierAndCost && (
@@ -161,11 +207,17 @@ export function NewProductApplicationLines({
                 )}
                 {!hideSupplierAndCost && (
                   <td className="px-2 py-2">
-                    {figure(line, 'cost_price', 'Cost price', { min: 0, optional: true })}
+                    {figure(line, 'cost_price', 'Cost price', {
+                      min: 0,
+                      optional: true,
+                    })}
                   </td>
                 )}
                 <td className="px-2 py-2">
-                  {figure(line, 'selling_price', 'Selling price', { min: 0, optional: true })}
+                  {figure(line, 'selling_price', 'Selling price', {
+                    min: 0,
+                    optional: true,
+                  })}
                 </td>
                 <td className="px-2 py-2">
                   {figure(line, 'expected_qty', 'Expected quantity', {
@@ -185,7 +237,9 @@ export function NewProductApplicationLines({
                       variant="ghost"
                       size="sm"
                       aria-label="Remove line"
-                      onClick={() => onChange(lines.filter((l) => l.key !== line.key))}
+                      onClick={() =>
+                        onChange(lines.filter((l) => l.key !== line.key))
+                      }
                     >
                       <Trash2 className="size-4" />
                     </Button>
@@ -196,7 +250,9 @@ export function NewProductApplicationLines({
           </tbody>
         </table>
       </div>
-      {errors.lines && <p className="mt-2 text-xs text-destructive">{errors.lines}</p>}
+      {errors.lines && (
+        <p className="mt-2 text-xs text-destructive">{errors.lines}</p>
+      )}
     </div>
   );
 }

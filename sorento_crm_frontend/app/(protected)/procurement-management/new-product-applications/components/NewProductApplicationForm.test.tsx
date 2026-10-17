@@ -21,7 +21,9 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mock.push, replace: vi.fn(), back: vi.fn() }),
   useSearchParams: () => new URLSearchParams(''),
 }));
-vi.mock('@/lib/toast', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
+}));
 vi.mock('../hooks/useNewProductApplications', () => ({
   useNewProductApplicationMutations: () => ({
     create: { mutateAsync: mock.createAsync, isPending: false },
@@ -29,7 +31,10 @@ vi.mock('../hooks/useNewProductApplications', () => ({
     submit: { mutateAsync: mock.submitAsync, isPending: false },
   }),
   useNewProductApplicationQuery: () => ({ data: undefined, isLoading: false }),
-  useNewProductApplicationPrefillQuery: () => ({ data: mock.prefill, isLoading: false }),
+  useNewProductApplicationPrefillQuery: () => ({
+    data: mock.prefill,
+    isLoading: false,
+  }),
   useNewProductApplicationLookups: () => ({
     itemGroups: async () => [],
     uoms: async () => [],
@@ -56,11 +61,21 @@ const PREFILL: NewProductApplicationPrefill = {
   project_name: 'WESTIN RESIDENCE',
   needed_by: '2028-01-17',
   remark: null,
-  lines: [{ proposed_code: 'SRTKS2433 & SRTKS2406', description: 'Kitchen sinks', expected_qty: '55' }],
+  lines: [
+    {
+      proposed_code: 'SRTKS2433 & SRTKS2406',
+      description: 'Kitchen sinks',
+      expected_qty: '55',
+    },
+  ],
 };
 
-function renderForm(props: { applicationId?: string; stockInquiryId?: string } = {}) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderForm(
+  props: { applicationId?: string; stockInquiryId?: string } = {},
+) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
     <QueryClientProvider client={client}>
       <NewProductApplicationForm {...props} />
@@ -68,7 +83,8 @@ function renderForm(props: { applicationId?: string; stockInquiryId?: string } =
   );
 }
 
-const saveDraft = () => fireEvent.click(screen.getByRole('button', { name: /save as draft/i }));
+const saveDraft = () =>
+  fireEvent.click(screen.getByRole('button', { name: /save as draft/i }));
 const lastBody = () => mock.createAsync.mock.calls.at(-1)?.[0];
 
 beforeEach(() => {
@@ -108,11 +124,17 @@ describe('number fields', () => {
     mock.prefill = PREFILL;
     renderForm({ stockInquiryId: 'si-1' });
 
-    const qty = (await screen.findByLabelText('Expected quantity')) as HTMLInputElement;
+    const qty = (await screen.findByLabelText(
+      'Expected quantity',
+    )) as HTMLInputElement;
     expect(qty.value).toBe('55');
     fireEvent.change(qty, { target: { value: '' } });
-    fireEvent.change(screen.getByLabelText('Cost price'), { target: { value: '12.5' } });
-    fireEvent.change(screen.getByLabelText('Cost price'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Cost price'), {
+      target: { value: '12.5' },
+    });
+    fireEvent.change(screen.getByLabelText('Cost price'), {
+      target: { value: '' },
+    });
 
     saveDraft();
     await waitFor(() => expect(mock.createAsync).toHaveBeenCalledTimes(1));
@@ -126,7 +148,9 @@ describe('number fields', () => {
 describe('Submit', () => {
   it('stays on the form when the server refuses, and reuses the saved draft on the next press', async () => {
     mock.prefill = PREFILL;
-    mock.submitAsync.mockRejectedValueOnce(new Error('Line 1: choose an item group'));
+    mock.submitAsync.mockRejectedValueOnce(
+      new Error('Line 1: choose an item group'),
+    );
     renderForm({ stockInquiryId: 'si-1' });
     await screen.findByLabelText('Proposed code');
 
@@ -139,6 +163,8 @@ describe('Submit', () => {
     await waitFor(() => expect(mock.submitAsync).toHaveBeenCalledTimes(2));
     expect(mock.createAsync).toHaveBeenCalledTimes(1);
     expect(mock.updateAsync).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(mock.push).toHaveBeenCalledWith(expect.stringContaining('npa-1')));
+    await waitFor(() =>
+      expect(mock.push).toHaveBeenCalledWith(expect.stringContaining('npa-1')),
+    );
   });
 });

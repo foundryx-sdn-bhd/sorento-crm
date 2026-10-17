@@ -378,6 +378,16 @@ export const MENU_SIDEBAR: MenuConfig = [
         permission: 'procurement.stock_inquiries.view',
       },
       {
+        title: 'New Product Applications',
+        path: '/procurement-management/new-product-applications',
+        permissionsAny: [
+          'procurement.new_product_applications.view',
+          'procurement.new_product_applications.create',
+          'procurement.new_product_applications.approve',
+          'procurement.new_product_applications.open_code',
+        ],
+      },
+      {
         title: 'Supply Chain',
         children: [
           {
@@ -1923,6 +1933,16 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
         title: 'Stock Inquiries',
         path: '/procurement-management/stock-inquiries',
         permission: 'procurement.stock_inquiries.view',
+      },
+      {
+        title: 'New Product Applications',
+        path: '/procurement-management/new-product-applications',
+        permissionsAny: [
+          'procurement.new_product_applications.view',
+          'procurement.new_product_applications.create',
+          'procurement.new_product_applications.approve',
+          'procurement.new_product_applications.open_code',
+        ],
       },
     ],
   },

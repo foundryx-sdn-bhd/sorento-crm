@@ -84,12 +84,15 @@ export const blankLine = (): DraftLine => ({
 });
 
 /** "SI26-0153 - SRTKS2433": the inquiry as the header picker and the detail page name it. */
-export const stockInquiryLabel = (number?: string | null, productCode?: string | null) =>
-  [number, productCode].filter(Boolean).join(' - ');
+export const stockInquiryLabel = (
+  number?: string | null,
+  productCode?: string | null,
+) => [number, productCode].filter(Boolean).join(' - ');
 
 const text = (v: string | null | undefined) => v ?? '';
 const clean = (v: string): string | null => (v.trim() ? v.trim() : null);
-const figure = (v: string | number | null | undefined) => (v === null || v === undefined ? '' : String(v));
+const figure = (v: string | number | null | undefined) =>
+  v === null || v === undefined ? '' : String(v);
 
 function lineFromDetail(l: NewProductApplicationLine): DraftLine {
   return {
@@ -139,7 +142,10 @@ export function stateFromPrefill(p: NewProductApplicationPrefill): FormState {
   return {
     ...EMPTY_FORM,
     stock_inquiry_id: text(p.stock_inquiry_id),
-    stock_inquiry_label: stockInquiryLabel(p.stock_inquiry_number, first?.proposed_code),
+    stock_inquiry_label: stockInquiryLabel(
+      p.stock_inquiry_number,
+      first?.proposed_code,
+    ),
     customer_name: text(p.customer_name),
     project_name: text(p.project_name),
     needed_by: text(p.needed_by),
@@ -186,7 +192,9 @@ const MONEY = { min: 0, optional: true } as const;
 const QTY = { min: 0, minExclusive: true, optional: true } as const;
 
 /** Keys are `<field>_<line key>`; empty means every number is fine or blank. */
-export function numberErrors(s: Pick<FormState, 'lines'>): Record<string, string> {
+export function numberErrors(
+  s: Pick<FormState, 'lines'>,
+): Record<string, string> {
   const found: Record<string, string> = {};
   for (const l of s.lines) {
     const checks: [string, string, typeof MONEY | typeof QTY][] = [

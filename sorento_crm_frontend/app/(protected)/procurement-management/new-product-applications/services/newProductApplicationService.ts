@@ -71,7 +71,10 @@ export async function getNewProductApplications(
     },
   );
   const res = await apiFetch(`${BASE}?${sp.toString()}`);
-  const body = await read<NewProductApplicationPage>(res, 'Failed to load applications');
+  const body = await read<NewProductApplicationPage>(
+    res,
+    'Failed to load applications',
+  );
   return {
     data: body.items,
     pagination: { total: body.total, page: body.page, limit: body.limit },
@@ -82,29 +85,51 @@ export async function getNewProductApplications(
 export async function getStockInquiryApplications(
   stockInquiryId: string,
 ): Promise<NewProductApplicationSummary[]> {
-  const sp = new URLSearchParams({ stock_inquiry_id: stockInquiryId, limit: '50' });
+  const sp = new URLSearchParams({
+    stock_inquiry_id: stockInquiryId,
+    limit: '50',
+  });
   const res = await apiFetch(`${BASE}?${sp.toString()}`);
-  const body = await read<NewProductApplicationPage>(res, 'Failed to load applications');
+  const body = await read<NewProductApplicationPage>(
+    res,
+    'Failed to load applications',
+  );
   return body.items;
 }
 
-export async function getNewProductApplication(id: string): Promise<NewProductApplicationDetail> {
+export async function getNewProductApplication(
+  id: string,
+): Promise<NewProductApplicationDetail> {
   const res = await apiFetch(`${BASE}/${encodeURIComponent(id)}`);
-  return read<NewProductApplicationDetail>(res, 'Failed to load the application');
+  return read<NewProductApplicationDetail>(
+    res,
+    'Failed to load the application',
+  );
 }
 
 export async function getNewProductApplicationPrefill(
   stockInquiryId: string,
 ): Promise<NewProductApplicationPrefill> {
-  const res = await apiFetch(`${BASE}/prefill?stock_inquiry_id=${encodeURIComponent(stockInquiryId)}`);
-  return read<NewProductApplicationPrefill>(res, 'Failed to load the stock inquiry');
+  const res = await apiFetch(
+    `${BASE}/prefill?stock_inquiry_id=${encodeURIComponent(stockInquiryId)}`,
+  );
+  return read<NewProductApplicationPrefill>(
+    res,
+    'Failed to load the stock inquiry',
+  );
 }
 
 export async function createNewProductApplication(
   data: NewProductApplicationWrite,
 ): Promise<NewProductApplicationDetail> {
-  const res = await apiFetch(BASE, { method: 'POST', body: JSON.stringify(data) });
-  return read<NewProductApplicationDetail>(res, 'Failed to save the application');
+  const res = await apiFetch(BASE, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  return read<NewProductApplicationDetail>(
+    res,
+    'Failed to save the application',
+  );
 }
 
 export async function updateNewProductApplication(
@@ -115,7 +140,10 @@ export async function updateNewProductApplication(
     method: 'PUT',
     body: JSON.stringify(data),
   });
-  return read<NewProductApplicationDetail>(res, 'Failed to save the application');
+  return read<NewProductApplicationDetail>(
+    res,
+    'Failed to save the application',
+  );
 }
 
 const at = (id: string) => encodeURIComponent(id);
@@ -129,13 +157,27 @@ export const rejectNewProductApplication = (id: string, reason: string) =>
 export const reviseNewProductApplication = (id: string, reason: string) =>
   post(`${at(id)}/revise`, 'Failed to revise the application', { reason });
 export const cancelNewProductApplication = (id: string, reason?: string) =>
-  post(`${at(id)}/cancel`, 'Failed to cancel the application', reason ? { reason } : {});
-export const linkNewProductApplicationLine = (id: string, lineId: string, productId: string) =>
+  post(
+    `${at(id)}/cancel`,
+    'Failed to cancel the application',
+    reason ? { reason } : {},
+  );
+export const linkNewProductApplicationLine = (
+  id: string,
+  lineId: string,
+  productId: string,
+) =>
   post(`${at(id)}/lines/${at(lineId)}/link`, 'Failed to link the product', {
     product_id: productId,
   });
-export const closeNewProductApplicationLine = (id: string, lineId: string, reason: string) =>
-  post(`${at(id)}/lines/${at(lineId)}/close`, 'Failed to close the line', { reason });
+export const closeNewProductApplicationLine = (
+  id: string,
+  lineId: string,
+  reason: string,
+) =>
+  post(`${at(id)}/lines/${at(lineId)}/close`, 'Failed to close the line', {
+    reason,
+  });
 export const undoNewProductApplicationLine = (id: string, lineId: string) =>
   post(`${at(id)}/lines/${at(lineId)}/undo`, 'Failed to undo the line');
 
@@ -144,7 +186,10 @@ export async function searchNewProductApplicationProducts(
   q: string,
 ): Promise<NewProductApplicationProductHit[]> {
   const res = await apiFetch(`${BASE}/products?q=${encodeURIComponent(q)}`);
-  return read<NewProductApplicationProductHit[]>(res, 'Failed to search products');
+  return read<NewProductApplicationProductHit[]>(
+    res,
+    'Failed to search products',
+  );
 }
 
 /** The item type select (no master-data select endpoint exists for it). */
@@ -152,18 +197,34 @@ export async function searchNewProductApplicationItemTypes(
   q: string,
 ): Promise<SearchableSelectOption[]> {
   const res = await apiFetch(`${BASE}/item-types?q=${encodeURIComponent(q)}`);
-  const rows = await read<NewProductApplicationItemType[]>(res, 'Failed to load item types');
-  return rows.map((r) => ({ value: r.id, label: r.item_type_name, code: r.item_type_code }));
+  const rows = await read<NewProductApplicationItemType[]>(
+    res,
+    'Failed to load item types',
+  );
+  return rows.map((r) => ({
+    value: r.id,
+    label: r.item_type_name,
+    code: r.item_type_code,
+  }));
 }
 
 /** Stock inquiries for the header picker, labelled "SI26-0153 - <product code>". */
 export async function searchStockInquiryOptions(
   q: string,
 ): Promise<SearchableSelectOption[]> {
-  const sp = buildDataGridParams({ pageIndex: 0, pageSize: 25 }, { query: q.trim() });
-  const res = await apiFetch(`/api/v1/procurement/stock-inquiries?${sp.toString()}`);
+  const sp = buildDataGridParams(
+    { pageIndex: 0, pageSize: 25 },
+    { query: q.trim() },
+  );
+  const res = await apiFetch(
+    `/api/v1/procurement/stock-inquiries?${sp.toString()}`,
+  );
   const body = await read<{
-    data: { id: string; inquiry_number?: string | null; product_code?: string | null }[];
+    data: {
+      id: string;
+      inquiry_number?: string | null;
+      product_code?: string | null;
+    }[];
   }>(res, 'Failed to load stock inquiries');
   return body.data.map((s) => ({
     value: s.id,

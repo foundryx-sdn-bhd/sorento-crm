@@ -1,5 +1,10 @@
 import { useMemo, useRef } from 'react';
-import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryKey,
+} from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 import type { ListPagerPage, ListPagerParams } from '@/hooks/useListPager';
@@ -44,7 +49,9 @@ export function newProductApplicationsListQueryKey(
   ];
 }
 
-function listParamsFromUrl(params: ListPagerParams): NewProductApplicationListParams {
+function listParamsFromUrl(
+  params: ListPagerParams,
+): NewProductApplicationListParams {
   return {
     pageIndex: params.pageIndex,
     pageSize: params.pageSize,
@@ -63,7 +70,9 @@ export const newProductApplicationsPagerQuery = {
     getNewProductApplications(listParamsFromUrl(params)),
 };
 
-export function useNewProductApplicationsQuery(params: NewProductApplicationListParams) {
+export function useNewProductApplicationsQuery(
+  params: NewProductApplicationListParams,
+) {
   return useQuery({
     ...LIST_QUERY_OPTIONS,
     queryKey: newProductApplicationsListQueryKey(params),
@@ -87,7 +96,9 @@ export function useNewProductApplicationQuery(id: string | null) {
 }
 
 /** The pre-fill copied from a responded stock inquiry; fetched once per inquiry. */
-export function useNewProductApplicationPrefillQuery(stockInquiryId: string | null) {
+export function useNewProductApplicationPrefillQuery(
+  stockInquiryId: string | null,
+) {
   return useQuery({
     queryKey: ['new-product-application', 'prefill', stockInquiryId],
     queryFn: () => getNewProductApplicationPrefill(stockInquiryId as string),
@@ -98,7 +109,10 @@ export function useNewProductApplicationPrefillQuery(stockInquiryId: string | nu
 }
 
 /** The applications raised from one stock inquiry; `enabled` is false for users with no NPA permission. */
-export function useStockInquiryApplicationsQuery(stockInquiryId: string | null, enabled: boolean) {
+export function useStockInquiryApplicationsQuery(
+  stockInquiryId: string | null,
+  enabled: boolean,
+) {
   return useQuery({
     queryKey: ['new-product-applications', 'stock-inquiry', stockInquiryId],
     queryFn: () => getStockInquiryApplications(stockInquiryId as string),
@@ -107,7 +121,8 @@ export function useStockInquiryApplicationsQuery(stockInquiryId: string | null, 
   });
 }
 
-const matches = (label: string, q: string) => label.toLowerCase().includes(q.trim().toLowerCase());
+const matches = (label: string, q: string) =>
+  label.toLowerCase().includes(q.trim().toLowerCase());
 
 /**
  * The staff selects of the line table: item group, UOM and brand from the master-data select
@@ -127,20 +142,31 @@ export function useNewProductApplicationLookups(): NewProductApplicationLookups 
       label: c.category_name,
       code: c.category_code,
     })),
-    uoms: (uoms.data ?? []).map((u) => ({ value: u.id, label: u.uom_code, description: u.uom_name })),
-    brands: (brands.data ?? []).map((b) => ({ value: b.id, label: b.brand_name, code: b.brand_code })),
+    uoms: (uoms.data ?? []).map((u) => ({
+      value: u.id,
+      label: u.uom_code,
+      description: u.uom_name,
+    })),
+    brands: (brands.data ?? []).map((b) => ({
+      value: b.id,
+      label: b.brand_name,
+      code: b.brand_code,
+    })),
   };
   return useMemo(() => {
     const pick = (key: string) => async (q: string) =>
       (latest.current[key] ?? []).filter(
-        (o) => !q.trim() || matches(`${o.label} ${o.code ?? ''} ${o.description ?? ''}`, q),
+        (o) =>
+          !q.trim() ||
+          matches(`${o.label} ${o.code ?? ''} ${o.description ?? ''}`, q),
       );
     return {
       itemGroups: pick('groups'),
       uoms: pick('uoms'),
       brands: pick('brands'),
       itemTypes: (q: string) => searchNewProductApplicationItemTypes(q),
-      suppliers: (q: string, pageIndex: number) => getSuppliersSelect(q, pageIndex),
+      suppliers: (q: string, pageIndex: number) =>
+        getSuppliersSelect(q, pageIndex),
     };
   }, []);
 }
@@ -148,10 +174,15 @@ export function useNewProductApplicationLookups(): NewProductApplicationLookups 
 export function useNewProductApplicationMutations() {
   const queryClient = useQueryClient();
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ['new-product-applications'] });
-    void queryClient.invalidateQueries({ queryKey: ['new-product-application'] });
+    void queryClient.invalidateQueries({
+      queryKey: ['new-product-applications'],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ['new-product-application'],
+    });
   };
-  const fail = (fallback: string) => (error: Error) => toast.error(error.message || fallback);
+  const fail = (fallback: string) => (error: Error) =>
+    toast.error(error.message || fallback);
   const move = (fallback: string, done?: string) => ({
     onSuccess: () => {
       refresh();
@@ -161,12 +192,18 @@ export function useNewProductApplicationMutations() {
   });
 
   const create = useMutation({
-    mutationFn: (data: NewProductApplicationWrite) => createNewProductApplication(data),
+    mutationFn: (data: NewProductApplicationWrite) =>
+      createNewProductApplication(data),
     ...move('Failed to save the application'),
   });
   const update = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: NewProductApplicationWrite }) =>
-      updateNewProductApplication(id, data),
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: NewProductApplicationWrite;
+    }) => updateNewProductApplication(id, data),
     ...move('Failed to save the application'),
   });
   const submit = useMutation({
@@ -193,13 +230,27 @@ export function useNewProductApplicationMutations() {
     ...move('Failed to cancel the application', 'Application cancelled'),
   });
   const link = useMutation({
-    mutationFn: ({ id, lineId, productId }: { id: string; lineId: string; productId: string }) =>
-      linkNewProductApplicationLine(id, lineId, productId),
+    mutationFn: ({
+      id,
+      lineId,
+      productId,
+    }: {
+      id: string;
+      lineId: string;
+      productId: string;
+    }) => linkNewProductApplicationLine(id, lineId, productId),
     ...move('Failed to link the product', 'Product linked'),
   });
   const close = useMutation({
-    mutationFn: ({ id, lineId, reason }: { id: string; lineId: string; reason: string }) =>
-      closeNewProductApplicationLine(id, lineId, reason),
+    mutationFn: ({
+      id,
+      lineId,
+      reason,
+    }: {
+      id: string;
+      lineId: string;
+      reason: string;
+    }) => closeNewProductApplicationLine(id, lineId, reason),
     ...move('Failed to close the line'),
   });
   const undo = useMutation({
@@ -208,5 +259,16 @@ export function useNewProductApplicationMutations() {
     ...move('Failed to undo the line'),
   });
 
-  return { create, update, submit, approve, reject, revise, cancel, link, close, undo };
+  return {
+    create,
+    update,
+    submit,
+    approve,
+    reject,
+    revise,
+    cancel,
+    link,
+    close,
+    undo,
+  };
 }
