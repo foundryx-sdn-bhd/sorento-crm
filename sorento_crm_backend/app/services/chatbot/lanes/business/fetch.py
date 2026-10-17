@@ -498,6 +498,10 @@ ORDER_STATUS_TO_SCOPE: dict[str, str] = {
 # refusals can never drift apart in wording.
 SO_NOT_ENABLED_MESSAGE = "Sales order figures are not enabled for your account."
 
+#: The outstanding report's group page size, pinned equal to the MCP presenter's
+#: `OUTSTANDING_GROUP_CAP` (the backend image cannot import that package).
+OUTSTANDING_GROUP_PAGE = 20
+
 ORDER_TOOLS: frozenset[str] = frozenset(
     {"crm_order_management_orders_list", "crm_order_management_orders_by_product_list"}
 )
@@ -629,6 +633,7 @@ def _set_page(
     total: int,
     build_header: Any,
     cap: int,
+    end_note: str = "",
 ) -> tuple[str | None, dict[str, int], list[Any] | None]:
     """CHAT-COMPOSER: one set page as ONE WhatsApp message. The page ends where the product
     code changes (every company row of a listed code rides with it) at the last block that keeps
@@ -651,7 +656,7 @@ def _set_page(
         counted = _rendered_product_count(listed)
         n = min(shown, counted) if counted is not None else shown
         more = composers_sets.next_count(total, offset, n, cap)
-        more_text = composers_sets.more_line(more) if more else ""
+        more_text = composers_sets.more_line(more) if more else end_note
         if question_at is not None and not cut:
             # A dealer page that still asks a quantity: the "more" line, then the question last.
             mid = msg[rows_start:question_at] + (more_text + "\n\n" if more_text else "") + msg[question_at:rows_end]
@@ -708,6 +713,109 @@ def _set_list_size(semantic_input: Any) -> int:
     from app.services.chatbot.composers import sets as composers_sets
 
     return composers_sets.page_size(_set_named_count(semantic_input), answer_mod.SET_LIST_MAX)
+
+
+#: The tools whose multi-match answer is a code-lookup list: product cards, one per code.
+CODE_LIST_TOOLS = frozenset({"crm_master_products_list", *SET_ROW_LIMIT} - {"crm_marketing_promotion_products_list"})
+
+
+def _code_list_ids(row_items: list[Any], entities: Any) -> list[dict[str, Any]] | None:
+    """CHAT-COMPOSER Lists L1: the product ids behind each printed code, in printed order, or None
+    when the list is not one a later "more" can page: fewer than two codes, a code whose rows are
+    not together, or a code with no product entity."""
+    if isinstance(entities, str):
+        entities = _safe_json(entities)
+    by_code: dict[str, list[str]] = {}
+    for ent in jsc.array(entities):
+        if not isinstance(ent, dict) or ent.get("entity_type") != "product" or not ent.get("uuid"):
+            continue
+        for field in ("code", "canonical_code"):
+            code = jsc.nullish_str(ent.get(field)).strip().casefold()
+            if code and ent["uuid"] not in by_code.setdefault(code, []):
+                by_code[code].append(ent["uuid"])
+    codes: list[str] = []
+    for it in row_items:
+        code = _row_code(it)
+        if not codes or codes[-1] != code:
+            codes.append(code)
+    if len(codes) < 2 or len(set(codes)) != len(codes):
+        return None
+    if any(not by_code.get(code.casefold()) for code in codes):
+        return None
+    return [{"code": code, "ids": by_code[code.casefold()]} for code in codes]
+
+
+def _without_total(header: str) -> str:
+    """A set header without its total: "(20, showing 10 to 20)" reads "(showing 10 to 20)"."""
+    return re.sub(r"\((\d[\d,]*), showing ", "(showing ", header, count=1)
+
+
+def _code_list_page(
+    *,
+    e: dict[str, Any],
+    msg: str,
+    rows_start: int,
+    rows_end: int,
+    row_ends: list[int],
+    row_items: list[Any],
+    row_idx: list[int],
+    ts: Any,
+    loc: Any,
+    ctx: dict[str, Any],
+    code_ids: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any] | None, list[Any] | None]:
+    """CHAT-COMPOSER Lists L1: a code-lookup list cut to ONE message on a card boundary, the intro
+    gaining the range, the page ending with the "more" line and carrying the matched product ids so a
+    bare "more" prints the rest (`turn_runtime.page_the_set`). `(msg, window, answers)`; the plain
+    reply with no window when the whole list fits."""
+    from app.services.chatbot.composers import sets as composers_sets
+    from app.services.chatbot.lanes.business import answer as answer_mod
+    lz = ctx.get("localizer") or IDENTITY
+    total = len(code_ids)
+    intro = msg[:rows_start].strip()
+    english_intro = jsc.js_string(e.get("intro") or "Here are the results.").strip()
+
+    def header(n: int) -> str:
+        if n >= total:
+            return intro
+        return composers_sets.ranged(
+            lz.text(english_intro), lz.fill(composers_sets.RANGE_CAPPED, first="1", last=str(n))
+        )
+
+    rows_msg = msg[rows_start:]
+    footer = f"_{loc.text(f'Data last updated: {ts}')}_" if ts else ""
+    paged, window, answers = _set_page(
+        e=e,
+        msg=rows_msg,
+        rows_start=0,
+        rows_end=rows_end - rows_start,
+        row_ends=[x - rows_start for x in row_ends],
+        row_items=row_items,
+        row_idx=row_idx,
+        question_at=None,
+        links_from=None,
+        source=e.get("items") or [],
+        loc=loc,
+        footer=footer,
+        other_brands="",
+        shown=total,
+        offset=0,
+        total=total,
+        build_header=header,
+        cap=answer_mod.SET_LIST_MAX,
+    )
+    if paged is None:
+        return msg, None, None
+    if answers is None:
+        return paged, None, None
+    carry = {
+        "code_list": True,
+        "set_noun": "matching products",
+        "code_ids": code_ids,
+        "total": total,
+        "shown": window["last"],
+    }
+    return paged, {**window, "carry": carry}, answers
 
 
 def _names_the_ask(attribute: str) -> bool:
@@ -926,6 +1034,13 @@ def entity_ids_transformer(
         detail_pick = jsc.get(semantic_input, "outstanding_detail_pick")
         if detail_pick in ("so", "do", "both"):
             out["detail"] = detail_pick
+        else:
+            from app.services.chatbot import composers
+
+            if composers.enabled():
+                # CHAT-COMPOSER Lists L2: the group page start; page 1 sends 0 so its "more" line prints.
+                offset = jsc.get(semantic_input, "outstanding_group_offset")
+                out["group_offset"] = offset if isinstance(offset, int) and not isinstance(offset, bool) and offset > 0 else 0
 
     # PLAN-chatbot-sales-report.md S4 wiring point 5: `crm_sales_report`'s OWN
     # contract - the SAME shape `crm_outstanding_report` above builds by hand
@@ -2536,7 +2651,7 @@ def _outstanding_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, An
         if offer
         else None
     )
-    return {
+    out = {
         # Review round (26 Sep 2026), SF1: `has_result: False` alone did not stop
         # `turn/compose.py` printing this same bare string VERBATIM whenever it rode
         # in on `lane_text` (only the literal substring "Error executing tool" was
@@ -2563,6 +2678,24 @@ def _outstanding_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, An
         # prints above a delivery-order answer. Read there off this marker.
         "outstanding_report": True,
     }
+    window = envelope.get("group_window")
+    if isinstance(window, dict):
+        from app.services.chatbot import composers
+
+        if composers.enabled():
+            # CHAT-COMPOSER Lists L2: the engine arms the carry so a bare "more" pages the groups.
+            o, k, t = window.get("offset"), window.get("shown"), window.get("total")
+            if all(isinstance(v, int) and not isinstance(v, bool) for v in (o, k, t)):
+                nxt = max(0, min(OUTSTANDING_GROUP_PAGE, t - o - k))
+                if nxt > 0 or o > 0:
+                    out["set_window"] = {
+                        "first": o + 1,
+                        "last": o + k,
+                        "total": t,
+                        "next": nxt,
+                        "carry": {"report_groups": True, "total": t, "shown": o + k if k else o},
+                    }
+    return out
 
 
 def _sales_report_filters_from_ctx(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -3800,7 +3933,19 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         from app.services.chatbot import composers
 
         paged_msg = None
-        if composers.enabled() and shown > 0:
+        # CHAT-COMPOSER Lists L1 (LD7): a code list never states a total; its last page ends with the
+        # narrow sentence where the "more" line would be.
+        end_note = ""
+        code_list = bool(composers.enabled() and predicate.get("code_list"))
+        if code_list:
+            from app.services.chatbot.composers import sets as composers_sets
+
+            lz = ctx.get("localizer") or IDENTITY
+            end_note = lz.fill(composers_sets.NARROW, n=f"{qualifying_total:,}")
+            header = _without_total(header)
+            if predicate.get("exhausted"):
+                paged_msg = end_note
+        if paged_msg is None and composers.enabled() and shown > 0:
             paged_msg, set_window, page_items = _set_page(
                 e=e,
                 msg=msg,
@@ -3822,17 +3967,20 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 shown=shown,
                 offset=offset,
                 total=qualifying_total,
-                build_header=lambda n: answer_mod.build_set_header(
-                    qualifying_total,
-                    n,
-                    set_noun,
-                    require,
-                    description=jsc.get(predicate, "description"),
-                    not_understood=jsc.get(predicate, "unrecognized_terms"),
-                    offset=offset,
-                    previous_total=jsc.get(predicate, "previous_total"),
+                build_header=lambda n: (_without_total if code_list else str)(
+                    answer_mod.build_set_header(
+                        qualifying_total,
+                        n,
+                        set_noun,
+                        require,
+                        description=jsc.get(predicate, "description"),
+                        not_understood=jsc.get(predicate, "unrecognized_terms"),
+                        offset=offset,
+                        previous_total=jsc.get(predicate, "previous_total"),
+                    )
                 ),
                 cap=answer_mod.SET_LIST_MAX,
+                end_note=end_note,
             )
         if paged_msg is not None:
             msg = paged_msg
@@ -3844,6 +3992,16 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 else:
                     body = f"{body}\n\n{other_brands}"
             msg = f"{header}\n\n{body}"
+    else:
+        from app.services.chatbot import composers
+
+        if composers.enabled() and ctx.get("tool") in CODE_LIST_TOOLS and not (plain_lines or stock_ask_render or qs_render or groups_render):
+            code_ids = _code_list_ids(row_items, ctx.get("entities")) if row_items else None
+            if code_ids is not None:
+                msg, set_window, page_items = _code_list_page(
+                    e=e, msg=msg, rows_start=rows_start, rows_end=rows_end, row_ends=row_ends,
+                    row_items=row_items, row_idx=row_idx, ts=ts, loc=loc, ctx=ctx, code_ids=code_ids,
+                )
 
     final_response = msg.strip()
     if so_bucket_refusal:

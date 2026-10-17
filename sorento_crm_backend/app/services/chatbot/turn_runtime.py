@@ -1313,6 +1313,9 @@ def with_set_count_from_text(
     """
     if not isinstance(carried, dict) or not isinstance(message, str):
         return verdict
+    if (carried.get("set_key") or {}).get("report_groups") or (carried.get("set_key") or {}).get("code_list"):
+        # CHAT-COMPOSER Lists: after a cut report or code list a bare number is a pick, not a count.
+        return verdict
     echoed = any(isinstance(e, dict) and e.get("current_message") is True for e in (verdict.get("entities") or []))
     # CLASS-HINT-KIND-PICK R2 (CHATBOT-TRIO console case 12, 7 Oct 2026): the parser read
     # "another 10" with the carried brand re-stated as an entity under `entity_op: "reuse"`,
@@ -1375,6 +1378,13 @@ _OWN_ASK_FIELDS = (
     "contains_flyer",
     "query_brands",
 )
+
+
+def _lane_paged(carry: Any) -> bool:
+    """CHAT-COMPOSER Lists: a carry the lane that printed it pages itself (a PO / PR card, the
+    outstanding report's groups), so `page_the_set` never reads it."""
+    key = carry.get("set_key") if isinstance(carry, dict) else None
+    return bool(isinstance(key, dict) and (key.get("ref_cards") or key.get("report_groups")) and _composers_on())
 
 
 def with_set_more(verdict: dict[str, Any], *, carried: Any) -> dict[str, Any]:
@@ -1977,7 +1987,8 @@ def lane_parse_output(
       AC-EQ-18 (a fresh, unaccepted question over an open offer) is byte-identical
       to AC-EQ-20 once the arm is gone - folded into it, not duplicated.
     """
-    out = dict(verdict)
+    # The audience and the reference page are the runner's to set (profile, carry), never the verdict's.
+    out = {k: v for k, v in verdict.items() if k not in ('ref_staff', 'ref_page')}
     if domain:
         out["domain_hint"] = domain
 
@@ -3442,6 +3453,10 @@ def outstanding_carry(
     elif answered.get("kind") == "sales_report_detail" and detail in SALES_REPORT_GROUP_BYS:
         # AC-SR-28: a sales report drill-down, re-run as `group_by` (`fetch.py`).
         out["outstanding_detail_pick"] = detail
+    offset = answered.get("group_offset")
+    if isinstance(offset, int) and not isinstance(offset, bool):
+        # CHAT-COMPOSER Lists L2: a "more" on the report's groups re-runs it at this offset.
+        out["outstanding_group_offset"] = offset
 
     # EVERY carried product, not the first: "all" over a ten-variant roster settles ten
     # codes onto the focus, and carrying one of them re-ran the report for that one under
@@ -3708,7 +3723,7 @@ def make_tool_runner(
         page_ids: list[str] = []
         listed_products: list[dict[str, Any]] = []
         carry = spec.filters.get("set_page")
-        if isinstance(carry, dict):
+        if isinstance(carry, dict) and not _lane_paged(carry):
             # Security B2: the entitlement comes off the CARRY (what the first answer
             # counted under), never off this turn's verdict - a bare count states no
             # tier, and an empty list is read downstream as "no tier filter at all".
@@ -3734,6 +3749,11 @@ def make_tool_runner(
         # instead. Flagged here so the next reader does not assume parity.
         lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy)
         lane_out = _spec_window(lane_out, spec)
+        # `ref_page` is the carry's alone; one the verdict supplies is dropped.
+        lane_out = {k: v for k, v in lane_out.items() if k != "ref_page"}
+        if _lane_paged(carry) and (carry["set_key"]).get("ref_cards"):
+            # CHAT-COMPOSER Lists L3: the reference card pages itself (`lanes/business`).
+            lane_out = {**lane_out, "ref_page": carry["set_key"]}
         if asked_promo_filter and domain == "promotion":
             # PROMO-SUBJECT-FILTER AC-6: the tier pick's own turn names no subject; the
             # one the menu was asked for rides the open pick's payload.
@@ -3861,8 +3881,8 @@ def make_tool_runner(
         for lane_key in ("po_numbers", "pr_numbers"):
             if placed_refs[lane_key]:
                 lane_out = {**lane_out, lane_key: placed_refs[lane_key]}
-        if is_staff_profile(profile):
-            lane_out = {**lane_out, "ref_staff": True}
+        # The audience is the profile's, both ways: a verdict never supplies it.
+        lane_out = {**lane_out, "ref_staff": is_staff_profile(profile)}
         if po_words:
             # SO-PO-REF: the PO number the parser also emitted as an entity is answered by
             # the `po_refs` arm, so it is no miss for compose to name a second time (nor to
@@ -4080,6 +4100,14 @@ def make_tool_runner(
                 page_predicate.get("other_brands"), page_predicate.get("require") or {}
             )
             text = f"{said}\n\n{others}" if others else said
+            if page_predicate.get("code_list"):
+                # CHAT-COMPOSER Lists L1 (LD7): a code list never states a total; the end is the
+                # narrow sentence alone.
+                from app.services.chatbot.composers import sets as composers_sets
+
+                from app.services.chatbot.label_catalog import IDENTITY
+
+                said = text = (localizer or IDENTITY).fill(composers_sets.NARROW, n=f"{int(page_predicate.get('qualifying_total') or 0):,}")
             fragment: dict[str, Any] = {"fetch": {"has_result": True, "response": text, "set_header": said}}
         elif (
             (
@@ -4530,6 +4558,13 @@ def _contact_stock_policy(db: Session, ctx: dict[str, Any], space_id: str | None
     return resolve_policy(db, resolved or contact_id, space_id)
 
 
+def _set_page_size(size: Any) -> int:
+    from app.services.chatbot.composers import sets as composers_sets
+    from app.services.chatbot.lanes.business import answer as answer_mod
+
+    return composers_sets.page_size(int(size) if size else None, answer_mod.SET_LIST_MAX)
+
+
 def page_the_set(
     db: Session,
     carry: dict[str, Any],
@@ -4586,6 +4621,29 @@ def page_the_set(
             "entitlement_missing": True,
             "set_noun": key.get("set_noun") or "products",
         }, []
+    if key.get("code_list") and _composers_on():
+        # CHAT-COMPOSER Lists L1: a code-lookup list carries its matched ids; the next page is a slice
+        # of them, no database read.
+        code_ids = [c for c in key.get("code_ids") or [] if isinstance(c, dict)]
+        total = int(key.get("total") or len(code_ids))
+        offset = max(0, int(key.get("shown") or 0))
+        page = code_ids[offset : offset + _set_page_size(size)]
+        predicate = {
+            "require": {},
+            "qualifying_total": total,
+            "truncated": False,
+            "unrecognized_terms": [],
+            "class_labels": [],
+            "set_noun": key.get("set_noun") or "products",
+            "code_list": True,
+        }
+        if offset:
+            predicate["offset"] = offset
+        if total and offset >= total:
+            predicate["exhausted"] = True
+        shown_now = min(offset + len(page), total) if page else offset
+        predicate["next_carry"] = {"set_key": {**key, "shown": shown_now}}
+        return predicate, [pid for c in page for pid in c.get("ids") or []]
     # W4: a carry that holds the resolver's own description replays it exactly (specs,
     # brand, LOOKUP ids); an older carry falls back to its class words.
     described = "specs" in key or "brand" in key or "product_ids" in key

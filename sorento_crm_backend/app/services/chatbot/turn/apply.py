@@ -42,6 +42,7 @@ from app.services.chatbot.turn.decide import (
     domain_in_message,
     names_its_own_domain,
     restated_kinds,
+    _stored_scope,
 )
 from app.services.chatbot.turn.narrow import decide as narrow_decide
 from app.services.chatbot.turn.pending import (
@@ -541,8 +542,22 @@ def _settle_question_subject(focus: Focus, pending: Pending, trace: Trace | None
         focus.sales_channel = str(filters["channel"])
 
 
+def _report_more(verdict: dict[str, Any] | None, focus: Focus) -> int | None:
+    """CHAT-COMPOSER Lists L2: the group offset a bare "more" asks for, off the report's own carry
+    (armed by the engine from the lane's `set_window`), or None."""
+    from app.services.chatbot import composers
+    from app.services.chatbot.turn_runtime import SET_CONTINUE_KEY
+
+    if not composers.enabled() or not verdict or verdict.get(SET_CONTINUE_KEY) is not True:
+        return None
+    key = focus.set_page.get("set_key") if isinstance(focus.set_page, dict) else None
+    if not isinstance(key, dict) or not key.get("report_groups"):
+        return None
+    return int(key.get("shown") or 0)
+
+
 def _answer_outstanding(
-    pending: Pending, decision: Decision, focus: Focus, trace: Trace
+    pending: Pending, decision: Decision, focus: Focus, trace: Trace, *, more: int | None = None
 ):
     """Contracts 38 and 39: the outstanding report's scope question and detail offer.
 
@@ -586,6 +601,20 @@ def _answer_outstanding(
     #: The status word the re-run goes out under, and therefore which tool
     #: `run_fetch`'s order-domain override picks.
     status_word = "sales_report" if sales_report else "outstanding"
+
+    if more is not None and pending.kind == "outstanding_detail":
+        # CHAT-COMPOSER Lists L2: "more" is a REFINE with an offset. The open offer's own filters
+        # settle the subject, so the re-run cannot widen; the offer stays open.
+        scope = _stored_scope(pending)
+        _settle_question_subject(focus, pending, trace)
+        focus.status = status_word
+        focus.document = list(DOCUMENT_BY_SCOPE[scope]) if scope else []
+        if asked_for:
+            focus.domains = [asked_for]
+        focus.set_page = None
+        trace.rules_fired.append("outstanding_more")
+        trace.outstanding = {"kind": pending.kind, "scope": scope, "detail": None, "group_offset": more}
+        return focus, pending, None, True
 
     if decision.refines:
         # The subject SETTLES exactly as an answer's does - the question's own resolved
@@ -734,7 +763,7 @@ def _answer_pending(state: State, decision: Decision, trace: Trace, verdict: dic
         # BEFORE the generic roster path: these options are a SCOPE, not an entity to
         # fetch with, and building one into an entity sent "Both" to the resolver as an
         # order token (console run 4, finding 6).
-        answered = _answer_outstanding(pending, decision, focus, trace)
+        answered = _answer_outstanding(pending, decision, focus, trace, more=_report_more(verdict, state.focus))
         if answered is not None:
             return answered
 
