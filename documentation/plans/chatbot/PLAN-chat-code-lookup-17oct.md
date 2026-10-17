@@ -1,6 +1,6 @@
 # PLAN: CHAT-CODE-LOOKUP (chatbot code lookups toward the owner's 97% bar)
 
-Status: Review, final checks (slices A-C + fix rounds 1-3 green at 24cb58be6b; security PASS; live TRAIN arm 2 89.4% vs main 86.2%). Track: L, LEAD pattern, local lane. Branch
+Status: Merge-ready pending crew (crew-done 17 Oct at the last fix 36b75db496: reviewer READY, security PASS, L1 0 vs #1755, live TRAIN arm 2 89.4% vs main 86.2%); stacked on #1755, retarget after it merges. Track: L, LEAD pattern, local lane. Branch
 `crew/chat-code-lookup`, base origin/main 20c191d861.
 
 Owner approval: 17 Oct ~14:10 ("Ok" to a code-lookup lane, in parallel with steps 1-2).
@@ -71,7 +71,8 @@ meant existing code -> answer that code; a bare code after an ETA reply -> the i
 
 - Red-first per slice and round, kill-proof each (PR #1761 crew-notes): A ad4389c047 -> 4717509497 (+ lead-approved
   test fixes 9f8d713e91); B 1833644813 -> e6eb546af0; C 5ac8b3fec6 -> 50495b919e; round 1 94df7d3722 -> 9e36f4e7b8;
-  round 2 bbd92f9851 -> 6192d8dedf (+ lead-approved G1 assertion 028fb6b07e); round 3 d39397d628 -> 24cb58be6b.
+  round 2 bbd92f9851 -> 6192d8dedf (+ lead-approved G1 assertion 028fb6b07e); round 3 d39397d628 -> 24cb58be6b;
+  last should-fix 1520f6039c -> 36b75db496 (one set named twice prints its members once).
 - Review: reviewer rounds on 50495b919e, 9e36f4e7b8, 028fb6b07e, 24cb58be6b; security-reviewer NEEDS WORK twice, then
   PASS at 028fb6b07e. Lead-accepted nits: an alternative for a discontinued set member keeps its own price; the
   group_by path skips the set heading (no priced tool groups in a set domain today). Forwarded to CHAT-CLOSED-LISTS:
