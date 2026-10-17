@@ -7704,9 +7704,11 @@ def _without_escalation_offer(answer: Any) -> Any:
 def _shown_codes(question: Any) -> list[str] | None:
     """CHAT-CODE-LOOKUP R2-7 (trace only): the product codes a picker, did-you-mean or related list
     shows, in display order, read off the question built from that same list; None when none."""
-    if question is None or question.kind != "product_pick":
+    if question is None or question.kind not in ("product_pick", "product_set_pick"):
         return None
-    codes = [str(o["code"]) for o in question.options if o.get("entity_type") == "product" and o.get("code")]
+    codes = [
+        str(o["code"]) for o in question.options if o.get("entity_type") in ("product", "product_set") and o.get("code")
+    ]
     return codes or None
 
 
@@ -7974,7 +7976,7 @@ def _run_answer(
             # any of them did not go as links (owner hand test, 9 Oct 2026).
             "file_mode": file_mode,
             "file_mode_fallback": file_fallback,
-            "shown_codes": _shown_codes(answer.question),
+            "shown_codes": _shown_codes(answer.question) or getattr(answer, "shown_codes", None),
         },
         raw={"reply": reply},
     )

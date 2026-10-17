@@ -2159,7 +2159,10 @@ def answer_for(
     alternative_lines = fetch_item.get("alternative_lines") if isinstance(fetch_item, Mapping) else None
     if alternative_lines:
         text = with_alternative_lines(text, alternative_lines)
-    return turn_compose.Answer(text=text, question=question)
+    rows = offer.get("suggest_last_result_set") if isinstance(offer, Mapping) else None
+    options = [_roster_option(row, kind="product_pick", position=i + 1) for i, row in enumerate(rows or []) if isinstance(row, Mapping)]
+    listed = [str(o["code"]) for o in options if o and o.get("entity_type") in ("product", "product_set") and o.get("code")]
+    return turn_compose.Answer(text=text, question=question, shown_codes=listed or None)
 
 
 def _held_member_no_file(

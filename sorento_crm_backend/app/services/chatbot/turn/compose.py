@@ -68,6 +68,8 @@ class Answer:
     files: list[dict[str, Any]] = field(default_factory=list)
     actions: list[dict[str, Any]] = field(default_factory=list)
     text: str = ""
+    #: Trace only (R2-7): product codes the reply lists when no pick question carries them.
+    shown_codes: list[str] | None = None
 
 
 def _codes_without_rows(entities: list[Any], figures: list[dict[str, Any]]) -> list[str]:
