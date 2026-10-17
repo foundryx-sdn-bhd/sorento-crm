@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_any_permission_with_api_key
 from app.services.error_handler import AppException
+from app.services.field_access import CLEARANCE_PERMISSION
 from app.services.stock_status_service import MAX_SUMMARY_IDS, stock_status, summaries
+from app.services.user_service import UserPermissionService
 
 router = APIRouter()
 
@@ -27,6 +29,18 @@ READ_PERMISSIONS = [
     "scm.reorder.run",
     "scm.dashboard.view",
 ]
+
+
+def _may_see_eta_delay(db: Session, user: dict) -> bool:
+    """Owner ruling 17 Oct (security S-C): the delayed ETA is a clearance field, shown only to
+    holders of `procurement.packing_lists.view_clearance`. Fails closed."""
+    user_id = (user or {}).get("id")
+    if not user_id:
+        return False
+    try:
+        return bool(UserPermissionService(db).check_user_has_permission(str(user_id), CLEARANCE_PERMISSION))
+    except Exception:  # noqa: BLE001 - fail closed, as field_access does
+        return False
 
 
 @router.get("/summary")
@@ -53,4 +67,4 @@ def get_stock_status(
     db: Session = Depends(get_db),
 ):
     """Every location holding the item, its SO / PO / SPO documents and incoming packing lists."""
-    return stock_status(db, product_id, so_due_by)
+    return stock_status(db, product_id, so_due_by, eta_delay_visible=_may_see_eta_delay(db, _user))

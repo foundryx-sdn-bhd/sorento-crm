@@ -89,8 +89,19 @@ def _iso(value: Optional[date]) -> Optional[str]:
     return value.isoformat() if value else None
 
 
-def stock_status(db: Session, product_id: str, so_due_by: Optional[date] = None) -> dict[str, Any]:
-    """Every location of the caller's company for one product, with the documents behind it."""
+def stock_status(
+    db: Session,
+    product_id: str,
+    so_due_by: Optional[date] = None,
+    *,
+    eta_delay_visible: bool = False,
+) -> dict[str, Any]:
+    """Every location of the caller's company for one product, with the documents behind it.
+
+    `eta_delay_visible`: the caller holds `procurement.packing_lists.view_clearance`, so a
+    shipment's delayed ETA may stand in for its estimate (owner ruling 17 Oct, security S-C).
+    Without it the estimate shows and the delay date never leaves the server.
+    """
     if not is_uuid(product_id):
         raise AppException(404, "Product not found")
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -113,7 +124,7 @@ def stock_status(db: Session, product_id: str, so_due_by: Optional[date] = None)
 
     sales_orders = _sales_order_rows(db, product_id, so_due_by)
     purchase_orders = _purchase_order_rows(db, product_id)
-    spos = _spo_rows(db, product_id)
+    spos = _spo_rows(db, product_id, eta_delay_visible)
 
     so_qty: dict[str, float] = defaultdict(float)
     po_qty: dict[str, float] = defaultdict(float)
@@ -154,7 +165,7 @@ def stock_status(db: Session, product_id: str, so_due_by: Optional[date] = None)
     spos = [r for r in spos if r["warehouse_id"] in visible]
     # Netted against exactly the SPO rows the SPO column counts, so a packing list's quantity
     # is in one figure or the other, never both and never neither.
-    incoming_pl = _incoming_pl(db, product_id, spos)
+    incoming_pl = _incoming_pl(db, product_id, spos, eta_delay_visible)
     for r in spos:
         r.pop("inbound_shipment_id")
 
@@ -326,7 +337,7 @@ def _purchase_order_rows(db: Session, product_id: str) -> list[dict]:
     return out
 
 
-def _spo_rows(db: Session, product_id: str) -> list[dict]:
+def _spo_rows(db: Session, product_id: str, eta_delay_visible: bool) -> list[dict]:
     """Open SPO rows (`spo_supply.open_incoming_clauses`), allocated less received."""
     rows = (
         db.query(
@@ -369,7 +380,8 @@ def _spo_rows(db: Session, product_id: str) -> list[dict]:
         balance = _num(r.allocated_quantity) - _num(r.quantity_received)
         if balance <= 0:
             continue
-        arrival = r.eta_delay_date or r.estimated_arrival_date or r.expected_date
+        delayed = r.eta_delay_date if eta_delay_visible else None
+        arrival = delayed or r.estimated_arrival_date or r.expected_date
         code, name = suppliers.get(str(r.supplier_id or r.ship_supplier_id), (None, None))
         out.append({
             "allocation_id": str(r.id),
@@ -389,7 +401,7 @@ def _spo_rows(db: Session, product_id: str) -> list[dict]:
     return out
 
 
-def _incoming_pl(db: Session, product_id: str, spos: list[dict]) -> list[dict]:
+def _incoming_pl(db: Session, product_id: str, spos: list[dict], eta_delay_visible: bool) -> list[dict]:
     """Packing lists still to land, net of the open SPO rows (`spos`, the SPO column) on them (R3)."""
     lines = (
         db.query(
@@ -420,7 +432,7 @@ def _incoming_pl(db: Session, product_id: str, spos: list[dict]) -> list[dict]:
             "shipment_id": str(ln.id),
             "shipment_number": ln.shipment_number,
             "container_number": ln.shipping_container_number,
-            "eta": _iso(ln.eta_delay_date or ln.estimated_arrival_date),
+            "eta": _iso((ln.eta_delay_date if eta_delay_visible else None) or ln.estimated_arrival_date),
             "still_to_land": 0.0,
         })
         s["still_to_land"] += still
