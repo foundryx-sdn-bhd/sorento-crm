@@ -290,14 +290,20 @@ def _similar_refusal(message: str, match: dict) -> JSONResponse:
     return JSONResponse(status_code=422, content={"error": message, "match": match})
 
 
-def _word_refusal(db: Session, row, word: str, owners: dict) -> None:
-    """409 when `word` already belongs to another field (one word, one field)."""
+def _word_refusal(
+    db: Session, row, word: str, owners: dict, value: Optional[str] = None
+) -> None:
+    """409 when `word` already belongs to another field (one word, one field).
+
+    `details` lets the grid put the message under the word: `value` is the value key the
+    word was added under (`_self` for an other-name), None for a new value."""
     other = find_word_on_other_key(db, row, word, owners)
     if other is not None:
         raise AppException(
             status_code=409,
             message=f"\"{word}\" is already a word for {other.label}.",
             code="spec_registry_word_on_other_key",
+            details={"word": word, "other_label": other.label, "value": value},
         )
 
 
@@ -1031,10 +1037,10 @@ def update_spec_key(
             owners = vocabulary_owners(db)
         if "user_synonyms" in fields:
             held = _held_words(row)
-            for words in (fields["user_synonyms"] or {}).values():
+            for value_key, words in (fields["user_synonyms"] or {}).items():
                 for word in words:
                     if word and word.strip() and normalise_vocabulary(word) not in held:
-                        _word_refusal(db, row, word.strip(), owners)
+                        _word_refusal(db, row, word.strip(), owners, value_key)
 
         # Suppressions land BEFORE the near-duplicate guard below, so the guard judges the
         # vocabulary as this save leaves it. Renaming a value - take `floor_standing`

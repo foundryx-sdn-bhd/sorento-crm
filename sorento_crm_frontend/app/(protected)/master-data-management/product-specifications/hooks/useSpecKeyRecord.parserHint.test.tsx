@@ -159,4 +159,82 @@ describe('useSpecKeyRecord - parser hint (F2)', () => {
     expect(result.current.mode).toBe('edit');
     expect(result.current.draft?.parserHint).toBe('kept text');
   });
+
+  describe('wordError (AC-2.4)', () => {
+    const MESSAGE = '"length" is already a word for Length.';
+    const refusal = () =>
+      jsonResponse(
+        {
+          message: MESSAGE,
+          detail: null,
+          code: 'spec_registry_word_on_other_key',
+          details: { word: 'length', other_label: 'Length', value: '_self' },
+        },
+        409,
+      );
+
+    async function refused() {
+      mockedFetch.mockResolvedValue(refusal());
+      const r = row();
+      const hook = renderHook(() => useSpecKeyRecord(r), { wrapper });
+      act(() => hook.result.current.edit());
+      await act(async () => {
+        await hook.result.current.save();
+      });
+      return hook;
+    }
+
+    it('is set from the 409 body, and the toast still fires', async () => {
+      const { result } = await refused();
+
+      expect(result.current.wordError).toEqual({
+        word: 'length',
+        value: '_self',
+        message: MESSAGE,
+      });
+      expect(toast.error).toHaveBeenCalledWith(MESSAGE, expect.anything());
+    });
+
+    it('is null for a 409 that carries no details', async () => {
+      mockedFetch.mockResolvedValue(
+        jsonResponse({ detail: 'x', code: 'spec_registry_word_on_other_key' }, 409),
+      );
+      const r = row();
+      const { result } = renderHook(() => useSpecKeyRecord(r), { wrapper });
+      act(() => result.current.edit());
+      await act(async () => {
+        await result.current.save();
+      });
+      expect(result.current.wordError).toBeNull();
+    });
+
+    it('clears when that value\'s words change', async () => {
+      const { result } = await refused();
+
+      act(() => {
+        result.current.setDraft((d) => ({ ...d, parserHint: 'unrelated' }));
+      });
+      expect(result.current.wordError).not.toBeNull();
+
+      act(() => {
+        result.current.setDraft((d) => ({ ...d, words: { ...d.words, _self: ['other'] } }));
+      });
+      expect(result.current.wordError).toBeNull();
+    });
+
+    it('clears on cancel', async () => {
+      const { result } = await refused();
+      act(() => result.current.cancel());
+      expect(result.current.wordError).toBeNull();
+    });
+
+    it('clears on a successful save', async () => {
+      const { result } = await refused();
+      mockedFetch.mockResolvedValue(jsonResponse({ ...row(), products_updated: 0 }));
+      await act(async () => {
+        await result.current.save();
+      });
+      expect(result.current.wordError).toBeNull();
+    });
+  });
 });

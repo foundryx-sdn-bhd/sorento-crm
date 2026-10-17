@@ -40,6 +40,8 @@ export interface WordsDataGridProps {
   addPlaceholder?: string;
   /** word -> the other specifications that also own it; shown under the word. */
   alsoOn?: Record<string, string[]>;
+  /** A refused word: its sentence shows under the row holding that word (edit mode). */
+  error?: { word: string; message: string } | null;
 }
 
 interface WordRow {
@@ -69,6 +71,7 @@ export function WordsDataGrid({
   emptyMessage = 'No words yet.',
   addPlaceholder = 'a word',
   alsoOn,
+  error,
 }: WordsDataGridProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -152,6 +155,11 @@ export function WordsDataGrid({
                 Also on: {others.join(', ')}
               </span>
             )}
+            {mode === 'edit' && error && error.word === word && (
+              <span role="alert" className="block text-xs text-destructive">
+                {error.message}
+              </span>
+            )}
           </div>
         );
       },
@@ -213,6 +221,7 @@ export function WordsDataGrid({
     removalBusy,
     savedWords,
     alsoOn,
+    error,
     onRename,
   ]);
 

@@ -199,7 +199,13 @@ export function SpecKeyRecordDetail({ specKey }: { specKey: string }) {
           </TabsList>
 
           <TabsContent value="details" className="mt-0 focus-visible:outline-none">
-            <HeaderTab row={row} mode={record.mode} draft={record.draft} setDraft={record.setDraft} />
+            <HeaderTab
+              row={row}
+              mode={record.mode}
+              draft={record.draft}
+              setDraft={record.setDraft}
+              wordError={record.wordError}
+            />
           </TabsContent>
 
           <TabsContent value="choices" className="mt-0 focus-visible:outline-none">
@@ -208,6 +214,7 @@ export function SpecKeyRecordDetail({ specKey }: { specKey: string }) {
               mode={record.mode}
               draft={record.draft}
               setDraft={record.setDraft}
+              wordError={record.wordError}
               onEnterEdit={() => {
                 record.edit();
                 setTab('choices');

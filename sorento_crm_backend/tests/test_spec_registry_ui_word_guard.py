@@ -158,6 +158,24 @@ def test_a_new_word_that_is_another_fields_own_word_is_refused(api):
     assert _row(db, "zzt_a").user_synonyms == {}
 
 
+def test_the_refusal_names_the_word_the_other_label_and_the_value_it_was_added_under(api):
+    db, _as = api
+    _as(_REGISTRY_ADMIN)
+    client = TestClient(app)
+    _key(db, "zzt_a", label="Alpha finish", data_type="enum", unit=None, allowed_values=["chrome"], synonyms={"chrome": ["chrome"]})
+    _key(db, "zzt_b", label="Beta pipe", synonyms={"_self": ["trap"]})
+
+    own = client.patch(f"{_BASE}/zzt_a", json={"user_synonyms": {"_self": ["trap"]}})
+    under_value = client.patch(f"{_BASE}/zzt_a", json={"user_synonyms": {"chrome": ["trap"]}})
+    new_value = client.patch(f"{_BASE}/zzt_a", json={"user_values": ["trap"]})
+    posted = client.post(f"{_BASE}/zzt_a/values", json={"value": "trap"})
+
+    assert own.json()["details"] == {"word": "trap", "other_label": "Beta pipe", "value": "_self"}
+    assert under_value.json()["details"]["value"] == "chrome"
+    assert new_value.json()["details"] == {"word": "trap", "other_label": "Beta pipe", "value": None}
+    assert posted.json()["details"] == {"word": "trap", "other_label": "Beta pipe", "value": None}
+
+
 def test_the_comparison_ignores_case_spacing_and_separators(api):
     db, _as = api
     _as(_REGISTRY_ADMIN)

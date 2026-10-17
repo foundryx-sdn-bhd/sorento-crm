@@ -213,3 +213,52 @@ describe('F4 - Also on', () => {
     expect(screen.queryByText(/^Also on:/)).toBeNull();
   });
 });
+
+describe('AC-2.4 - a refused word shows under its row', () => {
+  const error = { word: 'length', value: '_self', message: '"length" is already a word for Length.' };
+
+  it('edit mode renders the server message as an alert under the matching word', () => {
+    function Harness() {
+      const row = baseRow();
+      const [draft, setDraft] = useState<SpecKeyDraft>(() => projectSpecKeyDraft(row));
+      return (
+        <HeaderTab
+          row={row}
+          mode="edit"
+          draft={draft}
+          setDraft={(u) => setDraft((d) => u(d))}
+          wordError={error}
+        />
+      );
+    }
+    renderWithQuery(<Harness />);
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('"length" is already a word for Length.');
+    expect(alert.className).toContain('text-destructive');
+  });
+
+  it('view mode and a different value show no alert', () => {
+    renderWithQuery(
+      <HeaderTab
+        row={baseRow()}
+        mode="view"
+        draft={null}
+        setDraft={() => {}}
+        wordError={error}
+      />,
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    renderWithQuery(
+      <HeaderTab
+        row={baseRow()}
+        mode="view"
+        draft={null}
+        setDraft={() => {}}
+        wordError={{ ...error, value: 'chrome' }}
+      />,
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});

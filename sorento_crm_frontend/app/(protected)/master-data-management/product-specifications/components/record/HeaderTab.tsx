@@ -6,7 +6,7 @@ import { NumberInput } from '@/components/ui/number-input';
 import { numberFieldError } from '@/lib/number-field';
 import { Switch } from '@/components/ui/switch';
 import { WordsDataGrid } from '../WordsDataGrid';
-import { dedupe, seedWordsFor, type SpecKeyDraft } from '../../hooks/useSpecKeyRecord';
+import { dedupe, seedWordsFor, type SpecKeyDraft, type WordError } from '../../hooks/useSpecKeyRecord';
 import type { SpecRegistryKey } from '../../types/productSpec.types';
 
 /** The pseudo-value holding the words that name the SPECIFICATION itself ("oz",
@@ -38,6 +38,8 @@ export interface HeaderTabProps {
   /** Null in view mode - the tab reads straight off `row` then. */
   draft: SpecKeyDraft | null;
   setDraft: (updater: (draft: SpecKeyDraft) => SpecKeyDraft) => void;
+  /** The refused word, shown under its row when it was added as an other name. */
+  wordError?: WordError | null;
 }
 
 /**
@@ -47,7 +49,7 @@ export interface HeaderTabProps {
  * code name, no "Built in / Added here", no rule count, no Advanced anywhere on
  * this tab (D8): rules live only on their own tab.
  */
-export function HeaderTab({ row, mode, draft, setDraft }: HeaderTabProps) {
+export function HeaderTab({ row, mode, draft, setDraft, wordError }: HeaderTabProps) {
   const isNumeric = row.data_type === 'numeric';
   const isList = row.data_type === 'enum';
 
@@ -150,6 +152,7 @@ export function HeaderTab({ row, mode, draft, setDraft }: HeaderTabProps) {
           value={SELF_KEY}
           savedWords={row.synonyms?.[SELF_KEY] ?? EMPTY_WORDS}
           alsoOn={row.also_on}
+          error={wordError?.value === SELF_KEY ? wordError : null}
           emptyMessage="No other names yet."
           addPlaceholder="e.g. oz"
           onAdd={(word) =>

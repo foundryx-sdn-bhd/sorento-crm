@@ -331,6 +331,22 @@ export class SpecSimilarError extends Error {
 }
 
 /**
+ * A new word that another specification already owns (409
+ * `spec_registry_word_on_other_key`). Carries which word, and the value it was added
+ * under, so the words grid can put the sentence under that row.
+ */
+export class SpecWordRefusedError extends Error {
+  constructor(
+    message: string,
+    readonly word: string,
+    readonly value: string | null,
+  ) {
+    super(message);
+    this.name = 'SpecWordRefusedError';
+  }
+}
+
+/**
  * Raise the near-duplicate refusal as itself, and anything else as a plain error.
  *
  * `extractApiError` is still what handles every ordinary failure below; this reads the
@@ -350,6 +366,22 @@ async function throwSpecWriteError(
     }
     if (body?.match) {
       throw new SpecSimilarError(String(body.error ?? fallback));
+    }
+  }
+  if (response.status === 409) {
+    let body: { code?: string; details?: { word?: unknown; value?: unknown } } | null = null;
+    try {
+      body = await response.clone().json();
+    } catch {
+      body = null;
+    }
+    const details = body?.details;
+    if (body?.code === 'spec_registry_word_on_other_key' && typeof details?.word === 'string') {
+      throw new SpecWordRefusedError(
+        await extractApiError(response, fallback),
+        details.word,
+        typeof details.value === 'string' ? details.value : null,
+      );
     }
   }
   throw new Error(await extractApiError(response, fallback));
