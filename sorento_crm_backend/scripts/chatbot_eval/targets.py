@@ -215,7 +215,7 @@ def _subject_after(row: dict[str, Any]) -> set[str]:
         # holds in its after focus (extra.order) is the subject when no product is: products first, order second.
         held = {_key(o["raw"]) for o in ((_mem_focus(row, "after").get("extra") or {}).get("order") or [])
                 if isinstance(o, dict) and isinstance(o.get("raw"), str) and o["raw"].strip()}
-        return (codes | _looked_up_sets(row)) or held or _lookup_subjects(row)
+        return (codes or held or _lookup_subjects(row)) | _looked_up_sets(row)   # a looked-up parked set rides on top of the fallbacks
     # older / hand-built rows: the first source that names anything wins; the tool args are the last resort (a lookup
     # that answered with entities of its own outranks the literal terms the tool was called with)
     return (codes or _codes_of((_kind(row, "state").get("focus") or {}).get("products"))
