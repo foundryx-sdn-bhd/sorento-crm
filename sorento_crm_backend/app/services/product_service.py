@@ -1232,6 +1232,7 @@ class ProductService:
         """Delete a product."""
         product = self.get_product(product_id)
         self._reject_if_companion_rule_dependency(product_id)
+        self._reject_if_new_product_application_link(product_id)
         # Capture children BEFORE delete so we can re-anchor them to the next
         # existing ancestor afterwards (DB ondelete=SET NULL orphans them).
         ex_children = self._variant_child_ids(product_id)
@@ -1240,6 +1241,30 @@ class ProductService:
         for child_id in ex_children:
             self._reconcile_variant_links(child_id)
         return {"message": "Product deleted successfully"}
+
+    def _reject_if_new_product_application_link(self, product_id: str) -> None:
+        """A new product application line opened as this product holds it (RESTRICT, so the
+        link purchasing made is never silently undone); answer with a 409 naming the
+        application instead of the bare IntegrityError's 500."""
+        from app.models.new_product_application import (
+            NewProductApplication,
+            NewProductApplicationLine,
+        )
+
+        row = (
+            self.db.query(NewProductApplication.application_no)
+            .join(
+                NewProductApplicationLine,
+                NewProductApplicationLine.application_id == NewProductApplication.id,
+            )
+            .filter(NewProductApplicationLine.opened_product_id == product_id)
+            .first()
+        )
+        if row is not None:
+            raise handle_conflict(
+                f"This product was opened for new product application {row[0]}. "
+                "Undo that line first."
+            )
 
     def _reject_if_companion_rule_dependency(self, product_id: str) -> None:
         """RESTRICT is real at the DB level (migration 495), but a bare

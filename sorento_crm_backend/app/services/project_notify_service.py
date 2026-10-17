@@ -68,9 +68,15 @@ def management_user_ids(db: Session) -> List[str]:
 
 
 def approver_user_ids(
-    db: Session, company_id: Optional[str] = None, exclude: Optional[set] = None
+    db: Session,
+    company_id: Optional[str] = None,
+    exclude: Optional[set] = None,
+    slug: Optional[str] = None,
 ) -> List[str]:
     """Active, non-bot users who hold the quotation approve grant AND the quotation's company.
+
+    ``slug`` asks the same question for another grant (the new product application's approve
+    and open_code use it); it defaults to the quotation approve grant.
 
     The company grant is the same shape `cs_routing_service.eligible_pics_query` uses: a role
     that carries the slug says nothing about which company's quotations its holder may see.
@@ -93,7 +99,7 @@ def approver_user_ids(
         .join(User, User.id == UserRoleAssignment.user_id)
         .join(UserCompany, UserCompany.user_id == User.id)
         .filter(
-            UserPermission.slug == APPROVE_PERMISSION,
+            UserPermission.slug == (slug or APPROVE_PERMISSION),
             UserCompany.company_id == str(company_id or DEFAULT_COMPANY_ID),
             User.status == UserStatus.ACTIVE.value,
             User.is_trashed.is_(False),

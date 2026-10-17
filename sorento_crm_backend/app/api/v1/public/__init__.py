@@ -15,6 +15,7 @@ from app.api.v1.public import (
     portal_ideas,
     portal_price_tag,
     portal_sample_request,
+    portal_new_product_application,
     portal_sales_opportunity,
     print as print_route,
     quotation_sign,
@@ -64,6 +65,13 @@ router.include_router(
 # generic portal router for the same reason (D49).
 router.include_router(
     portal_sample_request.router, prefix="/portal", tags=["public-portal-sample-request"]
+)
+# New product applications (NEW-PRODUCT-APP): literal `/submissions/new_product_application...`
+# and `/new-product-application/...` paths, mounted before the generic portal router (D49).
+router.include_router(
+    portal_new_product_application.router,
+    prefix="/portal",
+    tags=["public-portal-new-product-application"],
 )
 router.include_router(portal.router, prefix="/portal", tags=["public-portal"])
 # Respond.io's direct message webhook (CHAT-LOCAL-FIRST R3), gated by its own signature.

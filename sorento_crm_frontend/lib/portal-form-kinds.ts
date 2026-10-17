@@ -79,10 +79,18 @@ export const CONVERSATION_KIND = 'conversation' as const;
  */
 export const SAMPLE_REQUEST_KIND = 'sample_request' as const;
 
+/**
+ * New Product Application (lane NEW-PRODUCT-APP): a request to open new product codes, started
+ * from the contact's own responded stock inquiry. Grantable per contact like `sample_request`;
+ * its pages are its own (`app/(auth)/portal/c/[slug]/new_product_application/`).
+ */
+export const NEW_PRODUCT_APPLICATION_KIND = 'new_product_application' as const;
+
 export type PortalLandingKind =
   | PortalSubmissionKind
   | typeof GATED_FORM_TYPE
   | typeof SAMPLE_REQUEST_KIND
+  | typeof NEW_PRODUCT_APPLICATION_KIND
   | typeof SALES_OPPORTUNITY_KIND
   | typeof CUSTOMER_ASKS_KIND
   | typeof CONVERSATION_KIND;
@@ -91,6 +99,7 @@ export type PortalLandingKind =
 export const LANDING_KINDS: readonly PortalLandingKind[] = [
   ...SUBMISSION_KINDS,
   SAMPLE_REQUEST_KIND,
+  NEW_PRODUCT_APPLICATION_KIND,
   GATED_FORM_TYPE,
   SALES_OPPORTUNITY_KIND,
   CUSTOMER_ASKS_KIND,
@@ -126,6 +135,7 @@ export const LANDING_LABELS: Record<PortalLandingKind, string> = {
   ...SUBMISSION_LABELS,
   price_tag_request: 'Price Tag Request',
   sample_request: 'Sample Request',
+  new_product_application: 'New Product Application',
   sales_opportunity: 'Sales Opportunity',
   customer_asks: 'Customer asks',
   conversation: 'Conversation',
