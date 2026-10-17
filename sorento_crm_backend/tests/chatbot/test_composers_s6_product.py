@@ -213,7 +213,8 @@ def test_answers_state_keeps_identity(monkeypatch):
         ),
     ],
 )
-def test_missing_lines_translate(line, ms, zh):
+def test_missing_lines_translate(monkeypatch, line, ms, zh):
+    _set_gate(monkeypatch, True)
     assert Localizer("ms", defaults("ms")).reply(line) == ms
     assert Localizer("zh", defaults("zh")).reply(line) == zh
 

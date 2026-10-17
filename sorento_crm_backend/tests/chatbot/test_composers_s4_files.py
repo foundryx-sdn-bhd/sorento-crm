@@ -239,7 +239,8 @@ def test_fit_line_not_retranslated():
     assert Localizer("zh", defaults("zh")).reply(line) == "没有 SRTWC286-SH 的马桶盖记录。"
 
 
-def test_new_missing_line_translates_via_the_catalogue():
+def test_new_missing_line_translates_via_the_catalogue(monkeypatch):
+    _set_gate(monkeypatch, True)
     line = "No Product Photos on record for SRTWC286-SH."
     assert Localizer("ms", defaults("ms")).reply(line) == "Tiada Product Photos dalam rekod untuk SRTWC286-SH."
     assert Localizer("zh", defaults("zh")).reply(line) == "SRTWC286-SH 没有Product Photos记录。"
