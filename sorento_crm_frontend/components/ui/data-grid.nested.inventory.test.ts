@@ -90,6 +90,10 @@ const EXPANDED_CONTENT_SITES = new Map<string, string>([
     'NESTED GRID: OrderInquiryStockGrid, a thin wrapper over CellStockTable (the hand-rolled <table> carve-out) whose rows open StockDocumentsPanel (PanelDataGrid). The expansion sits inside the OI detail lines grid\'s own provider, so the context default covers it, AND StockDocumentsPanel passes scrollerMaxHeight={false} itself (S3, PLAN-oi-request-cs-reserve.md, stock grid on the OI page)',
   ],
   [
+    'app/(protected)/project-sales/sample-requests/components/SampleRequestDetail.tsx',
+    'NESTED GRID: OrderInquiryStockGrid (BRW) under a sample request line, the same wrapper over CellStockTable as the OI entry above, whose rows open StockDocumentsPanel (PanelDataGrid). The expansion sits inside the sample request lines PanelDataGrid\'s own provider, so the context default covers it, AND StockDocumentsPanel passes scrollerMaxHeight={false} itself (SR-CORE, #1718)',
+  ],
+  [
     'app/(protected)/master-data-management/products/[id]/components/ProductSuppliersTab.tsx',
     'NESTED GRID: SupplierCostPrices (PanelDataGrid) under a supplier row, #1305 round 9. Covered by the context default (it names no scrollerMaxHeight of its own)',
   ],
