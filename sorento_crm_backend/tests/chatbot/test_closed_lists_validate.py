@@ -154,3 +154,13 @@ def test_control_untagged_entities_keep_todays_reading():
     """Gate off (no tag): today's split, "span" read as the scheme."""
     verdict = _verdict(_file_entity("span certificate", "certificate"))
     assert derive_require(verdict, message_text="span certificate") == {"certificate": {"scheme": "span"}}
+
+
+def test_under_the_gate_an_untagged_file_ask_reads_no_word_and_is_asked():
+    """Card R3: no listed pick means the bot asks; the cert regexes never read the raw or
+    the parser's own goal sentence on a closed-lists verdict."""
+    verdict = {**_verdict(_file_entity("span certificate", "certificate")), "closed_lists": True, "user_goal": "span cert"}
+    assert derive_require(verdict, message_text="span certificate") is None
+    bare = {**_verdict(), "closed_lists": True, "user_goal": "wants the cert"}
+    assert derive_require(bare, message_text="any cert?") is None
+

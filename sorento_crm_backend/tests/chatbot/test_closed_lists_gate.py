@@ -180,3 +180,25 @@ def test_gate_on_the_user_turn_lists_the_candidates_after_the_message(session_fa
     said = lines.index("Current user message: price for SRTWC8517")
     assert said < at and all(not line.strip() for line in lines[said + 1 : at])  # the message's own blank lines
     assert lines[at + 1] == '- "srtwc8517": code SRTWC8517 (Synthetic WC)'
+
+
+@pytest.mark.parametrize("gate", [False, True])
+def test_grounding_runs_under_the_gate_and_the_verdict_says_so(gate, session_factory, seeded, stub_access, monkeypatch):
+    from app.services.chatbot.head import grounding
+
+    seen: list[tuple[dict, dict]] = []
+    real = grounding.ground
+
+    def spy(db, verdict, **kwargs):
+        out = real(db, verdict, **kwargs)
+        seen.append((kwargs, out[0]))
+        return out
+
+    monkeypatch.setattr(grounding, "ground", spy)
+    _user_block(session_factory, stub_access, monkeypatch, gate=gate)
+
+    [(kwargs, _out)] = seen
+    assert kwargs.get("closed_lists", False) is gate
+    assert engine_mod.closed_lists_verdict({"entities": []}, gate=gate) == (
+        {"entities": [], "closed_lists": True} if gate else {"entities": []}
+    )
