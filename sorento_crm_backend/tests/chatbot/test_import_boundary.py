@@ -53,6 +53,7 @@ ALLOWED = {
     # reads the same marker. A developer tool, not core, not on any request path; it never
     # moves a label.
     "scripts/publish_closed_lists_prompt.py",
+    "scripts/publish_code_lookup_prompt.py",
     # EVAL-BENCH (#1743) L1 replay: re-runs recorded parses through the engine with every LLM
     # call blocked, so it patches `llm_call`, `head.parser` and `grounding` directly; `/chat/turn`
     # has no seam for a recorded parse. A developer tool and its own test, not core, not on any

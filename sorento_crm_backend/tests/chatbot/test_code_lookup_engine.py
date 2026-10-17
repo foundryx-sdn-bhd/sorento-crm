@@ -130,4 +130,4 @@ def test_a_pick_not_on_the_block_behaves_as_without_a_pick(session_factory, seed
 
     assert (hallucinated.reply or {}).get("text") == (baseline.reply or {}).get("text")
     assert _stock_ids(calls_h) == _stock_ids(calls_b)
-    assert all(ids[MEANT] not in found for found in _stock_ids(calls_h))
+    assert "Did you mean" in (hallucinated.reply or {}).get("text", "")
