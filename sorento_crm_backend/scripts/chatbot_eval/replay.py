@@ -2,7 +2,11 @@
 
 usage (cwd = the backend dir of the checkout under test):
   python scripts/chatbot_eval/replay.py run --traces FILE... --out OUT.jsonl
-  python scripts/chatbot_eval/replay.py live --items F --recorded F --out F --max-calls N --max-usd X --require-key-last4 XXXX [--prompt-version-id ID]
+  python scripts/chatbot_eval/replay.py live --items F --recorded F --out F --max-calls N --max-usd X --require-key-last4 XXXX [--prompt-version-id ID] [--chain]
+      (--chain: items sharing `conv` run as one conversation in `conv_turn` order. Turn one starts from its recorded
+      row, or from empty memory and no history when the item has `start: "empty"`; each later turn starts from the
+      memory the previous live turn left (its dry-run session_patch, read as the console reads it) and sees this run's
+      own exchanges as its history. A turn with no output turn skips the rest of its conversation ("chain_broken").)
       (--prompt-version-id pins the semantic parser prompt to that stored version on every live turn, replacing any recorded
       override; the output row's provenance then carries prompt_version_id)
       (history is read as of the recorded turn (prod world), not as of now: previous reply, recent exchanges, earlier
@@ -677,8 +681,10 @@ def _history_patches(stack: Any, history: dict[str, Any] | None) -> None:
     from app.services.chatbot import quoted
     from app.services.chatbot.turn import context as context_mod
 
-    # profile facts are read as of now; the L5 block is the recorded one verbatim (empty when the recorded prompt had none)
-    stack.enter_context(mock.patch.object(context_mod, "_render_l5", lambda facts: (history["about"], False)))
+    # profile facts are read as of now; the L5 block is the recorded one verbatim (empty when the recorded prompt had none;
+    # None, a chained turn with no recorded anchor, leaves the as-of-now block)
+    if history["about"] is not None:
+        stack.enter_context(mock.patch.object(context_mod, "_render_l5", lambda facts: (history["about"], False)))
     if history["l3"] is not None:  # L3 is the recorded prompt's block verbatim; without one the as-of DB reads above serve
         stack.enter_context(mock.patch.object(context_mod, "_render_l3", lambda *a, **k: history["l3"]))
     real_quoted = quoted.resolve_quoted_turn
@@ -703,15 +709,19 @@ def _history_patches(stack: Any, history: dict[str, Any] | None) -> None:
 
 
 def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], Any],
-              total: dict[str, Any], prompt_version_id: str | None = None) -> dict[str, Any]:
+              total: dict[str, Any], prompt_version_id: str | None = None,
+              carry: dict[str, Any] | None = None, sink: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One live turn on the recorded row's state, or, for a chained turn, on `carry` ({memory, history}: what the
+    previous live turn left). `sink` receives what the next chained turn needs (memory, history, message, reply)."""
     _require_rolled_back(factory)
     from app.models.chatbot_turn import ChatbotTurn
-    from app.services.chatbot import engine
+    from app.services.chatbot import console_service, engine
     from app.services.chatbot.contracts import Envelope
 
     out: dict[str, Any] = {"item_id": item["item_id"], "run": item.get("run")}
     payload = copy.deepcopy(row.get("envelope") or {})
-    payload.update(is_test=True, previous_conversation_state=_recorded_memory(row))
+    memory = _recorded_memory(row) if carry is None else carry["memory"]
+    payload.update(is_test=True, previous_conversation_state=memory)
     for key in ("mock_reformulator_output", "prompt_overrides", "referenced_result_set"):
         payload.pop(key, None)  # recorded harness keys never carry into a live item
     if prompt_version_id:
@@ -722,6 +732,9 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
     if inner is not None and isinstance(inner.setdefault("message", {}), dict):
         key = f"{item['item_id']}|{item.get('run')}"
         inner["message"]["messageId"] = "live-" + hashlib.sha256(key.encode()).hexdigest()[:16]
+        if carry is not None:  # a chained turn is this run's message: it quotes nothing the recorded prod turn quoted
+            inner["message"].pop("replyTo", None)
+            inner["message"].pop("reply_to", None)
     envelope = Envelope(**payload)
     usage, misses, tool_results = _new_usage(), [], []
     with contextlib.ExitStack() as stack:
@@ -738,7 +751,10 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
 
         stack.enter_context(mock.patch.object(ideate, "call_ideation_tool", ideation_blocked))
         hist_db = factory()
-        _history_patches(stack, _recorded_history(hist_db, row, envelope))
+        history = _recorded_history(hist_db, row, envelope)
+        if carry is not None:  # this run's conversation replaces the recorded one; the contact and anchor stay
+            history = {**(history or _NO_HISTORY), **carry["history"]}
+        _history_patches(stack, history)
         try:
             result = engine.run_turn(envelope, session_factory=factory, offload=False)
         except _CapStop as stop:
@@ -746,9 +762,16 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
             return {**out, "stopped": stop.reason}
     if getattr(result, "duplicate", False):
         return {**out, "skipped": "duplicate"}
+    if sink is not None:
+        left = console_service._next_state({"reply": result.reply, "session_patch": result.session_patch})
+        reply = result.reply.get("text") if isinstance(result.reply, dict) else None
+        sink.update(memory=memory if left is None else left, history=history, message=item["message"],
+                    reply=reply if isinstance(reply, str) else None)
     db = factory()
     turn = db.query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
     trace = list(turn.trace or []) if turn is not None else []
+    if sink is not None:
+        sink["turn_no"] = _turn_no(trace)
     uuid_codes = _uuid_codes(db, [t.get("args") for t in trace if isinstance(t, dict) and t.get("kind") == "tool"]
                              + [t.get("args") for t in tool_results])
     understood = next(((r.get("facts") or {}) for r in trace if isinstance(r, dict) and r.get("stage") == "understood"), {})
@@ -780,6 +803,55 @@ def _pin_resolves(session_factory: Callable[[], Any], version_id: str) -> bool:
         db.close()
 
 
+# a chained turn whose recorded row has no anchor: no recorded history to start from, the profile block as of now
+_NO_HISTORY: dict[str, Any] = {"l3": None, "anchor": None, "about": None, "turn_number": 0, "previous_reply": None,
+                               "recent": [], "summaries": [], "read_frames": [], "earlier_messages": []}
+# `start: "empty"`: a new conversation, nothing remembered and nothing said before it
+_FRESH_START: dict[str, Any] = {"memory": {}, "history": {"l3": None, "previous_reply": None, "recent": [], "summaries": [],
+                                                          "read_frames": [], "earlier_messages": [], "turn_number": 1}}
+
+
+def _conversations(items: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Items grouped by `conv` in order of first appearance, each group in `conv_turn` order; no `conv` = alone."""
+    groups: dict[tuple[str, Any], list[dict[str, Any]]] = {}
+    for n, item in enumerate(items):
+        key = ("conv", item["conv"], item.get("run")) if item.get("conv") is not None else ("item", n, None)
+        groups.setdefault(key, []).append(item)   # each run of a conversation is its own chain
+    return [sorted(group, key=lambda item: item.get("conv_turn") or 0) for group in groups.values()]
+
+
+def _turn_no(trace: list[Any]) -> int | None:
+    """The turn number the engine recorded for a live turn (the trace record carrying `turn_no` and `quoted_turn`)."""
+    queue: list[Any] = list(trace or [])
+    while queue:
+        node = queue.pop(0)
+        if isinstance(node, dict):
+            if "quoted_turn" in node and isinstance(node.get("turn_no"), int):
+                return node["turn_no"]
+            queue.extend(node.values())
+        elif isinstance(node, list):
+            queue.extend(node)
+    return None
+
+
+def _next_carry(sink: dict[str, Any]) -> dict[str, Any]:
+    """What the next chained turn starts from: the memory this turn left and this turn added to the history it saw
+    (L3 is then rendered from those reads, not taken verbatim from a recorded prompt). The turn number counts on from
+    the number this turn ran with (its trace), so a first turn with no recorded anchor still counts right."""
+    from app.services.chatbot import engine
+
+    seen = sink.get("history") or _NO_HISTORY
+    message, reply = sink["message"], sink.get("reply")
+    at = engine._short_day_time(seen["anchor"]) if seen.get("anchor") is not None else ""
+    recent = list(seen.get("recent") or []) + ([(message, reply)] if reply else [])
+    earlier = list(seen.get("earlier_messages") or []) + [{"created_at": at, "text": message}]
+    ran = sink.get("turn_no") if isinstance(sink.get("turn_no"), int) else int(seen.get("turn_number") or 0)
+    return {"memory": sink["memory"], "history": {
+        "l3": None, "previous_reply": reply, "recent": recent[-3:], "earlier_messages": earlier[-3:],
+        "turn_number": ran + 1, "summaries": list(seen.get("summaries") or []),
+        "read_frames": list(seen.get("read_frames") or [])}}
+
+
 LIVE_ERROR_RATE = 0.02
 
 
@@ -794,11 +866,13 @@ def _live_errored(res: dict[str, Any]) -> bool:
 def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], *,
               session_factory: Callable[[], Any], max_calls: int, max_usd: float,
               require_key_last4: str, on_row: Callable[[dict[str, Any]], None] | None = None,
-              prompt_version_id: str | None = None) -> list[dict[str, Any]]:
+              prompt_version_id: str | None = None, chain: bool = False) -> list[dict[str, Any]]:
     """Run each item's message through the engine on its recorded state; stop cleanly at a call or spend cap,
     or at "wrong_key" when a provider or embedding key does not end with `require_key_last4` (exactly 4 non-blank
     characters, else ValueError before any item). A `prompt_version_id` that is not a stored version of the parser
-    prompt is a ValueError before any item (the registry would otherwise fall back silently)."""
+    prompt is a ValueError before any item (the registry would otherwise fall back silently).
+    `chain`: items sharing `conv` run as one conversation (module docstring, --chain); each turn is still rolled
+    back on its own, the conversation lives in the carried memory and history only."""
     if not _valid_last4(require_key_last4):
         raise ValueError("require_key_last4 must be exactly 4 non-blank characters")
     if prompt_version_id and not _pin_resolves(session_factory, prompt_version_id):
@@ -812,35 +886,52 @@ def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], 
     previous_disable = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
     try:
-        for item in items:
-            stopped = stopped or total.get("stop")
-            if stopped is None:
-                if total["calls"] >= max_calls:
-                    stopped = "max_calls"
-                elif total["usd"] >= max_usd:
-                    stopped = "max_usd"
-            if stopped:
-                res = {"item_id": item["item_id"], "run": item.get("run"), "stopped": stopped}
-            elif str(item.get("recorded_turn_id")) not in by_id:
-                res = {"item_id": item["item_id"], "run": item.get("run"), "skipped": "no_recorded_row"}
-            else:
-                try:
-                    with _rolled_back(session_factory) as factory:
-                        res = _live_one(item, by_id[str(item["recorded_turn_id"])], factory, total,
-                                        prompt_version_id)
-                except Exception as exc:  # noqa: BLE001 - record the type only; never message text
-                    res = {"item_id": item["item_id"], "run": item.get("run"), "error": type(exc).__name__}
-            results.append(res)
-            if on_row is not None:
-                on_row(res)
-            if _live_errored(res):
-                error_ids.append(item["item_id"])
-            if len(error_ids) > max(2, LIVE_ERROR_RATE * len(items)):   # (never on a lone error in a short list) the bench is broken, not the bot: stop spending
-                res = {"stopped": "error_rate", "errors": len(error_ids), "first_ids": error_ids[:5]}
+        halted = False
+        for group in _conversations(items) if chain else [[item] for item in items]:
+            if halted:
+                break
+            carry = copy.deepcopy(_FRESH_START) if chain and group[0].get("start") == "empty" else None
+            broken = False
+            for item in group:
+                stopped = stopped or total.get("stop")
+                if stopped is None:
+                    if total["calls"] >= max_calls:
+                        stopped = "max_calls"
+                    elif total["usd"] >= max_usd:
+                        stopped = "max_usd"
+                if stopped:
+                    res = {"item_id": item["item_id"], "run": item.get("run"), "stopped": stopped}
+                elif broken:
+                    res = {"item_id": item["item_id"], "run": item.get("run"), "skipped": "chain_broken"}
+                elif str(item.get("recorded_turn_id")) not in by_id:
+                    res = {"item_id": item["item_id"], "run": item.get("run"), "skipped": "no_recorded_row"}
+                else:
+                    sink: dict[str, Any] = {}
+                    chained = {"carry": carry, "sink": sink} if chain else {}   # unchained: the call is unchanged
+                    try:
+                        with _rolled_back(session_factory) as factory:
+                            res = _live_one(item, by_id[str(item["recorded_turn_id"])], factory, total,
+                                            prompt_version_id, **chained)
+                    except Exception as exc:  # noqa: BLE001 - record the type only; never message text
+                        res = {"item_id": item["item_id"], "run": item.get("run"), "error": type(exc).__name__}
+                    if chain and "turn" in res:
+                        carry = _next_carry(sink)
+                if chain:
+                    broken = broken or "turn" not in res
+                    if item.get("conv") is not None:
+                        res = {**res, "conv": item["conv"], "conv_turn": item.get("conv_turn")}
                 results.append(res)
                 if on_row is not None:
                     on_row(res)
-                break
+                if _live_errored(res):
+                    error_ids.append(item["item_id"])
+                if len(error_ids) > max(2, LIVE_ERROR_RATE * len(items)):   # (never on a lone error in a short list) the bench is broken, not the bot: stop spending
+                    res = {"stopped": "error_rate", "errors": len(error_ids), "first_ids": error_ids[:5]}
+                    results.append(res)
+                    if on_row is not None:
+                        on_row(res)
+                    halted = True
+                    break
     finally:
         logging.disable(previous_disable)
     return results
@@ -1026,7 +1117,7 @@ def _cmd_live(args: argparse.Namespace) -> int:
 
         live_rows(items, recorded, session_factory=SessionLocal, max_calls=args.max_calls, max_usd=args.max_usd,
                   require_key_last4=args.require_key_last4, on_row=write,
-                  prompt_version_id=args.prompt_version_id)
+                  prompt_version_id=args.prompt_version_id, chain=args.chain)
     print(f"live items {len(items)} run {n['run']} stopped {n['stopped']} skipped {n['skipped']}")
     if last.get("stopped") == "error_rate":
         print(f"error_rate stop: {last['errors']} errored items, first {' '.join(str(i) for i in last['first_ids'])}")
@@ -1070,6 +1161,7 @@ def main(argv: list[str] | None = None) -> int:
     live.add_argument("--max-usd", type=float, required=True)
     live.add_argument("--require-key-last4", type=_last4_arg, required=True)
     live.add_argument("--prompt-version-id", default=None)
+    live.add_argument("--chain", action="store_true")
     diff = sub.add_parser("diff")
     diff.add_argument("base")
     diff.add_argument("head")
