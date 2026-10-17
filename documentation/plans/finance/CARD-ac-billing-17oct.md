@@ -112,3 +112,23 @@ Lives in `foundryx-shared-service`, its own PR there (this sandbox cannot reach 
 5. **Payment detail.** (a) Amount outstanding + due date only (no receipts, no who-paid-when, no ageing
    buckets), or (b) also receipts and knock-offs. **Rec (a):** it is what was asked and keeps the NDA scope
    (ruling Q6) to amounts; triggers for (b): the owner asks for collections, or for ageing.
+
+## 6. Element -> component map (Phase 1, commits eb3c698b, 23ad8585)
+
+| Screen element | Component | Repo path |
+|---|---|---|
+| FINANCE heading + Billing Documents item | menu entries (`permission` view, `moduleKey` finance) | `fe/config/menu.config.tsx`, `fe/lib/route-module-map.ts` |
+| List page shell, header (no Add), Export | `PageHeader`, `Container`, `Button` gated by `useCanExportBilling` | `fe/app/(protected)/finance/billing-documents/components/BillingDocumentsView.tsx`, `fe/app/(protected)/finance/billing-documents/lib/permissions.ts` |
+| Filters: Type / Status / Customer / Agent / Date / Open only / search | `SearchableMultiSelect`, `SearchableSelect` (clearable), `DateRangePicker`, `Switch`, `ListSearchInput` | same file; query string `fe/app/(protected)/finance/billing-documents/lib/listQuery.ts` |
+| List grid (fixed, resizable) | `DataGrid`, `DataGridTable`, `DataGridColumnHeader`, `DataGridPagination` | same file |
+| Type and Status pills | `BillingTypeBadge`, `BillingStatusBadge` (`Badge`) | `fe/app/(protected)/finance/billing-documents/components/BillingBadges.tsx` |
+| Outstanding cell (blank / Paid / amount) | `OutstandingCell` | `fe/app/(protected)/finance/billing-documents/components/OutstandingCell.tsx` |
+| Record header, meta strip, prev/next | `PageHeader`, `ListPager`, `BackToList` | `fe/app/(protected)/finance/billing-documents/[id]/components/BillingDocumentDetail.tsx` |
+| Record tabs Details / Lines / Related | `Tabs` line variant, `Field`, `PanelDataGrid` | same file |
+| Customer record: Billing documents tab | `BillingDocumentsView customerId` inside `CUSTOMER_TABS` | `fe/app/(protected)/order-management/customers/components/CustomerDetail.tsx` (+ `[id]/edit/page.tsx`, same tabs) |
+| Customer record: "Outstanding RM x as of date" | `CustomerOutstandingMeta` | `fe/app/(protected)/finance/billing-documents/components/CustomerOutstandingMeta.tsx` |
+| SO record: Invoices tab | `SalesOrderInvoices` | `fe/app/(protected)/finance/billing-documents/components/SalesOrderInvoices.tsx`, `fe/app/(protected)/scm/sales-orders/[id]/components/SalesOrderDetail.tsx` |
+| Data | `useBillingDocumentsQuery`, `useBillingDocumentQuery`, `useCustomerOutstandingQuery` -> `billingDocumentService` | `fe/app/(protected)/finance/billing-documents/hooks/useBillingDocuments.ts`, `fe/app/(protected)/finance/billing-documents/services/billingDocumentService.ts` |
+
+Mock data (illustrative, masked; the crew data case was a dealer with five SOs and no AR data anywhere
+before 25 Oct) lives only in the Phase 1 mock and goes when the service is wired.
