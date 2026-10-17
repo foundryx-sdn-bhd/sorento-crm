@@ -354,7 +354,8 @@ def test_ac03_put_replaces_the_lines(world):
 def test_ac03_delete_draft_is_a_registered_countdown_action_for_the_owner_only(world):
     from app.services import new_product_application_service as svc
     from app.services.error_handler import AppException
-    from app.services.record_actions import get_action
+    import app.services.record_actions  # noqa: F401  (registers the actions)
+    from app.services.form_action_registry import get_action
 
     assert get_action("new_product_application.delete") is not None
     d = _draft(world)

@@ -2181,6 +2181,29 @@ register(
 )
 
 
+def _delete_new_product_application(db: Session, payload: dict):
+    from app.services import new_product_application_service
+
+    # Applicant's own Draft only; re-checked here because the state can change inside the window.
+    new_product_application_service.delete_draft(
+        db, _entity_id(payload), str(payload.get("requested_by_id") or "")
+    )
+    return {"message": "Deleted"}
+
+
+register(
+    FormAction(
+        key="new_product_application.delete",
+        entity_types=("new_product_application",),
+        execute=_delete_new_product_application,
+        # Destructive: a hard delete of the applicant's draft and its lines.
+        window=WINDOW_DESTRUCTIVE,
+        permission=OWN_RECORD,
+        label="Delete draft",
+    )
+)
+
+
 def _void_price_tag_request(db: Session, payload: dict):
     from app.services.price_tag_request_service import (
         PriceTagRequestService,
