@@ -135,7 +135,7 @@ C1 PATCH `/api/v1/master-data/spec-registry/{spec_key}` (`app/api/v1/master_data
   more than 200 chars after cleaning -> 422 AppException code `spec_registry_hint_too_long`. Not a vocabulary-only
   field, so a caller with only `master_data.products.edit` gets 403 (existing gate).
 - A `label` that differs from the stored one sets `label_owned = True`.
-- `_serialise` adds `parser_hint`, `label_owned`, and `also_on: {word: [other field label, ...]}` for every word of
+- `_serialise` adds `id` (needed by the History tab's AuditTrail, never shown), `parser_hint`, `label_owned`, and `also_on: {word: [other field label, ...]}` for every word of
   this row (merged synonyms, all value keys incl. `_self`) that normalises equal (`normalise_vocabulary`) to a word,
   label or spec_key of another row; words with no overlap are absent from the map.
 - `unit` stays absent from `SpecKeyUpdate` (unchanged; FE stops sending it).
@@ -172,7 +172,7 @@ C6 `scripts/publish_specs_token_prompt.py`: `publish(session, from_version=None)
 
 ## Frontend contract (Phase 2, binding for tester + coder)
 Base: `sorento_crm_frontend/app/(protected)/master-data-management/product-specifications/`.
-F1 Types (`types/productSpec.types.ts`): `SpecRegistryKey` gains `parser_hint: string | null`, `label_owned: boolean`,
+F1 Types (`types/productSpec.types.ts`): `SpecRegistryKey` gains `id: string`, `parser_hint: string | null`, `label_owned: boolean`,
    `also_on?: Record<string, string[]>`.
 F2 `hooks/useSpecKeyRecord.ts`: draft gains `parserHint: string` (from `row.parser_hint ?? ''`); the PATCH body sends
    `parser_hint: draft.parserHint.trim() || null` and NO LONGER sends `unit` (drop draft.unit from the payload).
