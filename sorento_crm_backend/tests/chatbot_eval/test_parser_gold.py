@@ -134,6 +134,74 @@ def test_all_reasons_reported():
     assert ok is False and len(why) == 2
 
 
+def test_load_gold_accepts_canonical_and_attributes_only(tmp_path):
+    rows = pg.load_gold(_write(tmp_path, [_row("a", "x", {"canonical": None, "attributes_only": []})]))
+    assert rows[0]["expect"] == {"canonical": None, "attributes_only": []}
+
+
+def test_canonical_code_case_and_dash_blind():
+    v = _v(products=["SRTWT8259-GM"])
+    assert pg.grade_parse(v, {"canonical": "SRTWT8259-GM"})[0] is True
+    assert pg.grade_parse(v, {"canonical": "srtwt8259gm"})[0] is True
+    assert pg.grade_parse(v, {"canonical": "SRTWT8259-GY"})[0] is False
+    assert pg.grade_parse(_v(), {"canonical": "SRTWT8259-GM"})[0] is False
+
+
+def test_canonical_code_must_be_the_product_entitys_not_a_customers():
+    v = {"entities": [{"hint": "customer", "canonical_code": "SRTWT8259-GM"}]}
+    assert pg.grade_parse(v, {"canonical": "SRTWT8259-GM"})[0] is False
+
+
+def test_canonical_null_needs_every_product_entity_null():
+    assert pg.grade_parse(_v(products=[None]), {"canonical": None})[0] is True
+    assert pg.grade_parse(_v(), {"canonical": None})[0] is True
+    ok, why = pg.grade_parse(_v(products=[None, "SRTWT8259-GM"]), {"canonical": None})
+    assert ok is False and why
+    assert pg.grade_parse(_v(products=["SRTWT8259-GM"]), {"canonical": None})[0] is False
+    assert pg.grade_parse(_v(products=[""]), {"canonical": None})[0] is True
+
+
+def test_canonical_null_ignores_non_product_entities():
+    v = {"entities": [{"hint": "customer", "canonical_code": "ZZ Demo Trading"}]}
+    assert pg.grade_parse(v, {"canonical": None})[0] is True
+
+
+def test_attributes_only_subset():
+    assert pg.grade_parse(_v(attrs=["price"]), {"attributes_only": ["price", "stock"]})[0] is True
+    assert pg.grade_parse(_v(attrs=["price", "stock"]), {"attributes_only": ["price", "stock"]})[0] is True
+    assert pg.grade_parse(_v(attrs=["Price"]), {"attributes_only": ["price"]})[0] is True
+    ok, why = pg.grade_parse(_v(attrs=["price", "discontinued"]), {"attributes_only": ["price"]})
+    assert ok is False and why
+
+
+def test_attributes_only_empty_list_means_no_attribute_at_all():
+    assert pg.grade_parse(_v(attrs=["discontinued"]), {"attributes_only": []})[0] is False
+    assert pg.grade_parse(_v(), {"attributes_only": []})[0] is True
+    assert pg.grade_parse({}, {"attributes_only": []})[0] is True
+
+
+CODE_PICKS = BACKEND / "scripts" / "chatbot_eval" / "gold" / "parser_code_picks.jsonl"
+
+
+def test_code_picks_gold_file():
+    rows = pg.load_gold(CODE_PICKS)
+    ids = [r["id"] for r in rows]
+    assert len(rows) >= 16
+    assert len(ids) == len(set(ids))
+    for prefix in ("cp-typo-", "cp-tie-", "cp-part-", "cp-set-"):
+        assert any(i.startswith(prefix) for i in ids), prefix
+    assert sum(i.startswith("cp-typo-") for i in ids) >= 5
+    assert sum(i.startswith("cp-tie-") for i in ids) >= 4
+    assert sum(i.startswith("cp-part-") for i in ids) >= 3
+    assert sum(i.startswith("cp-set-") for i in ids) >= 2
+    for r in rows:
+        assert "canonical" in r["expect"] and "attributes_only" in r["expect"], r["id"]
+        if r["id"].startswith(("cp-tie-", "cp-part-")):
+            assert r["expect"]["canonical"] is None, r["id"]
+        else:
+            assert r["expect"]["canonical"], r["id"]
+
+
 def test_committed_gold_file():
     rows = pg.load_gold(GOLD)
     ids = [r["id"] for r in rows]

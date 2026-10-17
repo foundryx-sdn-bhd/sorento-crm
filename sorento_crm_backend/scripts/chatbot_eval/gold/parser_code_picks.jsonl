@@ -1,0 +1,17 @@
+{"id": "cp-typo-01", "message": "srttw8259gm in stock?", "expect": {"canonical": "SRTWT8259-GM", "attributes_only": []}}
+{"id": "cp-typo-02", "message": "price for srtcw8613sc", "expect": {"canonical": "SRTWC8613-SC", "attributes_only": ["price"]}}
+{"id": "cp-typo-03", "message": "strwb1409rg how many left", "expect": {"canonical": "SRTWB1409-RG", "attributes_only": []}}
+{"id": "cp-typo-04", "message": "do you carry vlsdh2625gm", "expect": {"canonical": "VLDSH2625-GM", "attributes_only": []}}
+{"id": "cp-typo-05", "message": "mba7045gy available?", "expect": {"canonical": "MAB7045-GY", "attributes_only": []}}
+{"id": "cp-typo-06", "message": "need cmm7722gd for a customer", "expect": {"canonical": "MCM7722-GD", "attributes_only": []}}
+{"id": "cp-tie-01", "message": "srtwq902 in stock?", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-tie-02", "message": "check srtkt7qssgy for me", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-tie-03", "message": "cbmc587qbl available?", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-tie-04", "message": "how many srtss301q do we have", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-part-01", "message": "mwc7615-s available?", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-part-02", "message": "srtsh2625-g in stock?", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-part-03", "message": "do you have mcm7741-g", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-part-04", "message": "srtwc6030-s how many", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-set-01", "message": "ibwc7605-s10 but in p trap", "expect": {"canonical": "IBWC7605-P", "attributes_only": []}}
+{"id": "cp-set-02", "message": "ibwc7605-p with s trap please", "expect": {"canonical": "IBWC7605-S10", "attributes_only": []}}
+{"id": "cp-set-03", "message": "mwc7604-sssc in p-trap", "expect": {"canonical": "MWC7604-P", "attributes_only": []}}
