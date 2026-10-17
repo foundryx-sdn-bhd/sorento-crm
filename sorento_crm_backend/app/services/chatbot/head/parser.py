@@ -15,6 +15,7 @@ signature enforces the discipline - nothing here takes a `Session`.
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from dataclasses import dataclass
@@ -22,7 +23,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.services.ai_prompt_registry import agent_model, render
+from app.services.ai_prompt_registry import agent_model, get_prompt, render, render_resolved
 from app.services.chatbot.contracts import ParserOutputError  # noqa: F401 - re-export
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import question as question_mod
@@ -89,9 +90,11 @@ class ParserConfig:
     # CHAT-CLOSED-LISTS S4b-v2: the gated version's own strict schema (`closed_lists_schema`),
     # None for the production one.
     json_schema: dict[str, Any] | None = None
+    # CHAT-STATE: the prompt in use asks for `state_changes` (set by `resolve_config` in S5).
+    state_block: bool = False
 
 
-def _build_json_schema() -> dict[str, Any]:
+def _build_base_json_schema() -> dict[str, Any]:
     """The strict 29-key `ParseOutput` schema the provider is held to (AC-105).
 
     26 top-level keys, and `routing` carries exactly two members, is what the LIVE
@@ -684,7 +687,41 @@ def _build_json_schema() -> dict[str, Any]:
     }
 
 
+_STATE_CHANGES_SCHEMA: dict[str, Any] = {
+    "type": ["array", "null"],
+    "maxItems": 8,
+    "items": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "op": {
+                "type": "string",
+                "enum": [
+                    "keep", "new_subject", "set", "clear", "pick", "answer", "switch_domain", "close_question",
+                ],
+            },
+            # Free string validated in code: the fixed axes plus every `policy.kinds` kind
+            # (an operator-edited table, the same reason `domain` is free).
+            "axis": {"type": ["string", "null"]},
+            "position": {"type": ["integer", "null"]},
+        },
+        "required": ["op", "axis", "position"],
+    },
+}
+
+
+def _build_json_schema(state_changes: bool = False) -> dict[str, Any]:
+    """The base schema, or (CHAT-STATE) the same with `state_changes` last in `properties`
+    and `required`. The base object stays what every other turn sends."""
+    schema = _build_base_json_schema()
+    if state_changes:
+        schema["properties"]["state_changes"] = copy.deepcopy(_STATE_CHANGES_SCHEMA)
+        schema["required"] = [*schema["required"], "state_changes"]
+    return schema
+
+
 PARSE_OUTPUT_JSON_SCHEMA = _build_json_schema()
+PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE = _build_json_schema(state_changes=True)
 PARSE_OUTPUT_SCHEMA_NAME = "chatbot_parse_output"
 # The keys the schema declares. Validation is "every required key present, nothing
 # unknown kept" - unknown keys are IGNORED (the risk the plan names: a model that
@@ -716,6 +753,7 @@ DECLARED_KEYS: frozenset[str] = frozenset(PARSE_OUTPUT_JSON_SCHEMA["required"])
 #: emission and no console case carries it, and absent reads as mode null.
 TOLERATED_ABSENT: frozenset[str] = frozenset(
     {
+        "state_changes",
         "broaden_to",
         "domain_in_message",
         "sales_channel",
@@ -756,14 +794,15 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
 )
 
 
-def closed_lists_schema(items: list[str]) -> dict[str, Any]:
-    """The strict schema of a CLOSED LISTS version: the production one, with each entity's
-    `listed_item` held to the items the lists render (a JSON enum) or null. The provider
-    then guarantees the parser picks a listed file type, certificate kind or scheme, or
-    none; no code ever maps the customer's word to one (CHAT-CLOSED-LISTS card R2/R5)."""
+def closed_lists_schema(items: list[str], *, state: bool = False) -> dict[str, Any]:
+    """The strict schema of a CLOSED LISTS version: the production one (the CHAT-STATE one
+    when the version also asks for `state_changes`), with each entity's `listed_item` held
+    to the items the lists render (a JSON enum) or null. The provider then guarantees the
+    parser picks a listed file type, certificate kind or scheme, or none; no code ever maps
+    the customer's word to one (CHAT-CLOSED-LISTS card R2/R5)."""
     import copy
 
-    schema = copy.deepcopy(PARSE_OUTPUT_JSON_SCHEMA)
+    schema = copy.deepcopy(PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE if state else PARSE_OUTPUT_JSON_SCHEMA)
     entity = schema["properties"]["entities"]["items"]
     # No item at all is a null-only key: an enum of [null] alone is refused by some providers.
     from app.services.chatbot.head.closed_lists_prompt import NOT_LISTED
@@ -792,9 +831,12 @@ def resolve_config(
     from app.services.ai_assistant_service import AIAssistantConfigService
     from app.services.llm_provider import resolve_api_key
 
-    system_prompt, prompt_version = render(
-        db, PROMPT_KEY, current_date=current_date, override_version_id=override_version_id
-    )
+    # ONE registry read: the gate reads the RAW template, the prompt is that same text rendered.
+    from app.services.chatbot.head.chat_state_prompt import HEADING
+
+    resolved = get_prompt(db, PROMPT_KEY, override_version_id=override_version_id)
+    raw_template = resolved.text
+    system_prompt, prompt_version = render_resolved(db, PROMPT_KEY, resolved, current_date=current_date)
     provider_override, model_override = agent_model(db, PROMPT_KEY)
 
     config = AIAssistantConfigService(db).get()
@@ -805,12 +847,17 @@ def resolve_config(
     api_key = resolve_api_key(config, provider)
     if not api_key:
         raise ParserError(f"no API key configured for provider {provider!r}")
-    closed_lists = uses_closed_lists(db, override_version_id=override_version_id)
+    from app.services.chatbot.head.closed_lists_prompt import gate_on
+
+    # The same one read as the state gate (#1747 R6): both gates and the text, one version.
+    closed_lists = gate_on(raw_template)
+    # CHAT-STATE: the literal on the prompt text (never on a message) opts the turn in.
+    state_block = HEADING in (raw_template or "")
     json_schema = None
     if closed_lists:
         from app.services.chatbot_prompt_vars import closed_list_enum
 
-        json_schema = closed_lists_schema(closed_list_enum(db))
+        json_schema = closed_lists_schema(closed_list_enum(db), state=state_block)
     return ParserConfig(
         system_prompt=system_prompt,
         prompt_version=prompt_version,
@@ -820,6 +867,7 @@ def resolve_config(
         closed_lists=closed_lists,
         code_lookup=closed_lists and uses_code_lookup(db, override_version_id=override_version_id),
         json_schema=json_schema,
+        state_block=state_block,
     )
 
 
@@ -1100,7 +1148,8 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             messages,
             temperature=0.0,
             max_tokens=PARSER_MAX_TOKENS,
-            json_schema=config.json_schema or PARSE_OUTPUT_JSON_SCHEMA,
+            json_schema=config.json_schema
+            or (PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE if config.state_block else PARSE_OUTPUT_JSON_SCHEMA),
             json_schema_name=PARSE_OUTPUT_SCHEMA_NAME,
             # One cache bucket per published prompt version: every parse on it shares
             # the same static prefix (OpenAI only; the others ignore it).

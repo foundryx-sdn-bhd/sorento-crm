@@ -807,3 +807,112 @@ def test_an_old_layout_prompt_with_exchanges_after_the_current_message_falls_bac
     block = live_env["parse_calls"][0]
     assert PRIOR_1 in block, "the exchanges after the current message were lost (truncated slice used)"
     assert "Recent exchanges" in block
+
+
+# ------------------------------------------------------------------ prompt pin (--prompt-version-id)
+PIN_ID = "00000000-0000-4000-8000-0000000000aa"
+PARSER_KEY = "chatbot_semantic_parser"
+
+
+def _seed_prompt_version(session_factory, *, name=PARSER_KEY, version_id=PIN_ID):
+    """A real ai_prompt_versions row, written inside the fixture's rolled-back transaction."""
+    from app.models.ai_prompt import AIPromptVersion
+
+    db = session_factory()
+    db.add(AIPromptVersion(id=version_id, name=name, version=901, type="text", template="synthetic parser prompt"))
+    db.commit()
+
+
+def _cli_live(tmp_path, session_factory, row, monkeypatch, extra):
+    import app.database
+
+    monkeypatch.setattr(app.database, "SessionLocal", session_factory)
+    items = tmp_path / "items.jsonl"
+    items.write_text("".join(json.dumps(i) + "\n" for i in items_for(row)))
+    rec = tmp_path / "recorded.jsonl"
+    rec.write_text(json.dumps(row) + "\n")
+    out = tmp_path / "out.jsonl"
+    rc = replay_mod.main(["live", "--items", str(items), "--recorded", str(rec), "--out", str(out),
+                          "--max-calls", "10", "--max-usd", "5", "--require-key-last4", LAST4, *extra])
+    return rc, [json.loads(l) for l in out.read_text().splitlines()]
+
+
+def test_prompt_pin_cli_flag_puts_the_override_on_every_live_payload(tmp_path, session_factory, recorded, live_env,
+                                                                     monkeypatch):
+    _seed_prompt_version(session_factory)
+    rc, _rows = _cli_live(tmp_path, session_factory, recorded, monkeypatch, ["--prompt-version-id", PIN_ID])
+    assert rc == 0
+    extras = live_env["envelopes"][0].model_extra or {}
+    assert extras.get("prompt_overrides") == {PARSER_KEY: PIN_ID}
+
+
+def test_prompt_pin_cli_value_wins_over_a_recorded_override(tmp_path, session_factory, recorded, live_env, monkeypatch):
+    row = copy.deepcopy(recorded)
+    row["envelope"]["prompt_overrides"] = {PARSER_KEY: "recorded-version", "other_key": "x"}
+    _seed_prompt_version(session_factory)
+    rc, _rows = _cli_live(tmp_path, session_factory, row, monkeypatch, ["--prompt-version-id", PIN_ID])
+    assert rc == 0
+    extras = live_env["envelopes"][0].model_extra or {}
+    assert extras.get("prompt_overrides") == {PARSER_KEY: PIN_ID}
+
+
+def test_prompt_pin_absent_flag_leaves_no_prompt_overrides_key(tmp_path, session_factory, recorded, live_env,
+                                                              monkeypatch):
+    row = copy.deepcopy(recorded)
+    row["envelope"]["prompt_overrides"] = {PARSER_KEY: "recorded-version"}
+    rc, rows = _cli_live(tmp_path, session_factory, row, monkeypatch, [])
+    assert rc == 0
+    assert "prompt_overrides" not in (live_env["envelopes"][0].model_extra or {})
+    assert "prompt_version_id" not in rows[0]["provenance"]
+
+
+def test_prompt_pin_provenance_records_the_pinned_version_id(tmp_path, session_factory, recorded, live_env, monkeypatch):
+    _seed_prompt_version(session_factory)
+    rc, rows = _cli_live(tmp_path, session_factory, recorded, monkeypatch, ["--prompt-version-id", PIN_ID])
+    assert rc == 0
+    assert rows[0]["provenance"]["prompt_version_id"] == PIN_ID
+
+
+def _assert_failed_closed(tmp_path, live_env, exc_info):
+    assert exc_info.type in (ValueError, SystemExit)
+    out = tmp_path / "out.jsonl"
+    assert not out.exists() or out.read_text() == "", "an output row was written under an unresolved pin"
+    assert live_env["envelopes"] == [] and live_env["parse_calls"] == [], "the engine ran under an unresolved pin"
+
+
+def test_prompt_pin_an_unknown_id_fails_the_cli_before_any_item_runs(tmp_path, session_factory, recorded, live_env,
+                                                                    monkeypatch):
+    with pytest.raises((ValueError, SystemExit)) as exc:
+        _cli_live(tmp_path, session_factory, recorded, monkeypatch, ["--prompt-version-id", PIN_ID])
+    _assert_failed_closed(tmp_path, live_env, exc)
+
+
+def test_prompt_pin_an_id_of_another_prompt_name_fails_the_cli_before_any_item_runs(
+        tmp_path, session_factory, recorded, live_env, monkeypatch):
+    _seed_prompt_version(session_factory, name="chatbot_router")
+    with pytest.raises((ValueError, SystemExit)) as exc:
+        _cli_live(tmp_path, session_factory, recorded, monkeypatch, ["--prompt-version-id", PIN_ID])
+    _assert_failed_closed(tmp_path, live_env, exc)
+
+
+def test_prompt_pin_live_rows_raises_value_error_on_an_unresolved_pin_before_any_item(session_factory, recorded,
+                                                                                     live_env):
+    with pytest.raises(ValueError):
+        replay_mod.live_rows(items_for(recorded, 2), [recorded], session_factory=session_factory, max_calls=50,
+                             max_usd=10.0, require_key_last4=LAST4, prompt_version_id=PIN_ID)
+    assert live_env["envelopes"] == [] and live_env["parse_calls"] == []
+
+
+def test_prompt_pin_a_turn_whose_prompt_version_is_none_records_no_prompt_version_id(
+        tmp_path, session_factory, recorded, live_env, monkeypatch):
+    _seed_prompt_version(session_factory)
+
+    def no_version_config(db, *, current_date, override_version_id=None):
+        return parser_mod.ParserConfig(system_prompt="stub", prompt_version=None, provider="openai",
+                                       model="gpt-test", api_key="k")
+
+    monkeypatch.setattr(parser_mod, "resolve_config", no_version_config)
+    rc, rows = _cli_live(tmp_path, session_factory, recorded, monkeypatch, ["--prompt-version-id", PIN_ID])
+    assert rc == 0
+    assert rows[0]["provenance"]["prompt_version"] is None
+    assert "prompt_version_id" not in rows[0]["provenance"]

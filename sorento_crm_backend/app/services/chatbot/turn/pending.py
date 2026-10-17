@@ -387,3 +387,27 @@ def without_escalation(question: Any) -> tuple[Any, list[dict[str, Any]] | None]
     if not kept:
         return None, members
     return replace(question, options=kept, payload=payload, team=None), members
+
+
+def option_entities(option: dict[str, Any]) -> list[dict[str, Any]]:
+    """What ONE picked option becomes: the entity rows a resolver-matched entity would
+    have been, `canonical_code` the code and `uuid` the key (one row per key). An option
+    with no key (a tier, a stored list row) is one row carrying only its code, its
+    payload value standing in for the code when it has one."""
+    uuids = option.get("uuids") or ([option["uuid"]] if option.get("uuid") else [])
+    payload = option.get("payload") if isinstance(option.get("payload"), dict) else {}
+    code = option.get("code") or (payload.get("value") if not uuids else None)
+    code = code or option.get("label")
+    name = option.get("name")
+    base = {
+        "raw": code,
+        "hint": option.get("entity_type"),
+        "canonical_code": code,
+        "current_message": True,
+        "confident": True,
+    }
+    if not uuids:
+        return [{**base, **({"name": name} if name else {})}]
+    return [
+        {**base, "uuid": u, **({"name": name} if name and len(uuids) <= 1 else {})} for u in uuids
+    ]

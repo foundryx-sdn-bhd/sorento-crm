@@ -313,3 +313,56 @@ def test_two_separate_specification_runs_are_refused():
     twice = 'Specification a ("A"): yes or no.\nother\nSpecification b ("B"): yes or no.\n'
     with pytest.raises(SystemExit):
         publisher.with_specs_token(twice)
+
+
+# --- STATE + CLOSED LISTS on one version (#1747 merged first) -----------------------------------
+
+
+def test_the_gated_schema_over_the_state_schema_keeps_both():
+    schema = parser_mod.closed_lists_schema(["certification"], state=True)
+
+    assert "state_changes" in schema["properties"] and "state_changes" in schema["required"]
+    entity = schema["properties"]["entities"]["items"]
+    assert entity["properties"]["listed_item"]["enum"] == ["certification", clp.NOT_LISTED, None]
+    assert "listed_item" in entity["required"]
+    # The module's own schemas are never mutated by the build.
+    assert "listed_item" not in parser_mod.PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE["properties"]["entities"]["items"]["properties"]
+
+
+def test_a_version_with_both_sections_resolves_to_the_combined_schema(monkeypatch):
+    from app.services import ai_assistant_service, llm_provider
+    from app.services.chatbot.head.chat_state_prompt import HEADING
+    from types import SimpleNamespace
+
+    cfg = SimpleNamespace(provider="openai", model="gpt-test")
+    monkeypatch.setattr(ai_assistant_service, "AIAssistantConfigService", lambda d: SimpleNamespace(get=lambda: cfg))
+    monkeypatch.setattr(llm_provider, "resolve_api_key", lambda config, provider: "sk-test")
+    with blank_session() as db:
+        _version(db, f"Rules {{{{current_date}}}}\n{HEADING}\nFill state_changes." + clp.SECTION, label="production")
+
+        config = parser_mod.resolve_config(db, current_date="today")
+
+    assert config.state_block is True and config.closed_lists is True
+    assert "state_changes" in config.json_schema["properties"]
+    assert "listed_item" in config.json_schema["properties"]["entities"]["items"]["properties"]
+
+
+def test_a_state_only_version_keeps_mains_state_schema(monkeypatch):
+    from app.services.chatbot import llm_call
+
+    sent: list[dict] = []
+
+    class _Result:
+        content = json.dumps({**_parser_output(), "asks": None, "topic_reset": None, "state_changes": None})
+        prompt_tokens = completion_tokens = total_tokens = cached_tokens = 0
+
+    monkeypatch.setattr(llm_call, "chat", lambda *a, **kw: sent.append(kw["json_schema"]) or _Result())
+    state_only = parser_mod.ParserConfig(
+        system_prompt="x", prompt_version=1, provider="openai", model="m", api_key="k", state_block=True,
+    )
+    try:
+        parser_mod.parse(state_only, "block")
+    except parser_mod.ParserError:
+        pass  # the emission shape is not what this test pins; the schema sent is
+
+    assert sent == [parser_mod.PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE]
