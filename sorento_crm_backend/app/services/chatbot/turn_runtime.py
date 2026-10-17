@@ -3153,22 +3153,33 @@ def file_type_ask(db: Session, ask: Any, focus: Any) -> Any:
 
     from app.models.product import Product, chat_searchable_products
 
+    from sqlalchemy import or_
+
     rows_in_focus = [row for row in getattr(focus, "products", None) or [] if isinstance(row, dict)]
-    product_ids = [str(row["uuid"]) for row in rows_in_focus if row.get("uuid")]
+    uuids = [str(row["uuid"]) for row in rows_in_focus if row.get("uuid")]
     # The ask is raised before the resolver runs, so a product named this turn has its
-    # code and no uuid yet: the code, whole (case aside), in this contact's scope.
+    # code and no uuid yet: the code, whole (case aside). Either way the product is read
+    # through the ORM here, so the contact's company AND brand scope and the chat rule
+    # apply to every product the roster is built from (security review, 17 Oct 2026).
     codes = {
         str(row.get("canonical_code") or row.get("raw") or "").strip().upper()
         for row in rows_in_focus
         if not row.get("uuid")
     } - {""}
-    if codes:
-        product_ids += [
-            str(pid)
-            for (pid,) in db.query(Product.id)
-            .filter(func.upper(Product.product_code).in_(codes), chat_searchable_products())
-            .all()
-        ]
+    if not uuids and not codes:
+        return ask
+    product_ids = [
+        str(pid)
+        for (pid,) in db.query(Product.id)
+        .filter(
+            or_(
+                *([Product.id.in_(uuids)] if uuids else []),
+                *([func.upper(Product.product_code).in_(codes)] if codes else []),
+            ),
+            chat_searchable_products(),
+        )
+        .all()
+    ]
     if not product_ids:
         return ask
     rows = (

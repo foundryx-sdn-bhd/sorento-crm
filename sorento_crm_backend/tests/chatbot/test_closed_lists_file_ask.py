@@ -191,3 +191,13 @@ def test_a_bare_2_fetches_the_second_offered_type(session_factory, seeded, stub_
 
     sent = [args for _name, args in calls if "attachment_type_ids" in (args or {})]
     assert sent and sent[0]["attachment_type_ids"] == [ids["technical_specifications"]], calls
+
+
+def test_a_product_outside_the_contacts_scope_offers_nothing(session_factory):
+    ids = _seed(session_factory)
+    db = session_factory()
+    set_company_scope(db, frozenset({"00000000-0000-0000-0000-000000000009"}))
+    focus = Focus(products=[{"uuid": ids["product"], "canonical_code": CODE}])
+    ask = pending_ask("attachment_type_ask", [])
+
+    assert turn_runtime.file_type_ask(db, ask, focus) is ask

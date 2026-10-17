@@ -249,3 +249,8 @@ def test_the_items_are_what_the_two_lists_render():
 
     with blank_session() as db:
         assert pv.closed_list_enum(db) == []
+
+
+def test_no_item_at_all_makes_listed_item_null_only():
+    entity = parser_mod.closed_lists_schema([])["properties"]["entities"]["items"]
+    assert entity["properties"]["listed_item"] == {"type": "null"}

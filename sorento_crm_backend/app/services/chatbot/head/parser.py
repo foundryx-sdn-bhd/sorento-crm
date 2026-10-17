@@ -762,7 +762,10 @@ def closed_lists_schema(items: list[str]) -> dict[str, Any]:
 
     schema = copy.deepcopy(PARSE_OUTPUT_JSON_SCHEMA)
     entity = schema["properties"]["entities"]["items"]
-    entity["properties"]["listed_item"] = {"type": ["string", "null"], "enum": [*items, None]}
+    # No item at all is a null-only key: an enum of [null] alone is refused by some providers.
+    entity["properties"]["listed_item"] = (
+        {"type": ["string", "null"], "enum": [*items, None]} if items else {"type": "null"}
+    )
     entity["required"] = [*entity["required"], "listed_item"]
     return schema
 

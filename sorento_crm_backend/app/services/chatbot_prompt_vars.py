@@ -293,6 +293,17 @@ def _render_find_filters(db: Session) -> str:
     return parser_vocabulary(db)
 
 
+#: CHAT-CLOSED-LISTS: the longest item the lists print and the gated schema enumerates, and
+#: how many items the enum carries at most (a provider strict-schema enum is bounded).
+MAX_LISTED_ITEM_CHARS = 60
+MAX_LISTED_ITEMS = 100
+
+
+def _item(row: dict) -> str:
+    """An attachment type as the lists print it: its code, else its name, on one line."""
+    return _one_line(row.get("code") or row.get("type_name") or "").strip()
+
+
 def _file_type_rows(db: Session) -> list[dict]:
     """The attachment types a PRODUCT carries a live file of (CHAT-CLOSED-LISTS card R1),
     certificate kinds aside (they are `{{certification_types}}`). Joined through
@@ -356,7 +367,7 @@ def _listed_line(head: str, words: list[str] | str | None) -> str:
 def render_attachment_types(db: Session) -> str:
     aliases = _alias_words(db)
     return "\n".join(
-        _one_line(_listed_line(f'File type {r["code"] or r["type_name"]}: {r["type_name"]}', _type_words(r, aliases)))
+        _one_line(_listed_line(f'File type {_item(r)}: {r["type_name"]}', _type_words(r, aliases)))
         for r in _file_type_rows(db)
     )
 
@@ -381,8 +392,11 @@ def _cert_schemes(db: Session) -> list[tuple[str, list[str]]]:
     for (scheme,) in db.execute(
         sql("SELECT DISTINCT scheme FROM certificates WHERE status = 'active' ORDER BY scheme")
     ):
-        name = (scheme or "").strip()
-        if name:
+        name = _one_line(scheme or "").strip()
+        # A register scheme is filed from an uploaded certificate (external ingest), so a
+        # long one is a read error, not a scheme: it never reaches the prompt or the enum
+        # (security review, 17 Oct 2026; the staff form caps it at 60).
+        if name and len(name) <= MAX_LISTED_ITEM_CHARS:
             schemes.setdefault(name.casefold(), (name, []))
     rows = db.execute(
         sql(
@@ -394,8 +408,8 @@ def _cert_schemes(db: Session) -> list[tuple[str, list[str]]]:
         )
     )
     for value, keyword in rows:
-        name = (value or "").strip()
-        if not name:
+        name = _one_line(value or "").strip()
+        if not name or len(name) > MAX_LISTED_ITEM_CHARS:
             continue
         _, words = schemes.setdefault(name.casefold(), (name, []))
         if keyword and keyword.strip() and keyword.strip() not in words:
@@ -406,7 +420,7 @@ def _cert_schemes(db: Session) -> list[tuple[str, list[str]]]:
 def render_certification_types(db: Session) -> str:
     aliases = _alias_words(db)
     lines = [
-        _listed_line(f'Certificate kind {r["code"] or r["type_name"]}: {r["type_name"]}', _type_words(r, aliases))
+        _listed_line(f'Certificate kind {_item(r)}: {r["type_name"]}', _type_words(r, aliases))
         for r in _cert_kind_rows(db)
     ]
     lines += [_listed_line(f"Certificate scheme {name}", ", ".join(words)) for name, words in _cert_schemes(db)]
@@ -429,8 +443,8 @@ def closed_list_items(db: Session) -> dict[str, dict[str, str]]:
         named: dict[str, str] = {}
         linked: dict[str, set[str]] = {}
         for r in rows:
-            item = str(r["code"] or r["type_name"])
-            for key in (item, str(r["type_name"])):
+            item = _item(r)
+            for key in (item, _one_line(r["type_name"] or "").strip()):
                 named[key.casefold()] = item
             keys = {str(r.get(k) or "").strip().casefold() for k in ("code", "type_name")} - {""}
             for word in (w for key in keys for w in aliases.get(key, [])):
@@ -464,10 +478,10 @@ def closed_list_items(db: Session) -> dict[str, dict[str, str]]:
 def closed_list_enum(db: Session) -> list[str]:
     """Every item the two lists render, once, in list order (file types, certificate kinds,
     schemes): the values the gated parser schema holds `listed_item` to."""
-    items = [str(r["code"] or r["type_name"]) for r in _file_type_rows(db)]
-    items += [str(r["code"] or r["type_name"]) for r in _cert_kind_rows(db)]
+    items = [_item(r) for r in _file_type_rows(db)]
+    items += [_item(r) for r in _cert_kind_rows(db)]
     items += [name for name, _words in _cert_schemes(db)]
-    return list(dict.fromkeys(items))
+    return [i for i in dict.fromkeys(items) if i and len(i) <= MAX_LISTED_ITEM_CHARS][:MAX_LISTED_ITEMS]
 
 
 def _find_filter_count() -> int:

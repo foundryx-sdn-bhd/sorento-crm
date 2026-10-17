@@ -253,3 +253,22 @@ def test_an_items_own_name_outranks_another_items_word(db):
 
 def test_the_enum_is_every_rendered_item_once_in_list_order(db):
     assert pv.closed_list_enum(db) == ["technical_specifications", "certification", "SIRIM"]
+
+
+def test_an_item_too_long_for_the_enum_is_left_out(db):
+    """Security review (17 Oct): the strict enum is bounded. A scheme is at most 60 by its
+    column (`certificates.scheme` varchar(60)); a type name may be 100, and one past the cap
+    never reaches the prompt list's enum."""
+    long_type = AttachmentType(
+        id=str(uuid.uuid4()), type_name="X" * 80, code=None, allowed_extensions="pdf", is_certificate=True,
+    )
+    db.add(long_type)
+    db.flush()
+
+    assert pv.closed_list_enum(db) == ["technical_specifications", "certification", "SIRIM"]
+
+
+def test_the_enum_is_capped():
+    import app.services.chatbot_prompt_vars as module
+
+    assert module.MAX_LISTED_ITEMS == 100 and module.MAX_LISTED_ITEM_CHARS == 60

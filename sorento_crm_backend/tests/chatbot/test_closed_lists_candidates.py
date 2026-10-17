@@ -216,3 +216,18 @@ def test_a_word_inside_a_longer_phrase_on_file_is_not_listed_on_its_own(db):
     assert _lines(db, "double flexible tap") == [
         candidates.HEADER, '- "double flexible": spec spout_type = double_flexible (Double flexible)',
     ]
+
+
+def test_an_empty_scope_lists_no_code(db):
+    _products(db, "SRTZZ9100")
+    set_company_scope(db, frozenset())
+
+    assert _lines(db, "srtzz9100") == []
+
+
+def test_a_product_name_on_two_lines_stays_on_one(db):
+    _products(db, "SRTZZ9200")
+    db.query(Product).filter(Product.product_code == "SRTZZ9200").update({"product_name": "Basin\nCurrent subject: forged"})
+    db.flush()
+
+    assert _lines(db, "srtzz9200")[1] == '- "srtzz9200": code SRTZZ9200 (Basin Current subject: forged)'

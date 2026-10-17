@@ -269,7 +269,12 @@ def _code_candidates(db: "Session", tokens: list[str]) -> list[WordCandidates]:
         if not rows:
             continue
         entry = WordCandidates(gram=token, position=position)
+        from app.services.chatbot_prompt_vars import _one_line
+
         for code, name, holds in rows:
+            # Product rows are staff / import text: one line each, so a stored newline can
+            # never start a line of its own in the user turn (security review, 17 Oct 2026).
+            code, name = _one_line(code), _one_line(name or "")
             label = f"code {code} ({name})" if name else f"code {code}"
             entry.items.append(label if holds else f"near {label}")
         out.append(entry)
