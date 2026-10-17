@@ -58,7 +58,7 @@ from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
 from app.utils.build_info import GIT_SHA
 from app.services.ledger_family import customer_groups
-from app.services.chatbot.head import grounding, parser
+from app.services.chatbot.head import candidates as candidates_mod, grounding, held_family, parser, scheme_index
 from app.services.chatbot.head.access import check_access, default_space_id
 from app.services.chatbot.head.build_ctx import build_ctx
 from app.services.chatbot.lanes import business, canned as canned_lanes, casual
@@ -1077,6 +1077,28 @@ def _contact_brand_scope(factory: SessionFactory, contact_respond_id: str) -> fr
         return frozenset({NO_BRAND_ID})
     finally:
         db.close()
+
+
+def closed_lists_verdict(verdict: dict[str, Any], *, gate: bool) -> dict[str, Any]:
+    """CHAT-CLOSED-LISTS: a verdict parsed by a CLOSED LISTS version says so, so the lanes
+    read the parser's listed picks and none of the word fallbacks (card R2/R5). The key is
+    the engine's alone: one a harness emission carried is dropped when the gate is off."""
+    if gate:
+        return {**verdict, "closed_lists": True}
+    return {k: v for k, v in verdict.items() if k != "closed_lists"} if "closed_lists" in verdict else verdict
+
+
+def _candidate_lines(db: Session, latest_user_message: str) -> list[str] | None:
+    """The candidate block for the message's OWN first line (the quoted reply under it is
+    not this message's words, the line grounding reads too). It only advises the parser,
+    so a failure leaves it out and the turn goes on (savepoint: the session stays usable)."""
+    message = latest_user_message.split("\n", 1)[0]
+    try:
+        with db.begin_nested():
+            return candidates_mod.candidate_lines(candidates_mod.shortlist(db, message))
+    except Exception:  # noqa: BLE001 - advisory block, never a failed turn
+        logger.warning("chatbot: candidate shortlist failed; parsing without it", exc_info=True)
+        return None
 
 
 def _scoped_factory(
@@ -4512,6 +4534,13 @@ def _run_stages_body(  # noqa: PLR0915
         promotion_kinds = turn_runtime.promotion_kind_rows(db)
         product_types = turn_runtime.product_type_names(db)
         product_details = turn_runtime.product_detail_values(db)
+        # CHAT-CLOSED-LISTS: what is on file under the words of this message, for a
+        # version carrying the CLOSED LISTS section only (code shortlists, the parser picks).
+        candidate_lines = (
+            _candidate_lines(db, latest_user_message)
+            if parser_config.closed_lists and isinstance(latest_user_message, str)
+            else None
+        )
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
     # One call, one schema. What comes back IS the verdict - a plain dict, validated once
@@ -4559,6 +4588,7 @@ def _run_stages_body(  # noqa: PLR0915
         product_types=product_types,
         product_details=product_details,
         recent_exchanges=recent,
+        candidate_lines=candidate_lines,
         state_block=state_block,
     )
     user_block, context_report = context_mod.assemble(context_layers)
@@ -4834,8 +4864,34 @@ def _run_stages_body(  # noqa: PLR0915
     verdict, _ranking_words = _report_ask.hold_words(verdict)
     with _session(session_factory) as grounding_db:
         verdict, grounding_notes = grounding.ground(
-            grounding_db, verdict, message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None
+            grounding_db,
+            verdict,
+            message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None,
+            closed_lists=parser_config.closed_lists,
         )
+    verdict = closed_lists_verdict(verdict, gate=parser_config.closed_lists)
+    if parser_config.closed_lists and state_in.focus.products:
+        # SPEC-OVER-HELD: a spec said about a held product narrows that product's family
+        # (`head/held_family.py`). A read failure leaves the verdict as it was.
+        try:
+            with _session(session_factory) as family_db:
+                verdict, family_note = held_family.narrow_held_family(family_db, verdict, list(state_in.focus.products))
+        except Exception:  # noqa: BLE001 - an advisory narrowing, never a failed turn
+            logger.warning("chatbot: held family narrowing failed; the turn goes on without it", exc_info=True)
+            family_note = None
+        if family_note:
+            turn_trace.add("held_family", family_note)
+    if parser_config.closed_lists:
+        # SCHEME-INDEX: a listed scheme about products indexes their certificates, never
+        # empties the answer (`head/scheme_index.py`). A read failure leaves the verdict.
+        try:
+            with _session(session_factory) as scheme_db:
+                verdict, scheme_note = scheme_index.index_scheme(scheme_db, verdict, list(state_in.focus.products))
+        except Exception:  # noqa: BLE001 - an advisory reading, never a failed turn
+            logger.warning("chatbot: scheme index failed; the turn goes on without it", exc_info=True)
+            scheme_note = None
+        if scheme_note:
+            turn_trace.add("scheme_index", scheme_note)
     if _ranking_words:
         verdict = {**verdict, "entities": [*(verdict.get("entities") or []), *_ranking_words]}
     if grounding_notes:
@@ -7221,6 +7277,15 @@ def _run_stages_body(  # noqa: PLR0915
                     focus=dataclasses_replace(state_out.focus, customers=focus_customers_named),
                 )
             ask = plan.ask
+            if parser_config.closed_lists and ask.kind == "attachment_type_ask":
+                # CHAT-CLOSED-LISTS card R3: the file types the product really has, as the
+                # roster the tail stores, so the reply's numbers are what "2" answers.
+                offered = turn_runtime.file_type_ask(db, ask, state_out.focus)
+                if offered is not ask:
+                    # The tail stores the question the Answer carries, so the options
+                    # printed here are the ones a bare "2" answers.
+                    ask = offered
+                    turn_trace.add("file_type_ask", {"options": len(offered.options)})
             if ask.kind == "customer_pick" and not _roster_is_outstanding(verdict, state_out.focus):
                 # PICKER-ONE (owner, 13 Oct 2026): a customer roster the narrower raised
                 # off the focus or off typed words carries the same has DO / no DO stamp

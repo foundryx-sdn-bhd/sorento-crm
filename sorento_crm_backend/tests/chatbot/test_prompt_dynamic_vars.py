@@ -55,6 +55,8 @@ def test_parser_key_declares_every_registry_variable():
         "sub_ask_measures",
         # CHAT-FIND (#1601): the generic find rule and filter lines.
         "find_filters",
+        # CHAT-CLOSED-LISTS S1: the file-type and certification-type lists.
+        "attachment_types", "certification_types",
     }
 
 
