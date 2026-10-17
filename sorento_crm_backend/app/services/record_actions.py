@@ -2158,6 +2158,29 @@ register(
 )
 
 
+def _delete_sample_request(db: Session, payload: dict):
+    from app.services import sample_request_service
+
+    # Owner's own Draft only; re-checked here because the state can change inside the window.
+    sample_request_service.delete_draft(
+        db, _entity_id(payload), str(payload.get("requested_by_id") or "")
+    )
+    return {"message": "Deleted"}
+
+
+register(
+    FormAction(
+        key="sample_request.delete",
+        entity_types=("sample_request",),
+        execute=_delete_sample_request,
+        # Destructive: a hard delete of the owner's draft and its lines.
+        window=WINDOW_DESTRUCTIVE,
+        permission=OWN_RECORD,
+        label="Delete draft",
+    )
+)
+
+
 def _void_price_tag_request(db: Session, payload: dict):
     from app.services.price_tag_request_service import (
         PriceTagRequestService,

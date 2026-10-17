@@ -997,8 +997,8 @@ def test_a_clarifys_quick_replies_reach_the_persisted_reply(
 
     Team names short enough to be buttons (QUICK-REPLY-NAMES: a title is cut at 20
     characters by the transport; the long-name twin is the test below). The persisted
-    TEXT is the separate, still-open gap `_XFAIL_CLARIFY_TEXT_IS_NONE` names, pinned by
-    `test_a_clarifys_text_reaches_the_persisted_reply` so it stays visible.
+    TEXT is pinned by `test_a_clarifys_text_reaches_the_persisted_reply` (CHAT-SPARSE:
+    the tail falls back to the lane's own message, so it is no longer blank).
     """
     result, row = _run_nurain_team_clarify(
         session_factory, system_settings_row, monkeypatch,
@@ -1020,14 +1020,13 @@ def test_a_clarifys_quick_replies_reach_the_persisted_reply(
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_CLARIFY_TEXT_IS_NONE)
 def test_a_clarifys_text_reaches_the_persisted_reply(
     session_factory, system_settings_row, monkeypatch
 ) -> None:
     """The half of prod turn 9dd4cd0f still open: the tail composes no text on the
     clarify arm, so the persisted reply's `text` is null while the action carries the
-    question. Kept as the xfail it was before QUICK-REPLY-NAMES split the buttons half
-    (now green above) out of it."""
+    question. Green since CHAT-SPARSE (12 Oct 2026): the tail falls back to the lane's own
+    message text when it composed none (owner rule, never a blank reply)."""
     result, row = _run_nurain_team_clarify(
         session_factory, system_settings_row, monkeypatch,
         teams=(("do_customer_service", "DO Customer Service"), ("project_customer_service", "Project CS")),

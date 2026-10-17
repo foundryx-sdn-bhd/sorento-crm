@@ -22,6 +22,7 @@ state; the tail (S2) is what fills it.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import logging
 import re
@@ -55,6 +56,7 @@ from app.services.chatbot.turn.reconcile import narrowed_miss_lines
 from app.services.chatbot.turn.state import is_staff_profile
 from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
+from app.utils.build_info import GIT_SHA
 from app.services.ledger_family import customer_groups
 from app.services.chatbot.head import grounding, parser
 from app.services.chatbot.head.access import check_access, default_space_id
@@ -141,6 +143,12 @@ WORKER_POLL_INTERVAL_SECONDS = 0.25
 # its own "(k/m)" line, after a blank line.
 _MARKED_PART_BREAK = re.compile(r"\n\n(?=\(\d+/\d+\)\n)")
 _MARKED_PART_HEAD = re.compile(r"\((\d+)/(\d+)\)\n")
+
+
+def _parser_prompt_sha256(config: Any) -> str | None:
+    """Hash of the exact system prompt text the parser was given, for run provenance."""
+    text = getattr(config, "system_prompt", None)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest() if isinstance(text, str) else None
 
 
 def split_marked_message(text: str) -> list[str]:
@@ -4580,6 +4588,11 @@ def _run_stages_body(  # noqa: PLR0915
             facts={
                 "prompt_version": parser_config.prompt_version,
                 "model": parser_config.model,
+                "prompt_sha256": _parser_prompt_sha256(parser_config),
+                "provider": getattr(parser_config, "provider", None),
+                # The parser call sends no reasoning effort, so None is the recorded truth.
+                "reasoning_effort": None,
+                "code_sha": GIT_SHA,
                 # A replay miss fails here: the console check must not read it as a live
                 # spend (LLM-TEST-COST).
                 "llm_cassette": llm_cassette.mode_label(),
@@ -4646,6 +4659,12 @@ def _run_stages_body(  # noqa: PLR0915
             "intent": verdict.get("intent_hint"),
             "entities": len(verdict.get("entities") or []),
             "prompt_version": parser_config.prompt_version,
+            "model": parser_config.model,
+            "prompt_sha256": _parser_prompt_sha256(parser_config),
+            "provider": getattr(parser_config, "provider", None),
+            # The parser call sends no reasoning effort, so None is the recorded truth.
+            "reasoning_effort": None,
+            "code_sha": GIT_SHA,
             "tokens": int(parser_usage.get("total_tokens") or 0),
             # Chatbot memory lane A (contract section 6): the provider's own split,
             # alongside the total the trace already carried.
@@ -9003,6 +9022,17 @@ def _run_escalation_arm(
                 ),
                 None,
             ),
+            # The lane's own customer message, for the same reason: the tail composes no
+            # text on this arm, and the persisted reply must not be blank while the
+            # action carries the handover (owner rule, never a blank reply).
+            "lane_text": next(
+                (
+                    a["text"]
+                    for a in all_actions
+                    if a.get("kind") == "send_message" and jsc.truthy(a.get("text"))
+                ),
+                None,
+            ),
         },
         session_factory=session_factory,
         # An accepted offer was CONSUMED by APPLY, so this carries nothing; a clarify
@@ -9947,6 +9977,7 @@ def run_tail(
     turn_trace: trace_mod.TurnTrace,
     write_session: bool = True,
     lane_quick_replies: Any = None,
+    lane_text: Any = None,
     state: Any = None,
     question: Any = None,
     remembered_before: Mapping[str, Any] | None = None,
@@ -10035,6 +10066,13 @@ def run_tail(
     composed = reply_ladder.compose_reply(outcome)
     if question is None:
         question = _question_offered(ctx, values, outcome, composed)
+    if isinstance(lane_text, str) and lane_text.strip() and not jsc.truthy(composed.get("text")):
+        # Owner rule, never a blank reply (crew eval, 12 Oct 2026): the `out_of_scope` arm
+        # composes no text here (`escalate-catalog`'s `includeResponse: false`), but its
+        # lane already built the one message the customer is sent. Without this the turn's
+        # reply, which the console, the next turn's `Previous response:` and the
+        # chat-history link read, is null while the action carries the handover.
+        composed = {**composed, "text": lane_text}
     # QUICK-REPLY-NAMES: the one seam every tail-composed set leaves through - at most
     # three buttons, none over 20 characters, no duplicates. Guarded BEFORE the lane
     # fallback is chosen, so a set the guard drops falls back the same way an absent one
@@ -10673,6 +10711,8 @@ def complete_turn(  # noqa: PLR0915 - one linear pipeline, and the order IS the 
                 # from, and this is one value the tail could not have composed for itself
                 # - what the lane already decided the customer can tap.
                 lane_quick_replies=fragments.get("lane_quick_replies"),
+                # Same reason: the text of the message the lane already built.
+                lane_text=fragments.get("lane_text"),
                 # ESCALATION-CONTROL (security review S1): n8n's `/complete` hands over no
                 # APPLY state, so the contact's own profile is read here, or a blocked
                 # contact would be offered the team and the CS roster on this path.

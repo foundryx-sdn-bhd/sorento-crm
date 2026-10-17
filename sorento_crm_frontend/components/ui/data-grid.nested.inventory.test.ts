@@ -211,11 +211,11 @@ const GRID_IN_FLOATING_SURFACE_SITES = new Map<string, string>([
     'The DataGridTable of the same grid, not a second one',
   ],
   [
-    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveConfirmDialog.tsx:157',
-    'OI-STAGED-NOTIFY: the staged lines of the Reserve confirmation, one row per line, in a dialog. Already scrollerMaxHeight={false}.',
+    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveConfirmDialog.tsx:247',
+    'OI-STAGED-NOTIFY: the staged lines of the Reserve confirmation, one row per line, in a dialog. Already scrollerMaxHeight={false}. Line moved from :157 when #1727 grew the dialog.',
   ],
   [
-    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveConfirmDialog.tsx:168',
+    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveConfirmDialog.tsx:262',
     'The DataGridTable of the same grid, not a second one',
   ],
 ]);
