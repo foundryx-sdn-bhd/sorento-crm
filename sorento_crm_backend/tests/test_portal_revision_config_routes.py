@@ -47,6 +47,8 @@ CONFIG_KEYS = {
 # at all (no PortalRevisionService dispatch, no revise/save-draft route), so a
 # settings row for it would configure nothing - the router excludes it via its
 # own REVISABLE_PORTAL_FORM_TYPES (GRANTABLE_PORTAL_FORM_TYPES minus this kind).
+# sample_request (SR-CORE #1718) is excluded for the same reason: the revise route
+# refuses it (no RevisionAdapter in portal_revision_service.ADAPTERS).
 PORTAL_TYPES = {
     "complaint",
     "stock_inquiry",
@@ -121,18 +123,20 @@ def test_get_lists_one_entry_per_portal_type_even_with_no_rows(client):
     assert all(item["is_enabled"] is False for item in items)
 
 
-def test_sales_opportunity_is_not_listed_and_not_puttable(client):
-    """sales_opportunity is in GRANTABLE_PORTAL_FORM_TYPES (S2-4) but has no
-    revision-engine wiring, so it must not offer a settings row that configures
-    nothing (REVISABLE_PORTAL_FORM_TYPES excludes it)."""
+@pytest.mark.parametrize("kind", ["sales_opportunity", "sample_request"])
+def test_a_grantable_kind_with_no_revision_engine_is_not_listed_and_not_puttable(client, kind):
+    """sales_opportunity (S2-4) and sample_request (SR-CORE #1718) are in
+    GRANTABLE_PORTAL_FORM_TYPES but have no revision-engine wiring, so neither may
+    offer a settings row that configures nothing (REVISABLE_PORTAL_FORM_TYPES
+    excludes them)."""
     c, db = client
     _as_office_user()
 
     items = c.get(BASE).json()["items"]
-    assert "sales_opportunity" not in {i["source_entity_type"] for i in items}
+    assert kind not in {i["source_entity_type"] for i in items}
 
     response = c.put(
-        f"{BASE}/sales_opportunity",
+        f"{BASE}/{kind}",
         json={
             "is_enabled": True,
             "max_revisions": None,
