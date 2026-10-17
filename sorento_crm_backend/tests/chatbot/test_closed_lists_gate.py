@@ -211,7 +211,8 @@ def test_the_gated_schema_holds_listed_item_to_the_rendered_items():
     schema = parser_mod.closed_lists_schema(["technical_specifications", "certification", "PPS"])
     entity = schema["properties"]["entities"]["items"]
     assert entity["properties"]["listed_item"] == {
-        "type": ["string", "null"], "enum": ["technical_specifications", "certification", "PPS", None],
+        "type": ["string", "null"],
+        "enum": ["technical_specifications", "certification", "PPS", clp.NOT_LISTED, None],
     }
     assert "listed_item" in entity["required"]
     # The production schema is untouched.
@@ -254,3 +255,9 @@ def test_the_items_are_what_the_two_lists_render():
 def test_no_item_at_all_makes_listed_item_null_only():
     entity = parser_mod.closed_lists_schema([])["properties"]["entities"]["items"]
     assert entity["properties"]["listed_item"] == {"type": "null"}
+
+
+def test_the_section_names_the_none_of_these_value():
+    """S6 (17 Oct): with null as the only way out the parser forced a brochure ask onto the
+    nearest listed type; a named "none of these" value is what it picks instead."""
+    assert f'"{clp.NOT_LISTED}"' in clp.SECTION

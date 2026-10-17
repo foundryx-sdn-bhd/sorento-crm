@@ -272,3 +272,9 @@ def test_the_enum_is_capped():
     import app.services.chatbot_prompt_vars as module
 
     assert module.MAX_LISTED_ITEMS == 100 and module.MAX_LISTED_ITEM_CHARS == 60
+
+
+def test_none_of_these_is_no_pick_whatever_the_code_says(db):
+    from app.services.chatbot.head.closed_lists_prompt import NOT_LISTED
+
+    assert _ground(db, {**_file_entity("brochure", "technical_specifications"), "listed_item": NOT_LISTED}) == []
