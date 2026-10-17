@@ -230,3 +230,23 @@ def test_staff_complaint_create_and_edit_with_a_visible_project(world):
         svc.update_complaint(str(complaint.id), ComplaintUpdate(project_id=foreign))
     complaint = svc.update_complaint(str(complaint.id), ComplaintUpdate(project_id=None))
     assert complaint.project_id is None
+
+
+@pytest.mark.parametrize("scope", ["unrestricted", "unset"])
+def test_helper_refuses_any_link_without_a_concrete_company_scope(scope):
+    """Security review: an X-API-Key request with no contact runs unrestricted (scope None);
+    the check must not then accept every company's project. No concrete scope, no link."""
+    from app.models.base import UNSET
+    from app.services.project_link import check_project_link
+
+    with blank_session() as db:
+        srt = _sorento(db)
+        project_seed_service.run(db, company_id=srt)
+        owner = _uid()
+        db.add(User(id=owner, email=f"{owner}@zzt.test", name=f"{MARKER} owner"))
+        db.flush()
+        own = _project(db, srt, owner)
+        with company_scope(db, None if scope == "unrestricted" else UNSET):
+            with pytest.raises(AppException) as exc:
+                check_project_link(db, own)
+    assert _code(exc.value) == "PROJECT_LINK_NOT_FOUND"

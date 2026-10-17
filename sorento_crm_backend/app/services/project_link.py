@@ -32,10 +32,23 @@ def check_project_link(db: Session, project_id: Optional[str]) -> Optional[str]:
     value = (project_id or "").strip() if isinstance(project_id, str) else project_id
     if not value:
         return None
+    from app.models.base import get_company_scope
     from app.models.projects import Project
 
     value = str(value)
-    if not _is_uuid(value) or db.query(Project.id).filter(Project.id == value).first() is None:
+    # Only a concrete company set may link. An X-API-Key request with no contact runs
+    # unrestricted (None) and a user with no grant runs UNSET; neither may pick a project,
+    # or any company's project would pass (security review).
+    scope = get_company_scope(db)
+    companies = list(scope) if isinstance(scope, frozenset) else []
+    if (
+        not companies
+        or not _is_uuid(value)
+        or db.query(Project.id)
+        .filter(Project.id == value, Project.company_id.in_(companies))
+        .first()
+        is None
+    ):
         raise AppException(
             status_code=422,
             message="That project was not found.",
