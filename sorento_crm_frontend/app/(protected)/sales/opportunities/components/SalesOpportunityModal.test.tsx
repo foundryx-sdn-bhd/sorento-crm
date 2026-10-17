@@ -10,6 +10,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { selectOption } from '@/test-utils';
 
+vi.mock('@/services/projectLinkService', () => ({
+  searchProjectsForLink: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('@/components/common/SearchableSelect', () => ({
   SearchableSelect: (props: {
     id?: string;

@@ -483,7 +483,7 @@ export async function getPurchaseRequestConversation(
  * link to the same registered projects with the same label rule (code + title, never a UUID),
  * and two copies would drift the moment one of them starts showing the developer.
  */
-export { searchProjectsForLink } from '@/app/(protected)/complaint-management/complaints/services/complaintService';
+export { searchProjectsForLink } from '@/services/projectLinkService';
 
 /**
  * Queue a printable Purchase Request / Sponsorship Form PDF.

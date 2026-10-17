@@ -46,6 +46,10 @@ vi.mock('@/components/common/DetailActions', () => ({
     </div>
   ),
 }));
+vi.mock('@/services/projectLinkService', () => ({
+  searchProjectsForLink: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('@/components/common/SearchableSelect', () => ({
   SearchableSelect: (props: {
     id?: string;

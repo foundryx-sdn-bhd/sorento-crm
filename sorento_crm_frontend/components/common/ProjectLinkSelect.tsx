@@ -1,7 +1,7 @@
 'use client';
 
 import { SearchableSelect } from '@/components/common/SearchableSelect';
-import { searchProjectsForLink } from '@/app/(protected)/complaint-management/complaints/services/complaintService';
+import { searchProjectsForLink } from '@/services/projectLinkService';
 
 interface ProjectLinkSelectProps {
   value: string | null | undefined;
@@ -29,7 +29,7 @@ export function ProjectLinkSelect({
       aria-label="Project"
       value={value || ''}
       onChange={(next) => onChange(next || null)}
-      fetchOptions={(query, pageIndex) => searchProjectsForLink(query, pageIndex + 1)}
+      fetchOptions={(query, pageIndex) => searchProjectsForLink(query, (pageIndex ?? 0) + 1)}
       paginated
       pageSize={25}
       clearable

@@ -16,6 +16,43 @@ vi.mock('../../_shared/hooks/useProjectForms', () => ({
   useProjectForms: (kind: string) => state.byKind[kind] ?? { isLoading: true },
 }));
 
+vi.mock('@/components/common/PanelDataGrid', () => ({
+  PanelDataGrid: (props: {
+    title: string;
+    rows: { id: string; number: string }[];
+    isLoading?: boolean;
+    error?: unknown;
+    onRetry?: () => void;
+    emptyTitle: string;
+    emptyBody?: string;
+    rowHref?: (row: { id: string; number: string }) => string;
+    columns: { id?: string; size?: number }[];
+  }) => (
+    <section aria-label={props.title}>
+      <h3>{props.title}</h3>
+      {props.error ? (
+        <div>
+          <span role="alert">{(props.error as Error).message}</span>
+          <button onClick={props.onRetry}>Retry</button>
+        </div>
+      ) : props.isLoading ? (
+        <span>loading</span>
+      ) : props.rows.length === 0 ? (
+        <div>
+          <p>{props.emptyTitle}</p>
+          <p>{props.emptyBody}</p>
+        </div>
+      ) : (
+        props.rows.map((r) => (
+          <a key={r.id} href={props.rowHref?.(r)}>
+            {r.number}
+          </a>
+        ))
+      )}
+    </section>
+  ),
+}));
+
 import { FormsPanel } from './FormsPanel';
 
 const project = { id: 'p-1' } as never;
@@ -26,16 +63,17 @@ beforeEach(() => {
 });
 
 describe('FormsPanel', () => {
-  it('renders only the permitted sections', () => {
+  it('renders only the permitted sections, each with a hint under the empty heading', () => {
     perms.set = new Set(['procurement.stock_inquiries.view']);
     state.byKind['stock-inquiries'] = { isLoading: false, isError: false, data: { rows: [], total: 0 } };
     render(<FormsPanel project={project} />);
     expect(screen.getByText('Stock inquiries')).toBeTruthy();
     expect(screen.queryByText('Complaints')).toBeNull();
     expect(screen.getByText('No stock inquiries on this project')).toBeTruthy();
+    expect(screen.getByText('Stock inquiries linked to this project appear here.')).toBeTruthy();
   });
 
-  it('links a row to the form and shows its status', () => {
+  it('opens a row at the form detail page through rowHref', () => {
     perms.set = new Set(['sales.opportunities.view']);
     state.byKind['sales-opportunities'] = {
       isLoading: false,
@@ -43,13 +81,12 @@ describe('FormsPanel', () => {
       data: {
         total: 1,
         rows: [
-          { id: 'o1', href: '/sales/opportunities/o1', number: 'OP-1', date: null, statusLabel: 'New', statusClass: '', summary: 'Tower A' },
+          { id: 'o1', href: '/sales/opportunities/o1', number: 'OP-1', date: null, status: 'new', statusLabel: 'New', summary: 'Tower A' },
         ],
       },
     };
     render(<FormsPanel project={project} />);
     expect(screen.getByRole('link', { name: /OP-1/ }).getAttribute('href')).toBe('/sales/opportunities/o1');
-    expect(screen.getByText('New')).toBeTruthy();
   });
 
   it('shows the error with a Retry, never a stuck spinner', () => {
@@ -61,7 +98,7 @@ describe('FormsPanel', () => {
       refetch: vi.fn(),
     };
     render(<FormsPanel project={project} />);
-    expect(screen.getByText('Failed to fetch complaints')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe('Failed to fetch complaints');
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
   });
 

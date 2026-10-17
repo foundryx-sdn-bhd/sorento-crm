@@ -175,22 +175,6 @@ export default function SalesOpportunityModal({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="opportunity-project">Project (optional)</Label>
-              <ProjectLinkSelect
-                id="opportunity-project"
-                value={projectId}
-                onChange={(next) => {
-                  setProjectId(next);
-                  setProjectError(null);
-                }}
-              />
-              {projectError ? (
-                <p role="alert" className="text-sm text-destructive">
-                  {projectError}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex flex-col gap-1.5">
               <Label htmlFor="opportunity-title">Title</Label>
               <Input
                 id="opportunity-title"
@@ -221,6 +205,22 @@ export default function SalesOpportunityModal({
                 value={expectedCloseDate}
                 onChange={(e) => setExpectedCloseDate(e.target.value)}
               />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="opportunity-project">Project (optional)</Label>
+              <ProjectLinkSelect
+                id="opportunity-project"
+                value={projectId}
+                onChange={(next) => {
+                  setProjectId(next);
+                  setProjectError(null);
+                }}
+              />
+              {projectError ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {projectError}
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">

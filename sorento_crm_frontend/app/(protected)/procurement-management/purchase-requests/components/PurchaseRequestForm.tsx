@@ -35,7 +35,7 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/common/SearchableSelect";
-import { searchProjectsForLink } from "../services/purchaseRequestService";
+import { ProjectLinkSelect } from "@/components/common/ProjectLinkSelect";
 import { RequestCustomerField } from "./RequestCustomerField";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -702,18 +702,11 @@ export default function PurchaseRequestForm({
                   name="project_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Registered project (optional)</FormLabel>
-                      <SearchableSelect
-                        value={field.value || ""}
-                        onChange={(next) => field.onChange(next || null)}
-                        fetchOptions={(query, pageIndex) =>
-                          searchProjectsForLink(query, pageIndex + 1)
-                        }
-                        paginated
-                        pageSize={25}
-                        clearable
-                        placeholder="Search a project by code or title"
-                        emptyMessage="No project matches that. Leave it empty if it was never registered."
+                      <FormLabel>Project (optional)</FormLabel>
+                      <ProjectLinkSelect
+                        value={field.value}
+                        onChange={field.onChange}
+                        selectedLabel={request?.project_label}
                       />
                       <FormMessage />
                     </FormItem>

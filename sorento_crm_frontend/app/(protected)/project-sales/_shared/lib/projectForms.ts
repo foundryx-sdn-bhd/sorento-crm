@@ -1,5 +1,5 @@
-import { statusPillClass } from '@/lib/status-pill';
-import { priceTagStatusLabel, priceTagStatusPillClass } from '@/lib/price-tag-status';
+import { complaintStatusLabel } from '@/lib/complaint-status';
+import { priceTagStatusLabel } from '@/lib/price-tag-status';
 import { STOCK_INQUIRY_STATUS_LABELS } from '@/app/(protected)/procurement-management/stock-inquiries/types/stockInquiry.types';
 import { getComplaints } from '@/app/(protected)/complaint-management/complaints/services/complaintService';
 import { getPurchaseRequests } from '@/app/(protected)/procurement-management/purchase-requests/services/purchaseRequestService';
@@ -13,8 +13,9 @@ export interface ProjectFormRow {
   href: string;
   number: string;
   date: string | null;
+  /** The raw status, for the badge's colour; `statusLabel` is what it reads. */
+  status: string;
   statusLabel: string;
-  statusClass: string;
   summary: string;
 }
 
@@ -92,7 +93,8 @@ export function visibleProjectFormSections(
   return PROJECT_FORM_SECTIONS.filter((s) => has(s.permission));
 }
 
-const PAGE_SIZE = 50;
+/** Rows fetched per section; the grid pages them from there. */
+const PAGE_SIZE = 200;
 
 function titleCase(status: string | null | undefined): string {
   return (status ?? '')
@@ -122,8 +124,8 @@ export async function fetchProjectForms(
           href: `/complaint-management/complaints/${c.id}`,
           number: c.complaint_number ?? '-',
           date: c.complaint_date ? String(c.complaint_date) : null,
-          statusLabel: titleCase(c.status),
-          statusClass: statusPillClass(c.status),
+          status: c.status ?? '',
+          statusLabel: complaintStatusLabel(c.status),
           summary: join([c.customer_name, c.project_title]),
         })),
       };
@@ -146,8 +148,8 @@ export async function fetchProjectForms(
           href: `${base}/${r.id}`,
           number: r.request_number ?? '-',
           date: r.request_date ?? null,
+          status: r.status ?? '',
           statusLabel: titleCase(r.status),
-          statusClass: statusPillClass(r.status),
           summary: join([r.customer_name, r.project_title]),
         })),
       };
@@ -161,9 +163,9 @@ export async function fetchProjectForms(
           href: `/procurement-management/stock-inquiries/${i.id}`,
           number: i.inquiry_number ?? '-',
           date: i.created_at ? String(i.created_at) : null,
+          status: i.status ?? '',
           statusLabel:
             STOCK_INQUIRY_STATUS_LABELS[i.status ?? ''] ?? titleCase(i.status),
-          statusClass: statusPillClass(i.status),
           summary: join([i.product_code, i.project_customer]),
         })),
       };
@@ -181,8 +183,8 @@ export async function fetchProjectForms(
           href: `/dealer-kit/price-tag-requests/${r.id}`,
           number: r.doc_number,
           date: r.created_at ?? null,
+          status: r.status,
           statusLabel: priceTagStatusLabel(r.status),
-          statusClass: priceTagStatusPillClass(r.status),
           summary: join([r.debtor_name, r.contact_name]),
         })),
       };
@@ -196,8 +198,8 @@ export async function fetchProjectForms(
           href: `/sales/opportunities/${o.id}`,
           number: o.opportunity_no,
           date: o.created_at ?? null,
+          status: o.stage_key,
           statusLabel: o.stage_label,
-          statusClass: statusPillClass(o.stage_key),
           summary: join([o.title, o.customer_name ?? o.prospect_name]),
         })),
       };

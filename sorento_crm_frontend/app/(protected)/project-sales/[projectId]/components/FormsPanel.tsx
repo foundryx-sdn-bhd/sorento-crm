@@ -1,21 +1,24 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import type { ColumnDef } from '@tanstack/react-table';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
+import { PanelDataGrid } from '@/components/common/PanelDataGrid';
+import { SectionSkeleton } from '@/components/common/SectionSkeleton';
 import { ListLoadFailure } from '@/components/common/ListLoadFailure';
 import { usePermissions } from '@/hooks/usePermissions';
 import { formatDateInMalaysia } from '@/lib/helpers';
-import { STATUS_PILL_BASE } from '@/lib/status-pill';
 import { useProjectForms } from '../../_shared/hooks/useProjectForms';
 import {
   visibleProjectFormSections,
+  type ProjectFormRow,
   type ProjectFormSectionDef,
 } from '../../_shared/lib/projectForms';
 import type { Project } from '../../_shared/types/project.types';
 
-function FormSectionCard({
+function FormSectionGrid({
   section,
   projectId,
 }: {
@@ -23,68 +26,75 @@ function FormSectionCard({
   projectId: string;
 }) {
   const query = useProjectForms(section.kind, projectId);
-  const rows = query.data?.rows ?? [];
-  const total = query.data?.total ?? rows.length;
+  const rows = React.useMemo(() => query.data?.rows ?? [], [query.data]);
+
+  const columns = React.useMemo<ColumnDef<ProjectFormRow>[]>(
+    () => [
+      {
+        id: 'number',
+        accessorFn: (row) => row.number,
+        header: ({ column }) => <DataGridColumnHeader title="Number" column={column} />,
+        cell: ({ row }) => (
+          <span className="truncate text-sm font-medium tabular-nums" title={row.original.number}>
+            {row.original.number}
+          </span>
+        ),
+        size: 150,
+        meta: { headerTitle: 'Number' },
+      },
+      {
+        id: 'date',
+        accessorFn: (row) => row.date ?? '',
+        header: ({ column }) => <DataGridColumnHeader title="Date" column={column} />,
+        cell: ({ row }) => (row.original.date ? formatDateInMalaysia(row.original.date) : '-'),
+        size: 120,
+        meta: { headerTitle: 'Date' },
+      },
+      {
+        id: 'status',
+        accessorFn: (row) => row.statusLabel,
+        header: ({ column }) => <DataGridColumnHeader title="Status" column={column} />,
+        cell: ({ row }) =>
+          row.original.statusLabel ? (
+            <Badge status={row.original.status} appearance="light">
+              {row.original.statusLabel}
+            </Badge>
+          ) : (
+            '-'
+          ),
+        size: 170,
+        meta: { headerTitle: 'Status' },
+      },
+      {
+        id: 'summary',
+        accessorFn: (row) => row.summary,
+        header: ({ column }) => <DataGridColumnHeader title="Details" column={column} />,
+        cell: ({ row }) => (
+          <span className="truncate text-sm" title={row.original.summary || undefined}>
+            {row.original.summary || '-'}
+          </span>
+        ),
+        size: 280,
+        meta: { headerTitle: 'Details' },
+      },
+    ],
+    [],
+  );
 
   return (
-    <Card aria-label={section.title}>
-      <CardHeader className="py-3">
-        <CardTitle className="text-base">
-          {section.title}
-          {query.data ? (
-            <span className="ms-2 text-sm font-normal text-muted-foreground tabular-nums">
-              {total}
-            </span>
-          ) : null}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-4 pb-4">
-        {query.isLoading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
-          </div>
-        ) : query.isError ? (
-          <ListLoadFailure error={query.error} onRetry={() => void query.refetch()} />
-        ) : rows.length === 0 ? (
-          <div>
-            <p className="text-sm font-medium">{section.emptyTitle}</p>
-            <p className="text-sm text-muted-foreground">{section.emptyHint}</p>
-          </div>
-        ) : (
-          <>
-            <ul className="divide-y rounded-lg border">
-              {rows.map((row) => (
-                <li key={row.id}>
-                  <Link
-                    href={row.href}
-                    className="flex flex-col gap-1 px-3 py-2 text-sm hover:bg-muted/50 sm:flex-row sm:items-center sm:gap-3"
-                  >
-                    <span className="shrink-0 font-medium tabular-nums sm:w-36">{row.number}</span>
-                    <span className="shrink-0 text-muted-foreground sm:w-28">
-                      {row.date ? formatDateInMalaysia(row.date) : '-'}
-                    </span>
-                    <span className="shrink-0">
-                      <span className={`${STATUS_PILL_BASE} ${row.statusClass}`}>
-                        {row.statusLabel || '-'}
-                      </span>
-                    </span>
-                    <span className="min-w-0 flex-1 truncate" title={row.summary || undefined}>
-                      {row.summary || '-'}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            {total > rows.length ? (
-              <p className="mt-2 text-xs text-muted-foreground tabular-nums">
-                Showing {rows.length} of {total}
-              </p>
-            ) : null}
-          </>
-        )}
-      </CardContent>
-    </Card>
+    <PanelDataGrid
+      title={section.title}
+      columns={columns}
+      rows={rows}
+      getRowId={(row) => row.id}
+      listingKey={`${section.permission}::project-forms-${section.kind}`}
+      isLoading={query.isLoading}
+      error={query.isError ? query.error : undefined}
+      onRetry={() => void query.refetch()}
+      emptyTitle={section.emptyTitle}
+      emptyBody={section.emptyHint}
+      rowHref={(row) => row.href}
+    />
   );
 }
 
@@ -102,10 +112,7 @@ export function FormsPanel({ project }: { project: Project }) {
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-24 w-full" />
-      </div>
+      <SectionSkeleton rows={4} />
     );
   }
   if (isError) {
@@ -126,7 +133,7 @@ export function FormsPanel({ project }: { project: Project }) {
   return (
     <div className="space-y-4">
       {sections.map((section) => (
-        <FormSectionCard key={section.kind} section={section} projectId={project.id} />
+        <FormSectionGrid key={section.kind} section={section} projectId={project.id} />
       ))}
     </div>
   );

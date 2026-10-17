@@ -13,4 +13,10 @@ describe('ProjectLinkValue (AC-FP-30)', () => {
     expect(screen.getByText('No project')).toBeTruthy();
     expect(screen.queryByRole('link')).toBeNull();
   });
+  it('does not claim No project when a link exists but its label is hidden', () => {
+    render(<ProjectLinkValue projectId="p-1" projectLabel={null} />);
+    expect(screen.getByText('Linked project not visible')).toBeTruthy();
+    expect(screen.queryByText('No project')).toBeNull();
+    expect(screen.queryByRole('link')).toBeNull();
+  });
 });
