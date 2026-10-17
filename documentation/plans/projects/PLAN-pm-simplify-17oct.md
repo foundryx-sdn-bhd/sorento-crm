@@ -1,0 +1,169 @@
+# PLAN: simplify the project PO and delivery schedule parts (PM-SIMPLIFY)
+
+Status: mock v2 on the real project case (PRJ-000001, masked rows from crew) filed for the owner
+(17 Oct 2026) with Q1-Q3 open; Q4 and Q5 answered (a). No code until the owner OKs the mock. No code until the owner OKs the mock. Track: not chosen yet
+(decided by the diff once the mock is approved).
+
+Owner 15 Oct: "the PO part and the delivery schedule part are badly designed, too complicated ->
+simplify." This is a new round on top of the shipped 24 Sep redesign
+(`PLAN-po-schedule-redesign-24sep.md`, slices S1-S7, #1219 #1237 #1264 #1265, later #1618 #1681).
+
+## Steps
+
+1. Discovery: walk create PO from a project, plan and change delivery dates, partial deliveries,
+   see what is outstanding. Count screens, clicks and fields per job, screenshot every step.
+2. Proposal: fewer steps and screens, existing components only. Mock v1 on the real case with an
+   element -> component map (repo paths), at most 5 questions, one report to the owner.
+3. After the owner OKs the mock: behaviour card if rules change, red-first tests, reviewer,
+   security review, browser pass, hand-test script.
+
+## Discovery findings (code walk, 17 Oct; browser walk with step counts follows)
+
+FE root `sorento_crm_frontend/app/(protected)/project-sales/[projectId]` (P below), BE root
+`sorento_crm_backend/app`.
+
+### Where the work lives today
+
+- Project detail has 12 tabs (`P/components/ProjectDetailClient.tsx:77-90`); PO, schedule and SO
+  work sits on three of them (POs, Delivery schedules, Sales orders).
+- One PO end to end visits those 3 tabs plus 4 pages: PO record `P/pos/[poId]`, PO review
+  `P/purchase-orders/[versionId]`, schedule review `P/delivery-schedules/[versionId]`, sales
+  order `P/sales-orders/[psoId]` (and its /worksheet, /revisions, /divergence sub-pages).
+
+### Jobs, as the code runs them
+
+1. **Create a PO (scan).** POs tab -> Upload a PO document (2 fields) -> PO review page, wait
+   for extraction -> fix lines (7 editable columns) -> act on each handwritten note -> Confirm ->
+   Approve -> Countersign (a second user). Three sign-offs on one screen
+   (`P/components/POIntakeConfirmClient.tsx:215-233`, `BE/api/v1/projects/po_intake.py:329,366,387`).
+   By hand: Record a PO (7 fields, `PurchaseOrderDialog.tsx:131-221`) then Edit the PO lines
+   (8-column editor) on the PO record page.
+2. **Plan delivery dates.** Delivery schedules tab -> Upload a schedule (4-6 fields,
+   `DeliveryScheduleUploadDialog.tsx:160-262`) -> review matrix -> fix cells / resolve or dismiss
+   columns -> Confirm (dialog, "Confirm anyway" + reason when anything is unreconciled).
+3. **Change delivery dates.** Dates are read-only on the matrix
+   (`DeliveryScheduleMatrix.tsx:233-239`). Three different routes, three different stores:
+   upload a whole new version (`delivery_phases.delivery_date`), accept a re-date proposal in the
+   History sheet (`delivery_schedule_cells.delivery_date_override`,
+   `BE/services/project_schedule_service.py:2330`), or edit `delivery_date` on SO lines
+   (`SalesOrderLinesEditor.tsx:273`), which never flows back. Published SOs then go through
+   Revisions -> Compare -> Create the amendment (dialog) -> decide rows -> Publish the amendment.
+4. **Partial deliveries.** No delivery is recorded on the project at all. Splitting happens
+   when sales orders are built (Build drafts dialog + second confirm,
+   `SalesOrderBuildDialog.tsx:92-202`): each PO line is spread over schedule phases into SO lines.
+   Delivered quantities exist only on core `sales_order_lines.qty_delivered` (AutoCount sync,
+   `BE/models/order.py:759-764`).
+5. **See what is outstanding.** No project screen shows ordered vs scheduled vs delivered per
+   item. Only Stock debt and Fulfilment planning read delivered quantities, keyed by product/SO,
+   outside the project.
+
+### Defects found on the way (verified against the code)
+
+- D1. Two editing surfaces for a scanned PO's lines; only one reaches the sales orders. The
+  build reads `po_lines` whenever a PO version exists
+  (`BE/services/project_so_draft_service.py:577-602`); hand edits to `purchase_order_lines` are
+  used only without a scan (`:604-627`) and confirming a new version deletes and rewrites them
+  (`BE/services/project_po_confirm.py:246-247`).
+- D2. Approve and Countersign gate nothing: no reader of the approval stamps in the build or
+  publish path (grep of `approved_at` in `project_so_draft_service.py` and
+  `api/v1/projects/sales_orders.py` is empty), though `po_intake.py:372` says CS cannot open the
+  draft before approval.
+- D3. A sales order can be built from an unconfirmed schedule version: `build` never checks
+  `confirmed_at`; the build dialog lists "Not confirmed yet" versions. The PO version picked
+  also falls back to an unconfirmed one (`project_so_draft_service.py:571-575`).
+- D4. The next-step card links `?tab=pos&po=`, `?tab=schedules&po=`, `?tab=sales-orders&build=`
+  (`POToSalesOrderStep.tsx:76-81`) but only `tab` is read (`ProjectDetailClient.tsx:98`), so the
+  user re-picks the PO in the next dialog.
+- D5. The PO is re-picked in the schedule upload, the build dialog and the amendment picker.
+
+### Data model, for reference
+
+Four line sets describe one order: `po_lines` (scan, per version), `purchase_order_lines`
+(agreed/keyed), `delivery_schedule_cells` (product x phase), project `sales_order_lines`
+(product x phase x date). Delivery dates live in three places: `delivery_phases.delivery_date`,
+`delivery_schedule_cells.delivery_date_override`, `sales_order_lines.delivery_date`.
+
+## Discovery findings (browser walk, 17 Oct)
+
+Sandbox copy, synthetic project "Taman Contoh Residences" (12 PO lines, schedule v1 + v2 over
+6 phases in two areas, 6 sales orders, PSO-000001 published with 3 lines part delivered).
+Sidebar clicks from `/`. Screenshots: `evidence/pm-simplify-17oct/` (a = create a PO, b = change
+dates, c = partial deliveries, d = what is outstanding; `-1280` and `-375`).
+
+| Job | Today |
+| --- | --- |
+| A. Create a PO | 3 pages (project, PO record, PO document review) + 2 dialogs (Upload: 2 fields, Record: 7 fields), 10 clicks, 3 sign-offs (Confirm, Approve, Countersign) (a01-a09) |
+| B. Change one delivery date | Not possible on the schedule: dates are column headers, clicking does nothing; History sheet read-only (b04-b07). Only route seen: the delivery date on every draft SO line for that area, one SO at a time; published SOs locked (b08). Or upload a revision: 5-field dialog (b02), review, confirm |
+| C. Partial deliveries | Shown nowhere: SO lines have Qty, UOM, Unit price, Amount, Delivery (date); no delivered figure (c04). Build drafts: 2 dialogs, 3 fields (c02, c03) |
+| D. Ordered / scheduled / delivered / outstanding per item | 7 screens, about 15 clicks; ordered and scheduled found on two different pages, compared by eye; delivered and outstanding not obtainable (d01-d04) |
+
+Also seen: schedule v2 "Need attention (0)" filter beside a "Needs acknowledgement 1" flag (b04);
+PO review says "Only 0 of 1 pages were read" on a confirmed PO with all 12 lines (a09); product
+not resolved shows as "Not matched", "Not quoted", "Not identified" and "Not resolved" on four
+screens; PO line UOM "NOS" becomes "UNIT" on the SO line (b08).
+
+## Proposal (mock v1)
+
+Mock: `mockups/po-schedule-simplify-v1.html` (1280 and 375 frames, numbered callouts, element to
+component map, existing components only).
+
+1. One **Orders** tab on the project replaces POs, Delivery schedules and Sales orders (12 tabs to
+   10). Grid of POs; a row expands to its schedule and sales orders; right-click for the row's
+   actions; Columns toggle.
+2. One **PO page** (`pos/[poId]`) replaces the PO record, the PO document review and the schedule
+   review pages. Line tabs: Lines, Deliveries, Sales orders, Documents. One header CTA: the next
+   step.
+3. **Lines tab**: Ordered, Scheduled, Delivered, Outstanding per line, from existing data (no
+   migration: `projects.sales_order_lines.source_po_line_id` + `core_sales_order_line_id` ->
+   `public.sales_order_lines.qty_delivered` via `delivered_qty_of`,
+   `BE/services/project_supply_service.py:532`). Expand a line for its deliveries.
+4. **Deliveries tab**: one row per phase; the date is edited in place and draft SO lines on that
+   phase follow; a published SO gets the existing amendment flow (Q2). Upload revised schedule is
+   one field.
+5. One sign-off (Q1). Build in one dialog with one field (Q5). Defects D1-D5 fixed on the way.
+
+| Job | Today | Proposed |
+| --- | --- | --- |
+| Create a PO from a scan | 3 pages + 2 dialogs, 10 clicks, 3 sign-offs | 1 page + 1 dialog, 3 clicks, 1 sign-off |
+| Change one delivery's date | not possible on the schedule | 2 clicks, 1 field |
+| Upload a revised schedule | 5 fields | 1 field |
+| See a partial delivery | shown nowhere | 0 extra clicks |
+| Outstanding per item | 7 screens, ~15 clicks, not answerable | 1 screen, 2 clicks |
+| Build sales orders | 2 dialogs, 3 fields | 1 dialog, 1 field |
+
+## Questions for the owner
+
+- Q1. Approve + Countersign gate nothing: (a) drop them, Confirm is the only sign-off; (b) keep and
+  make Build wait for Countersign. Recommendation (a).
+- Q2. Change a delivery date: (a) edit in place, draft SOs follow, published get an amendment;
+  (b) only via a revised schedule upload. Recommendation (a).
+- Q3. One page per PO (merge the three pages)? Recommendation yes.
+- Q4. Delivered quantities: (a) AutoCount only, read-only; (b) also recorded in the CRM.
+  **Answered (crew, 17 Oct): (a).** Owner rule: AutoCount is the source of truth.
+- Q5. Build: (a) keep the split-by choice in one dialog; (b) always split by delivery date, no
+  dialog. **Answered (crew, 17 Oct): (a)**, no behaviour removed.
+
+Crew, 17 Oct: Q1, Q2 and Q3 go to the owner with the mock refilled on the real project case
+(masked rows from the crew-data-request). Defects D1-D5 are fixed in the build regardless.
+
+UAC draft: `pm-simplify-17oct-acceptance-criteria.md`. UI word for a schedule row is "Area" (24 Sep ruling J6); "phase" below is the code name (`delivery_phases`).
+
+Track (once approved): full track. Q2 changes a business rule (behaviour card), and the merged
+PO page is well over 300 lines; no migration expected.
+
+## Mock v2: the real project case (17 Oct)
+
+`mockups/po-schedule-simplify-v2.html`, built by `mockups/po-schedule-simplify-gen/` from crew's masked
+rows of PRJ-000001 (loaded only into a sandbox database; the rows are not in the repo). What the real
+case adds over the synthetic one:
+
+- 50 live PO lines (51 printed, 1 cancelled), 15 delivery areas (12 tower, 3 common area with no
+  label, shown as Part 1 to 3), 3 sales orders, all blocked, nothing published or delivered.
+- The same product sits on several PO lines, so schedule units are shared out over those lines in
+  line order before comparing; 20 lines come out short on the schedule and 2 over, and 3 schedule
+  columns (2,733 units) match no product. This agrees with the confirmed version's 35 of 44
+  columns reconciled.
+- **240 of 258 sales order lines carry a delivery date that no longer matches their area's
+  confirmed date.** The sales orders were built from schedule v1; v2 (confirmed 19 Aug) moved every
+  tower date by about six months and nothing carried the new dates over. This is defect D6, and the
+  case for Q2: a date belongs to the area, and draft sales order lines follow it.
