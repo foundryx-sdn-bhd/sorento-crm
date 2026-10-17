@@ -3116,6 +3116,48 @@ def near_miss_sentence(near: Any, require: dict[str, Any]) -> str:
     return f"{said} {counted} {has_what} in another {label.lower()}: {others}."
 
 
+def token_labeller(r: Any, all_ents: Any) -> tuple[Any, Any, Any]:
+    """`(type_of_token, raw_of_token, label_token)` for the words a miss names: `"zzqq999" (product)`.
+    One definition for the not-found message and for any other reply that names an unplaced word."""
+    # FIRST-wins on a normalised-key collision (a plain map built from `.map()` would keep
+    # the LAST entity instead, letting this node and the tail disagree on which entity a
+    # token names). Keyed under BOTH `raw` and `canonical_code`, mirroring what
+    # `resolve-entity` is SENT.
+    by_raw_stripped: dict[str, Any] = {}
+    for entity in all_ents:
+        key = _type_norm(jsc.get(entity, "raw"))
+        if key not in by_raw_stripped:
+            by_raw_stripped[key] = entity
+        code_key = _type_norm(jsc.get(entity, "canonical_code"))
+        if code_key and code_key not in by_raw_stripped:
+            by_raw_stripped[code_key] = entity
+
+    def type_of_token(token: Any) -> str:
+        res = jsc.find(
+            jsc.array(jsc.get(r, "resolutions")),
+            lambda x: _type_norm(jsc.get(x, "token")) == _type_norm(token),
+        )
+        matches = jsc.get(res, "matches") if jsc.truthy(res) else None
+        first = matches[0] if isinstance(matches, list) and matches else None
+        if jsc.truthy(first) and jsc.truthy(jsc.get(first, "entity_type")):
+            return _prettify_type(jsc.get(first, "entity_type"))
+        hint = jsc.get(by_raw_stripped.get(_type_norm(token)), "hint")
+        return _prettify_type(jsc.js_string(hint)) if jsc.truthy(hint) else ""
+
+    def raw_of_token(token: Any) -> Any:
+        entity = by_raw_stripped.get(_type_norm(token))
+        raw = jsc.get(entity, "raw")
+        return raw if jsc.truthy(raw) else token
+
+    def label_token(token: Any) -> str:
+        type_label = type_of_token(token)
+        return f'"{jsc.js_string(raw_of_token(token))}"' + (
+            f" ({type_label})" if type_label else ""
+        )
+
+    return type_of_token, raw_of_token, label_token
+
+
 def not_found_error_message(
     item: dict[str, Any] | None,
     *,
@@ -3737,41 +3779,7 @@ def not_found_error_message(
         not_found_raw = [t for t in unresolved if _nf_norm_raw(t) not in resolved_toks]
         use_breakdown = len(found_lines) > 0
 
-        # FIRST-wins on a normalised-key collision (a plain map built from `.map()` would keep
-        # the LAST entity instead, letting this node and the tail disagree on which entity a
-        # token names). Keyed under BOTH `raw` and `canonical_code`, mirroring what
-        # `resolve-entity` is SENT.
-        by_raw_stripped: dict[str, Any] = {}
-        for entity in all_ents:
-            key = _type_norm(jsc.get(entity, "raw"))
-            if key not in by_raw_stripped:
-                by_raw_stripped[key] = entity
-            code_key = _type_norm(jsc.get(entity, "canonical_code"))
-            if code_key and code_key not in by_raw_stripped:
-                by_raw_stripped[code_key] = entity
-
-        def type_of_token(token: Any) -> str:
-            res = jsc.find(
-                jsc.array(jsc.get(r, "resolutions")),
-                lambda x: _type_norm(jsc.get(x, "token")) == _type_norm(token),
-            )
-            matches = jsc.get(res, "matches") if jsc.truthy(res) else None
-            first = matches[0] if isinstance(matches, list) and matches else None
-            if jsc.truthy(first) and jsc.truthy(jsc.get(first, "entity_type")):
-                return _prettify_type(jsc.get(first, "entity_type"))
-            hint = jsc.get(by_raw_stripped.get(_type_norm(token)), "hint")
-            return _prettify_type(jsc.js_string(hint)) if jsc.truthy(hint) else ""
-
-        def raw_of_token(token: Any) -> Any:
-            entity = by_raw_stripped.get(_type_norm(token))
-            raw = jsc.get(entity, "raw")
-            return raw if jsc.truthy(raw) else token
-
-        def label_token(token: Any) -> str:
-            type_label = type_of_token(token)
-            return f'"{jsc.js_string(raw_of_token(token))}"' + (
-                f" ({type_label})" if type_label else ""
-            )
+        type_of_token, raw_of_token, label_token = token_labeller(r, all_ents)
 
         # State the SEARCH SCOPE, so "nothing matched" cannot be read as "nothing matched in
         # the one company you were thinking of". Empty on a single-company turn.

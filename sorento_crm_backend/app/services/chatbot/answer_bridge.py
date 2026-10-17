@@ -1968,7 +1968,7 @@ def answer_for(
     if held_none is not None:
         # R2-2: the held member's own "has no <type>" line, then the same unplaced-word line and
         # escalate offer the normal miss ends with; no did-you-mean (the member is on file).
-        not_found = {**not_found, "escalate_message": _held_miss_text(held_none, resolved.get("unresolved_tokens") or [], not_found, localizer)}
+        not_found = {**not_found, "escalate_message": _held_miss_text(held_none, resolved, parser, not_found, localizer)}
     offer = {} if held_none is not None else miss_mod.run_miss_lane(
         not_found,
         parser=parser,
@@ -2191,15 +2191,19 @@ def _held_member_no_file(
     return localizer.fill("{code} has no {types}.", code=str(products[0]["code"]), types=asked or "attachment")
 
 
-def _held_miss_text(line: str, unplaced: list[Any], not_found: Mapping[str, Any], localizer: Any = None) -> str:
-    """The held member's line, the words the turn could not place (as the normal miss names them),
-    and the escalate sentence the normal miss message closes with (absent for staff)."""
+def _held_miss_text(
+    line: str, resolved: Mapping[str, Any], parser: Any, not_found: Mapping[str, Any], localizer: Any = None
+) -> str:
+    """The held member's line, the words the turn could not place (labelled as the normal miss
+    labels them), and the escalate sentence the normal miss message closes with (absent for staff)."""
     parts = [line]
+    unplaced = [t for t in resolved.get("unresolved_tokens") or [] if t]
     if unplaced:
         if localizer is None:
             from app.services.chatbot.label_catalog import IDENTITY as localizer
-        names = ", ".join(f'"{w}"' for w in unplaced if w)
-        parts.append(localizer.fill("Couldn't find: {names}.", names=names))
+        entities = parser.get("entities") if isinstance(parser, Mapping) else None
+        label_token = answer_mod.token_labeller(resolved, entities if isinstance(entities, list) else [])[2]
+        parts.append(localizer.fill("Couldn't find: {names}.", names=", ".join(label_token(t) for t in unplaced)))
     message = str(not_found.get("escalate_message") or "")
     _head, found, offer = message.rpartition("Would you like me to escalate")
     if found:
