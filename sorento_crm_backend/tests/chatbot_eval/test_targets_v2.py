@@ -2291,3 +2291,48 @@ def test_r29d_a_brand_refine_answered_by_a_how_many_alone_is_unchanged():
     res = _r29d("How many units of CB94SS-BL?", held_before=False, verdict=R29D_BRAND, extra_value=None, brands=["sorento"],
                 flt={"key": "brand", "kind": "brand", "value": "sorento"})
     assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+
+
+# round 29e: the bot's own value-miss reply is an honest none; loose none phrases are not
+@pytest.mark.parametrize("reply", [
+    "Here's what you want: double flexible kitchen taps with chrome\n• Sorento double flexible kitchen taps: 2\n\n"
+    "Couldn't find: chrome (finish or colour).",
+    "Here's what you want: double flexible kitchen taps with chrome\n• Sorento double flexible kitchen taps: 2\n\n"
+    "Couldn't find: double flexible (spout type).",
+])
+def test_r29e_a_value_miss_reply_with_a_label_is_an_honest_none(reply):
+    res = _r29b(reply)
+    assert res["checks"].get("none_on_record") is True, res["checks"]
+
+
+@pytest.mark.parametrize("reply", [
+    "Here's what you want: chrome kitchen taps (2)\n1. *Product Code:* SRTWT2234\n2. *Product Code:* SRTWT2235\n\n"
+    "Sorry, we don't have stock for SRTWT2235.",
+    "No worries, these matched your filters.",
+])
+def test_r29e_a_stock_line_or_a_loose_phrase_is_not_a_none_for_the_spec(reply):
+    res = _r29b(reply)
+    assert res["checks"].get("none_on_record") is False, res["checks"]
+
+
+def test_r29e_the_quoted_unknown_word_line_stays_a_dead_end():
+    res = _r29b("Here's what you want: tap\n\nCouldn't find: \"kitchan\". Would you like me to escalate to purchasing team?")
+    assert res["checks"].get("none_on_record") is False, res["checks"]
+
+
+def test_r29e_a_code_led_value_row_beside_a_how_many_is_an_answer_on_a_files_item():
+    r = row2(message="send the brochure of SRTA100", reply="How many units?\n1. SRTA100 x 2: Available")
+    res = grade_turn(r, item("scope", fact="product_attachment", fact_label="files"))
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+
+
+def test_r29e_a_code_led_price_row_beside_a_how_many_is_an_answer_on_a_promo_item():
+    r = row2(message="any promo for SRTA100", reply="How many units?\n1. SRTA100: RM 90")
+    res = grade_turn(r, item("scope", fact="promotion"))
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+
+
+def test_r29e_a_chinese_price_question_is_not_a_how_many():
+    r = row2(message="any promo for SRTA100", reply="SRTA100 多少钱？RM 90")
+    res = grade_turn(r, item("scope", fact="promotion"))
+    assert res["checks"].get("no_qty_ask") is True and "qty_ask_ok" not in res["checks"], res["checks"]
