@@ -12,6 +12,7 @@ import uuid
 import pytest
 
 import app.main  # noqa: F401  isort:skip
+from app.models.base import set_company_scope
 from app.models.product import Product, ProductAttachment, ProductCategory, UnitOfMeasure
 from app.models.resources import Attachment, AttachmentType
 from app.services.ai_assistant_service import MCPRuntimeClient
@@ -71,7 +72,9 @@ def test_the_ask_lists_the_file_types_the_product_has(session_factory):
     focus = Focus(products=[{"uuid": ids["product"], "canonical_code": CODE, "raw": CODE, "hint": "product"}])
     ask = pending_ask("attachment_type_ask", [], payload={"domain": "product_attachment"})
 
-    offered = turn_runtime.file_type_ask(session_factory(), ask, focus)
+    db = session_factory()
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))  # the engine's sessions are always scoped
+    offered = turn_runtime.file_type_ask(db, ask, focus)
 
     assert offered.kind == "attachment_type_ask"
     assert offered.payload == {"domain": "product_attachment"}
@@ -145,3 +148,46 @@ def test_gate_off_the_ask_is_unchanged(session_factory, seeded, stub_access, mon
     asked, _result = _asked(session_factory, stub_access, monkeypatch, gate=False)
 
     assert all(not a.options for a in asked if a.kind == "attachment_type_ask")
+
+
+def test_a_product_named_by_code_before_the_resolver_ran_is_found_by_its_code(session_factory):
+    ids = _seed(session_factory)
+    db = session_factory()
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+    focus = Focus(products=[{"raw": CODE.lower(), "canonical_code": CODE.lower(), "hint": "product"}])
+
+    offered = turn_runtime.file_type_ask(db, pending_ask("attachment_type_ask", []), focus)
+
+    assert [o["uuid"] for o in offered.options] == [ids["certification"], ids["technical_specifications"]]
+
+
+def test_a_bare_2_fetches_the_second_offered_type(session_factory, seeded, stub_access, monkeypatch):
+    from tests.chatbot.test_engine import CONTACT_ID
+
+    ids = _seed(session_factory)
+    _asked(session_factory, stub_access, monkeypatch, gate=True)
+
+    calls: list[tuple[str, dict]] = []
+
+    def call_tool(self, name, arguments):
+        calls.append((name, arguments))
+        return json.dumps({"ok": True, "items": []})
+
+    pick = _parser_output(
+        intent_hint=None, domain_hint=None, message_type="business_query", user_goal="picks option 2",
+        reference_positions=[2], entities=[],
+    )
+    monkeypatch.setattr(parser_mod, "parse", lambda config, user_block: pick)
+    monkeypatch.setattr(MCPRuntimeClient, "call_tool", call_tool)
+    message = {
+        "event_type": "message.received",
+        "contact": {"id": CONTACT_ID},
+        "message": {
+            "messageId": "ZZT-file-ask-2", "contactId": CONTACT_ID, "channelId": "whatsapp", "traffic": "incoming",
+            "message": {"type": "text", "text": "2"},
+        },
+    }
+    engine_mod.run_turn(_envelope(message=message), session_factory=session_factory)
+
+    sent = [args for _name, args in calls if "attachment_type_ids" in (args or {})]
+    assert sent and sent[0]["attachment_type_ids"] == [ids["technical_specifications"]], calls

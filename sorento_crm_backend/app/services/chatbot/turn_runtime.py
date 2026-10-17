@@ -3136,6 +3136,66 @@ def stamp_customer_options(
     return out
 
 
+def file_type_ask(db: Session, ask: Any, focus: Any) -> Any:
+    """`ask`, a "which kind of file?" question given the file types the subject products
+    really carry as its numbered options (CHAT-CLOSED-LISTS card R3, crew Q3 (a), 17 Oct
+    2026), or `ask` itself when it is another question, already has options, or no product
+    on the focus has a file. Each option is the roster shape a picked option becomes an
+    entity from (`turn/apply._answer_pending`): a bare "2" fetches that type."""
+    from dataclasses import replace
+
+    from app.models.product import ProductAttachment
+    from app.models.resources import Attachment, AttachmentType
+
+    if getattr(ask, "kind", None) != "attachment_type_ask" or getattr(ask, "options", None):
+        return ask
+    from sqlalchemy import func
+
+    from app.models.product import Product, chat_searchable_products
+
+    rows_in_focus = [row for row in getattr(focus, "products", None) or [] if isinstance(row, dict)]
+    product_ids = [str(row["uuid"]) for row in rows_in_focus if row.get("uuid")]
+    # The ask is raised before the resolver runs, so a product named this turn has its
+    # code and no uuid yet: the code, whole (case aside), in this contact's scope.
+    codes = {
+        str(row.get("canonical_code") or row.get("raw") or "").strip().upper()
+        for row in rows_in_focus
+        if not row.get("uuid")
+    } - {""}
+    if codes:
+        product_ids += [
+            str(pid)
+            for (pid,) in db.query(Product.id)
+            .filter(func.upper(Product.product_code).in_(codes), chat_searchable_products())
+            .all()
+        ]
+    if not product_ids:
+        return ask
+    rows = (
+        db.query(AttachmentType.id, AttachmentType.code, AttachmentType.type_name)
+        .join(Attachment, Attachment.attachment_type_id == AttachmentType.id)
+        .join(ProductAttachment, ProductAttachment.attachment_id == Attachment.id)
+        .filter(ProductAttachment.product_id.in_(product_ids), Attachment.is_deleted.isnot(True))
+        .distinct()
+        .order_by(AttachmentType.type_name)
+        .all()
+    )
+    if not rows:
+        return ask
+    options = [
+        {
+            "position": i,
+            "entity_type": "attachment_type",
+            "code": code or name,
+            "uuid": str(type_id),
+            "name": name,
+            "label": name,
+        }
+        for i, (type_id, code, name) in enumerate(rows, start=1)
+    ]
+    return replace(ask, options=options)
+
+
 def stamp_customer_ask(
     db: Session,
     ask: Any,

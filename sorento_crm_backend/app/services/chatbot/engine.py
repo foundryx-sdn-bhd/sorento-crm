@@ -7161,6 +7161,14 @@ def _run_stages_body(  # noqa: PLR0915
                     focus=dataclasses_replace(state_out.focus, customers=focus_customers_named),
                 )
             ask = plan.ask
+            if parser_config.closed_lists and ask.kind == "attachment_type_ask":
+                # CHAT-CLOSED-LISTS card R3: the file types the product really has, as the
+                # roster the tail stores, so the reply's numbers are what "2" answers.
+                offered = turn_runtime.file_type_ask(db, ask, state_out.focus)
+                if offered is not ask:
+                    ask = offered
+                    state_out = dataclasses_replace(state_out, pending=offered)
+                    turn_trace.add("file_type_ask", {"options": len(offered.options)})
             if ask.kind == "customer_pick" and not _roster_is_outstanding(verdict, state_out.focus):
                 # PICKER-ONE (owner, 13 Oct 2026): a customer roster the narrower raised
                 # off the focus or off typed words carries the same has DO / no DO stamp
