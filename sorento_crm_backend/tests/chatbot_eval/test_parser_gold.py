@@ -310,3 +310,75 @@ def test_run_live_smoke_two_rows_by_repeats(session_factory, monkeypatch):
         assert (r["passed"], r["reasons"]) == pg.grade_parse(verdict, case["expect"])
     assert not any(r["passed"] for r in out[2:])
     assert seen == out
+
+
+OTHER_COMPANY = "00000000-0000-0000-0000-000000000002"
+
+
+def test_run_live_registers_the_scope_listener_and_scopes_the_candidate_block(session_factory, monkeypatch):
+    """The runner scopes its session to the default company, so it must install the scope filter itself:
+    in a fresh process nothing else does, and the candidate block then lists other companies' codes."""
+    import uuid
+
+    from app.models.company import Company
+    from app.models.product import Product, ProductCategory, UnitOfMeasure
+    from app.services import company_scope, llm_provider
+    from app.services.chatbot.head import parser as parser_mod
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+    from tests._pg_fixture import unique_code
+
+    db = session_factory()
+    for cid, label in ((DEFAULT_COMPANY_ID, "DEF"), (OTHER_COMPANY, "OTH")):
+        if db.get(Company, cid) is None:
+            db.add(Company(id=cid, name=f"ZZT {label}", code=unique_code(label)[:20]))
+    db.flush()
+    held = {}
+    for cid, code in ((DEFAULT_COMPANY_ID, "ZZQPL7-MINE"), (OTHER_COMPANY, "ZZQPL7-THEIRS")):
+        cat = ProductCategory(id=str(uuid.uuid4()), category_code=unique_code("CAT")[:50], category_name="ZZT cat",
+                              company_id=cid)
+        uom = UnitOfMeasure(id=str(uuid.uuid4()), uom_code=unique_code("UOM")[:50], uom_name="Each", company_id=cid)
+        db.add_all([cat, uom])
+        db.flush()
+        db.add(Product(id=str(uuid.uuid4()), product_code=code, product_name=f"Name of {code}", category_id=cat.id,
+                       base_uom_id=uom.id, list_price=1, company_id=cid, is_searchable=True))
+        held[cid] = code
+    db.commit()
+
+    class _Keyed:
+        api_key = "sk-synthetic-not-a-real-key-WXYZ"
+
+    events: list[str] = []
+    blocks: list[str] = []
+    real_register = company_scope.register_company_scope_listeners
+
+    def spy_register():
+        events.append("register")
+        return real_register()
+
+    def fake_chat(self, messages, **kw):
+        return llm_provider.ChatResult(content="{}", prompt_tokens=10, completion_tokens=1, total_tokens=11,
+                                       cached_tokens=0)
+
+    def fake_parse(config, user_block):
+        events.append("parse")
+        blocks.append(user_block)
+        llm_provider.OpenAIProvider.chat(_Keyed(), [{"role": "user", "content": "x"}], model="gpt-5.4-mini")
+        return {"status": "ok", "domain_hint": "product", "entities": [], "requested_attributes": []}
+
+    config = parser_mod.ParserConfig(system_prompt="x", prompt_version=1, provider="openai", model="gpt-5.4-mini",
+                                     api_key="k", closed_lists=True, code_lookup=True)
+    monkeypatch.setattr(company_scope, "register_company_scope_listeners", spy_register)
+    monkeypatch.setattr(llm_provider.OpenAIProvider, "chat", fake_chat)
+    monkeypatch.setattr(parser_mod, "parse", fake_parse)
+    monkeypatch.setattr(parser_mod, "resolve_config", lambda db, **kw: config)
+
+    out = pg.run_live([{"id": "scope", "message": "zzqpl7 price", "expect": {}}], session_factory=session_factory,
+                      version_id="1", repeats=1, max_usd=5.0, require_key_last4="WXYZ")
+
+    assert out and out[0]["reasons"] == [], out
+    # The red assertion: the runner itself installs the listener, before it builds the user turn.
+    assert "register" in events, "run_live never calls register_company_scope_listeners"
+    assert events.index("register") < events.index("parse")
+    # End to end (can only fail in a process where nothing registered the listener yet).
+    assert blocks and held[DEFAULT_COMPANY_ID] in blocks[0]
+    assert held[OTHER_COMPANY] not in blocks[0]
