@@ -173,3 +173,104 @@ def test_a_listed_set_code_is_recorded():
         question = SimpleNamespace(kind=kind, options=options)
 
         assert _shown_codes(question) == ["ZZSETQ7701-RL", "ZZPRQ7701-GM", "ZZSETQ7701-P-RL"], kind
+
+
+# ---- reviewer on 0bb2beb109: the compose did-you-mean (turn/compose.py:491-505) and the escalation
+# lane's own product did-you-mean (lanes/escalation.py:836-849 -> run_tail) list codes too
+
+COMPOSE_HEAD = (
+    "Stock availability:\n\n*Product Code:* SRTWC286\n*Warehouse:* BUKIT RAJA\n*Quantity On Hand:* 12\n\n"
+    'Couldn\'t find "srt5764" (product). Did you mean:\n'
+)
+COMPOSE_MULTI_TEXT = COMPOSE_HEAD + (
+    "1. SRT57-CR\n2. SRT5713\n3. SRT5732\nReply with a code to continue, or would you like me to escalate to warehouse team?"
+)
+COMPOSE_ONE_TEXT = COMPOSE_HEAD + "1. SRT57-CR\nReply with a code to continue, or would you like me to escalate to warehouse team?"
+COMPOSE_ONE_STAFF_TEXT = COMPOSE_HEAD + "1. SRT57-CR\nReply with a code to continue."
+
+
+def _compose_shown(answer):
+    """What the engine's replied record reads off a composed answer (engine.py:7979)."""
+    from app.services.chatbot.engine import _shown_codes
+
+    return _shown_codes(answer.question) or getattr(answer, "shown_codes", None)
+
+
+def _compose_answer(suggestions, profile=None):
+    from tests.chatbot.test_multi_code_dym import _answer, _envelope
+
+    return _answer(_envelope({"SRTWC286": 12}, ["srt5764"], {"srt5764": suggestions}), profile)
+
+
+def test_answered_code_plus_suggested_token_records_the_suggestions():
+    from tests.chatbot.test_multi_code_dym import SUGGEST
+
+    answer = _compose_answer(SUGGEST)
+
+    assert answer.text == COMPOSE_MULTI_TEXT
+    assert _compose_shown(answer) == ["SRT57-CR", "SRT5713", "SRT5732"]
+
+
+def test_answered_code_plus_one_suggestion_records_it():
+    """One offered code is a team_pick escalate offer, not a product_pick."""
+    from tests.chatbot.test_multi_code_dym import SUGGEST
+
+    answer = _compose_answer(SUGGEST[:1])
+
+    assert answer.text == COMPOSE_ONE_TEXT
+    assert _compose_shown(answer) == ["SRT57-CR"]
+
+
+def test_answered_code_plus_one_suggestion_for_staff_records_it():
+    """Staff: no offer, the question is None, the reply still lists the code."""
+    from app.services.chatbot.turn.state import Profile
+    from tests.chatbot.test_multi_code_dym import SUGGEST
+
+    answer = _compose_answer(SUGGEST[:1], Profile(tier="office"))
+
+    assert answer.text == COMPOSE_ONE_STAFF_TEXT
+    assert _compose_shown(answer) == ["SRT57-CR"]
+
+
+@pytest.mark.usefixtures("_no_real_mcp_calls", "_stub_casual_llm")
+def test_escalation_did_you_mean_records_its_codes(session_factory, stub_access, monkeypatch):
+    """A real escalation turn: "escalate <typo'd code> to the marketing team" asks the lane's own product
+    did-you-mean (a team_pick over product options) through engine.run_tail, which hardcodes shown_codes None."""
+    from app.services.chatbot import engine as engine_mod
+    from tests.chatbot._turn_helpers import entity, verdict
+    from tests.chatbot.test_engine import _envelope, _parser_output  # noqa: F401
+    from tests.chatbot.test_escalation_agent_carry import _seed_contact, _seed_product
+
+    _seed_contact(session_factory, phone="+60900000777")
+    for code in ("ZZEWC8609-PP", "ZZEWC8606-PP"):
+        _seed_product(session_factory, code=code)
+    parsed = verdict(
+        message_type="business_query", domain_hint="master_products", intent_hint="check_product",
+        user_goal="please escalate ZZEWC8607-PP water closet to the marketing team",
+        entities=[entity("ZZEWC8607-PP", hint="product", confident=False)],
+        routing={"suggested_team": "purchasing", "suggested_agent": "general_enquiries"},
+        escalation={"is_escalation_confirmation": False, "company_pick": None},
+    )
+    _install_parser(monkeypatch, parsed)
+    stub_access()
+
+    result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
+
+    assert _text(result) == (
+        'Couldn\'t find "ZZEWC8607-PP". Did you mean:\n1. ZZEWC8606-PP\n2. ZZEWC8609-PP\n'
+        "Reply with the number and I will pass it to the marketing product team."
+    )
+    assert _replied_facts(session_factory, result).get("shown_codes") == ["ZZEWC8606-PP", "ZZEWC8609-PP"]
+
+
+def _install_parser(monkeypatch, parsed) -> None:
+    from app.services.chatbot.head import parser as parser_mod
+    from tests.chatbot.test_engine import stub_access as _unused  # noqa: F401
+
+    monkeypatch.setattr(
+        parser_mod, "resolve_config",
+        lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+            system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test"
+        ),
+    )
+    monkeypatch.setattr(parser_mod, "parse", lambda config, user_block: parsed)
