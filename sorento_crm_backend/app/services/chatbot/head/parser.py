@@ -15,6 +15,7 @@ signature enforces the discipline - nothing here takes a `Session`.
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from dataclasses import dataclass
@@ -22,7 +23,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.services.ai_prompt_registry import agent_model, render
+from app.services.ai_prompt_registry import agent_model, get_prompt, render, render_resolved
 from app.services.chatbot.contracts import ParserOutputError  # noqa: F401 - re-export
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import question as question_mod
@@ -80,9 +81,11 @@ class ParserConfig:
     provider: str
     model: str
     api_key: str
+    # CHAT-STATE: the prompt in use asks for `state_changes` (set by `resolve_config` in S5).
+    state_block: bool = False
 
 
-def _build_json_schema() -> dict[str, Any]:
+def _build_base_json_schema() -> dict[str, Any]:
     """The strict 29-key `ParseOutput` schema the provider is held to (AC-105).
 
     26 top-level keys, and `routing` carries exactly two members, is what the LIVE
@@ -675,7 +678,41 @@ def _build_json_schema() -> dict[str, Any]:
     }
 
 
+_STATE_CHANGES_SCHEMA: dict[str, Any] = {
+    "type": ["array", "null"],
+    "maxItems": 8,
+    "items": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "op": {
+                "type": "string",
+                "enum": [
+                    "keep", "new_subject", "set", "clear", "pick", "answer", "switch_domain", "close_question",
+                ],
+            },
+            # Free string validated in code: the fixed axes plus every `policy.kinds` kind
+            # (an operator-edited table, the same reason `domain` is free).
+            "axis": {"type": ["string", "null"]},
+            "position": {"type": ["integer", "null"]},
+        },
+        "required": ["op", "axis", "position"],
+    },
+}
+
+
+def _build_json_schema(state_changes: bool = False) -> dict[str, Any]:
+    """The base schema, or (CHAT-STATE) the same with `state_changes` last in `properties`
+    and `required`. The base object stays what every other turn sends."""
+    schema = _build_base_json_schema()
+    if state_changes:
+        schema["properties"]["state_changes"] = copy.deepcopy(_STATE_CHANGES_SCHEMA)
+        schema["required"] = [*schema["required"], "state_changes"]
+    return schema
+
+
 PARSE_OUTPUT_JSON_SCHEMA = _build_json_schema()
+PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE = _build_json_schema(state_changes=True)
 PARSE_OUTPUT_SCHEMA_NAME = "chatbot_parse_output"
 # The keys the schema declares. Validation is "every required key present, nothing
 # unknown kept" - unknown keys are IGNORED (the risk the plan names: a model that
@@ -707,6 +744,7 @@ DECLARED_KEYS: frozenset[str] = frozenset(PARSE_OUTPUT_JSON_SCHEMA["required"])
 #: emission and no console case carries it, and absent reads as mode null.
 TOLERATED_ABSENT: frozenset[str] = frozenset(
     {
+        "state_changes",
         "broaden_to",
         "domain_in_message",
         "sales_channel",
@@ -764,9 +802,12 @@ def resolve_config(
     from app.services.ai_assistant_service import AIAssistantConfigService
     from app.services.llm_provider import resolve_api_key
 
-    system_prompt, prompt_version = render(
-        db, PROMPT_KEY, current_date=current_date, override_version_id=override_version_id
-    )
+    # ONE registry read: the gate reads the RAW template, the prompt is that same text rendered.
+    from app.services.chatbot.head.chat_state_prompt import HEADING
+
+    resolved = get_prompt(db, PROMPT_KEY, override_version_id=override_version_id)
+    raw_template = resolved.text
+    system_prompt, prompt_version = render_resolved(db, PROMPT_KEY, resolved, current_date=current_date)
     provider_override, model_override = agent_model(db, PROMPT_KEY)
 
     config = AIAssistantConfigService(db).get()
@@ -783,6 +824,8 @@ def resolve_config(
         provider=provider,
         model=model,
         api_key=api_key,
+        # CHAT-STATE: the literal on the prompt text (never on a message) opts the turn in.
+        state_block=HEADING in (raw_template or ""),
     )
 
 
@@ -1044,7 +1087,7 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             messages,
             temperature=0.0,
             max_tokens=PARSER_MAX_TOKENS,
-            json_schema=PARSE_OUTPUT_JSON_SCHEMA,
+            json_schema=PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE if config.state_block else PARSE_OUTPUT_JSON_SCHEMA,
             json_schema_name=PARSE_OUTPUT_SCHEMA_NAME,
             # One cache bucket per published prompt version: every parse on it shares
             # the same static prefix (OpenAI only; the others ignore it).
