@@ -19,6 +19,8 @@ import { Alert, AlertIcon, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 
@@ -29,7 +31,11 @@ import {
   useSaveChatbotMemorySettings,
   useSaveChatbotTierOrder,
 } from './hooks/useChatbotMemoryAndTierOrder';
-import type { ChatbotMemorySettings, ChatbotSettings } from './services/chatbotSettingsService';
+import type {
+  ChatbotDirectIngressMode,
+  ChatbotMemorySettings,
+  ChatbotSettings,
+} from './services/chatbotSettingsService';
 import MemorySettingsCard from './components/MemorySettingsCard';
 import TierOrderCard from './components/TierOrderCard';
 import CrossDomainLadderCard, {
@@ -57,6 +63,13 @@ import type { ChatbotDomainInput } from '@/app/(protected)/system-management/cha
  * turn engine itself decides, so a checkbox here would no longer change anything the
  * next WhatsApp message does.
  */
+
+// CHAT-SPEED: who the respond.io webhook starts turns for (owner ruling Q4 a).
+const DIRECT_INGRESS_OPTIONS: { value: ChatbotDirectIngressMode; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'contacts', label: 'Listed contacts' },
+  { value: 'all', label: 'All contacts' },
+];
 
 export default function ChatbotSettingsPage() {
   const settingsQuery = useChatbotSettings();
@@ -170,6 +183,40 @@ export default function ChatbotSettingsPage() {
               }}
             />
           </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <Label htmlFor="chatbot-direct-ingress" className="font-normal">
+              Direct ingress
+            </Label>
+            <div className="w-full sm:w-56">
+              <SearchableSelect
+                id="chatbot-direct-ingress"
+                value={draft.chatbot_direct_ingress_mode}
+                options={DIRECT_INGRESS_OPTIONS}
+                onChange={(next) =>
+                  set(
+                    'chatbot_direct_ingress_mode',
+                    (next || 'off') as ChatbotDirectIngressMode,
+                  )
+                }
+              />
+            </div>
+          </div>
+          {draft.chatbot_direct_ingress_mode === 'contacts' ? (
+            <div className="space-y-2">
+              <Label htmlFor="chatbot-direct-ingress-contacts" className="font-normal">
+                Listed contacts
+              </Label>
+              <Textarea
+                id="chatbot-direct-ingress-contacts"
+                rows={3}
+                value={draft.chatbot_direct_ingress_contacts ?? ''}
+                placeholder="One respond.io contact id per line"
+                onChange={(event) =>
+                  set('chatbot_direct_ingress_contacts', event.target.value || null)
+                }
+              />
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

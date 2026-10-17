@@ -121,6 +121,23 @@ class RespondWorkspaceChatbotRetryUpdate(BaseModel):
             "CLEARS the stored key; omit the field to leave it untouched."
         ),
     )
+    # CHAT-SPEED: the thin n8n sender a webhook-started turn posts its actions to. Same
+    # presence rule as the retry pair: omitted leaves it, explicit null or blank CLEARS it.
+    chatbot_sender_url: Optional[str] = Field(
+        None,
+        max_length=512,
+        description=(
+            "Webhook a turn the respond.io webhook started posts its finished actions to. "
+            "https only, and must not resolve to this machine or a private range."
+        ),
+    )
+    chatbot_sender_key: Optional[str] = Field(
+        None,
+        description=(
+            "Plain chatbot sender key, sent as X-Chatbot-Sender-Key. Write-only; explicit "
+            "null or blank CLEARS it."
+        ),
+    )
 
 
 class RespondWorkspaceResponse(BaseModel):
@@ -146,6 +163,8 @@ class RespondWorkspaceResponse(BaseModel):
     # customer's WhatsApp conversation and a last-4 is four characters an attacker no
     # longer has to guess (AC-804).
     has_chatbot_retry_key: bool = False
+    chatbot_sender_url: Optional[str] = None
+    has_chatbot_sender_key: bool = False
     created_at: datetime
     updated_at: datetime
 

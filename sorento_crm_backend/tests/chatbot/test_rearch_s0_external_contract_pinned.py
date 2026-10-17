@@ -7,6 +7,10 @@ captured by the tester FROM `origin/main` (`model_json_schema()` on each class p
 `list(ACTION_KINDS)`) at this lane's real branch point, `f14802a7c` - the captain
 corrected the filename from the brief's `3009b374c` to match (ruling, 16 Sep 2026).
 
+One deliberate change since the capture: CHAT-SPEED (18 Oct 2026) added `respond_webhook` to
+`Envelope.ingress` for turns the CRM's own respond.io webhook starts. Additive; no n8n
+caller sends it, and nothing else in the contract moved.
+
 THIS AC IS EXPECTED GREEN RIGHT NOW, by design - it is the guard that later S0/S2/S3
 slices must not silently reshape the outer-loop contract, not a red waiting on new work.
 Said explicitly per the brief's own instruction.

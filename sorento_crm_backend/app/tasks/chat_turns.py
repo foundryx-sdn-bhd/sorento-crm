@@ -15,6 +15,8 @@ currently draining - forever, at whatever rate redis can accept.
 from __future__ import annotations
 
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Callable
 
@@ -61,6 +63,111 @@ def run_turn_job(
         result.stage,
     )
     return payload
+
+
+# CHAT-SPEED: direct turns run on a small pool of threads INSIDE the API process, not on RQ.
+# Measured on a dev stack (18 Oct): an RQ work-horse is forked per job and paid ~0.85 s of
+# cold start before the turn row existed, out of a 2.30 s saving; a warm thread pays ~0.01 s.
+# It is also how `/chat/turn` already runs (an API thread per n8n call), and it keeps the
+# turn off the single `worker_fast` process that `media` and `respond_io` share. Bounded:
+# past `DIRECT_TURN_THREADS` turns in flight the message is left to the n8n copy, so a
+# burst degrades to today's path instead of queueing here.
+DIRECT_TURN_THREADS = 8
+_pool: ThreadPoolExecutor | None = None
+_pool_lock = threading.Lock()
+_in_flight = 0
+
+
+def _submit(func: Callable[..., Any], *args: Any) -> bool:
+    """Run `func(*args)` on the direct-turn pool. False, running nothing, when it is full."""
+    global _pool, _in_flight
+    with _pool_lock:
+        if _in_flight >= DIRECT_TURN_THREADS:
+            return False
+        if _pool is None:
+            _pool = ThreadPoolExecutor(
+                max_workers=DIRECT_TURN_THREADS, thread_name_prefix="direct-turn"
+            )
+        _in_flight += 1
+        pool = _pool
+
+    def _run() -> None:
+        global _in_flight
+        try:
+            func(*args)
+        except Exception:  # noqa: BLE001 - a thread has nobody to raise to
+            logger.exception("direct ingress: the turn failed")
+        finally:
+            with _pool_lock:
+                _in_flight -= 1
+
+    try:
+        pool.submit(_run)
+    except Exception:
+        with _pool_lock:
+            _in_flight -= 1
+        raise
+    return True
+
+
+def enqueue_direct_turn(
+    db: Any,
+    payload: dict[str, Any],
+    *,
+    contact_id: str,
+    traffic: str,
+    channel: str,
+    already_existed: bool,
+    hmac_signed: bool,
+) -> bool:
+    """CHAT-SPEED: start a webhook message's turn on the direct-turn pool, when the gate
+    allows it.
+
+    Called by the respond.io webhook AFTER the message is stored. A doorway, like the rest of
+    this file: the gate lives in `app.services.chatbot.direct_ingress`. **Never raises**: the
+    webhook's answer to respond.io must not depend on this, and anything not started here is
+    answered by the n8n copy exactly as before. True when a turn was started.
+    """
+    try:
+        from app.services.chatbot import direct_ingress
+
+        reason = direct_ingress.skip_reason(
+            db,
+            payload,
+            contact_id=contact_id,
+            traffic=traffic,
+            channel=channel,
+            already_existed=already_existed,
+            hmac_signed=hmac_signed,
+        )
+        if reason is None and not _submit(run_direct_turn_job, payload):
+            reason = "busy"
+        if reason is not None:
+            if reason not in ("off", "contact_not_listed"):
+                logger.info("direct ingress: not started for %s (%s)", contact_id, reason)
+            return False
+        return True
+    except Exception:  # noqa: BLE001 - see the docstring: the n8n copy is the fallback
+        logger.warning("direct ingress: could not start the turn for %s", contact_id, exc_info=True)
+        return False
+
+
+def run_direct_turn_job(payload: dict[str, Any]) -> dict[str, Any]:
+    """Run the webhook-started turn and hand its actions to the n8n sender (on a pool
+    thread). The argument is the respond.io webhook body as JSON. Returns
+    `{turn_id, status, duplicate, sent, skipped}` for the log.
+    """
+    from app.services.chatbot import direct_ingress
+
+    outcome = direct_ingress.run(payload)
+    logger.info(
+        "direct ingress turn %s: status=%s duplicate=%s sent=%s",
+        outcome.get("turn_id"),
+        outcome.get("status"),
+        outcome.get("duplicate"),
+        outcome.get("sent"),
+    )
+    return outcome
 
 
 def sweep_chat_facts(

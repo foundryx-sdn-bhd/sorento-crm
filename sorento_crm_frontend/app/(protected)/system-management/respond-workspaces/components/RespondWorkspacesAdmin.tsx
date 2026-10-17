@@ -61,6 +61,8 @@ interface FormState {
   ideation_embed_signing_secret: string;
   chatbot_retry_ingress_url: string;
   chatbot_retry_ingress_key: string;
+  chatbot_sender_url: string;
+  chatbot_sender_key: string;
   is_active: boolean;
   is_default: boolean;
 }
@@ -79,6 +81,8 @@ const EMPTY_FORM: FormState = {
   ideation_embed_signing_secret: '',
   chatbot_retry_ingress_url: '',
   chatbot_retry_ingress_key: '',
+  chatbot_sender_url: '',
+  chatbot_sender_key: '',
   is_active: true,
   is_default: false,
 };
@@ -93,6 +97,8 @@ export default function RespondWorkspacesAdmin() {
   // blank input cannot mean "remove it". This flag is the explicit ask, and it is what
   // makes the key sent as `''` on save.
   const [clearRetryKey, setClearRetryKey] = useState(false);
+  // Same rule for the chatbot sender key (CHAT-SPEED).
+  const [clearSenderKey, setClearSenderKey] = useState(false);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   // Ideation-product dropdown state: fetched name cache (to resolve the stored id
   // to a human name) + the last upstream error surfaced under the select.
@@ -237,6 +243,7 @@ export default function RespondWorkspacesAdmin() {
     setEditing(null);
     setForm(EMPTY_FORM);
     setClearRetryKey(false);
+    setClearSenderKey(false);
     setIdeationProductError(null);
     setDialogOpen(true);
   }
@@ -245,6 +252,7 @@ export default function RespondWorkspacesAdmin() {
     setEditing(row);
     setIdeationProductError(null);
     setClearRetryKey(false);
+    setClearSenderKey(false);
     setForm({
       space_id: row.space_id,
       name: row.name ?? '',
@@ -261,6 +269,8 @@ export default function RespondWorkspacesAdmin() {
       // Write-only: the stored key is never sent to the browser, so the input starts
       // empty on every open and a blank save keeps whatever is on the row.
       chatbot_retry_ingress_key: '',
+      chatbot_sender_url: row.chatbot_sender_url ?? '',
+      chatbot_sender_key: '',
       is_active: row.is_active,
       is_default: row.is_default,
     });
@@ -297,6 +307,10 @@ export default function RespondWorkspacesAdmin() {
       if (form.chatbot_retry_ingress_key.trim())
         retry.chatbot_retry_ingress_key = form.chatbot_retry_ingress_key.trim();
       else if (clearRetryKey) retry.chatbot_retry_ingress_key = '';
+      // The sender pair rides the same route under the same two rules.
+      retry.chatbot_sender_url = form.chatbot_sender_url.trim();
+      if (form.chatbot_sender_key.trim()) retry.chatbot_sender_key = form.chatbot_sender_key.trim();
+      else if (clearSenderKey) retry.chatbot_sender_key = '';
 
       // ONLY the row PUT is skippable, and only because a 403 on it used to block the
       // narrow retry route a `user_management.settings.edit` principal is entitled to
@@ -754,6 +768,7 @@ export default function RespondWorkspacesAdmin() {
                 value={form.chatbot_retry_ingress_key}
                 onChange={(e) => {
                   setClearRetryKey(false);
+    setClearSenderKey(false);
                   setForm((f) => ({ ...f, chatbot_retry_ingress_key: e.target.value }));
                 }}
                 placeholder={
@@ -790,6 +805,73 @@ export default function RespondWorkspacesAdmin() {
                 </p>
               )}
             </div>
+            {editing && (
+              <>
+                <div className="border-t pt-4 mt-1">
+                  <p className="text-sm font-medium">Chatbot sender</p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="ws-sender-url">Chatbot sender webhook URL</Label>
+                  <Input
+                    id="ws-sender-url"
+                    value={form.chatbot_sender_url}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, chatbot_sender_url: e.target.value }))
+                    }
+                    placeholder="https://…/webhook/…"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="ws-sender-key">
+                    Sender key{' '}
+                    {editing.has_chatbot_sender_key && !clearSenderKey && (
+                      <span className="text-muted-foreground">
+                        (Key set - leave blank to keep current)
+                      </span>
+                    )}
+                  </Label>
+                  <Input
+                    id="ws-sender-key"
+                    type="password"
+                    value={form.chatbot_sender_key}
+                    onChange={(e) => {
+                      setClearSenderKey(false);
+                      setForm((f) => ({ ...f, chatbot_sender_key: e.target.value }));
+                    }}
+                    placeholder={
+                      editing.has_chatbot_sender_key && !clearSenderKey ? '•••• (unchanged)' : ''
+                    }
+                    autoComplete="new-password"
+                  />
+                  {editing.has_chatbot_sender_key && !clearSenderKey && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="justify-self-start"
+                      onClick={() => {
+                        setClearSenderKey(true);
+                        setForm((f) => ({ ...f, chatbot_sender_key: '' }));
+                      }}
+                    >
+                      Remove stored sender key
+                    </Button>
+                  )}
+                  {clearSenderKey && (
+                    <p className="text-xs text-destructive">
+                      The stored sender key will be removed when you save.{' '}
+                      <button
+                        type="button"
+                        className="underline"
+                        onClick={() => setClearSenderKey(false)}
+                      >
+                        Keep it
+                      </button>
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
             <div className="flex items-center gap-2">
               <Checkbox
                 id="ws-active"

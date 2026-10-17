@@ -39,10 +39,11 @@ from app.config import settings
 from app.models.base import set_brand_scope, set_company_scope
 from app.models.chatbot_turn import ChatbotTurn
 from app.services import llm_cassette
-from app.services.chatbot import dispatch, jsc, llm_call, media_intake, send_order, trace as trace_mod
+from app.services.chatbot import direct_ingress, dispatch, jsc, llm_call, media_intake, send_order, trace as trace_mod
 from app.services.chatbot.contracts import (
     BUSINESS_BRANCH_KINDS,
     CRM_COMPLETED_BRANCH_KINDS,
+    DIRECT_INGRESS,
     ORDER_OR_SALES_DOMAINS,
     SALES_DOMAIN,
     SELF_CLOSING_BRANCH_KINDS,
@@ -3278,7 +3279,15 @@ def _run_turn(
             # a real place in the queue the customer's next WhatsApp message waits on - and
             # a test turn must never delay a real customer. Nothing is lost: ordering
             # decides the order of REPLIES to one contact, and a dry run sends none.
-            ordered = _s7_mode(db, switches) and not dry_run
+            # CHAT-SPEED: with S7 off the n8n dispatcher is what serialises a contact, and it
+            # never sees a turn the respond.io webhook started. So while direct ingress covers
+            # this contact, EVERY live turn of it takes the ticket: the direct turn, and the
+            # n8n copy of a later message that would otherwise run beside it.
+            ordered = (
+                _s7_mode(db, switches)
+                or envelope.ingress == DIRECT_INGRESS
+                or direct_ingress.covers(switches, contact_respond_id)
+            ) and not dry_run
             existing = _existing_turn(
                 db,
                 contact_respond_id=contact_respond_id,
@@ -7385,7 +7394,9 @@ def _run_stages_body(  # noqa: PLR0915
                     "delegate_error": lane_error_text,
                 },
             )
-        elif delegate is not None and s7_mode and not dry_run:
+        elif delegate is not None and (s7_mode or envelope.ingress == DIRECT_INGRESS) and not dry_run:
+            # CHAT-SPEED: a webhook-started turn has no n8n spine behind it either, so a lane
+            # that still delegates is closed the S7 way rather than left as a ghost.
             # S7 mode retires the n8n tail: a turn that still delegates has NOBODY to
             # finish it, so it is closed here rather than left as a ghost.
             orphan_error = (
@@ -7394,6 +7405,11 @@ def _run_stages_body(  # noqa: PLR0915
                 f"completed in the CRM. Add {branch_kind!r} to "
                 f"system_settings.chatbot_completed_lanes on a build that can complete "
                 f"it, or turn S7 mode off."
+                if s7_mode
+                else f"This turn came through direct ingress (the respond.io webhook), "
+                f"which has no n8n spine to finish the {delegate!r} lane. Leave this "
+                f"lane's messages to n8n by turning direct ingress off until the CRM "
+                f"completes {branch_kind!r}."
             )
             logger.error("chatbot turn %s: %s", turn_id, orphan_error)
             turn_trace.record(
@@ -7404,7 +7420,7 @@ def _run_stages_body(  # noqa: PLR0915
                     "S7 mode retires the n8n tail, so a lane that still delegates has "
                     "nobody left to complete it."
                 ),
-                facts={"lane": delegate, "s7_mode": True, "lane_completed_by_crm": False},
+                facts={"lane": delegate, "s7_mode": s7_mode, "ingress": envelope.ingress, "lane_completed_by_crm": False},
                 error=orphan_error,
                 raw={"item": item},
             )
@@ -9464,6 +9480,9 @@ class _TurnSwitches:
     # ladder in by hand, so nothing saw it. This is the "a new DB column must reach every
     # manual builder" lesson one builder further along than the two it usually names.
     chatbot_crossdomain_ladder: Any = None
+    # CHAT-SPEED: which contacts the respond.io webhook starts turns for (`direct_ingress`).
+    chatbot_direct_ingress_mode: str = "off"
+    chatbot_direct_ingress_contacts: str | None = None
 
 
 def _read_switches(db: Session) -> _TurnSwitches:
@@ -9482,6 +9501,8 @@ def _read_switches(db: Session) -> _TurnSwitches:
         ),
         chatbot_ordering_enabled=bool(getattr(row, "chatbot_ordering_enabled", False)),
         chatbot_crossdomain_ladder=getattr(row, "chatbot_crossdomain_ladder", None),
+        chatbot_direct_ingress_mode=str(getattr(row, "chatbot_direct_ingress_mode", None) or "off"),
+        chatbot_direct_ingress_contacts=getattr(row, "chatbot_direct_ingress_contacts", None),
     )
 
 

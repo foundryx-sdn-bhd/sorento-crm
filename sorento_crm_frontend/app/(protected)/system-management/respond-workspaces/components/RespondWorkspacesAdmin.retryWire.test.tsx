@@ -36,6 +36,8 @@ const ROW = {
   ideation_embed_signing_secret_masked: null,
   chatbot_retry_ingress_url: STORED_URL,
   has_chatbot_retry_key: true,
+  chatbot_sender_url: null,
+  has_chatbot_sender_key: false,
   created_at: '2026-07-20T00:00:00Z',
   updated_at: '2026-07-20T00:00:00Z',
 };
@@ -167,5 +169,55 @@ describe('the chatbot retry save, at the wire', () => {
       (c) => c.method === 'PUT' && !c.url.includes('/chatbot-retry'),
     );
     expect(rowPut).toBeUndefined();
+  });
+});
+
+// CHAT-SPEED: the chatbot sender pair rides the same narrow route as the retry pair.
+describe('the chatbot sender save, at the wire', () => {
+  it('sends the typed sender URL and key on the chatbot-retry route', async () => {
+    await openEditDialog();
+
+    const url = screen.getByLabelText(/Chatbot sender webhook URL/i) as HTMLInputElement;
+    expect(url.value).toBe('');
+    fireEvent.change(url, {
+      target: { value: 'https://automate-zzt.example.com/webhook/chatbot-sender' },
+    });
+    fireEvent.change(screen.getByLabelText(/^Sender key/i), {
+      target: { value: 'zzt-sender-key' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^update$/i }));
+
+    await waitFor(() => expect(retryCall()).toBeDefined());
+    const body = retryCall()!.body!;
+    expect(body.chatbot_sender_url).toBe(
+      'https://automate-zzt.example.com/webhook/chatbot-sender',
+    );
+    expect(body.chatbot_sender_key).toBe('zzt-sender-key');
+    // The retry URL rides along unchanged.
+    expect(body.chatbot_retry_ingress_url).toBe(STORED_URL);
+  });
+
+  it('leaves the sender key unmentioned when its input is left blank', async () => {
+    await openEditDialog();
+    fireEvent.click(screen.getByRole('button', { name: /^update$/i }));
+    await waitFor(() => expect(retryCall()).toBeDefined());
+    const body = retryCall()!.body!;
+    expect(body.chatbot_sender_url).toBe('');
+    expect('chatbot_sender_key' in body).toBe(false);
+  });
+});
+
+describe('the chatbot sender key, removed', () => {
+  it('sends chatbot_sender_key: "" after "Remove stored sender key"', async () => {
+    ROW.has_chatbot_sender_key = true;
+    try {
+      await openEditDialog();
+      fireEvent.click(screen.getByRole('button', { name: /remove stored sender key/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^update$/i }));
+      await waitFor(() => expect(retryCall()).toBeDefined());
+      expect(retryCall()!.body!.chatbot_sender_key).toBe('');
+    } finally {
+      ROW.has_chatbot_sender_key = false;
+    }
   });
 });

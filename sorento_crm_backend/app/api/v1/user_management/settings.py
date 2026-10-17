@@ -196,6 +196,11 @@ class SystemSettingUpdate(BaseModel):
     # above - they must appear HERE and in the GET dict, because both are manual.
     chatbot_business_lane_enabled: Optional[bool] = None
     chatbot_ordering_enabled: Optional[bool] = None
+    # CHAT-SPEED: the direct-ingress switch. A Literal, so a mode outside the three answers
+    # 422 instead of being stored and read as off. Same rule as every block above - it must
+    # appear HERE and in the GET dict, because both are manual.
+    chatbot_direct_ingress_mode: Optional[Literal["off", "contacts", "all"]] = None
+    chatbot_direct_ingress_contacts: Optional[str] = Field(None, max_length=20000)
     # Price tag packages (D2): the product classes a request line is WARNED about
     # when it reaches marketing without its catalogue package. Same rule as every
     # block above - it must appear HERE and in the GET dict, because both are manual.
@@ -471,6 +476,8 @@ async def get_settings(
                 "chatbot_completed_lanes": getattr(settings, "chatbot_completed_lanes", None) or [] if settings else None,
                 "chatbot_business_lane_enabled": getattr(settings, "chatbot_business_lane_enabled", False) if settings else None,
                 "chatbot_ordering_enabled": getattr(settings, "chatbot_ordering_enabled", False) if settings else None,
+                "chatbot_direct_ingress_mode": getattr(settings, "chatbot_direct_ingress_mode", None) or "off" if settings else None,
+                "chatbot_direct_ingress_contacts": getattr(settings, "chatbot_direct_ingress_contacts", None) if settings else None,
                 "price_tag_guarded_classes": getattr(settings, "price_tag_guarded_classes", None) or [] if settings else None,
                 # PLAN-oi-request-cs-reserve.md section 6c (F1): BOTH manual builders,
                 # or the setting never reaches the General settings screen at all.
@@ -1023,6 +1030,7 @@ def _update_general_settings_impl(settings_data: SystemSettingUpdate, db: Sessio
         "borrow_from_order_enabled": False,
         "chatbot_business_lane_enabled": False,
         "chatbot_ordering_enabled": False,
+        "chatbot_direct_ingress_mode": "off",
         # A7 (chatbot-growth-r1): repeats SystemSetting.chatbot_crossdomain_ladder's own
         # default (app/models/user.py).
         "chatbot_crossdomain_ladder": {
