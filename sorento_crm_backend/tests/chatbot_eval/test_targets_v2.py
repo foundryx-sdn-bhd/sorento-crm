@@ -2162,3 +2162,37 @@ def test_r29_a_file_sent_beside_a_how_many_is_an_answer():
     r = _att([_file("Technical Specifications")], reply="How many units?")
     res = grade_turn(r, item("scope", fact="product_attachment", fact_label="files"))
     assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+
+
+# round 29b: a spec item whose catalogue holds nothing is graded on an honest none
+R29B_ITEM = dict(SPEC_ITEM, none_on_record=True, near=["SRTWT2234", "SRTWT2235"])
+R29B_NONE_REASON = "The bot did not say that no product matches the spec."
+
+
+def _r29b(reply, gold=R29B_ITEM):
+    return grade_turn(row2(message="any double flexible kitchen tap in chrome for mocha or sorento lite", verdict=SPEC_V,
+                           reply=reply), item("spec", **gold))
+
+
+@pytest.mark.parametrize("reply", [
+    "Here's what you want: chrome double flexible kitchen taps\n\nBut none matched. Please refer to your salesman.",
+    "Here's what you want: chrome double flexible kitchen taps\n\nBut no chrome double flexible kitchen taps matched these.\n"
+    "Closest: SRTWT2234, SRTWT2235",
+])
+def test_r29b_an_honest_none_passes_a_none_on_record_spec_item(reply):
+    res = _r29b(reply)
+    assert res["checks"].get("none_on_record") is True and "shown" not in res["checks"], res["checks"]
+    assert res["passed"] is True, (res["reason"], res["checks"])
+
+
+def test_r29b_an_unknown_word_dead_end_is_not_a_none():
+    reply = "Here's what you want: tap\n\nCouldn't find: \"kitchan\". Would you like me to escalate to purchasing team?"
+    res = _r29b(reply)
+    assert res["checks"].get("none_on_record") is False, res["checks"]
+    assert res["passed"] is False and res["reason"] == R29B_NONE_REASON, res["reason"]
+
+
+def test_r29b_without_none_on_record_a_none_reply_still_fails_on_shown():
+    res = _r29b("Here's what you want: chrome taps\n\nBut none matched. Please refer to your salesman.", SPEC_ITEM)
+    assert res["checks"].get("shown") is False and "none_on_record" not in res["checks"], res["checks"]
+    assert res["passed"] is False and res["reason"] == "The reply showed no product.", res["reason"]
