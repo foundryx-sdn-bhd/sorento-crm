@@ -48,6 +48,9 @@ ALLOWED = {
     # (engine H57), so there is no route through `/chat/turn` that exercises the queue.
     # Not core, not on any request path.
     "scripts/chatbot_queue_replay.py",
+    # CHAT-STATE (#1747): a maintenance script that publishes an unlabelled parser prompt
+    # version (`head/chat_state_prompt`). Not core, not on any request path.
+    "scripts/publish_chat_state_prompt.py",
     # EVAL-BENCH (#1743) L1 replay: re-runs recorded parses through the engine with every LLM
     # call blocked, so it patches `llm_call`, `head.parser` and `grounding` directly; `/chat/turn`
     # has no seam for a recorded parse. A developer tool and its own test, not core, not on any
@@ -59,6 +62,10 @@ ALLOWED = {
     # ideation offload; `/chat/turn` has no seam for those. Bench tooling, not core, not on a
     # request path. Listed by file, like `test_replay.py` above.
     "tests/chatbot_eval/test_replay_live.py",
+    # Bench tooling, not core, not on a request path: it patches the engine's run_turn to pin offload=False.
+    "tests/chatbot_eval/test_replay_guard.py",
+    # Bench tooling, not core, not on a request path: it stubs the engine's run_turn to return a failed-status turn.
+    "tests/chatbot_eval/test_replay_failfast.py",
     # Chatbot memory lane A S2 (contract section 4/5): the contact's memory/facts
     # surface is a `user_management.contacts` route, so it cannot live under
     # `app/services/chatbot/`, yet its vocabulary, precedence and row-lock rules

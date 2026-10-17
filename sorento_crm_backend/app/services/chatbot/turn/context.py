@@ -231,6 +231,10 @@ class ContextLayers:
     product_types: list[str] | None = None
     #: AC-36: the registry's descriptor keys and values, one `Product details:` line.
     product_details: list[tuple[str, list[str]]] | None = None
+    #: CHAT-STATE: the rendered `State:` block. When set it replaces the five legacy state
+    #: lines (Current subject, Open task, Open question, Pending, Open question options)
+    #: and is never trimmed.
+    state_block: str | None = None
 
 
 def _l5_segment(fact: dict[str, Any]) -> str:
@@ -381,7 +385,11 @@ def _render_l2(
     task_lines: list[str] | None = None,
     open_question_line: str | None = None,
     brands_line: str | None = None,
+    state_block: str | None = None,
 ) -> tuple[str, bool]:
+    if state_block:
+        # Never cut: the block is the whole state, and the shrink loop below only trims a subject.
+        return "\n".join(p for p in (brands_line, state_block) if p), False
     dropped = False
     options_line: str | None = None
     if pending_options:
@@ -463,20 +471,23 @@ def _assemble_off(layers: ContextLayers) -> tuple[str, dict[str, Any]]:
         f"Previous response: {previous}",
         f"Current user message: {layers.current_message}",
     ]
-    if layers.current_subject:
-        lines.append(f"Current subject: {layers.current_subject}")
-    lines.extend(layers.task_lines or [])
-    if layers.open_question_line:
-        lines.append(layers.open_question_line)
-    if layers.pending_kind:
-        lines.append(f"Pending: the assistant is waiting for a {layers.pending_kind} reply.")
-    if layers.pending_options:
-        lines.append("Open question options: " + "; ".join(layers.pending_options))
+    if not layers.state_block:
+        if layers.current_subject:
+            lines.append(f"Current subject: {layers.current_subject}")
+        lines.extend(layers.task_lines or [])
+        if layers.open_question_line:
+            lines.append(layers.open_question_line)
+        if layers.pending_kind:
+            lines.append(f"Pending: the assistant is waiting for a {layers.pending_kind} reply.")
+        if layers.pending_options:
+            lines.append("Open question options: " + "; ".join(layers.pending_options))
     if layers.settings_profile_line:
         lines.append(layers.settings_profile_line)
     brands_line = _brands_and_kinds(layers)
     if brands_line:
         lines.append(brands_line)
+    if layers.state_block:
+        lines.append(layers.state_block)
     exchanges = recent_exchange_lines(layers.recent_exchanges, previous)
     if exchanges:
         lines.append(_RECENT_EXCHANGES_HEADER)
@@ -523,6 +534,7 @@ def assemble(layers: ContextLayers) -> tuple[str, dict[str, Any]]:
         layers.task_lines,
         layers.open_question_line,
         _brands_and_kinds(layers),
+        layers.state_block,
     )
     l1_text, l1_dropped = _render_l1(layers.current_message, layers.reply_to, layers.media_line)
 

@@ -1563,6 +1563,20 @@ def render(
             f"Missing required variable(s) for prompt '{name}': {', '.join(sorted(missing))}"
         )
     rp = get_prompt(db, name, label=label, override_version_id=override_version_id)
+    return render_resolved(db, name, rp, **variables)
+
+
+def render_resolved(
+    db: Session, name: str, rp: "RenderedPrompt", **variables: object
+) -> tuple[str, int | None]:
+    """`render` for a prompt the caller already resolved (one registry read for both the raw
+    template and the rendered text)."""
+    spec = PROMPT_KEYS.get(name)
+    missing = (set(spec.variables) if spec else set()) - set(variables.keys())
+    if missing:
+        raise ValueError(
+            f"Missing required variable(s) for prompt '{name}': {', '.join(sorted(missing))}"
+        )
     values: dict[str, object] = dict(variables)
     if spec is not None and spec.registry_variables:
         wanted = (extract_tokens(rp.text) & set(spec.registry_variables)) - set(values)

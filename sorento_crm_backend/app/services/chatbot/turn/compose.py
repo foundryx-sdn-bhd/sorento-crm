@@ -1016,6 +1016,8 @@ _ASK_HEADERS: dict[str, str] = {
     "sales_report_detail": "Which list would you like?",
     "kind_pick": "Which one do you mean?",
     "attachment_type_ask": "Which kind of file do you need?",
+    "period_ask": "Which period do you mean?",
+    "held_customer_ask": "Same customer or all customers?",
 }
 
 
