@@ -275,3 +275,34 @@ def test_h1_two_sets_sharing_a_member_list_it_under_each_set_without_price(
     first_block, second_block = text[lo:hi], text[hi:]
     assert _name(first_own) in first_block and _name(SHARED) in first_block, text
     assert _name(second_own) in second_block and _name(SHARED) in second_block, text
+
+
+# ---------------------------------------------------------------- round 4 I1: one set named twice
+
+TWICE_SET = "ZZTWCE8608-RL"
+TWICE_PARTS = ("ZZTWCE-MEMB01", "ZZTWCE-MEMB02")
+
+
+@pytest.mark.parametrize("domain, intent", _DOMAINS)
+def test_i1_one_set_named_twice_prints_its_members_once(
+    domain, intent, session_factory, seeded, stub_access, monkeypatch
+):
+    db = session_factory()
+    ids = _mk_products(db, list(TWICE_PARTS))
+    _mk_set(db, TWICE_SET, [ids[c] for c in TWICE_PARTS], name="Twice 250")
+    db.commit()
+    spaced = TWICE_SET.lower().replace("-", " ")
+
+    text, calls = _run_multi(
+        session_factory, stub_access, monkeypatch, text=f"details of {TWICE_SET} and {spaced}",
+        codes=[TWICE_SET, spaced], domain=domain, intent=intent,
+    )
+
+    assert text.count(f"Set {TWICE_SET}") == 1, text
+    assert "List Price" not in text and "MYR" not in text and not re.search(r"\bRM\b", text), text
+    for code in TWICE_PARTS:
+        assert text.count(_name(code)) == 1, text
+    assert _all_ids(calls) == set(ids.values()), calls
+    ids_flat = [i for _n, a in calls for i in (a.get("product_ids") or [])]
+    for pid in ids.values():
+        assert ids_flat.count(pid) <= 1, (pid, calls)
