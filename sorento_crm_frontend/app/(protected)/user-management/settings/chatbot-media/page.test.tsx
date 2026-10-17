@@ -168,8 +168,8 @@ describe('ChatbotMediaSettingsPage query states', () => {
     });
     renderWithClient();
 
-    expect(screen.getByLabelText(/photos per contact per month/i)).toHaveValue('77');
-    expect(screen.getByLabelText(/items per burst window/i)).toHaveValue('3');
+    expect(screen.getByLabelText(/photos per contact per month/i)).toHaveValue(77);
+    expect(screen.getByLabelText(/items per burst window/i)).toHaveValue(3);
     expect(skeletonCount()).toBe(0);
   });
 });
@@ -483,12 +483,12 @@ describe('ChatbotMediaSettingsPage save re-sync', () => {
 
     const input = document.getElementById('media-image-monthly-limit') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '123' } });
-    expect(input).toHaveValue('123');
+    expect(input).toHaveValue(123);
 
     fireEvent.click(saveButton());
 
     expect(mutate).toHaveBeenCalled();
-    expect(input).toHaveValue('999');
+    expect(input).toHaveValue(999);
   });
 });
 

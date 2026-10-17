@@ -118,3 +118,13 @@ def test_depth_exceeded_rejected():
         node = _group("and", node)
     problems = validate_tree(node, SOURCES)
     assert any("nesting depth" in p for p in problems)
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("operator", ["eq", "neq"])
+@pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+def test_number_eq_neq_refuses_a_non_finite_value(operator, bad):
+    tree = _group("and", _cond("promotion.endDate.daysUntil", operator, bad))
+    assert validate_tree(tree, SOURCES) != []

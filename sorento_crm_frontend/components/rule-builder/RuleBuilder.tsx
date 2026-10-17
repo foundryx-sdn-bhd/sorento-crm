@@ -14,7 +14,7 @@
  * SearchableSelect / SearchableMultiSelect (the repo's searchable-dropdown
  * standard - never `ui/select`).
  */
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { AlertTriangle, ArrowLeftRight, Loader2, Plus, Trash2, Undo2 } from 'lucide-react';
 import {
   CROSS_FACT_OPERATORS,
@@ -30,6 +30,9 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
+import { ruleTreeHasBadNumber } from './ruleTreeBadNumber';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -167,11 +170,13 @@ export interface RuleBuilderProps {
   value: RuleGroup | null;
   /** Fires on every edit with the serialized tree - null when empty. */
   onChange: (group: RuleGroup | null) => void;
+  /** Told after each edit whether a number box holds text that cannot be read as a number. */
+  onBadNumberChange?: (bad: boolean) => void;
   disabled?: boolean;
 }
 
 /** Public component: fetches facts for `sources`, then renders the builder. */
-export function RuleBuilder({ sources, value, onChange, disabled = false }: RuleBuilderProps) {
+export function RuleBuilder({ sources, value, onChange, onBadNumberChange, disabled = false }: RuleBuilderProps) {
   const { data: facts, isLoading, isError, error } = useRuleFacts(sources);
 
   if (sources.length === 0) return null;
@@ -201,18 +206,20 @@ export function RuleBuilder({ sources, value, onChange, disabled = false }: Rule
     );
   }
 
-  return <RuleBuilderInner facts={facts} value={value} onChange={onChange} disabled={disabled} />;
+  return <RuleBuilderInner facts={facts} value={value} onChange={onChange} onBadNumberChange={onBadNumberChange} disabled={disabled} />;
 }
 
 function RuleBuilderInner({
   facts,
   value,
   onChange,
+  onBadNumberChange,
   disabled = false,
 }: {
   facts: RuleFactItem[];
   value: RuleGroup | null;
   onChange: (group: RuleGroup | null) => void;
+  onBadNumberChange?: (bad: boolean) => void;
   disabled?: boolean;
 }) {
   const keyRef = useRef(0);
@@ -257,7 +264,9 @@ function RuleBuilderInner({
 
   const update = (next: DraftGroup) => {
     setRoot(next);
-    onChange(next.rules.length === 0 ? null : (toWire(next) as RuleGroup));
+    const wire = next.rules.length === 0 ? null : (toWire(next) as RuleGroup);
+    onBadNumberChange?.(ruleTreeHasBadNumber(wire, facts));
+    onChange(wire);
   };
 
   return (
@@ -594,6 +603,25 @@ function ConditionRow({
   );
 }
 
+/** A condition's typed value: the shared number field for numbers, a plain input otherwise. */
+function ValueInput({
+  inputType,
+  error,
+  ...props
+}: { inputType: 'number' | 'date' | 'text'; error?: string } & Omit<ComponentProps<typeof Input>, 'type'>) {
+  return inputType === 'number' ? (
+    <NumberInput {...props} error={error} errorClassName="w-full" value={Array.isArray(props.value) ? undefined : (props.value as string | number | undefined)} />
+  ) : (
+    <Input type={inputType} {...props} />
+  );
+}
+
+/** A typed number bound that cannot be read (bad input) says so on its own box. */
+function memberError(inputType: 'number' | 'date' | 'text', member: string | undefined): string | undefined {
+  if (inputType !== 'number' || !member || !member.trim()) return undefined;
+  return numberFieldError(member);
+}
+
 function ConditionValue({
   condition,
   fact,
@@ -614,19 +642,21 @@ function ConditionValue({
   if (shape === 'pair') {
     const v = Array.isArray(condition.value) ? (condition.value as string[]) : ['', ''];
     return (
-      <div className="flex items-center gap-1">
-        <Input
-          type={inputType}
+      <div className="flex flex-wrap items-center gap-1">
+        <ValueInput
+          inputType={inputType}
           className="h-8 w-32"
           value={v[0] ?? ''}
+          error={memberError(inputType, v[0])}
           disabled={disabled}
           onChange={(e) => onChange({ ...condition, value: [e.target.value, v[1] ?? ''] })}
         />
         <span className="text-xs text-muted-foreground">and</span>
-        <Input
-          type={inputType}
+        <ValueInput
+          inputType={inputType}
           className="h-8 w-32"
           value={v[1] ?? ''}
+          error={memberError(inputType, v[1])}
           disabled={disabled}
           onChange={(e) => onChange({ ...condition, value: [v[0] ?? '', e.target.value] })}
         />
@@ -677,22 +707,23 @@ function ConditionValue({
   }
   if (fact.type === 'boolean') return null;
 
+  const singleValue =
+    typeof condition.value === 'string' || typeof condition.value === 'number'
+      ? String(condition.value)
+      : '';
   return (
-    <Input
-      type={inputType}
+    <ValueInput
+      inputType={inputType}
       className={cn('h-8', inputType === 'date' ? 'w-36' : 'w-40')}
       placeholder="Value"
-      value={
-        typeof condition.value === 'string' || typeof condition.value === 'number'
-          ? String(condition.value)
-          : ''
-      }
+      value={singleValue}
+      error={memberError(inputType, singleValue)}
       disabled={disabled}
       onChange={(e) =>
         onChange({
           ...condition,
           value:
-            inputType === 'number' && e.target.value !== ''
+            inputType === 'number' && e.target.value !== '' && e.target.value !== 'NaN'
               ? Number(e.target.value)
               : e.target.value,
         })

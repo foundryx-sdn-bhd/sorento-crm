@@ -2243,3 +2243,41 @@ describe('SpoPlannerTable - review round 1', () => {
     expect(take('SO-3001')).toHaveValue(0);
   });
 });
+
+describe('S10 - a refused SPO quantity marks the box and sends nothing', () => {
+  it('a typed -3 keeps -3, Create SPO shows the sentence on the box and calls nothing', async () => {
+    state.suggestion = suggestion({ lines: [unbackedLine()] });
+    state.create = vi.fn().mockResolvedValue({});
+    renderTable();
+    const box = await screen.findByTestId('spo-qty-input');
+    fireEvent.change(box, { target: { value: '-3' } });
+    // Round 2 (S-C): nothing is said while typing; only a refused send shows the sentence.
+    expect(screen.queryByText('Enter a number of at least 0.')).toBeNull();
+    expect(box).not.toHaveAttribute('aria-invalid', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /create spo/i }));
+    expect(state.create).not.toHaveBeenCalled();
+    expect(box).toHaveValue(-3);
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a number of at least 0.')).toBeInTheDocument();
+  });
+});
+
+describe('S-C (round 2) - the SPO quantity sentence waits for a refused send', () => {
+  it('a cleared box says nothing while typing, Create SPO then shows it, and it follows live until valid', async () => {
+    state.suggestion = suggestion({ lines: [unbackedLine()] });
+    state.create = vi.fn().mockResolvedValue({});
+    renderTable();
+    const box = await screen.findByTestId('spo-qty-input');
+    fireEvent.change(box, { target: { value: '' } });
+    expect(screen.queryByText(/^Enter a number/)).toBeNull();
+    expect(box).not.toHaveAttribute('aria-invalid', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /create spo/i }));
+    expect(state.create).not.toHaveBeenCalled();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: '-1' } });
+    expect(screen.getByText('Enter a number of at least 0.')).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: '2' } });
+    expect(screen.queryByText(/^Enter a number/)).toBeNull();
+  });
+});

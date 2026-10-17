@@ -15,6 +15,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -492,16 +493,11 @@ export default function GRNForm({ grnId, onSuccess }: GRNFormProps) {
                         <FormItem className="w-32">
                           <FormLabel>Qty Expected</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
+                            <NumberInput
                               min={0}
                               {...f}
                               disabled={serverApproved}
-                              onChange={(e) =>
-                                f.onChange(
-                                  parseInt(e.target.value, 10) || 0,
-                                )
-                              }
+                              onChange={(e) => f.onChange(e.target.value)}
                             />
                           </FormControl>
                           <FormMessage />
@@ -515,16 +511,11 @@ export default function GRNForm({ grnId, onSuccess }: GRNFormProps) {
                         <FormItem className="w-32">
                           <FormLabel>Qty Received</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
+                            <NumberInput
                               min={0}
                               {...f}
                               disabled={serverApproved}
-                              onChange={(e) =>
-                                f.onChange(
-                                  parseInt(e.target.value, 10) || 0,
-                                )
-                              }
+                              onChange={(e) => f.onChange(e.target.value)}
                             />
                           </FormControl>
                           <FormMessage />

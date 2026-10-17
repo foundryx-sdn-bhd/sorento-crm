@@ -19,6 +19,8 @@ import {
 } from '@/components/ui/dialog';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
@@ -132,6 +134,8 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
   const [editProductDialogOpen, setEditProductDialogOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [promotionPrice, setPromotionPrice] = useState<string>('');
+  // Set once a Save found a wrong price; the price sentences then follow the typing.
+  const [priceErrorsShown, setPriceErrorsShown] = useState(false);
   const [editingProduct, setEditingProduct] = useState<{
     id: string;
     product_id: string;
@@ -233,7 +237,11 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
       return;
     }
 
-    const price = promotionPrice ? parseFloat(promotionPrice) : undefined;
+    if (numberFieldError(promotionPrice, { min: 0, optional: true })) {
+      setPriceErrorsShown(true);
+      return;
+    }
+    const price = promotionPrice.trim() ? Number(promotionPrice) : undefined;
 
     const ddRaw = addProductDealerDiscount;
     const ddParsed = parseDealerDiscountPercentInput(ddRaw);
@@ -270,6 +278,7 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
     list_price: number | null;
   }) => {
     setEditingProduct(product);
+    setPriceErrorsShown(false);
     setPromotionPrice(product.promotion_price?.toString() || '');
     setDealerDiscountInput(fractionToPercentInputString(product.dealer_discount_percent));
     setListPriceInput(
@@ -283,17 +292,20 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
   const handleUpdateProductPrice = async () => {
     if (!editingProduct) return;
 
-    const price = promotionPrice ? parseFloat(promotionPrice) : 0;
+    if (
+      numberFieldError(promotionPrice, { min: 0 }) ||
+      numberFieldError(listPriceInput, { min: 0 })
+    ) {
+      setPriceErrorsShown(true);
+      return;
+    }
+    const price = Number(promotionPrice);
     const ddParsed = parseDealerDiscountPercentInput(dealerDiscountInput);
     if (!ddParsed.ok) {
       toast.error('Dealer discount must be a percentage between 0 and 100.');
       return;
     }
-    const listPrice = Number.parseFloat(listPriceInput.replace(',', '.'));
-    if (Number.isNaN(listPrice) || listPrice < 0) {
-      toast.error('Enter a valid list price (0 or greater).');
-      return;
-    }
+    const listPrice = Number(listPriceInput);
 
     try {
       await updatePriceMutation.mutateAsync({
@@ -416,6 +428,7 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
   const openAddProductForGroup = (groupId: string) => {
     setAddProductGroupId(groupId);
     setSelectedProductId('');
+    setPriceErrorsShown(false);
     setPromotionPrice('');
     setAddProductDealerDiscount('');
     setAddProductDialogOpen(true);
@@ -651,6 +664,7 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
                 const first = defaultGroupId || sortedGroupsBase[0]?.id || '';
                 setAddProductGroupId(first);
                 setSelectedProductId('');
+                setPriceErrorsShown(false);
                 setPromotionPrice('');
                 setAddProductDealerDiscount('');
                 setAddProductDialogOpen(true);
@@ -853,18 +867,17 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
             </div>
             <div className="space-y-2">
               <Label>Promotion price (optional)</Label>
-              <Input
-                type="number"
+              <NumberInput
                 step="0.01"
                 placeholder="Leave empty to use list price"
                 value={promotionPrice}
                 onChange={(e) => setPromotionPrice(e.target.value)}
+                error={priceErrorsShown ? numberFieldError(promotionPrice, { min: 0, optional: true }) : undefined}
               />
             </div>
             <div className="space-y-2">
               <Label>Dealer discount (% off list)</Label>
-              <Input
-                type="number"
+              <NumberInput
                 step="0.1"
                 min={0}
                 max={100}
@@ -924,8 +937,7 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
             </div>
             <div className="space-y-2">
               <Label>Sort order</Label>
-              <Input
-                type="number"
+              <NumberInput
                 step="1"
                 placeholder="Auto if empty"
                 value={groupFormSort}
@@ -967,8 +979,7 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-0.5">
                         <Label className="text-xs">Purchase qty</Label>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="1"
                           min="1"
                           placeholder="e.g. 10"
@@ -983,8 +994,7 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
                       </div>
                       <div className="space-y-0.5">
                         <Label className="text-xs">FOC qty</Label>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="1"
                           min="0"
                           placeholder="e.g. 1"
@@ -1052,29 +1062,28 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
               <>
                 <div className="space-y-2">
                   <Label>List price *</Label>
-                  <Input
-                    type="number"
+                  <NumberInput
                     step="0.01"
                     min={0}
                     placeholder="List price"
                     value={listPriceInput}
                     onChange={(e) => setListPriceInput(e.target.value)}
+                    error={priceErrorsShown ? numberFieldError(listPriceInput, { min: 0 }) : undefined}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Promotion price (selling) *</Label>
-                  <Input
-                    type="number"
+                  <NumberInput
                     step="0.01"
                     placeholder="Enter promotion price"
                     value={promotionPrice}
                     onChange={(e) => setPromotionPrice(e.target.value)}
+                    error={priceErrorsShown ? numberFieldError(promotionPrice, { min: 0 }) : undefined}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Dealer discount (% off list)</Label>
-                  <Input
-                    type="number"
+                  <NumberInput
                     step="0.1"
                     min={0}
                     max={100}
@@ -1098,11 +1107,7 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
             </Button>
             <Button
               onClick={handleUpdateProductPrice}
-              disabled={
-                !promotionPrice.trim() ||
-                !listPriceInput.trim() ||
-                updatePriceMutation.isPending
-              }
+              disabled={updatePriceMutation.isPending}
             >
               {updatePriceMutation.isPending ? (
                 <>

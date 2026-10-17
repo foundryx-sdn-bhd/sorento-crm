@@ -14,6 +14,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { getUsersSelect } from '@/services/userSelectService';
@@ -53,6 +55,8 @@ export function IntegrationFormDialog({
   const [outboundKey, setOutboundKey] = useState('');
   // Abuse ceiling, not a quota. Blank uses the platform default.
   const [rateLimit, setRateLimit] = useState('');
+  const [checked, setChecked] = useState(false);
+  const rateLimitError = numberFieldError(rateLimit, { min: 0, integer: true, optional: true });
 
   // This SearchableSelect is static-options only, so the roster is fetched
   // once and filtered client-side rather than searched server-side.
@@ -95,7 +99,15 @@ export function IntegrationFormDialog({
     );
   }, [open, integration]);
 
+  useEffect(() => {
+    if (open) setChecked(false);
+  }, [open]);
+
   const submit = async () => {
+    if (rateLimitError) {
+      setChecked(true);
+      return;
+    }
     if (isEdit && integration) {
       // credentials_json is deliberately not sent: omitting it means "keep the
       // existing credential". Sending an empty object here would silently wipe
@@ -222,12 +234,12 @@ export function IntegrationFormDialog({
 
           <div className="space-y-2">
             <Label htmlFor="integration-rate-limit">Rate limit (requests/minute)</Label>
-            <Input
+            <NumberInput
               id="integration-rate-limit"
-              type="number"
               min={0}
               value={rateLimit}
               onChange={(e) => setRateLimit(e.target.value)}
+              error={checked ? rateLimitError : undefined}
               placeholder="Default (600)"
             />
             <p className="text-xs text-muted-foreground">

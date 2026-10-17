@@ -37,7 +37,13 @@ def validate_project_value(raw: Any) -> Optional[Decimal]:
             value = Decimal(str(raw))
         except (InvalidOperation, ValueError):
             raise handle_validation_error("Total project value must be a number.")
-    if abs(value) >= PROJECT_VALUE_MAX:
+    if not value.is_finite():
+        raise handle_validation_error("Total project value must be a number.")
+    try:
+        too_large = abs(value) >= PROJECT_VALUE_MAX
+    except ArithmeticError:
+        too_large = True
+    if too_large:
         raise handle_validation_error(
             "Total project value is too large (max 9,999,999,999,999.99)."
         )

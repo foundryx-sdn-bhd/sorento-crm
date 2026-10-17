@@ -81,6 +81,7 @@ vi.mock(
 
 import { searchSampleRequestProducts } from '../services/sampleRequestService';
 import { lookupCustomersForRequest } from '@/app/(protected)/procurement-management/purchase-requests/services/customerLookupService';
+import { typeBadInput } from '@/test-utils/badInput';
 import SampleRequestForm from './SampleRequestForm';
 
 const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>;
@@ -360,5 +361,79 @@ describe('AC-SR-03 / AC-SR-80 the write payload', () => {
     expect(body).not.toHaveProperty('quotation_version_id');
     expect(body).not.toHaveProperty('deliver_immediately');
     for (const line of body.lines ?? []) expect(line).not.toHaveProperty('alt_product_id');
+  });
+});
+
+describe('number fields round 9: Save as draft refuses a bad quantity or loan period like Submit', () => {
+  const SENTENCE = 'Enter a whole number of at least 1.';
+  async function pickProduct() {
+    const row = ensureRow();
+    searchProduct(row, 'tpe9101');
+    fireEvent.click(await screen.findByRole('option', { name: /TPE-9101/ }));
+    return row;
+  }
+  const draft = () => fireEvent.click(screen.getByRole('button', { name: /^save as draft$/i }));
+  const nothingSent = () => {
+    expect(mut.createAsync).not.toHaveBeenCalled();
+    expect(mut.updateAsync).not.toHaveBeenCalled();
+  };
+
+  it('a blank Quantity sends nothing and shows the sentence', async () => {
+    renderForm();
+    await screen.findByText('Consignment Requisition Form');
+    const row = await pickProduct();
+    fireEvent.change(within(row).getByLabelText('Quantity'), { target: { value: '' } });
+    draft();
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
+  });
+
+  it('a Quantity of 0 sends nothing and shows the sentence', async () => {
+    renderForm();
+    await screen.findByText('Consignment Requisition Form');
+    const row = await pickProduct();
+    fireEvent.change(within(row).getByLabelText('Quantity'), { target: { value: '0' } });
+    draft();
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
+  });
+
+  it('a bad-input Quantity sends nothing and shows the sentence', async () => {
+    renderForm();
+    await screen.findByText('Consignment Requisition Form');
+    const row = await pickProduct();
+    typeBadInput(within(row).getByLabelText('Quantity'));
+    draft();
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
+  });
+
+  it('a blank Loan Period sends nothing and shows the sentence', async () => {
+    renderForm();
+    await screen.findByText('Consignment Requisition Form');
+    await pickProduct();
+    fireEvent.change(screen.getByLabelText('Loan Period'), { target: { value: '' } });
+    draft();
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
+  });
+
+  it('a bad-input Loan Period sends nothing and shows the sentence', async () => {
+    renderForm();
+    await screen.findByText('Consignment Requisition Form');
+    await pickProduct();
+    typeBadInput(screen.getByLabelText('Loan Period'));
+    draft();
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
+  });
+
+  it('S1 guard: a refused Submit with a blank Loan Period shows the sentence under the box', async () => {
+    renderForm();
+    await screen.findByText('Consignment Requisition Form');
+    fireEvent.change(screen.getByLabelText('Loan Period'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /^submit$/i }));
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
   });
 });
