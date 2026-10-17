@@ -83,8 +83,9 @@ def test_turn_two_starts_from_the_memory_turn_one_left(session_factory, recorded
     run(session_factory, recorded, chat(recorded, [ONE, TWO]))
     first = results[0]
     left = console_service._next_state({"reply": first.reply, "session_patch": first.session_patch})
-    want = left if left is not None else _state(live_env["envelopes"][0])
-    assert _state(live_env["envelopes"][1]) == want
+    assert left is not None and left != replay_mod._recorded_memory(recorded), \
+        "turn one left no new memory, so this test could not tell a carried state from the recorded one"
+    assert _state(live_env["envelopes"][1]) == left
 
 
 def test_turn_one_starts_from_the_recorded_memory(session_factory, recorded, live_env):
