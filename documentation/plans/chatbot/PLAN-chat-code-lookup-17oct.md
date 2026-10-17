@@ -100,3 +100,15 @@ branch). EVAL-BENCH's answer.py clash patch with #1760 is applied when crew rela
 - R2-3 generalise: crew sends held-out failure CLASSES after the 18 Oct combined run; EVAL-SETS adds ~150 real TRAIN
   code-lookup items. Never held-out items.
 - Live: cap USD 3 per run; at most 2 stacks machine-wide via crew/state/live-slots/<LANE> (mkdir to take, rmdir on stop).
+
+### Round 2 progress (17 Oct, late)
+
+- Regrade at $0, grader c744bfe9f1 (#1762, rounds 32-34) on EVAL-BENCH's train_code export (93 items, 90 judged):
+  main 77 (85.6%), lane arm 1 80 (88.9%), arm 2 79 (87.8%). Arm 2 fails: grader / gold 6 (4 staff family stock asks
+  stay list_all by owner S12 + F1, cp0-f61e0d4814 company scope, cp0-9793ea25dc set code; EVAL-BENCH round 35),
+  parse 3 (csk11b class, cp0-df53e90ebf domain reuse -> CHAT-STATE r2, when deliver), answer 2 (cp0-232723529a file
+  miss on the held member, cp0-d9971420da #1648).
+- R2-1 red 661228fed6 + 9b0016b15a, fix 6e962eda8e (parser gold runner + when-deliver rule); live-path import bug red
+  2b79a2da31, fix 498c3559b6. R2-2 red b3851e6310, fix 5ffa13b2da (code-pick rules, held member with no file).
+- Parser gold measurement pending (old v161 vs new v165 35119206, both on v158). A first attempt ran with EVAL-BENCH's
+  stack.env and was stopped by crew and discarded; re-runs use stack-ccl.env (own ports 8108 / 8208).
