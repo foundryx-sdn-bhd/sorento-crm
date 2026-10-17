@@ -1,6 +1,6 @@
 # PLAN: EVAL-SETS, more real TRAIN items + the 100-question rehearsal (17 Oct 2026)
 
-Status: built, in review (small fix track, crew tooling, size S). Deliverable A delivered 17 Oct (458 TRAIN items:
+Status: in review (small fix track, crew tooling, size S). Deliverable A delivered 17 Oct (458 TRAIN items:
 code 198, spec 65 = 10 real + 55 synthetic, attachment 83, follow-ups 111 = 58 real + 53 synthetic), Deliverable B
 delivered 18 Oct (100 conversations, 230 turns), both crew-side; runner change `replay.py live --chain` in PR #1773.
 
