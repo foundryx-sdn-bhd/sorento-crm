@@ -342,23 +342,43 @@ class MCPToolCallError(RuntimeError):
 class MCPRuntimeClient:
     """Minimal JSON-RPC client for FastMCP streamable HTTP endpoint."""
 
-    def __init__(self, base_url: str, timeout_seconds: int = 20):
+    def __init__(
+        self,
+        base_url: str,
+        timeout_seconds: int = 20,
+        *,
+        staff: bool = False,
+        staff_user_id: str | None = None,
+    ):
+        """`staff=True` only for the in-app AI assistant: it has no Respond contact, so it sends
+        `X-MCP-Scope: staff` to keep reading company-scoped tools without one (SEC-MCP-AUTH,
+        `sorento_crm_mcp/sorento_crm_mcp/scope.py`). The chatbot lanes never set it, so their
+        calls without a contact are refused. `staff_user_id` is only logged by the MCP server."""
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.staff = staff
+        self.staff_user_id = staff_user_id
+
+    def _headers(self) -> dict[str, str]:
+        headers = {
+            # FastMCP streamable HTTP requires both content types in Accept.
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+        }
+        token = (settings.mcp_auth_token or "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        if self.staff:
+            headers["X-MCP-Scope"] = "staff"
+            if self.staff_user_id:
+                headers["X-MCP-Staff-User"] = str(self.staff_user_id)
+        return headers
 
     def _rpc(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         rid = str(uuid.uuid4())
         payload = {"jsonrpc": "2.0", "id": rid, "method": method, "params": params or {}}
         with httpx.Client(timeout=self.timeout_seconds) as client:
-            resp = client.post(
-                self.base_url,
-                json=payload,
-                headers={
-                    # FastMCP streamable HTTP requires both content types in Accept.
-                    "Accept": "application/json, text/event-stream",
-                    "Content-Type": "application/json",
-                },
-            )
+            resp = client.post(self.base_url, json=payload, headers=self._headers())
             resp.raise_for_status()
             body = self._decode_streamable_body(resp)
         if isinstance(body, dict) and "error" in body:
@@ -755,7 +775,11 @@ class AIAssistantChatService:
 
     def list_mcp_tools(self) -> list[str]:
         """Fetch current tool names from MCP runtime for settings UI sync."""
-        mcp = MCPRuntimeClient(settings.ai_assistant_mcp_url, timeout_seconds=settings.ai_assistant_mcp_timeout_seconds)
+        mcp = MCPRuntimeClient(
+            settings.ai_assistant_mcp_url,
+            timeout_seconds=settings.ai_assistant_mcp_timeout_seconds,
+            staff=True,
+        )
         tool_names = sorted(mcp.list_tools())
         logger.info("AI assistant MCP tool catalog fetched count=%s", len(tool_names))
         return tool_names
@@ -2064,6 +2088,8 @@ class AIAssistantChatService:
         mcp = MCPRuntimeClient(
             settings.ai_assistant_mcp_url,
             timeout_seconds=settings.ai_assistant_mcp_timeout_seconds,
+            staff=True,
+            staff_user_id=user_id,
         )
         call_started = time.perf_counter()
         try:
@@ -2334,6 +2360,8 @@ class AIAssistantChatService:
         mcp = MCPRuntimeClient(
             settings.ai_assistant_mcp_url,
             timeout_seconds=settings.ai_assistant_mcp_timeout_seconds,
+            staff=True,
+            staff_user_id=user_id,
         )
         try:
             tool_catalog = mcp.list_tools_with_schema()
@@ -2451,6 +2479,8 @@ class AIAssistantChatService:
                 pf = MCPRuntimeClient(
                     settings.ai_assistant_mcp_url,
                     timeout_seconds=settings.ai_assistant_mcp_timeout_seconds,
+                    staff=True,
+                    staff_user_id=user_id,
                 )
                 pf_args = {"query": user_message, "contact_id": "", "space_id": ""}
                 pf_out = self._cached_tool_call(
@@ -2978,6 +3008,7 @@ class AIAssistantChatService:
         mcp = MCPRuntimeClient(
             settings.ai_assistant_mcp_url,
             timeout_seconds=settings.ai_assistant_mcp_timeout_seconds,
+            staff=True,
         )
         openai_tools: list[dict[str, Any]] = []
         guide_tool_name = "user_guides_read"

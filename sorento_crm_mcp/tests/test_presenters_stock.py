@@ -107,7 +107,7 @@ async def test_catalog_requested_qty_reaches_the_backend():
 
     client = _FakeClient()
     fn = _compile_tool(spec())
-    await fn(_FakeCtx(client), requested_qty=50)
+    await fn(_FakeCtx(client), contact_id="900000008", space_id="364817", requested_qty=50)
 
     assert client.query["requested_qty"] == "50"
 

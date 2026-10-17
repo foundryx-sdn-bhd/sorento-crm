@@ -13,3 +13,7 @@ a9b1b46c2f515c54ec958e12fa0067b5877a8929:sorento_crm_backend/tests/test_runtime_
 9bf3312b9dae5a5666bafcc6d7f81285b0dd58ae:sorento_crm_backend/tests/test_respond_webhook_ingest.py:generic-api-key:197
 9bf3312b9dae5a5666bafcc6d7f81285b0dd58ae:sorento_crm_backend/tests/test_respond_webhook_ingest.py:generic-api-key:198
 9bf3312b9dae5a5666bafcc6d7f81285b0dd58ae:sorento_crm_backend/tests/test_respond_webhook_ingest.py:generic-api-key:227
+# SEC-MCP-AUTH (PR #1742): the release / rollback MCP probe sends a deliberately WRONG bearer
+# ("deploy-check-not-the-token", a fixed probe string, never a real token) to prove the gate answers 401.
+e4369f5bf17bcb9139d2f3526d596d22fad762af:.github/workflows/deploy.yml:curl-auth-header:2121
+e4369f5bf17bcb9139d2f3526d596d22fad762af:.github/workflows/rollback.yml:curl-auth-header:179

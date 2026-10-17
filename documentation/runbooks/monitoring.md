@@ -199,7 +199,8 @@ This needs the release that contains this change. Before that, the variable does
 On 11 Aug n8n's `/healthz` was green while the bot was dead for 18 hours. `/healthz` only proves
 the n8n process answers. This workflow proves the path the bot really uses: every 5 minutes it
 runs one DB read through the `sorento-crm-db` credential and one MCP tool call
-(`crm_master_products_list`, `limit 1`), and pings Healthchecks only when both worked. A failure
+(`crm_forms_management_forms_list`, `limit 1`: a global tool, because a company-scoped one
+without a contact is refused since SEC-MCP-AUTH), and pings Healthchecks only when both worked. A failure
 anywhere means no ping, and Healthchecks alerts after period + grace (about 15 minutes).
 
 The workflow: `documentation/runbooks/n8n-heartbeat-workflow.json`.
@@ -218,9 +219,9 @@ plain HTTP 200 check would pass while the bot is broken.
    `n8n-heartbeat-workflow.json` (download it from the repo).
 3. Node **DB read**: in Credential, pick the existing `sorento-crm-db`.
 4. Node **MCP call**: set URL to `<MCP_URL>` (open the bot workflow's MCP node and copy its
-   endpoint exactly). If the bot's MCP node authenticates (for example an API-key header), set
-   Authentication > Generic Credential Type > **Header Auth** and pick the same credential the
-   bot uses. Do not paste a key as a plain header: plain headers are saved in the workflow and
+   endpoint exactly). The MCP server requires a bearer token (SEC-MCP-AUTH): set
+   Authentication > Generic Credential Type > **Bearer Auth** and pick the same credential the
+   bot's MCP nodes use (`sorento-mcp-bearer`). Do not paste a key as a plain header: plain headers are saved in the workflow and
    show up in every export.
 5. Node **Ping Healthchecks**: replace `REPLACE_WITH_HC_N8N_URL` in its URL field with
    `<HC_N8N_URL>`.

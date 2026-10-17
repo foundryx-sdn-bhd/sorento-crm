@@ -96,6 +96,7 @@ async def test_the_call_carries_the_policy_to_the_backend(name):
     needed = TOOL_REQUIRED_NARROWING_FILTERS.get(name)
     if needed:
         kwargs.setdefault(needed[0], _PROMO_UUID)
+    kwargs.update(contact_id="900000008", space_id="364817")
 
     await fn(_FakeCtx(client), **kwargs)  # type: ignore[arg-type]
 

@@ -15,6 +15,8 @@ Create a dedicated user in the CRM (e.g. `n8n-mcp@internal`), assign a role with
 |----------|----------|-------------|
 | `CRM_BASE_URL` | Yes | API origin only, e.g. `https://crm-api.example.com` (no trailing slash) |
 | `EXTERNAL_API_KEY` | Yes | Same as backend `EXTERNAL_API_KEY` |
+| `MCP_AUTH_TOKEN` | Yes | Bearer token every caller sends (`Authorization: Bearer <token>`); 32+ chars, e.g. `openssl rand -hex 32`. The server refuses to start without it. The CRM backend reads the same name. |
+| `MCP_AUTH_MODE` | No | `enforce` (default): no or wrong token gets 401. `permit`: rollout only, a request with no Authorization header passes and logs a warning; a wrong token is still 401. |
 | `CRM_MCP_HOST` | No | Default `0.0.0.0` |
 | `CRM_MCP_PORT` | No | Default `8765` |
 | `CRM_MCP_TIMEOUT` | No | HTTP timeout seconds (default `60`) |
@@ -29,11 +31,21 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 export CRM_BASE_URL=http://localhost:8000
 export EXTERNAL_API_KEY=your-key
+export MCP_AUTH_TOKEN=$(openssl rand -hex 32)   # put the same value in the backend .env
 export EXTERNAL_API_KEY_ACT_AS_USER_ID=...   # on the API server / .env, not here
 python -m sorento_crm_mcp
 ```
 
-Default MCP streamable HTTP path: **`/mcp`** (see [MCP streamable HTTP](https://modelcontextprotocol.io/)).
+Default MCP streamable HTTP path: **`/mcp`** (see [MCP streamable HTTP](https://modelcontextprotocol.io/)). `/healthz` answers `ok` with no token, for container healthchecks.
+
+## Auth and company scope
+
+- Every request needs `Authorization: Bearer <MCP_AUTH_TOKEN>` (`sorento_crm_mcp/auth.py`), else 401.
+- A tool that declares `contact_id` + `space_id` reads company-owned data. Called without both, it answers
+  `{"error": "scope_required", "data": [], "total": 0}` and never calls the CRM (`sorento_crm_mcp/scope.py`).
+  The CRM then resolves the contact's companies (`company_scope_resolver.resolve_contact_company_scope`).
+- The in-app staff AI assistant has no contact and sends `X-MCP-Scope: staff` to keep its answers; that header
+  counts only on a request with a valid token, and each such call is logged with the tool and staff user.
 
 ## Docker
 
@@ -41,13 +53,13 @@ Build and run next to the API (same Compose network as n8n):
 
 ```bash
 docker build -t sorento-crm-mcp ./sorento_crm_mcp
-docker run --rm -e CRM_BASE_URL=http://sorento-api:8000 -e EXTERNAL_API_KEY=... -p 8765:8765 sorento-crm-mcp
+docker run --rm -e CRM_BASE_URL=http://sorento-api:8000 -e EXTERNAL_API_KEY=... -e MCP_AUTH_TOKEN=... -p 8765:8765 sorento-crm-mcp
 ```
 
 ## n8n
 
 1. Use the **MCP Client Tool** (or current n8n MCP node) with transport **Streamable HTTP** (or SSE if your n8n build requires it).
-2. Server URL: `http://<mcp-host>:8765/mcp` (adjust for TLS and path).
+2. Server URL: `http://<mcp-host>:8765/mcp` (adjust for TLS and path). Authentication: Bearer Auth credential holding `MCP_AUTH_TOKEN`.
 3. Ensure n8n can reach the MCP container and the MCP container can reach `CRM_BASE_URL`.
 
 ## Logging

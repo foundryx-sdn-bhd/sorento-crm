@@ -74,7 +74,7 @@ async def _call_with_brand_ids(spec_name: str):
     fn = _compile_tool(spec)
     client = _RecordingClient()
     ctx = _FakeCtx(client)
-    await fn(ctx, brand_ids=[BRAND_UUID])
+    await fn(ctx, contact_id="900000008", space_id="364817", brand_ids=[BRAND_UUID])
     return client.calls
 
 

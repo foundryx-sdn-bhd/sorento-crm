@@ -2085,7 +2085,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           timeout: 1m
-          command_timeout: 2m
+          command_timeout: 3m
           script: |
             set -e
             # Frontend / backend via host nginx (public domain), with a WAIT.
@@ -2097,7 +2097,8 @@ jobs:
             # entirely fine (blue healthy, nginx swapped, worker recreated, alembic at
             # 511). So it now polls for up to 90 seconds, prints each attempt's code and
             # the elapsed time, and only then tries local nginx and gives up. 90s plus
-            # the MCP check below sits inside this step's own `command_timeout: 2m`.
+            # the two MCP checks below (the in-backend call has a 15s client timeout) sit inside
+            # this step's own `command_timeout: 3m`.
             started=$(date +%s)
             ok=""
             while [ $(( $(date +%s) - started )) -lt 90 ]; do
@@ -2115,12 +2116,26 @@ jobs:
               curl -fsS -o /dev/null http://127.0.0.1/
             fi
             # MCP via host nginx (n8n entrypoint, port stays 8765 forever)
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8765/mcp || true)
-            # 406 expected for plain GET (MCP demands SSE Accept header); means nginx reached MCP.
+            # SEC-MCP-AUTH: send a deliberately WRONG bearer. A gated MCP answers 401 in both
+            # MCP_AUTH_MODE=enforce and permit; 406 (FastMCP's own answer to a plain GET) means
+            # the request reached an MCP with no token check, i.e. an image from before the gate.
+            code=$(curl -s -o /dev/null -w "%{http_code}" -H 'Authorization: Bearer deploy-check-not-the-token' http://127.0.0.1:8765/mcp || true)
             case "$code" in
-              200|405|406) echo "MCP reachable via nginx (HTTP $code)";;
-              *) echo "ERROR: MCP via nginx returned $code"; exit 1;;
+              401) echo "MCP reachable via nginx and refusing a wrong token (HTTP $code)";;
+              *) echo "ERROR: MCP via nginx returned $code (expected 401 from the bearer gate)"; exit 1;;
             esac
+            # SEC-MCP-AUTH: the CRM's own MCP call, from inside the live backend, at the URL and
+            # with the token the chatbot uses. Catches a backend holding a different
+            # MCP_AUTH_TOKEN than MCP (401 in both modes), which the wrong-token probe above
+            # cannot see. Prints only the last error line (an httpx status line, never a header).
+            cd /opt/sorento-crm2
+            be=$(docker compose ps --status running --services | grep -E '^backend_(blue|green)$' | head -1)
+            if out=$(docker compose exec -T "$be" python -c "from app.config import settings; from app.services.ai_assistant_service import MCPRuntimeClient; MCPRuntimeClient(settings.ai_assistant_mcp_url, timeout_seconds=15).list_tools()" 2>&1); then
+              echo "backend ($be) -> MCP authenticated call OK"
+            else
+              echo "ERROR: backend ($be) cannot call MCP, so the chatbot cannot fetch: $(printf '%s' "$out" | tail -1)"
+              exit 1
+            fi
 
       # The owner mail, a step of this job since CI-LEAN (10 Oct 2026): as a
       # job of its own it billed a minute per release, and on run

@@ -13,7 +13,9 @@ from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.types import ASGIApp
 
+from sorento_crm_mcp.auth import MIN_TOKEN_LENGTH, MODES, BearerAuthMiddleware
 from sorento_crm_mcp.catalog import CATALOG, ToolSpec
 from sorento_crm_mcp.escalation_hint import attach_suggested_escalation
 from sorento_crm_mcp.http_client import CRMClient
@@ -21,6 +23,7 @@ from sorento_crm_mcp.module_loader import merged_catalog
 from sorento_crm_mcp.presenters import PRESENTER_TOOLS, present_response
 from sorento_crm_mcp.ideation import register_ideation_tools
 from sorento_crm_mcp.record_actions import register_record_action_tools
+from sorento_crm_mcp.scope import check_scope
 from sorento_crm_mcp.settings import Settings
 from sorento_crm_mcp.user_guides import register_user_guide_tools
 
@@ -1082,10 +1085,16 @@ async def _enrich_products_with_attachments(client: Any, raw: str, query: dict[s
     product_ids = [str(r.get("id")) for r in rows if isinstance(r, dict) and r.get("id")]
     if not product_ids:
         return raw
+    child_query = {"product_ids": ",".join(product_ids), "attachment_type_ids": att_type_ids}
+    # The child route is company-scoped too: carry the caller's contact so its rows are
+    # scoped the same way the parent page was (SEC-MCP-AUTH).
+    for key in ("contact_id", "space_id"):
+        if (query or {}).get(key) not in (None, ""):
+            child_query[key] = query[key]
     pa_rows = await _fetch_all_child_rows(
         client,
         "/api/v1/master-data/product-attachments",
-        {"product_ids": ",".join(product_ids), "attachment_type_ids": att_type_ids},
+        child_query,
         "crm_master_products_list",
     )
     by_product: dict[str, list[Any]] = defaultdict(list)
@@ -1778,6 +1787,9 @@ def _compile_tool(spec: ToolSpec):
         f"    if _missing:\n"
         f"        raise ValueError('Missing required query parameter(s): ' + ', '.join(_missing))\n"
         f"    _view = q.pop('view', None)\n"
+        f"    _refusal = _check_scope(_spec, q, body, ctx)\n"
+        f"    if _refusal is not None:\n"
+        f"        return _refusal\n"
         f"    _resp = await _execute_tool_request_with_body(_spec, client, _pp, q, body)\n"
         f"    _resp = await _attach_suggested_escalation(_spec.name, _resp, api_url=_settings.crm_base_url, api_key=_settings.external_api_key)\n"
         f"    if _view == 'render':\n"
@@ -1792,12 +1804,27 @@ def _compile_tool(spec: ToolSpec):
         "_execute_tool_request": _execute_tool_request,
         "_execute_tool_request_with_body": _execute_tool_request_with_body,
         "_attach_suggested_escalation": attach_suggested_escalation,
+        "_check_scope": check_scope,
         "_present_response": present_response,
         "json": json,
         "_spec": spec,
     }
     exec(code, ns)  # noqa: S102 - catalog-only templates
     return ns[fname]
+
+
+def create_http_app(settings: Settings) -> ASGIApp:
+    """The ASGI app `__main__` serves: FastMCP's streamable HTTP app behind the bearer gate."""
+    token = (settings.mcp_auth_token or "").strip()
+    if len(token) < MIN_TOKEN_LENGTH:
+        raise RuntimeError(
+            f"MCP_AUTH_TOKEN must be set to a random value of at least {MIN_TOKEN_LENGTH} characters "
+            "(e.g. `openssl rand -hex 32`); the MCP server will not serve without it."
+        )
+    mode = (settings.mcp_auth_mode or "").strip().lower()
+    if mode not in MODES:
+        raise RuntimeError(f"MCP_AUTH_MODE must be one of {', '.join(MODES)}.")
+    return BearerAuthMiddleware(create_mcp_app(settings).streamable_http_app(), token, mode=mode)
 
 
 def create_mcp_app(settings: Settings) -> FastMCP:
