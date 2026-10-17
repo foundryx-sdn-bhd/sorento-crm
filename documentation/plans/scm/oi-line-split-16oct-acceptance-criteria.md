@@ -61,7 +61,9 @@ make sure the sort handler is at the leftmost, go"), Q1 drag yes, Q2-Q4 (a), Q5 
 - AC-A11 Change pill per split against its own line's base date: later DELAY, earlier ADVANCE, same
   REMAIN, cancel CANCEL.
 - AC-A12 Header: "Split delivery", "<SO no> · <SO date> · <customer>", search by item code
-  (ListSearchInput), a "Split lines only" switch, Close, Save (the one CTA). Under it a status line:
+  (ListSearchInput), a "Split lines only" switch, ONE secondary button that reads "Close" with no
+  unsaved changes and "Cancel" (discards them and closes) with unsaved changes, and Save (the one
+  CTA). Escape and the dialog X with unsaved changes keep the page open and say "Save or Cancel". Under it a status line:
   "<n> lines · <n> products · <n> split", then for each line that does not add up or has a split
   with no date: "<item> line <no>: N left | N over | date to fill" and "Show" (clears search and
   filter, scrolls to the line, flashes it, focuses its first cell).
