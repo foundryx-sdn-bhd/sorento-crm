@@ -63,6 +63,17 @@ def db():
         session.add(att)
         session.flush()
         session.add(ProductAttachment(id=str(uuid.uuid4()), product_id=product.id, attachment_id=att.id, company_id=DEFAULT_COMPANY_ID))
+        from app.models.lookup import LookupOption, LookupOptionKeyword, LookupSet
+
+        lookup = LookupSet(id=str(uuid.uuid4()), set_key="attachment_type_alias", name="Attachment Type Alias")
+        session.add(lookup)
+        session.flush()
+        option = LookupOption(id=str(uuid.uuid4()), set_id=lookup.id, value="Technical Specifications",
+                              label="Technical Specifications", sort_order=0)
+        session.add(option)
+        session.flush()
+        for word in ("technical drawing", "TD"):
+            session.add(LookupOptionKeyword(id=str(uuid.uuid4()), option_id=option.id, keyword=word))
         session.add(Certificate(
             id=str(uuid.uuid4()), attachment_type_id=certs.id, scheme="SIRIM",
             certificate_number=unique_code("CERT")[:120], status="active", company_id=None,
@@ -99,8 +110,47 @@ def test_a_cert_kind_and_a_scheme_on_file_are_tagged_with_the_listed_spelling(db
     assert (scheme["listed"], scheme["canonical_code"]) == ("cert_scheme", "SIRIM")
 
 
+def test_a_pick_that_is_one_items_own_word_names_that_item(db):
+    """The parser writes the kind in a listed word ("technical drawing", an alias of the
+    owner's lookup set; "certificate", a word of the Certification type): the item whose
+    words hold it, whole and case aside. Its own words, never the customer's."""
+    [drawing] = _ground(db, _file_entity("TD", "technical drawing"))
+    assert (drawing["listed"], drawing["canonical_code"]) == ("file_type", "technical_specifications")
+    [cert] = _ground(db, _file_entity("span certificate", "certificate"))
+    assert (cert["listed"], cert["canonical_code"]) == ("cert_kind", "certification")
+
+
+def test_a_word_two_items_share_names_neither(db):
+    photos = AttachmentType(
+        id=str(uuid.uuid4()), type_name="Product Photos", code="product_photos", description="photo, image",
+        allowed_extensions="jpg",
+    )
+    db.add(photos)
+    db.flush()
+    from app.models.product import ProductAttachment as PA
+
+    product_id = db.query(PA.product_id).first()[0]
+    att = Attachment(
+        id=str(uuid.uuid4()), original_filename="p.jpg", stored_filename=f"{uuid.uuid4().hex}.jpg",
+        file_path="https://cdn.test/p.jpg", attachment_type_id=photos.id, is_deleted=False, company_id=DEFAULT_COMPANY_ID,
+    )
+    db.add(att)
+    db.flush()
+    db.add(PA(id=str(uuid.uuid4()), product_id=product_id, attachment_id=att.id, company_id=DEFAULT_COMPANY_ID))
+    db.flush()
+    # "spec" is no word here; give both file types the word "sheet".
+    from app.models.lookup import LookupOption, LookupOptionKeyword
+
+    for option in db.query(LookupOption).all():
+        db.add(LookupOptionKeyword(id=str(uuid.uuid4()), option_id=option.id, keyword="sheet"))
+    photos.description = "photo, image, sheet"
+    db.flush()
+
+    assert _ground(db, _file_entity("sheet", "sheet")) == []
+
+
 def test_a_pick_off_the_lists_is_dropped_whatever_the_customer_typed(db):
-    # "drawing" is a word of the type's description, never its code: no word is read.
+    # "drawing" is no listed word ("Drawing by Marketing" is), and the raw is never read.
     assert _ground(db, _file_entity("drawing", "drawing")) == []
     assert _ground(db, _file_entity("span", "span")) == []
     assert _ground(db, _file_entity("TD", None)) == []

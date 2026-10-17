@@ -116,7 +116,27 @@ def test_the_file_type_list_names_each_type_a_product_carries_with_its_code_and_
 
     assert pv.render_value(db, "attachment_types") == (
         "File type product_photos: Product Photos. Words: Product Photos, Photo, Image.\n"
-        "File type technical_specifications: Technical Specifications. Words: Spec / Drawing by Marketing."
+        "File type technical_specifications: Technical Specifications. Words: Spec, Drawing by Marketing."
+    )
+
+
+def test_the_alias_lookup_set_adds_its_words_to_the_type_it_names(db):
+    product = _product(db)
+    drawings = _type(db, "Technical Specifications", code="technical_specifications", description="Spec")
+    _file_on_product(db, drawings, product)
+    lookup = LookupSet(id=str(uuid.uuid4()), set_key="attachment_type_alias", name="Attachment Type Alias")
+    db.add(lookup)
+    db.flush()
+    option = LookupOption(id=str(uuid.uuid4()), set_id=lookup.id, value="Technical Specifications",
+                          label="Technical Specifications", sort_order=0)
+    db.add(option)
+    db.flush()
+    for word in ("technical drawing", "TD", "spec"):
+        db.add(LookupOptionKeyword(id=str(uuid.uuid4()), option_id=option.id, keyword=word))
+    db.flush()
+
+    assert pv.render_value(db, "attachment_types") == (
+        "File type technical_specifications: Technical Specifications. Words: Spec, technical drawing, TD."
     )
 
 
@@ -185,7 +205,7 @@ def test_no_certificates_renders_nothing(db):
 
 def test_both_lists_are_registry_variables_cleared_when_their_tables_change():
     assert {"attachment_types", "certification_types"} <= set(pv.VARIABLE_NAMES)
-    assert "attachment_types" in pv.VARIABLES["attachment_types"].tables
+    assert {"attachment_types", "lookup_options", "lookup_option_keywords"} <= set(pv.VARIABLES["attachment_types"].tables)
     assert {"attachment_types", "certificates", "lookup_options", "lookup_option_keywords"} <= set(
         pv.VARIABLES["certification_types"].tables
     )
