@@ -1,6 +1,7 @@
 # CARD: CHAT-SPEED, cut the wait before the CRM sees a WhatsApp message (17 Oct)
 
-Status: card filed for owner OK, no code yet. Track: size L, cloud lane (CHAT-SPEED, chatbot
+Status: card filed; crew answered Q2-Q4 (17 Oct), Q1 waits on the dev measurement, then the
+owner's one OK. No code yet. Track: size L, cloud lane (CHAT-SPEED, chatbot
 design step 4). Scope is the ingress plumbing only (respond.io -> n8n -> CRM). The parser output
 schema and the engine answer path are out of scope (CHAT-STATE, CHAT-CLOSED-LISTS,
 CHAT-CODE-LOOKUP and CHAT-COMPOSER own them). Paths are under `sorento_crm_backend/` unless
@@ -248,6 +249,17 @@ stay on the owner's machine: they hold real messages, and this repo is treated a
    Integrations respond webhook keys are set. D needs only the last one. B needs the first two.
    **Recommendation:** read them before answering Q1, since they decide whether B is even
    available.
+
+## Answers so far (crew, 17 Oct)
+
+- Q2: (a) a thin n8n sender webhook. Egress stays in n8n (D9).
+- Q3: (a) a 120 s staleness guard.
+- Q4: (a) off / listed contacts / all.
+- Q5: crew reads `chatbot_ordering_enabled` and `chatbot_completed_lanes` from the dev copy of
+  the 15 Oct prod backup. Whether the webhook keys are set may stay an owner read, because the
+  copy was neutralised.
+- Q1: open. Crew runs queries 1-3 on the dev copy and applies the card's rule (D if P+Q at p50
+  is at least 1.5 s, else B). The owner then gives one OK.
 
 ## Build plan once the card is OK'd (option D, red-first)
 
