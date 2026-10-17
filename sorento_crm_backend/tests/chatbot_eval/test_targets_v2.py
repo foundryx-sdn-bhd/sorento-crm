@@ -2518,3 +2518,24 @@ def test_r30d_two_filter_words_in_one_argument_list_are_carried():
 def test_r30d_the_whole_phrase_in_one_string_is_carried():
     res = _r30d("black matt", {"scope_terms": ["black matt basin"]})
     assert res["checks"].get("applied") is True, res["checks"]
+
+
+# round 30e: product codes and uuids are not filter words
+def test_r30e_a_size_number_inside_a_product_code_is_not_carried():
+    res = _r30d("600mm", {"product_codes": ["SRTWB600-W"]})
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30e_a_size_number_inside_a_product_uuid_is_not_carried():
+    res = _r30d("600mm", {"product_ids": ["4d3a600b-1b2c-4d5e-8f90-123456789abc"]})
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30e_a_letter_inside_a_product_code_does_not_make_a_filter_word():
+    res = _r30d("p_trap", {"scope_terms": ["SRTWC8354-SH-UF-P", "s trap"]})
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30e_a_size_without_a_space_in_a_search_term_is_carried():
+    res = _r30d("300mm", {"scope_terms": ["300mm basin"]})
+    assert res["checks"].get("applied") is True, res["checks"]
