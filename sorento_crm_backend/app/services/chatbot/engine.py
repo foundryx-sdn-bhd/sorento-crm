@@ -4502,7 +4502,7 @@ def _run_stages_body(  # noqa: PLR0915
                 "replied",
                 summary=f"Replied: {reply_text}" if reply_text else "Sent no reply; the burst repeat stayed silent.",
                 why="The reply is the media intake's own denial text, never the customer's words.",
-                facts={"lane": "media_denied", "sections": 0, "asking": None, "files": 0},
+                facts={"lane": "media_denied", "sections": 0, "asking": None, "files": 0, "shown_codes": None},
                 raw={"reply": {"text": reply_text}},
             )
             turn_trace.record(
@@ -7701,6 +7701,15 @@ def _without_escalation_offer(answer: Any) -> Any:
     return dataclasses_replace(answer, text=text, question=question, offer=None)
 
 
+def _shown_codes(question: Any) -> list[str] | None:
+    """CHAT-CODE-LOOKUP R2-7 (trace only): the product codes a picker, did-you-mean or related list
+    shows, in display order, read off the question built from that same list; None when none."""
+    if question is None or question.kind != "product_pick":
+        return None
+    codes = [str(o["code"]) for o in question.options if o.get("entity_type") == "product" and o.get("code")]
+    return codes or None
+
+
 def _dealer_refers_to_salesman(answer: Any, localizer: Any = None) -> Any:
     from app.services.chatbot import dealer_stock as dealer_mod
 
@@ -7965,6 +7974,7 @@ def _run_answer(
             # any of them did not go as links (owner hand test, 9 Oct 2026).
             "file_mode": file_mode,
             "file_mode_fallback": file_fallback,
+            "shown_codes": _shown_codes(answer.question),
         },
         raw={"reply": reply},
     )
@@ -10400,6 +10410,7 @@ def run_tail(
             "file_mode": file_mode,
             "file_mode_fallback": file_fallback,
             "files": len(src_files) if isinstance(src_files, list) else 0,
+            "shown_codes": None,
         },
         raw={"reply": reply},
     )
@@ -10787,7 +10798,7 @@ def _complete_canned_lane(
             "replied",
             summary=f"Refused: {trace_mod.lane_words(branch_kind).lower()}.",
             why="The contact is not granted the agent this turn would have used.",
-            facts={"lane": branch_kind},
+            facts={"lane": branch_kind, "shown_codes": None},
             raw={"reply": reply},
         )
         turn_trace.record(
