@@ -1077,6 +1077,7 @@ export function useOrderInquiryWorklistColumns({
                 productId={row.original.product_id}
                 itemCode={row.original.item_code}
                 lineIds={row.original.core_line_id ? [row.original.core_line_id] : []}
+                openKey={row.original.id}
               />
             ) : null}
           </div>

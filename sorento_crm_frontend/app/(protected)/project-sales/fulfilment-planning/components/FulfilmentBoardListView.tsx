@@ -660,6 +660,7 @@ export function FulfilmentBoardListView({
                   productId={row.original.product_id}
                   itemCode={row.original.item_code}
                   lineIds={row.original.line_id ? [row.original.line_id] : []}
+                  openKey={row.original.key}
                 />
               ) : null}
             </span>

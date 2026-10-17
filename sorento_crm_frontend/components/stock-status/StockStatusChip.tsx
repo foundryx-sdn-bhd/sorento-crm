@@ -13,7 +13,12 @@
  * its columns whenever one of its inputs changes, and TanStack renders a cell function as a
  * component, so every cell remounts and a popover held in the chip's own state closed: the
  * first click after load landed just before such a rebuild. Held here, a remounted chip
- * reopens where it was.
+ * reopens where it was. It is keyed by the caller's row (`openKey`): two rows of one product
+ * must not share it, or both popovers open and each one's dismiss closes the other.
+ *
+ * Side: the chip asks for the side with more room when the room below is short, and the
+ * height is capped at the room on that side, so the popover is never squeezed into a strip
+ * low on the screen and never pushed off a small one.
  */
 import * as React from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -53,7 +58,9 @@ function useChipOpen(key: string): [boolean, (open: boolean) => void] {
   React.useEffect(() => {
     mounted.set(key, (mounted.get(key) ?? 0) + 1);
     return () => {
-      mounted.set(key, (mounted.get(key) ?? 1) - 1);
+      const left = (mounted.get(key) ?? 1) - 1;
+      if (left > 0) mounted.set(key, left);
+      else mounted.delete(key);
       // A remount mounts the new chip in the same commit; only a chip that is not back by
       // the next task has left the page, and its popover must not reopen on a later visit.
       setTimeout(() => {
@@ -69,26 +76,55 @@ function useChipOpen(key: string): [boolean, (open: boolean) => void] {
   return [open, setOpen];
 }
 
+/** Test-only: no chip open, no chip counted. */
+export function resetStockStatusChipsForTests() {
+  mounted.clear();
+  setOpenKey(null);
+}
+
+// Below this much room under the chip, the popover goes to whichever side has more.
+const ROOM_WANTED_PX = 448;
+
+function sideWithRoom(trigger: HTMLElement | null): 'top' | 'bottom' {
+  if (!trigger) return 'bottom';
+  const rect = trigger.getBoundingClientRect();
+  const below = window.innerHeight - rect.bottom;
+  return below < ROOM_WANTED_PX && rect.top > below ? 'top' : 'bottom';
+}
+
 export interface StockStatusChipProps {
   productId: string;
   /** The item code, for the button's accessible name. */
   itemCode: string;
   lineIds?: string[];
+  /**
+   * The row's own stable id, so two rows of one product never share an open popover.
+   * Defaults to the product and its lines.
+   */
+  openKey?: string;
 }
 
 export function StockStatusChip({
   productId,
   itemCode,
   lineIds,
+  openKey,
 }: StockStatusChipProps) {
   const summary = useStockStatusSummary(productId).data ?? undefined;
   const [open, setOpen] = useChipOpen(
-    `${productId}|${lineIds?.join(',') ?? ''}`,
+    openKey ?? `${productId}|${lineIds?.join(',') ?? ''}`,
   );
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const [side, setSide] = React.useState<'top' | 'bottom'>('bottom');
+  // Measured when it opens, and again when a remounted chip comes back open.
+  React.useLayoutEffect(() => {
+    if (open) setSide(sideWithRoom(triggerRef.current));
+  }, [open]);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           aria-label={`Stock status of ${itemCode}`}
           className="inline-flex cursor-pointer flex-wrap items-center gap-1"
@@ -124,13 +160,13 @@ export function StockStatusChip({
       {/* Portalled: a row can be its own stacking context, and a popover left inside it would
           paint under the next row. */}
       <PopoverPortal>
-        {/* Height (crew audit): capped at the room on its side, but never asking for less than
-            28rem, so a chip low on the screen overflows below and Radix flips the popover above
-            instead of squeezing it into the strip that is left. It scrolls inside past that. */}
         <PopoverContent
+          side={side}
           align="start"
           collisionPadding={8}
-          className="max-h-[max(var(--radix-popover-content-available-height),min(28rem,calc(100dvh-2rem)))] w-[min(60rem,calc(100vw-2rem))] overflow-y-auto p-3"
+          data-stock-status-popover=""
+          data-requested-side={side}
+          className="max-h-(--radix-popover-content-available-height) w-[min(60rem,calc(100vw-2rem))] overflow-y-auto p-3"
           onClick={(event) => event.stopPropagation()}
         >
           <p className="mb-2 font-semibold">{itemCode}</p>
