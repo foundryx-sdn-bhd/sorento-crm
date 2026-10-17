@@ -94,8 +94,12 @@ export function PanelDataGrid<TRow extends object>({
   columns: ColumnDef<TRow>[];
   rows: TRow[];
   getRowId?: (row: TRow) => string;
-  /** Drives per-user column order and visibility. See docs/LISTING-COLUMN-PREFERENCES.md. */
-  listingKey: string;
+  /**
+   * Drives per-user column order and visibility. See docs/LISTING-COLUMN-PREFERENCES.md.
+   * `null` turns persistence off: the right call when the columns are data (the stock status
+   * panel's SO totals, one column per location), as `DataGrid` itself documents.
+   */
+  listingKey: string | null;
   isLoading?: boolean;
   /** The read's error. With no rows it renders no-access or message + Retry (lever L2). */
   error?: unknown;
