@@ -121,10 +121,13 @@ describe('DirectoryTreeSidebar scrolls the open folder into view (crew audit 1)'
     const scroll = vi.fn();
     Element.prototype.scrollIntoView = scroll;
     renderSidebar('q1');
-    const row = screen.getAllByText('Q1')[0];
+    // The row itself (the element carrying the folder's drag / drop handlers), not an
+    // ancestor such as the whole tree.
+    const row = screen.getAllByText('Q1')[0].closest('.group');
+    expect(row).not.toBeNull();
     expect(scroll).toHaveBeenCalled();
     const scrolled = scroll.mock.contexts as Element[];
-    expect(scrolled.some((el) => el.contains(row))).toBe(true);
+    expect(scrolled).toContain(row);
     expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
   });
 

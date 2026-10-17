@@ -116,21 +116,39 @@ describe('useFolderUrl', () => {
     expect(result.current.folderId).toBe('mkt');
   });
 
-  it('a pending folder does not stick when an older navigation lands first', () => {
+  it('any Back / Forward drops a pending folder, even onto the folder it started from', () => {
     search = 'directoryId=mkt';
     const { result, rerender } = renderHook(() => useFolderUrl());
-    act(() => result.current.openFolder('camp'));
     act(() => result.current.openFolder('q1'));
-    // camp's navigation lands first: still showing q1, which is on its way.
-    search = 'directoryId=camp';
+    act(() => {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+    });
     rerender();
-    expect(result.current.folderId).toBe('q1');
-    search = 'directoryId=q1';
-    rerender();
+    expect(result.current.folderId).toBe('mkt');
+  });
+
+  it('a pending folder is dropped when another navigation discarded it and moved the URL', () => {
+    // Next's action queue drops an in-flight navigation when a newer one starts (e.g. a
+    // router.replace elsewhere on the page); the screen must follow the URL, not keep q1.
+    search = 'directoryId=mkt';
+    const { result, rerender } = renderHook(() => useFolderUrl());
+    act(() => result.current.openFolder('q1'));
     expect(result.current.folderId).toBe('q1');
     search = 'directoryId=camp';
     rerender();
     expect(result.current.folderId).toBe('camp');
+  });
+
+  it('a second open while the first is pending shows the second', () => {
+    search = 'directoryId=mkt';
+    const { result, rerender } = renderHook(() => useFolderUrl());
+    act(() => result.current.openFolder('camp'));
+    act(() => result.current.openFolder('q1'));
+    expect(result.current.folderId).toBe('q1');
+    expect(push).toHaveBeenLastCalledWith(`${BASE}?directoryId=q1`, { scroll: false });
+    search = 'directoryId=q1';
+    rerender();
+    expect(result.current.folderId).toBe('q1');
   });
 
   it('opening the root drops the param and keeps every other one', () => {

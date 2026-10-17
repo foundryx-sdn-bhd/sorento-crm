@@ -17,11 +17,13 @@
  * open A > B > C, reload, Back, Back, open D, Back).
  *
  * A router navigation is a server round trip (about 1s on the dev server), so the folder
- * the user opened is shown at once as `pending` and handed back to the URL when it lands,
- * or as soon as Back / Forward moves the URL anywhere.
+ * the user opened is shown at once as `pending` and handed back to the URL as soon as the
+ * URL moves at all: its own navigation landing, Back / Forward, or another navigation that
+ * discarded it (Next's action queue drops an in-flight navigation when a newer one starts).
+ * So the screen never keeps a folder the URL does not hold.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { startTransition, useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { FOLDER_ALL_ID } from '../constants';
 
@@ -39,14 +41,18 @@ export function useFolderUrl(): { folderId: string | null; openFolder: OpenFolde
   const searchParams = useSearchParams();
   const urlFolderId = normalise(searchParams?.get(DIRECTORY_PARAM));
 
-  // The folder just opened, until its navigation lands. A wrapper object so the root
-  // (null) can be pending too.
-  const [pending, setPending] = useState<{ id: string | null } | null>(null);
-  if (pending && pending.id === urlFolderId) setPending(null);
+  // The folder just opened, and the URL's folder at that moment; dropped once the URL
+  // moves away from `fromUrl`.
+  const [pending, setPending] = useState<{ id: string | null; fromUrl: string | null } | null>(
+    null
+  );
+  if (pending && pending.fromUrl !== urlFolderId) setPending(null);
 
-  // Back / Forward always wins over a navigation still in flight.
+  // Back / Forward wins over a navigation still in flight, even when it lands on the URL
+  // the pending one started from. A transition, like Next's own popstate restore, so the
+  // screen does not show the pre-Back folder for a frame before the restore commits.
   useEffect(() => {
-    const onPopState = () => setPending(null);
+    const onPopState = () => startTransition(() => setPending(null));
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
@@ -58,7 +64,7 @@ export function useFolderUrl(): { folderId: string | null; openFolder: OpenFolde
       const next = normalise(id);
       // Re-opening the shown folder must not stack a duplicate Back step.
       if (next === folderId) return;
-      setPending({ id: next });
+      setPending({ id: next, fromUrl: urlFolderId });
       const params = new URLSearchParams(searchParams?.toString());
       if (next) params.set(DIRECTORY_PARAM, next);
       else params.delete(DIRECTORY_PARAM);
@@ -67,7 +73,7 @@ export function useFolderUrl(): { folderId: string | null; openFolder: OpenFolde
       if (opts?.replace) router.replace(href, { scroll: false });
       else router.push(href, { scroll: false });
     },
-    [folderId, pathname, router, searchParams]
+    [folderId, urlFolderId, pathname, router, searchParams]
   );
 
   return { folderId, openFolder };
