@@ -27,7 +27,9 @@ vi.mock('./StockStatusPanel', async (importOriginal) => {
 import { StockStatusChip } from './StockStatusChip';
 
 function renderChips() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
     <QueryClientProvider client={client}>
       <StockStatusChip productId="a" itemCode="SRTWB1515" lineIds={['l1']} />
@@ -57,8 +59,13 @@ describe('StockStatusChip', () => {
     expect(apiFetchMock).toHaveBeenCalledTimes(1);
     const url = new URL(apiFetchMock.mock.calls[0][0], 'http://x');
     expect(url.pathname).toBe('/api/v1/inventory/stock-status/summary');
-    expect(url.searchParams.get('product_ids')?.split(',').sort()).toEqual(['a', 'b']);
-    const chip = screen.getByRole('button', { name: 'Stock status of SRTWB1515' });
+    expect(url.searchParams.get('product_ids')?.split(',').sort()).toEqual([
+      'a',
+      'b',
+    ]);
+    const chip = screen.getByRole('button', {
+      name: 'Stock status of SRTWB1515',
+    });
     expect(chip.textContent).toContain('On hand');
     expect(chip.textContent).toContain('-10,390');
     expect(chip.textContent).not.toContain('·');
@@ -67,10 +74,85 @@ describe('StockStatusChip', () => {
   it('opens the panel for its item, this line marked, only when clicked', async () => {
     renderChips();
     expect(panelSpy).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: 'Stock status of SRTWB1515' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Stock status of SRTWB1515' }),
+    );
     expect(await screen.findByTestId('panel')).toBeInTheDocument();
     expect(panelSpy).toHaveBeenLastCalledWith(
-      expect.objectContaining({ productId: 'a', lineIds: ['l1'], showOpenFullPage: true }),
+      expect.objectContaining({
+        productId: 'a',
+        lineIds: ['l1'],
+        showOpenFullPage: true,
+      }),
     );
+  });
+
+  // Crew audit, fulfilment board: a list rebuilds its columns when an input changes, and
+  // TanStack then remounts every cell. The first click after load lost its popover that way.
+  function Remountable({
+    generation,
+    productId = 'a',
+  }: {
+    generation: number;
+    productId?: string;
+  }) {
+    return (
+      <StockStatusChip
+        key={generation}
+        productId={productId}
+        itemCode="SRTWB1515"
+        lineIds={['l1']}
+      />
+    );
+  }
+  function renderRemountable() {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <Remountable generation={1} />
+      </QueryClientProvider>,
+    );
+    const remount = (generation: number, ui?: React.ReactElement) =>
+      view.rerender(
+        <QueryClientProvider client={client}>
+          {ui ?? <Remountable generation={generation} />}
+        </QueryClientProvider>,
+      );
+    return { remount };
+  }
+
+  it('stays open when its cell is remounted (the board rebuilding its columns)', async () => {
+    const { remount } = renderRemountable();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Stock status of SRTWB1515' }),
+    );
+    expect(await screen.findByTestId('panel')).toBeInTheDocument();
+    remount(2);
+    expect(await screen.findByTestId('panel')).toBeInTheDocument();
+  });
+
+  it('stays closed across a remount once closed, and a chip gone for good does not reopen later', async () => {
+    const { remount } = renderRemountable();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Stock status of SRTWB1515' }),
+    );
+    await screen.findByTestId('panel');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(screen.queryByTestId('panel')).not.toBeInTheDocument(),
+    );
+    remount(2);
+    expect(screen.queryByTestId('panel')).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Stock status of SRTWB1515' }),
+    );
+    await screen.findByTestId('panel');
+    remount(3, <div />); // the page moved on: the chip is gone
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    remount(4);
+    expect(screen.queryByTestId('panel')).not.toBeInTheDocument();
   });
 });
