@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>New product application v3</title>
-<!-- NEW-PRODUCT-APP mock v3 (17 Oct): v2 refilled with one real responded inquiry from crew's masked dev rows (SI26-0153; company, project and product names real, no person names). v2 = v1 + crew answers Q2-Q5 (Q2 = the #1698 quotation approval precedent). Built only from existing components; every callout names its component and repo path. FE = sorento_crm_frontend/. Illustrative data only (public repo). -->
+<!-- NEW-PRODUCT-APP mock v3 (17 Oct): v2 refilled with a case SHAPED on one real responded dev inquiry; every name, number and code is invented (public repo, review 18 Oct). v2 = v1 + crew answers Q2-Q5 (Q2 = the #1698 quotation approval precedent). Built only from existing components; every callout names its component and repo path. FE = sorento_crm_frontend/. Illustrative data only (public repo). -->
 <style>
 :root{--fg:#09090b;--muted:#71717a;--border:#e4e4e7;--muted-bg:#f4f4f5;--primary:#1b84ff;--destructive:#dc2626;--callout:#e11d74;
   --font:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -70,8 +70,8 @@ table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-sp
 .menu div{padding:7px 10px;border-radius:6px}.menu div.hl{background:#e9f3ff;color:var(--primary);font-weight:600}
 </style>
 <div class="doc">
-<h1>New Product Application, mock v3 (real case SI26-0153)</h1>
-<p class="sub"><b>v3 = v2 on a real case.</b> Frames 1-3 and 5 follow stock inquiry <b>SI26-0153</b> from the dev copy: purchasing replied "Can proceed, please issue new product code application form for us to create new code." Its product code field holds two codes ("SRTKS2433 &amp; SRTKS2406"), which is how 6 of the 14 responded new-code inquiries look (several codes or a variant note in one field), so the application gets two lines. What happens AFTER the inquiry (item group, UOM, approval, the opened code) is illustrative. List rows and frame 3b sit on other real inquiries (SI26-0149, SI26-0145, SI26-0150) with illustrative applications. No person names (public repo).</p>
+<h1>New Product Application, mock v3 (a real-shaped case, names invented)</h1>
+<p class="sub"><b>v3 = v2 on a real-shaped case</b> (owner-approved 18 Oct; names, numbers and codes masked afterwards because the repo is public). Frames 1-3 and 5 follow an inquiry shaped on a real dev one, here <b>SI26-0412</b>: purchasing replied "Supplier can make it, please apply for a new code." Its product code field holds two codes ("XY-1234-MB &amp; XY-1234-BG"), which is how 6 of the 14 responded new-code inquiries look (several codes or a variant note in one field), so the application gets two lines. What happens AFTER the inquiry (item group, UOM, approval, the opened code) is illustrative. List rows and frame 3b sit on other real inquiries (SI26-0420, SI26-0398, SI26-0401) with illustrative applications. No person names (public repo).</p>
 <p class="sub">Lane NEW-PRODUCT-APP, 17 Oct. <b>v2 = v1 + crew answers (17 Oct):</b> Q2 approval, lock and Revise copy the owner-approved quotation approval (#1698): approvers are holders of the approve permission in the company; Submitted and Approved are locked; Revise asks "What changed, and why?" and goes back to Draft (no snapshot, no revision number; the audit trail keeps the reason and old values); a Rejected application is edited and sent with the same Submit. Q3 inquiry link optional, Q4 many lines each linked on its own, Q5 description, item group and base UOM required. Q1 (staff only now) is with the owner; this mock is staff side. New in v2: frame 3b (Rejected, and the Revise dialog); the Revisions box is gone. Every callout names the existing component and repo path it is built from. FE = sorento_crm_frontend/. (v1 / v2 used invented data; v3 uses the real case above.)</p>
 <p class="sub">Layout follows the Purchase Request / Sponsorship Form / Stock Inquiry / Sample Request document card: header fields in a 2-column grid, then the product line table, then the footer buttons. View and edit are the same card.</p>
 
@@ -81,16 +81,16 @@ table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-sp
 <div class="scroll"><div class="frame w1280"><div class="shell">
   <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Procurement Management</div><div class="it on">Stock Inquiries</div><div class="it">New Product Applications</div></div>
   <div class="main"><div class="topbar"></div><div class="content">
-    <div class="phdr rel"><div><h1>Stock Inquiry - SI26-0153</h1><div class="crumb">Created: 17/09/2026 &middot; <span class="pill ok">Responded</span></div></div>
+    <div class="phdr rel"><div><h1>Stock Inquiry - SI26-0412</h1><div class="crumb">Created: 17/09/2026 &middot; <span class="pill ok">Responded</span></div></div>
       <div style="display:flex;gap:8px;align-items:flex-start"><span class="btn out sm">&lsaquo;</span><span class="btn out sm">&rsaquo;</span><div class="rel"><span class="btn out sm">&#9881;</span><span class="co pin">1</span>
         <div class="menu" style="position:absolute;right:0;top:34px;z-index:4"><div>Update &amp; Reply</div><div>Download PDF</div><div>Copy view link</div><div class="hl">&#10010; Create new product application</div><div>Void</div></div></div></div></div>
     <div class="card" style="padding:20px 24px;margin-top:150px">
       <div class="kv">
-        <div class="k">Product code</div><div><b>SRTKS2433 &amp; SRTKS2406</b> <span class="badge2">Not in the product list</span></div>
-        <div class="k">Item description</div><div>SORENTO NANOGRAIN KITCHEN SINK (540x440x230MM) SRTKS2433 &amp; SORENTO S/STEEL KITCHEN SINK SRTKS2406 (540x440x230MM)</div>
-        <div class="k">Project / customer</div><div>WESTIN RESIDENCE / VST GROUP OF COMPANIES</div>
+        <div class="k">Product code</div><div><b>XY-1234-MB &amp; XY-1234-BG</b> <span class="badge2">Not in the product list</span></div>
+        <div class="k">Item description</div><div>Kitchen sink, nanograin finish, XY-1234-MB &amp; kitchen sink, stainless steel, XY-1234-BG</div>
+        <div class="k">Project / customer</div><div>EXAMPLE RESIDENCE, TOWER B / EXAMPLE DEVELOPER SDN BHD</div>
         <div class="k">Quantity</div><div>55</div><div class="k">Delivery date</div><div>17/01/2028</div>
-        <div class="k">Purchasing response</div><div>Can proceed, please issue new product code application form for us to create new code.</div>
+        <div class="k">Purchasing response</div><div>Supplier can make it, please apply for a new code.</div>
         <div class="k rel">New product applications<span class="co pin" style="right:auto;left:150px">2</span></div><div class="muted">None yet</div>
       </div>
     </div>
@@ -103,7 +103,7 @@ table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-sp
 </div>
 
 <!-- ============ FRAME 2: NEW FORM ============ -->
-<h2 class="ft">2. Staff, create a New Product Application, pre-filled from SI26-0153 (1280 wide)</h2>
+<h2 class="ft">2. Staff, create a New Product Application, pre-filled from SI26-0412 (1280 wide)</h2>
 <div class="layout">
 <div class="scroll"><div class="frame w1280"><div class="shell">
   <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Procurement Management</div><div class="it">Stock Inquiries</div><div class="it on">New Product Applications</div></div>
@@ -115,19 +115,19 @@ table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-sp
       <div class="grid2">
         <div class="f"><label>Applicant</label><div class="inp ro">(signed-in user)</div></div>
         <div class="f"><label>Date</label><div class="inp ro">17/10/2026</div></div>
-        <div class="f rel"><span class="co pin">5</span><label>Stock inquiry</label><div class="inp">SI26-0153 - SRTKS2433 &amp; SRTKS2406<span>&times;</span></div></div>
+        <div class="f rel"><span class="co pin">5</span><label>Stock inquiry</label><div class="inp">SI26-0412 - XY-1234-MB &amp; XY-1234-BG<span>&times;</span></div></div>
         <div class="f"><label>Needed by</label><div class="inp">17/01/2028</div></div>
-        <div class="f span2 rel"><span class="co pin">6</span><label>Customer</label><div class="inp">VST GROUP OF COMPANIES<span>&times;</span></div><div class="meta" style="margin-top:2px"><span class="badge2">No debtor code</span> typed name copied from the inquiry; pick the debtor to replace it</div></div>
-        <div class="f span2"><label>Project name</label><div class="inp">WESTIN RESIDENCE</div></div>
-        <div class="f span2"><label>Reason / remark</label><div class="inp ta">Purchasing (SI26-0153): Can proceed, please issue new product code application form for us to create new code.</div></div>
+        <div class="f span2 rel"><span class="co pin">6</span><label>Customer</label><div class="inp">EXAMPLE DEVELOPER SDN BHD<span>&times;</span></div><div class="meta" style="margin-top:2px"><span class="badge2">No debtor code</span> typed name copied from the inquiry; pick the debtor to replace it</div></div>
+        <div class="f span2"><label>Project name</label><div class="inp">EXAMPLE RESIDENCE, TOWER B</div></div>
+        <div class="f span2"><label>Reason / remark</label><div class="inp ta">Purchasing (SI26-0412): Supplier can make it, please apply for a new code.</div></div>
       </div>
 
       <div class="rel" style="display:flex;justify-content:space-between;align-items:center;margin:28px 0 10px"><span class="co pin" style="right:auto;left:90px;top:-4px">7</span>
         <p class="b" style="margin:0">Line items</p><span class="btn out sm">+ Add row</span></div>
       <div class="card" style="overflow-x:auto">
       <table class="t lt wide"><thead><tr><th style="width:44px">No.</th><th style="width:150px">Proposed code</th><th style="width:220px">Description <span class="req">*</span></th><th style="width:170px">Item group <span class="req">*</span></th><th style="width:100px">Base UOM <span class="req">*</span></th><th style="width:130px">Brand</th><th style="width:130px">Item type</th><th style="width:170px">Supplier</th><th style="width:130px">Supplier model no</th><th style="width:100px">Cost (MYR)</th><th style="width:100px">Selling (MYR)</th><th style="width:90px">Exp. qty</th><th style="width:160px">Further description / remark</th><th style="width:40px"></th></tr></thead><tbody>
-        <tr class="rel"><td class="muted">1<span class="co pin" style="right:auto;left:-10px">19</span></td><td><div class="cellinp">SRTKS2433</div><div class="meta">copied as "SRTKS2433 &amp; SRTKS2406"; split by the applicant</div></td><td><div class="cellinp">SORENTO NANOGRAIN KITCHEN SINK (540x440x230MM)</div></td><td><div class="cellinp ph muted">Search item group</div></td><td><div class="cellinp">UNIT &times;</div></td><td><div class="cellinp">Sorento &times;</div></td><td><div class="cellinp">KITCHEN SINK &times;</div></td><td><div class="cellinp ph muted">Search supplier</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp">55 &times;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td class="trash">&#128465;</td></tr>
-        <tr><td class="muted">2</td><td><div class="cellinp">SRTKS2406</div></td><td><div class="cellinp">SORENTO S/STEEL KITCHEN SINK (540x440x230MM)</div></td><td><div class="cellinp">Kitchen Sink &times;</div></td><td><div class="cellinp">UNIT &times;</div></td><td><div class="cellinp">Sorento &times;</div></td><td><div class="cellinp">KITCHEN SINK &times;</div></td><td><div class="cellinp ph muted">Search supplier</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp">55 &times;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td class="trash">&#128465;</td></tr>
+        <tr class="rel"><td class="muted">1<span class="co pin" style="right:auto;left:-10px">19</span></td><td><div class="cellinp">XY-1234-MB</div><div class="meta">copied as "XY-1234-MB &amp; XY-1234-BG"; split by the applicant</div></td><td><div class="cellinp">Kitchen sink, nanograin finish</div></td><td><div class="cellinp ph muted">Search item group</div></td><td><div class="cellinp">UNIT &times;</div></td><td><div class="cellinp">Sorento &times;</div></td><td><div class="cellinp">KITCHEN SINK &times;</div></td><td><div class="cellinp ph muted">Search supplier</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp">55 &times;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td class="trash">&#128465;</td></tr>
+        <tr><td class="muted">2</td><td><div class="cellinp">XY-1234-BG</div></td><td><div class="cellinp">Kitchen sink, stainless steel</div></td><td><div class="cellinp">Kitchen Sink &times;</div></td><td><div class="cellinp">UNIT &times;</div></td><td><div class="cellinp">Sorento &times;</div></td><td><div class="cellinp">KITCHEN SINK &times;</div></td><td><div class="cellinp ph muted">Search supplier</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp">55 &times;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td class="trash">&#128465;</td></tr>
       </tbody></table></div>
       <div class="banner red rel" style="margin-top:12px"><span class="co pin">8</span>Line 1: choose an item group.</div>
     </div>
@@ -137,10 +137,10 @@ table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-sp
 <div class="notes"><ol>
   <li><span class="co">3</span><div><b>PageHeader "New Product Application" + outline Cancel</b>, as New Sample Request / New Purchase Request.<span class="ref">app/(protected)/project-sales/sample-requests/new/page.tsx; procurement-management/purchase-requests/new/page.tsx</span></div></li>
   <li><span class="co">4</span><div><b>One document card</b> border-2, type badge + status pill, centred title, 2-column grid (1 column on a phone). The detail page renders the same card read-only, so create, edit and view are one layout.<span class="ref">PurchaseRequestDocumentEditCard.tsx:295-329; SampleRequestDetail.tsx:497-530 (Card border-2, grid sm:grid-cols-2)</span></div></li>
-  <li><span class="co">5</span><div><b>Stock inquiry = SearchableSelect, clearable</b> over the company's stock inquiries, label "SI26-0153 - product code". Pre-set when started from the inquiry; optional (Q3).<span class="ref">components/common/SearchableSelect.tsx (fetchOptions, clearable)</span></div></li>
+  <li><span class="co">5</span><div><b>Stock inquiry = SearchableSelect, clearable</b> over the company's stock inquiries, label "SI26-0412 - product code". Pre-set when started from the inquiry; optional (Q3).<span class="ref">components/common/SearchableSelect.tsx (fetchOptions, clearable)</span></div></li>
   <li><span class="co">6</span><div><b>Customer = the PR / SF / SR searchable customer box</b>: debtors with code underneath, free text allowed ("No debtor code" badge). The inquiry's customer text arrives as typed text, never matched.<span class="ref">procurement-management/purchase-requests/components/RequestCustomerField.tsx (AsyncCombobox + lookupCustomersForRequest)</span></div></li>
   <li><span class="co">7</span><div><b>Line items = the PR / SR line table</b> "Line items" + outline "Add row", delete icon per row. Item group, Base UOM, Brand, Item type and Supplier are SearchableSelect (clearable); the price and qty boxes are number inputs that can be emptied (the &times; clears to empty, never 0). The table scrolls sideways inside its card; the page never does.<span class="ref">components/common/SampleRequestLines.tsx; PurchaseRequestForm.tsx:929-969; selects: master-data-management/shared/hooks/use-product-category-select-query.ts, use-uom-select-query.ts, use-brand-select-query.ts, services/supplierSelectService.ts; item types: NEW select endpoint (none exists, card rule 3)</span></div></li>
-  <li><span class="co">19</span><div><b>Real case: one inquiry field, two codes.</b> SI26-0153's product code field is "SRTKS2433 &amp; SRTKS2406". The pre-fill copies it as text into line 1 and never splits it (no guessing); the applicant edits line 1 to SRTKS2433, presses Add row for SRTKS2406 and fixes both descriptions. Item type KITCHEN SINK is a real AutoCount item type (on 99% of active products in the dev copy); supplier and cost are left empty, which Q5 (a) allows.<span class="ref">components/common/SampleRequestLines.tsx (Add row)</span></div></li>
+  <li><span class="co">19</span><div><b>One inquiry field, two codes (as in the real dev inquiry).</b> SI26-0412's product code field is "XY-1234-MB &amp; XY-1234-BG". The pre-fill copies it as text into line 1 and never splits it (no guessing); the applicant edits line 1 to XY-1234-MB, presses Add row for XY-1234-BG and fixes both descriptions. Item type KITCHEN SINK is a real AutoCount item type (on 99% of active products in the dev copy); supplier and cost are left empty, which Q5 (a) allows.<span class="ref">components/common/SampleRequestLines.tsx (Add row)</span></div></li>
   <li><span class="co">8</span><div><b>Submit refusals</b> one sentence per missing field, naming the line; the draft is saved regardless, so nothing is lost and the form is never stuck.<span class="ref">extractApiError in lib/api-client; SampleRequestForm.tsx submit path</span></div></li>
   <li><span class="co">9</span><div><b>Footer buttons</b> Cancel, Save as draft, Submit (the Sample Request pair).<span class="ref">SampleRequestForm.tsx footer; PurchaseRequestForm.tsx:980-1057</span></div></li>
 </ol></div>
@@ -160,19 +160,19 @@ table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-sp
       <div class="dtitle">New Product Application</div>
       <div class="grid2">
         <div class="f"><label class="muted">Applicant</label><b>(applicant)</b></div>
-        <div class="f"><label class="muted">Stock inquiry</label><b style="color:var(--primary)">SI26-0153</b></div>
-        <div class="f"><label class="muted">Customer</label><b>VST GROUP OF COMPANIES</b> <span class="badge2">No debtor code</span></div>
+        <div class="f"><label class="muted">Stock inquiry</label><b style="color:var(--primary)">SI26-0412</b></div>
+        <div class="f"><label class="muted">Customer</label><b>EXAMPLE DEVELOPER SDN BHD</b> <span class="badge2">No debtor code</span></div>
         <div class="f"><label class="muted">Needed by</label><b>17/01/2028</b></div>
       </div>
       <div class="rel" style="margin:24px 0 10px"><span class="co pin" style="right:auto;left:90px;top:-4px">12</span><p class="b" style="margin:0">Line items</p></div>
       <div class="card" style="overflow-x:auto">
       <table class="t lt" style="min-width:1000px"><thead><tr><th style="width:40px">No.</th><th style="width:120px">Proposed code</th><th style="width:180px">Description</th><th style="width:110px">Item group</th><th style="width:70px">UOM</th><th style="width:150px">Supplier</th><th style="width:80px">Cost</th><th style="width:250px">Opened as</th></tr></thead><tbody>
-        <tr><td class="muted">1</td><td>SRTKS2433</td><td>SORENTO NANOGRAIN KITCHEN SINK (540x440x230MM)</td><td>Kitchen Sink</td><td>UNIT</td><td class="muted">-</td><td class="muted">-</td><td><span class="pill ok">Opened</span> <b style="color:var(--primary)">SRTKS2433</b><div class="meta">(purchaser), 18/10/2026 &middot; <u>Undo</u></div></td></tr>
-        <tr class="rel"><td class="muted">2</td><td>SRTKS2406</td><td>SORENTO S/STEEL KITCHEN SINK (540x440x230MM)</td><td>Kitchen Sink</td><td>UNIT</td><td class="muted">-</td><td class="muted">-</td><td><span class="co pin">13</span><div style="display:flex;gap:6px"><span class="btn sm">Link product</span><span class="btn out sm">Not opening</span></div>
-          <div class="cellinp" style="margin-top:6px">srtks2406</div><div class="dd"><div class="muted">srtks2406 is not in the product list yet. It appears after AutoCount sends it.</div></div></td></tr>
+        <tr><td class="muted">1</td><td>XY-1234-MB</td><td>Kitchen sink, nanograin finish</td><td>Kitchen Sink</td><td>UNIT</td><td class="muted">-</td><td class="muted">-</td><td><span class="pill ok">Opened</span> <b style="color:var(--primary)">XY-1234-MB</b><div class="meta">(purchaser), 18/10/2026 &middot; <u>Undo</u></div></td></tr>
+        <tr class="rel"><td class="muted">2</td><td>XY-1234-BG</td><td>Kitchen sink, stainless steel</td><td>Kitchen Sink</td><td>UNIT</td><td class="muted">-</td><td class="muted">-</td><td><span class="co pin">13</span><div style="display:flex;gap:6px"><span class="btn sm">Link product</span><span class="btn out sm">Not opening</span></div>
+          <div class="cellinp" style="margin-top:6px">xy1234bg</div><div class="dd"><div class="muted">xy1234bg is not in the product list yet. It appears after AutoCount sends it.</div></div></td></tr>
       </tbody></table></div>
     </div>
-    <div style="max-width:1100px;margin:16px auto 0" class="rel"><span class="co pin">14</span><div class="card" style="padding:14px 18px"><b>Audit trail</b> <span class="muted xs">Submitted, Approved, Line 1 linked to SRTKS2433</span></div></div>
+    <div style="max-width:1100px;margin:16px auto 0" class="rel"><span class="co pin">14</span><div class="card" style="padding:14px 18px"><b>Audit trail</b> <span class="muted xs">Submitted, Approved, Line 1 linked to XY-1234-MB</span></div></div>
   </div></div>
 </div></div></div>
 <div class="notes"><ol>
@@ -190,7 +190,7 @@ table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-sp
 <div class="scroll"><div class="frame w1280"><div class="shell">
   <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Procurement Management</div><div class="it">Stock Inquiries</div><div class="it on">New Product Applications</div></div>
   <div class="main"><div class="topbar"></div><div class="content">
-    <div class="phdr rel"><div><h1>New Product Application - NPA-000004 (on SI26-0150)</h1><div class="crumb">Submitted: 17/10/2026 &middot; <span class="pill" style="background:#fee2e2;color:#991b1b">Rejected</span></div></div>
+    <div class="phdr rel"><div><h1>New Product Application - NPA-000004 (on SI26-0401)</h1><div class="crumb">Submitted: 17/10/2026 &middot; <span class="pill" style="background:#fee2e2;color:#991b1b">Rejected</span></div></div>
       <div style="display:flex;gap:8px"><span class="btn out sm">&lsaquo;</span><span class="btn out sm">&rsaquo;</span><span class="btn">Submit</span><span class="btn out">Edit</span><span class="btn out sm">&#9881;</span></div></div>
     <div class="banner red rel"><span class="co pin">17</span><b>Rejected</b> by (approver), 17/10/2026: Quote the flanges as spare parts under the existing codes. (illustrative reason)</div>
     <div style="display:flex;gap:24px;align-items:flex-start;margin-top:24px">
@@ -219,9 +219,9 @@ table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-sp
     <div class="phdr rel"><div><h1>New Product Applications</h1></div><span class="btn">+ New</span><span class="co pin" style="right:auto;left:300px;top:0">15</span></div>
     <div style="display:flex;gap:8px;margin-bottom:10px"><div class="inp ph" style="width:280px">Search number, code, description</div><div class="inp" style="width:170px">Status: All</div><div class="inp" style="width:170px">Applicant: All</div></div>
     <div class="card" style="overflow:hidden"><table class="t"><thead><tr><th style="width:120px">Number</th><th style="width:110px">Status</th><th style="width:110px">Inquiry</th><th style="width:200px">Customer</th><th>First line</th><th style="width:70px">Lines</th><th style="width:110px">Done</th><th style="width:110px">Date</th></tr></thead><tbody>
-      <tr><td>NPA-000003</td><td><span class="pill warn">Submitted</span></td><td>SI26-0149</td><td class="truncate">PARAMOUNT PROPERTY CONSTRUCTION SDN BHD (PROJECT)</td><td>Stainless Steel Flexible Hose 36"</td><td>1</td><td>0 / 1</td><td>17/10/2026</td></tr>
-      <tr><td>NPA-000002</td><td><span class="pill ok">Completed</span></td><td>SI26-0145</td><td>VANTREX DEVELOPMENT SDN BHD (PROJECT)</td><td>SRTBT2872-17 with matt finish</td><td>1</td><td>1 / 1</td><td>16/10/2026</td></tr>
-      <tr><td>NPA-000001</td><td><span class="pill blue">Approved</span></td><td>SI26-0153</td><td>VST GROUP OF COMPANIES</td><td>SORENTO NANOGRAIN KITCHEN SINK</td><td>2</td><td>1 / 2</td><td>17/10/2026</td></tr>
+      <tr><td>NPA-000003</td><td><span class="pill warn">Submitted</span></td><td>SI26-0420</td><td class="truncate">EXAMPLE CONSTRUCTION SDN BHD (PROJECT)</td><td>Stainless Steel Flexible Hose 36"</td><td>1</td><td>0 / 1</td><td>17/10/2026</td></tr>
+      <tr><td>NPA-000002</td><td><span class="pill ok">Completed</span></td><td>SI26-0398</td><td>EXAMPLE PROPERTIES SDN BHD (PROJECT)</td><td>XY-2872-17 with matt finish</td><td>1</td><td>1 / 1</td><td>16/10/2026</td></tr>
+      <tr><td>NPA-000001</td><td><span class="pill blue">Approved</span></td><td>SI26-0412</td><td>EXAMPLE DEVELOPER SDN BHD</td><td>Kitchen sink, nanograin finish</td><td>2</td><td>1 / 2</td><td>17/10/2026</td></tr>
     </tbody></table></div>
   </div></div>
 </div></div></div>
@@ -238,11 +238,11 @@ table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-sp
   <div class="meta" style="margin:4px 0 10px"><span class="pill blue">Approved</span> &middot; 1 of 2 lines done</div>
   <div style="display:flex;gap:8px;margin-bottom:12px"><span class="btn out" style="flex:1;justify-content:center">Revise</span><span class="btn out sm">&#9881;</span></div>
   <div class="card b2 rel" style="padding:14px"><span class="co pin">16</span>
-    <div class="grid1"><div class="f"><label class="muted">Stock inquiry</label><b>SI26-0153</b></div><div class="f"><label class="muted">Customer</label><b>VST GROUP OF COMPANIES</b></div></div>
+    <div class="grid1"><div class="f"><label class="muted">Stock inquiry</label><b>SI26-0412</b></div><div class="f"><label class="muted">Customer</label><b>EXAMPLE DEVELOPER SDN BHD</b></div></div>
     <p class="b" style="margin:16px 0 8px">Line items</p>
     <div style="overflow-x:auto"><table class="t lt" style="width:640px"><thead><tr><th style="width:36px">No.</th><th style="width:150px">Proposed code</th><th style="width:200px">Description</th><th style="width:220px">Opened as</th></tr></thead><tbody>
-      <tr><td>1</td><td>SRTKS2433</td><td>Nanograin kitchen sink</td><td><span class="pill ok">Opened</span> SRTKS2433</td></tr>
-      <tr><td>2</td><td>SRTKS2406</td><td>S/steel kitchen sink</td><td><span class="btn sm">Link product</span></td></tr>
+      <tr><td>1</td><td>XY-1234-MB</td><td>Kitchen sink, nanograin</td><td><span class="pill ok">Opened</span> XY-1234-MB</td></tr>
+      <tr><td>2</td><td>XY-1234-BG</td><td>Kitchen sink, stainless steel</td><td><span class="btn sm">Link product</span></td></tr>
     </tbody></table></div>
   </div>
 </div></div>

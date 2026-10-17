@@ -83,7 +83,10 @@ One record, **New Product Application** `NPA-000001`, under Procurement Manageme
      the application to Draft and writes one audit row with the reason. From Submitted it tells the approvers the
      request was withdrawn. No snapshot copy and no revision number (#1698 keeps none; the audit trail holds the old
      values). Revise is refused once any line has been opened.
-   - Cancelled: applicant, from Draft / Submitted / Approved while no line is opened.
+   - Cancelled: applicant, from Draft / Submitted / Approved / Rejected while no line is opened (review 18 Oct:
+     Rejected included so a rejected application never has to be resubmitted to be dropped).
+   - An approver may approve an application they raised themselves, as on the #1698 quotation approval; they
+     are not notified about their own application (review 18 Oct, recorded as accepted).
    - One primary button = the viewer's next action (Submit; Approve + Reject for an approver; Revise).
 6. **Purchasing opens the code** (permission `open_code`). Per line, on an Approved application:
    - **Link product**: a product search (same as SR: ignores dashes, spaces and case; only LISTS matches; a person
@@ -116,18 +119,17 @@ One record, **New Product Application** `NPA-000001`, under Procurement Manageme
 - Only one asked-about code later appeared in the master, 69 days after the inquiry: today nothing ties the two.
 - Active products: item type 99%, brand 77%, cost 41%, barcode 1 product, weight none. So the form asks item type
   and brand, keeps cost optional, and does not ask barcode or weight.
-- Real case used by mock v3: SI26-0153 (responded; purchasing: "please issue new product code application form
-  for us to create new code"), two kitchen sinks SRTKS2433 and SRTKS2406 in one code field.
+- Case used by mock v3 (shaped on one real dev inquiry; every name, number and code masked): SI26-0412 (responded; purchasing: "supplier can make it, please apply for a new code"), two kitchen sinks XY-1234-MB and XY-1234-BG in one code field.
 
-## Examples (A on the real case SI26-0153; the rest shape the rules)
+## Examples (A on the real-shaped case SI26-0412; the rest shape the rules)
 
 | # | Input | Result |
 |---|---|---|
-| A | SI26-0153, `responded`, code field "SRTKS2433 & SRTKS2406" (neither in products), two 540x440x230 kitchen sinks, qty 55, WESTIN RESIDENCE / VST GROUP OF COMPANIES. Project sales presses Create from the inquiry | New form: inquiry link set, project copied, customer typed text with "No debtor code" until a debtor is picked, line 1 = proposed "SRTKS2433 & SRTKS2406" + description + qty 55. The applicant edits line 1 to SRTKS2433 and adds line 2 SRTKS2406 |
+| A | SI26-0412, `responded`, code field "XY-1234-MB & XY-1234-BG" (neither in products), two standard-size kitchen sinks, qty 55, EXAMPLE RESIDENCE, TOWER B / EXAMPLE DEVELOPER SDN BHD. Project sales presses Create from the inquiry | New form: inquiry link set, project copied, customer typed text with "No debtor code" until a debtor is picked, line 1 = proposed "XY-1234-MB & XY-1234-BG" + description + qty 55. The applicant edits line 1 to XY-1234-MB and adds line 2 XY-1234-BG |
 | A2 | Submit A without Item group | Refused: "Line 1: choose an item group". Draft kept |
 | A3 | Item group Kitchen Sink and UOM UNIT on both lines, item type KITCHEN SINK, brand Sorento, supplier and cost left empty, submit; an approver approves | Approved, locked. Purchasing gets "NPA-000001: 2 new codes to open" |
-| A4 | Purchasing opens `SRTKS2433` and `SRTKS2406` in AutoCount; ESB sends them; purchasing types "srtks2433" in Link product on line 1, then line 2 | Each search lists the code; purchasing picks it. After line 2 the application is Completed; applicant notified; SI26-0153 shows NPA-000001 -> SRTKS2433, SRTKS2406 |
-| B | Same as A4 but line 2 searched before the ESB push | "srtks2406 is not in the product list yet ..."; line 2 stays open, the application stays Approved (1 of 2 done); nothing breaks |
+| A4 | Purchasing opens `XY-1234-MB` and `XY-1234-BG` in AutoCount; ESB sends them; purchasing types "xy1234mb" in Link product on line 1, then line 2 | Each search lists the code; purchasing picks it. After line 2 the application is Completed; applicant notified; SI26-0412 shows NPA-000001 -> XY-1234-MB, XY-1234-BG |
+| B | Same as A4 but line 2 searched before the ESB push | "xy1234bg is not in the product list yet ..."; line 2 stays open, the application stays Approved (1 of 2 done); nothing breaks |
 | C | Application with 3 colour lines (CP / MB / BG); supplier discontinues BG | Purchasing links CP and MB, marks BG Not opening "supplier dropped BG". Completed |
 | D | Approved application, sales notices wrong UOM | Revise, reason "UOM is SET not UNIT": back to Draft, fix, Submit, approve again. The audit trail shows the reason and the old UOM |
 | D2 | Rejected "supplier price too high, find another" | Applicant changes supplier and cost, presses Submit: Submitted again, approvers notified again |

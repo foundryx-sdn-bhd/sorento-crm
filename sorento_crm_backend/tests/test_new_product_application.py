@@ -155,13 +155,13 @@ def _inquiry(db, **over):
     row = StockInquiry(
         id=uid(),
         inquiry_number=f"SI26-Z{uid()[:4]}",
-        product_code="SRTKS2433 & SRTKS2406",
-        item_description="NANOGRAIN KITCHEN SINK (540x440x230MM) & S/STEEL KITCHEN SINK",
-        project_customer=f"{MARKER} VST GROUP OF COMPANIES",
-        project_name=f"{MARKER} WESTIN RESIDENCE",
+        product_code="XY-1234-MB & XY-1234-BG",
+        item_description="Kitchen sink, nanograin finish & kitchen sink, stainless steel",
+        project_customer=f"{MARKER} EXAMPLE DEVELOPER SDN BHD",
+        project_name=f"{MARKER} EXAMPLE RESIDENCE, TOWER B",
         quantity="55",
         delivery_date="2028-01-17",
-        purchasing_response="Can proceed, please issue new product code application form.",
+        purchasing_response="Supplier can make it, please apply for a new code.",
         status="responded",
     )
     for k, v in over.items():
@@ -243,8 +243,8 @@ def world(sent):
 
 def _line(w, **over):
     body = {
-        "proposed_code": "SRTKS2433",
-        "description": "NANOGRAIN KITCHEN SINK (540x440x230MM)",
+        "proposed_code": "XY-1234-MB",
+        "description": "Kitchen sink, nanograin finish",
         "category_id": w.refs.category,
         "base_uom_id": w.refs.uom,
         "brand_id": w.refs.brand,
@@ -259,10 +259,10 @@ def _line(w, **over):
 def _body(w, **over):
     body = {
         "stock_inquiry_id": w.inquiry.id,
-        "customer_name": f"{MARKER} VST GROUP OF COMPANIES",
-        "project_name": f"{MARKER} WESTIN RESIDENCE",
+        "customer_name": f"{MARKER} EXAMPLE DEVELOPER SDN BHD",
+        "project_name": f"{MARKER} EXAMPLE RESIDENCE, TOWER B",
         "needed_by": "2028-01-17",
-        "lines": [_line(w), _line(w, proposed_code="SRTKS2406", description="S/STEEL SINK")],
+        "lines": [_line(w), _line(w, proposed_code="XY-1234-BG", description="Kitchen sink, stainless steel")],
     }
     body.update(over)
     return body
@@ -417,7 +417,7 @@ def test_ac05_prefill_copies_the_inquiry_as_text_and_matches_nothing(world):
     assert body["needed_by"] == "2028-01-17"
     assert len(body["lines"]) == 1
     line = body["lines"][0]
-    assert line["proposed_code"] == "SRTKS2433 & SRTKS2406"  # never split
+    assert line["proposed_code"] == "XY-1234-MB & XY-1234-BG"  # never split
     assert line["description"] == world.inquiry.item_description
     assert line["expected_qty"] == "55"
     assert line.get("category_id") is None

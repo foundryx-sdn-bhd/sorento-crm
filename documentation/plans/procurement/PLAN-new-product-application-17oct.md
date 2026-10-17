@@ -1,7 +1,7 @@
 # PLAN - New product application (NEW-PRODUCT-APP)
 
-Lane NEW-PRODUCT-APP, size L, cloud. Status: Plan. Card + mock v3 (real case SI26-0153) filed 17 Oct (crew answered Q2-Q5; Q1 with the
-owner); no code until the owner OKs card + mock.
+Lane NEW-PRODUCT-APP, size L, cloud. Status: Review. Owner OKed card + mock v3 on 18 Oct (Q1 = portal too); crew PQ1 (b), PQ2 (a). Built: migration,
+staff + portal BE and FE; reviewer round 1 fixed (6b68759f, 34a488d1); browser pass + hand test next.
 Track: full (migration + new permissions). PR #1769, branch `claude/new-product-application-0u631d`.
 
 Owner 15 Oct: stock inquiry about a new product code -> inquiry responded -> new product application ->

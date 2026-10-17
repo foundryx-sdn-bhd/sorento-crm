@@ -13,8 +13,9 @@ component) or by the browser pass (B).
   an empty number field is stored as NULL (never 0).
 - **AC-NPA-03** Only the applicant edits or deletes their Draft (403 otherwise). Delete draft is the countdown
   pending action `new_product_application.delete` (10 s, hard delete, lines go with it); no confirm dialog.
-- **AC-NPA-04** Item group, base UOM, brand, item type, supplier and stock inquiry ids must exist in the caller's
-  company; anything else is 422 naming the field (never a silent drop).
+- **AC-NPA-04** Item group, base UOM, brand, item type, supplier and customer ids must exist in the caller's
+  company; a stock inquiry id must exist (stock inquiries carry no company today; a portal contact may only use its
+  own); anything else is 422 naming the field in words (never a silent drop).
 - **AC-NPA-05** Created from a stock inquiry (`?stock_inquiry_id=`): the form pre-fills inquiry link, project name,
   customer TEXT (no debtor id), needed-by, and line 1 = proposed code + description + expected qty from the inquiry.
   No customer, product or name matching happens anywhere (B + vitest).

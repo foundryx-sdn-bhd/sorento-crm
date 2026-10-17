@@ -44,13 +44,13 @@ def _inquiry(db, contact_id, **over):
     row = StockInquiry(
         id=uid(),
         inquiry_number=f"SI26-Z{uid()[:4]}",
-        product_code="SRTKS2433 & SRTKS2406",
-        item_description="NANOGRAIN KITCHEN SINK",
-        project_customer=f"{MARKER} VST GROUP OF COMPANIES",
-        project_name=f"{MARKER} WESTIN RESIDENCE",
+        product_code="XY-1234-MB & XY-1234-BG",
+        item_description="Kitchen sink, nanograin finish",
+        project_customer=f"{MARKER} EXAMPLE DEVELOPER SDN BHD",
+        project_name=f"{MARKER} EXAMPLE RESIDENCE, TOWER B",
         quantity="55",
         delivery_date="2028-01-17",
-        purchasing_response="Can proceed, please issue new product code application form.",
+        purchasing_response="Supplier can make it, please apply for a new code.",
         status="responded",
         contact_id=contact_id,
         space_id="zzt-space",
@@ -134,8 +134,8 @@ def _as(p, contact_id):
 
 def _line(p, **over):
     body = {
-        "proposed_code": "SRTKS2433",
-        "description": "NANOGRAIN KITCHEN SINK",
+        "proposed_code": "XY-1234-MB",
+        "description": "Kitchen sink, nanograin finish",
         "category_id": p.product.category_id,
         "base_uom_id": p.product.base_uom_id,
         "expected_qty": "55",
@@ -213,7 +213,7 @@ def test_prefill_from_my_responded_inquiry_copies_text(portal):
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["customer_id"] is None
-    assert body["lines"][0]["proposed_code"] == "SRTKS2433 & SRTKS2406"
+    assert body["lines"][0]["proposed_code"] == "XY-1234-MB & XY-1234-BG"
 
 
 @pytest.mark.parametrize("which", ["theirs", "mine_open"])
