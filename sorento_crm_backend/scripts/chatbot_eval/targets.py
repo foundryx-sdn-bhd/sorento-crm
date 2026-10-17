@@ -479,12 +479,16 @@ def _menu_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tupl
 # the engine's stock reply lines (label_catalog.py: "Got stock.", "Only N got stock.", "No stock, ETA ...", "No stock found
 # for ...", "yes, we have stock") and their ms / zh renderings
 STOCK_WORDS_RE = re.compile(r"\b(?:stock|in stock|available|availability|ada|ready stock|ready|how many left|berapa ada)\b", re.I)
-QUANTITY_ASK_RE = re.compile(r"how\s+many|berapa", re.I)
+QUANTITY_ASK_RE = re.compile(r"how\s+many|berapa|多少", re.I)
 
 
 FILES_PROMO_SPEC_FACTS = frozenset({"product_attachment", "promotion", "master_products"})
 FILES_PROMO_SPEC_LABELS = frozenset({"files", "promotions", "product_info"})
-SENTENCE_RE = re.compile(r"(?<=[.?!])\s+|\n")
+SENTENCE_RE = re.compile(r"(?<=[.?!])\s+|(?<=[？。])")
+SPEC_LISTED_RE = re.compile(r"^(?:\d+\.\s+)?" + CODE_RE.pattern, re.M)             # a code-led line, slot lines included
+NUMBERED_LINE_RE = re.compile(r"\d+\. ")
+ANSWER_BLOCK_RE = re.compile(r"\*[^*\n]+:\*")                       # "*Promotion:* ..." field
+CODE_LED_VALUE_RE = re.compile(r"\d+\.\s+" + CODE_RE.pattern + r"[^\n:]*:\s*\S")   # "1. SRTA100: RM 90"
 
 
 def _files_sent(row: dict[str, Any]) -> int:
@@ -513,9 +517,16 @@ def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None,
                   or bool(label and label not in KNOWN_FACT_LABELS) or slice_name == "attachment"
                   or (slice_name == "spec" and not STOCK_WORDS_RE.search(user_message(row))))
     if answer_ask:
-        rest = "\n".join(x for x in SENTENCE_RE.split(reply) if not QUANTITY_ASK_RE.search(x))
-        answered = (bool(re.search(r"\d", CODE_RE.sub(" ", rest))) or bool(SET_NUMBERED_RE.search(rest))
-                    or bool(SET_CODE_ROW_RE.search(rest)) or _files_sent(row) > 0)
+        lines = [x.strip() for line in reply.split("\n")   # a numbered line is kept whole: its "1. " is not a sentence end
+                 for x in ([line] if NUMBERED_LINE_RE.match(line) else SENTENCE_RE.split(line))
+                 if x and x.strip() and not QUANTITY_ASK_RE.search(x)]
+        # the bot's quantity slots ("1. CODE - 10") and menu options ("1. Office") are part of the question: a numbered
+        # line is an answer only with an answer block or a code-led value
+        numbered = [x for x in lines if NUMBERED_LINE_RE.match(x)]
+        plain = "\n".join(x for x in lines if not NUMBERED_LINE_RE.match(x))
+        answered = (any(ANSWER_BLOCK_RE.search(x) or CODE_LED_VALUE_RE.match(x) for x in numbered)
+                    or bool(re.search(r"\d", CODE_RE.sub(" ", plain))) or bool(SET_CODE_ROW_RE.search(plain))
+                    or (slice_name == "spec" and bool(SPEC_LISTED_RE.search("\n".join(lines)))) or _files_sent(row) > 0)
         if not answered:
             return ("no_qty_ask", False, "The bot asked how many instead of giving the answer.")
     return ("qty_ask_ok", True, "The bot asked how many instead of giving the answer.")
@@ -831,6 +842,11 @@ def _val(x: Any) -> str:
     return text
 
 
+# the bot's own "nothing matches" forms ("But none matched.", "But no <X> matched these.", "No products found")
+NO_MATCH_RE = re.compile(r"\bnone matched\b|\bno\b[^\n.]{0,80}?\bmatched\b|\bno (?:products?|results?|items?) found\b"
+                         r"|\bnone on record\b|\bwe don.?t have\b", re.I)
+
+
 def _spec(row, item):
     extra = _mem_focus(row, "after").get("extra") or {}
     got = {_val(e.get("spec_value") if e.get("spec_value") is not None else e.get("raw")) for e in _entities(row)
@@ -848,8 +864,11 @@ def _spec(row, item):
     words += [set(v.split()) for v in got]
     reply = reply_text(row)
     shown = bool(CODE_RE.search(reply)) and not COULD_NOT_FIND_RE.search(reply)   # at least one product, no dead end
+    # a catalogue that holds nothing for the spec: the bot saying so is the answer, products listed as well are fine
+    answer = (("none_on_record", bool(NO_MATCH_RE.search(reply)), "The bot did not say that no product matches the spec.")
+              if (item.get("gold") or {}).get("none_on_record") else ("shown", shown, "The reply showed no product."))
     checks = [("spec_set", want <= got and bool(want or class_want), "The spec words were not grounded to the expected set."),
-              ("shown", shown, "The reply showed no product."), *_needless(row, {}, shown=shown, slice_name="spec")]
+              answer, *_needless(row, {}, shown=shown, slice_name="spec")]
     if class_want:  # reported, not part of `passed`: the bot records class words as category entities
         checks.append(("class", all(any(set(v.split()) <= w for w in words) for v in class_want),
                        "The product class was read differently from the one asked."))
