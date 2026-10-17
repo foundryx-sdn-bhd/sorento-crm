@@ -213,9 +213,9 @@ Phase 1 against a mock, then Phase 2 wiring, per the pipeline.
   `SearchableSelect` or `SearchableMultiSelect`, each optional one `clearable`; Date is the
   standard date range; query strings are built with `buildDataGridParams`. The Export button
   shows only with `finance.billing_documents.export` (and view).
-- **S2-4 [BE]** (J6) Given `GET /api/v1/finance/billing-documents`, then it pages, sorts and
-  searches through the list-query registry (resource `finance_billing_documents`), is scoped to
-  the caller's company, and answers 403 without the view slug.
+- **S2-4 [BE]** (J6) Given `GET /api/v1/finance/billing-documents`, a dedicated route, then it
+  pages, sorts and searches, is scoped to the caller's company, and answers 403 without the view
+  slug. The list-query registry resource `finance_billing_documents` serves the export.
 - **S2-5 [FE]** (J7) Given a row click, then `/finance/billing-documents/{id}` opens with a
   `PageHeader` (number, type badge, status badge), a meta strip (source AutoCount, last synced,
   document date), `RecordNavigation` prev and next, and line tabs Details, Lines, Related.
@@ -265,7 +265,7 @@ Mostly shared-service work; the CRM side is a runbook and a measurement.
 ## S5: outstanding per invoice and per customer (owner 15 Oct, read-only)
 
 Added by lane AC-BILLING (`CARD-ac-billing-17oct.md`). Written to the card's recommendations on Q1 to
-Q5; DRAFT until the owner answers them.
+Q5; approved by the owner 18 Oct (Q1 to Q5 all (a)).
 
 - **S5-1 [BE]** Given `POST /api/v1/external/ingest/ar_outstanding` with one debtor record whose
   `documents` name two stored invoices of that customer, then both get `outstanding`, `due_date` and

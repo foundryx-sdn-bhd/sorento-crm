@@ -822,7 +822,9 @@ No deletions door: a debtor with nothing open is pushed with `total_outstanding:
   push IV and CS before CN and DN; reconcile vanishings to `/billing_documents/deletions`.
 - **Line source refs.** `FromDocType='SO'`: the SO line's own ref `{db}:{SO.DocKey}:{SODTL.DtlKey}`.
   `'DO'`: `{book}:DO:{DocKey}:{DtlKey}` with the DO feed's book (section 13), so the CRM finds its own DO
-  line exactly by `(book, doc_key, dtl_key)` and takes that line's sales order line. `'IV'` (CN lines):
+  line exactly by `(book, doc_key, dtl_key)` and takes that line's sales order line. The hop is decided when the invoice is pushed, so the DO
+  backfill must reach a day before that day's invoices are pushed; an invoice pushed before its DO stays
+  unlinked until the invoice is pushed again. `'IV'` (CN lines):
   `{db}:IV:{DocKey}:{DtlKey}`. NULL `FromDocDtlKey`: send `from_doc_type` / `from_doc_no`, no ref.
 - **AR sweep (sink 2.10).** Over `ARInvoice`, `ARDN`, `ARCN` per `DebtorCode`; a per-debtor fingerprint
   `SUM(Outstanding), COUNT(open), MAX(LastModified)` picks the debtors to push (a knock-off may not bump any

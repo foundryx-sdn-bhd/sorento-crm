@@ -25,6 +25,9 @@ The CRM holds no copy and has no date floor.
 - Dry run first: one day of each type through `?dry_run=true`, read the verdicts, expect no `failed`.
 - Then oldest first, day by day. Within a day: IV and CS before CN and DN (a note links its invoice by
   `against_source_ref` / `against_doc_no` at ingest; a note that lands first is linked when its invoice lands).
+- The DO backfill must reach a day before that day's invoices are pushed: an invoice line's DO hop
+  (`{book}:DO:{DocKey}:{DtlKey}` to the sales order line) is decided at its push, so an invoice pushed
+  before its DO stays unlinked until the invoice is pushed again.
 - Batch size 1000 records (the door's cap; 413 above it).
 - Each company pushes under its own `companyCode`.
 - Outstanding (`ar_outstanding`) runs only after the billing backfill has reached today, so every listed
