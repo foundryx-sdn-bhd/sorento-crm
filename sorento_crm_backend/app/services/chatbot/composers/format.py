@@ -16,7 +16,7 @@ ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 # with one too. Written as an escape, not as the character: the repo forbids an em dash in
 # anything WE write, and this is a literal from a node body that ships, and changing it
 # would change what a customer is sent.
-EM_DASH = "—"
+EM_DASH = "\u2014"
 
 
 def timestamp(iso: Any) -> str | None:
