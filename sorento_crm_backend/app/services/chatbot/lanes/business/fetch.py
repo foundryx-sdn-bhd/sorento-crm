@@ -1846,8 +1846,37 @@ _PRODUCT_IDENTITY_LABELS: frozenset[str] = frozenset(
     {"Product Code", "Product Name", "Description", "List Price", "Dimensions", "Company"}
 )
 
-#: Price fields a product set answer drops (CHAT-CODE-LOOKUP R2).
+#: Price fields a product set answer drops (CHAT-CODE-LOOKUP R2), by key; the product list's
+#: price pair carries no key, so its label stands in.
+_SET_PRICE_KEYS: frozenset[str] = frozenset({"list_price", "selling_price"})
 _SET_PRICE_LABELS: frozenset[str] = frozenset({"List Price", "Selling Price"})
+
+
+def _group_set_rows(e: dict[str, Any], set_by_code: dict[str, str]) -> None:
+    """CHAT-CODE-LOOKUP R2 (U2.3): the rows that are members of a typed product set drop their
+    price and sit under their own "Set <code>" heading, one block per set; a plain product's
+    row keeps its price and sits under no set (its block comes first, with no heading)."""
+    plain: list[Any] = []
+    by_set: dict[str, list[Any]] = {}
+    for row in e.get("items") or []:
+        fields = row.get("fields") if isinstance(row, dict) else None
+        code = next(
+            (jsc.js_string(f.get("value")).casefold() for f in fields or [] if isinstance(f, dict) and f.get("label") == "Product Code"),
+            None,
+        )
+        owner = set_by_code.get(code) if code else None
+        if owner is None:
+            plain.append(row)
+            continue
+        row["fields"] = [
+            f for f in fields
+            if not (isinstance(f, dict) and (f.get("key") in _SET_PRICE_KEYS or (not _has_key(f) and f.get("label") in _SET_PRICE_LABELS)))
+        ]
+        by_set.setdefault(owner, []).append(row)
+    if not by_set:
+        return
+    groups = [{"label": f"Set {code}", "items": rows} for code, rows in by_set.items()]
+    e["groups"] = ([{"label": "", "items": plain}] if plain else []) + groups
 
 _SPEC_KEY_PREFIX = "spec:"
 
@@ -3056,13 +3085,8 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             e["groups"] = []
             e["group_by_dropped"] = axis
 
-    if ctx.get("set_code"):
-        # CHAT-CODE-LOOKUP R2 (U2.3): a product set answers as its members, named by the set's
-        # code and with no price (the set carries none of its own; entity_resolver._probe_product_set).
-        for row in [*(e.get("items") or []), *(e.get("summary_items") or [])]:
-            if isinstance(row, dict) and isinstance(row.get("fields"), list):
-                row["fields"] = [f for f in row["fields"] if not (isinstance(f, dict) and f.get("label") in _SET_PRICE_LABELS)]
-        e["intro"] = f"Set {ctx['set_code']}: " + jsc.js_string(e.get("intro") or "Here are the results.").strip()
+    if ctx.get("set_by_code") and not e.get("groups"):
+        _group_set_rows(e, ctx["set_by_code"])
 
     # -- requested-attribute projection ------------------------------------- #
     # The CRM dumps every clearance field the caller may see, by design: it prevents the

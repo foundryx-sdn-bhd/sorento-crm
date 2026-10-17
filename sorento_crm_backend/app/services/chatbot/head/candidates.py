@@ -263,7 +263,11 @@ def _visible_set_clauses(db: "Session") -> list:
     from app.models.product_set import ProductSet, ProductSetMember
 
     members = db.query(ProductSetMember.id).filter(ProductSetMember.product_set_id == ProductSet.id)
-    visible = db.query(Product.id).filter(chat_searchable_products(), Product.company_id == ProductSet.company_id)
+    visible = (
+        db.query(Product.id)
+        .filter(chat_searchable_products(), Product.company_id == ProductSet.company_id)
+        .correlate(ProductSet)
+    )
     unseen = members.filter(not_(ProductSetMember.product_id.in_(visible.scalar_subquery())))
     return [ProductSet.is_active.is_(True), members.exists(), not_(unseen.exists())]
 
@@ -301,7 +305,7 @@ def _set_rows(db: "Session", word: str) -> list[tuple[str, str | None]]:
 
 def _ranked(word: str, rows: list[tuple[str, str | None, str]], floor: float) -> list[tuple[str, str | None, bool, str]]:
     """Product and set rows ranked together (exact, prefix, contains, near by similarity;
-    a near set before a near product, since a set-only code has no product line to fall back on), the near ones kept from `floor` up, capped."""
+    a set before a product on an exact tie), the near ones kept from `floor` up, capped."""
     typed = trigrams(word)
     keyed = []
     for code, name, kind in rows:
@@ -310,7 +314,7 @@ def _ranked(word: str, rows: list[tuple[str, str | None, str]], floor: float) ->
         rank = 0 if folded == word else 1 if folded.startswith(word) else 2 if word in folded else 3
         if rank == 3 and score < floor:
             continue
-        keyed.append(((rank, kind != "set code" and rank == 3, -score, kind != "set code", code), (code, name, rank < 3, kind)))
+        keyed.append(((rank, -score, kind != "set code", code), (code, name, rank < 3, kind)))
     return [row for _key, row in sorted(keyed)][:CAP_PER_WORD]
 
 
