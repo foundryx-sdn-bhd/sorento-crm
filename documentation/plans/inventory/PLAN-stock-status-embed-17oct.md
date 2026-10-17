@@ -325,5 +325,15 @@ on the form's Item Code column only if the owner asks. Its own small-fix lane.
   `scm.dashboard.view`, SPO `procurement.spo_allocations.view`, PL `procurement.packing_lists.view`),
   else plain text.
 - Below 992 wide, By location reads as cards (mock frame 1 at 375).
+- Crew audit fix round (17 Oct): which chip is open lives outside the chip, because a list
+  that rebuilds its columns remounts every cell (TanStack renders a cell function as a
+  component) and the board's first click after load lost its popover that way. The popover's
+  max height has a floor of min(28rem, 100dvh - 2rem) so it flips above a low chip instead of
+  shrinking to the strip below it.
+- Open, owner ruling: (1) container text such as "SEKU1741573 (KUCHING)" on a packing list does
+  not equal the SPO's "SEKU1741573", so the exact match leaves 50 units of PL-2609-040 in both
+  SPO and Incoming PL (1 of 359 open shipments); matching unchanged until the ruling.
+  (2) Security S-C: the effective ETA folds in `eta_delay_date`, which the registry lists as a
+  `procurement.packing_lists.view_clearance` field; the board does the same today.
 - Follow-ups: Sample Request swap (above); the fulfilment board and loading plan count SO the
   `demand.py` way, which differs from this panel by design (R4).
