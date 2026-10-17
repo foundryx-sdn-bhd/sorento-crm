@@ -1,6 +1,6 @@
 # PLAN: CHAT-CODE-LOOKUP (chatbot code lookups toward the owner's 97% bar)
 
-Status: Build, step 3 (card answered 17 Oct: Q1/Q2/Q4/Q5 (a); owner kept the sibling picker (Q3), R3 dropped; stacked on #1755). Track: L, LEAD pattern, local lane. Branch
+Status: Review (slices A-C green at 50495b919e, red-first + kill-proof per slice on #1761; reviewer + security-reviewer running; live TRAIN arm waits for the eval stack). Track: L, LEAD pattern, local lane. Branch
 `crew/chat-code-lookup`, base origin/main 20c191d861.
 
 Owner approval: 17 Oct ~14:10 ("Ok" to a code-lookup lane, in parallel with steps 1-2).
@@ -66,3 +66,11 @@ meant existing code -> answer that code; a bare code after an ETA reply -> the i
 - S5 held family member for a typed family code (R5). Owner c08.
 - S6 domain reuse, count = stock (R6), prompt. #1755-arm TRAIN: cp0-7ce4ddc2da, cp0-df53e90ebf.
 - R3 dropped: owner ruling 17 Oct keeps the sibling picker after a full answer (`answer.py:4846-4848`).
+
+## Evidence so far
+
+- A: red ad4389c047, fix 4717509497, lead-approved test fixes 9f8d713e91, kill-proof posted. B: red 1833644813, fix
+  e6eb546af0, kill-proof posted. C: red 5ac8b3fec6, fix 50495b919e, kill-proof posted.
+- L1 grounding tier 0 / 1506 vs main and vs #1755 (slice A); turn tier on the fixed replay DB: #1755 vs lane 0 / 585,
+  main vs lane 3 / 585, the same 3 as main vs #1755 (owned by #1755).
+- Prompt: unlabelled v159 (slice A section) published on sorento_cagent_stack; production label v63 untouched.
