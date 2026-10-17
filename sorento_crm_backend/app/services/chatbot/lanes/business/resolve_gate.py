@@ -1362,6 +1362,24 @@ def _no_such_account(
 # --------------------------------------------------------------------------- #
 
 
+def _product_set_ids(resolved: Any) -> set[str]:
+    """The uuids of every `product_set` match in a resolver payload."""
+    found: set[str] = set()
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if node.get("entity_type") == "product_set" and node.get("uuid"):
+                found.add(str(node["uuid"]))
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(resolved)
+    return found
+
+
 def run(
     ctx: dict[str, Any],
     entry: Any,
@@ -1491,6 +1509,12 @@ def run(
     #    it - so the gate gets its own copy and `resolved` keeps the pre-gate snapshot,
     #    which is what `$('resolve-entity')` returns downstream.
     gate_input = _snapshot(resolved)
+    if parser.get("code_lookup") is True and services.visible_sets is not None:
+        # CHAT-CODE-LOOKUP R2: which product sets the contact may be told about, read on the
+        # scoped session; the gate expands only those (an unseen one stays today's miss).
+        gate_input["visible_set_ids"] = sorted(
+            services.visible_sets(sorted(_product_set_ids(gate_input)))
+        )
     gate_item = run_gate(
         gate_input,
         parser=parser,

@@ -2257,6 +2257,11 @@ def run_fetch(
         # stay byte-inert for every non-HAS turn.
         "predicate": gate.get("predicate"),
     }
+    set_codes = {str(e.get("set_code")) for e in entities if isinstance(e, dict) and e.get("set_code")}
+    if len(set_codes) == 1:
+        # CHAT-CODE-LOOKUP R2: the members of the product set the customer typed; the reply
+        # names the set and prints no price (`output_structurer`).
+        trigger["set_code"] = next(iter(set_codes))
     if tool_name == "crm_portal_link_get":
         # DEV-FAILURES RC-B: the intro names the form the link opens, in the reply language.
         templates = reply_copy.resolve(db) if db is not None else reply_copy.fallback_copy()

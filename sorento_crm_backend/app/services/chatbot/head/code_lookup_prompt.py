@@ -19,14 +19,17 @@ Product codes in the candidates block. A "near code X (name)" line under a word 
 spelt near a word that is NOT on file as typed. Pick it (hint "product", canonical_code X) only when it is plainly
 the code the message means: the same digits with letters swapped, missing or one letter off. A near code with other
 digits is another product. When exactly one near code is plainly meant, pick it: the assistant answers that code and
-names it. When two or more are equally plausible, or none is plainly meant, pick none (canonical_code null, confident
-false): the assistant asks which code.
+names it. When two or more are equally plausible, or none is plainly meant, pick none (canonical_code null): the assistant
+asks which code. A typed word that is not on file is never its own canonical_code: it is a listed code or null.
 A "set code X (name)" line is a product set: hint "product", canonical_code X; with a spec word (P-trap, S-trap, a size),
 pick the set whose name carries it.
+When the typed code's own name carries another spec than the one the message names (a typed set named S-TRAP 250MM, a
+message saying P-trap), pick the listed set or near set code whose name carries the spec the message names.
 
-Asked attributes. An attribute the message asks about that is not on the attribute list (weight, material,
-warranty) is still emitted in requested_attributes, in the user's own word: the assistant gives its value or says
-it is not recorded. This overrides the closed vocabulary of REQUESTED ATTRIBUTES; never drop an asked attribute.
+Asked attributes. For domain_hint "master_products", an attribute the message asks about that is not on the
+attribute list (weight, material, warranty) is still emitted in requested_attributes, in the user's own word: the
+assistant gives its value or says it is not recorded. This overrides the closed vocabulary of REQUESTED ATTRIBUTES
+for master_products only; every other domain keeps its own rule.
 
 A count beside a code. A product code with a count beside it ("5unit", "x 10", "3 pcs") and no purpose word (price,
 ETA, drawing, order, delivery) is a stock ask whatever the previous domain: domain_hint "inventory", intent_hint

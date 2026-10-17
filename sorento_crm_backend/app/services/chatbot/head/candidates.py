@@ -252,27 +252,46 @@ def _fold_code(code: str) -> str:
     return re.sub(r"[-\s]+", "", code).casefold()
 
 
-def _set_rows(db: "Session", word: str) -> list[tuple[str, str | None]]:
-    """CHAT-CODE-LOOKUP R2: the active product sets whose code holds `word` or is spelt near
-    it, each only when it has members and every member is a chat-searchable product (a set
-    with a hidden part is not a code the customer may be told about). Company scope applies
-    through the ORM listener; `NEAR_CODE_NO_EXACT` is the widest floor the caller uses."""
-    from sqlalchemy import func, not_, or_
+def _visible_set_clauses(db: "Session") -> list:
+    """The filters that leave only the product sets this contact may be told about: active,
+    with members, and EVERY member id among the products they may see (chat-searchable, the
+    set's own company, brand scope through the ORM listener). Checked positively, so a member
+    the scope hides fails the set instead of dropping out of a "hidden" read."""
+    from sqlalchemy import not_
 
     from app.models.product import Product, chat_searchable_products
     from app.models.product_set import ProductSet, ProductSetMember
 
-    norm = func.lower(func.regexp_replace(ProductSet.set_code, r"[-\s]+", "", "g"))
     members = db.query(ProductSetMember.id).filter(ProductSetMember.product_set_id == ProductSet.id)
-    hidden = members.join(Product, Product.id == ProductSetMember.product_id).filter(not_(chat_searchable_products()))
+    visible = db.query(Product.id).filter(chat_searchable_products(), Product.company_id == ProductSet.company_id)
+    unseen = members.filter(not_(ProductSetMember.product_id.in_(visible.scalar_subquery())))
+    return [ProductSet.is_active.is_(True), members.exists(), not_(unseen.exists())]
+
+
+def visible_set_ids(db: "Session", set_ids: list[str]) -> set[str]:
+    """Which of `set_ids` pass `_visible_set_clauses` for the contact the session is scoped to."""
+    from app.models.product_set import ProductSet
+
+    if not set_ids:
+        return set()
+    rows = db.query(ProductSet.id).filter(ProductSet.id.in_(set_ids), *_visible_set_clauses(db)).all()
+    return {str(row[0]) for row in rows}
+
+
+def _set_rows(db: "Session", word: str) -> list[tuple[str, str | None]]:
+    """CHAT-CODE-LOOKUP R2: the visible product sets (`_visible_set_clauses`) whose code holds
+    `word` or is spelt near it. `NEAR_CODE_NO_EXACT` is the widest floor the caller uses."""
+    from sqlalchemy import func, or_
+
+    from app.models.product_set import ProductSet
+
+    norm = func.lower(func.regexp_replace(ProductSet.set_code, r"[-\s]+", "", "g"))
     return [
         (code, name)
         for code, name in db.query(ProductSet.set_code, ProductSet.name)
         .filter(
-            ProductSet.is_active.is_(True),
             or_(norm.contains(word, autoescape=True), func.similarity(norm, word) >= NEAR_CODE_NO_EXACT),
-            members.exists(),
-            not_(hidden.exists()),
+            *_visible_set_clauses(db),
         )
         .order_by(ProductSet.set_code)
         .limit(CAP_PER_WORD * 4)
@@ -282,16 +301,16 @@ def _set_rows(db: "Session", word: str) -> list[tuple[str, str | None]]:
 
 def _ranked(word: str, rows: list[tuple[str, str | None, str]], floor: float) -> list[tuple[str, str | None, bool, str]]:
     """Product and set rows ranked together (exact, prefix, contains, near by similarity;
-    a set before a product on a tie), the near ones kept from `floor` up, capped."""
+    a near set before a near product, since a set-only code has no product line to fall back on), the near ones kept from `floor` up, capped."""
     typed = trigrams(word)
     keyed = []
     for code, name, kind in rows:
         folded = _fold_code(code)
-        score = similarity(typed, trigrams(code))
+        score = similarity(typed, trigrams(folded))
         rank = 0 if folded == word else 1 if folded.startswith(word) else 2 if word in folded else 3
         if rank == 3 and score < floor:
             continue
-        keyed.append(((rank, -score, kind != "set code", code), (code, name, rank < 3, kind)))
+        keyed.append(((rank, kind != "set code" and rank == 3, -score, kind != "set code", code), (code, name, rank < 3, kind)))
     return [row for _key, row in sorted(keyed)][:CAP_PER_WORD]
 
 
@@ -348,7 +367,7 @@ def _code_candidates(db: "Session", tokens: list[str], *, code_lookup: bool = Fa
                 rows = held + [
                     (code, name, False)
                     for code, name in db.query(Product.product_code, Product.product_name)
-                    .filter(chat_searchable_products(), ~norm.contains(word, autoescape=True), sim >= NEAR_CODE_NO_EXACT)
+                    .filter(chat_searchable_products(), ~norm.contains(word, autoescape=True), norm.op("%")(word), sim >= NEAR_CODE_NO_EXACT)
                     .order_by(sim.desc(), Product.product_code)
                     .limit(CAP_PER_WORD)
                     .all()

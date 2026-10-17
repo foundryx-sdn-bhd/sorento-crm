@@ -675,7 +675,11 @@ def _exact_codes_only(
         # compared here ("TAP SRTWT5608" with canonical_code null: the token is
         # "tapsrtwt5608", the placed code "srtwt5608"); the maps stay keyed by the token.
         code = (read_values or {}).get(fold) or fold
-        exact = [c for c in candidates if code_of(c) == code]
+        # CHAT-CODE-LOOKUP R2: a member of the product set the customer typed (the gate puts
+        # `set_code` on its rows) belongs to that token.
+        exact = [
+            c for c in candidates if code_of(c) == code or (c.get("set_code") and turn_state.token_key(c["set_code"]) == code)
+        ]
         family: list[dict[str, Any]] = []
         if turn_task.code_or_number(code):
             family = [c for c in candidates if code_of(c).startswith(code)] or [

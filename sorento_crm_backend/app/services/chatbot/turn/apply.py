@@ -2300,7 +2300,6 @@ def _narrow_and_plan(
     unplaced: frozenset[str] | set[str] | None = None,
     refuse_empty_subject: bool = False,
     held_product_uuids: frozenset[str] = frozenset(),
-    held_unnarrowed: bool = False,
 ) -> Plan:
     denied: list[str] = []
     ask: Pending | None = None
@@ -2325,12 +2324,7 @@ def _narrow_and_plan(
         filters: dict[str, Any] = {}
         domain_ask_kind = None
         domain_ask_options: list[dict[str, Any]] = []
-        narrowing = dict(row.narrowing)
-        if held_unnarrowed and held_product_uuids and "product" not in narrowing:
-            # CHAT-CODE-LOOKUP R5: a domain with no product narrowing (product info) reads a
-            # held family member the way `list_all` domains do (`held_member_settles`).
-            narrowing["product"] = "list_all"
-        for kind, policy_value in narrowing.items():
+        for kind, policy_value in row.narrowing.items():
             outcome = narrow_decide(
                 kind=kind,
                 policy_value=policy_value,
@@ -3760,7 +3754,6 @@ def _apply(
                 str(p["uuid"]) for p in state.focus.products or [] if isinstance(p, dict) and p.get("uuid")
             )
         ),
-        held_unnarrowed=verdict.get("code_lookup") is True,
         # Ported from PR #1118 (not merged), review round 9 finding 4 / D34 round 11:
         # a bare quantity with nothing open, or a cancel that names nothing, is not a
         # subject - see `_narrow_and_plan`'s own comment on `refuse_empty_subject`.

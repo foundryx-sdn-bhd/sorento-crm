@@ -440,7 +440,9 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
     # member products (product info and stock), the set's code riding on each as `set_code`.
     set_members = parser.get("code_lookup") is True and domain in _SET_MEMBER_DOMAINS
     for m in flat:
-        if set_members and jsc.get(m, "entity_type") == "product_set":
+        if set_members and jsc.get(m, "entity_type") == "product_set" and (
+            str(jsc.get(m, "uuid")) in {str(i) for i in resolver.get("visible_set_ids") or []}
+        ):
             for member in jsc.array(jsc.get(jsc.get(m, "display"), "members")):
                 member_uuid = jsc.get(member, "uuid")
                 if jsc.truthy(member_uuid):
@@ -500,7 +502,13 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                 continue
             types = [jsc.get(m, "entity_type") for m in matches if jsc.truthy(m)]
             if set_members:
-                types = ["product" if t == "product_set" else t for t in types]
+                visible = {str(i) for i in resolver.get("visible_set_ids") or []}
+                types = [
+                    "product" if t == "product_set" and any(
+                        str(jsc.get(m, "uuid")) in visible for m in matches if jsc.get(m, "entity_type") == "product_set"
+                    ) else t
+                    for t in types
+                ]
             if types and not any(t in allowed for t in types):
                 token = jsc.get(resolution, "token")
                 if jsc.truthy(token):
