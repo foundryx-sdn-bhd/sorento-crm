@@ -7053,7 +7053,11 @@ def _run_stages_body(  # noqa: PLR0915
                 # `miss_on_typed_product` is the one computation beside the resolve outcome.
                 # CHAT-COMPOSER: a page cut to one message listed fewer than the limit; the carry
                 # moves past what was actually printed.
-                if paged:
+                lane_carry = window.get("carry") if isinstance(window, dict) else None
+                if composers.enabled() and plan.fetch and isinstance(lane_carry, dict):
+                    # CHAT-COMPOSER Lists: the lane that printed the "more" line wrote its own carry.
+                    state_out.focus.set_page = {"set_key": {**lane_carry, "domain": plan.fetch[0].domain}}
+                elif paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
                     if window_last is not None and isinstance(state_out.focus.set_page, dict):

@@ -605,6 +605,42 @@ def _nothing_live_of_kind(
     return {**_fixed_reply(text), "kind_none": True} if text else None
 
 
+def _ref_page_fragment(db: Any, ref_status: Any, carry: dict[str, Any]) -> dict[str, Any] | None:
+    """CHAT-COMPOSER Lists L3: the page a "more" asks of a cut PO / PR card, with its "more" line and
+    the carry for the next one. None when the card is gone."""
+    from app.services.chatbot.composers import sets as composers_sets
+
+    cards = carry.get("ref_cards") or []
+    now = carry
+    if int(now.get("shown") or 0) >= int(now.get("total") or 0):
+        # This card is done: go on to the next cut card (from its line 10), else say the end.
+        now = ref_status.next_ref(now)
+    index = int(now.get("card") or 0)
+    if index >= len(cards):
+        return None
+    shown, total = int(now.get("shown") or 0), int(now.get("total") or 0)
+    text = ref_status.card_page(db, cards[index], shown)
+    if text is None:
+        return None
+    after, left = now, 0
+    if shown < total:
+        after = ref_status.next_ref(now)
+        ahead = after if int(after["shown"]) < int(after["total"]) else ref_status.next_ref(after)
+        left = composers_sets.next_count(int(ahead["total"]), 0, int(ahead["shown"]), ref_status.MAX_LINES)
+        if left:
+            text += "\n\n" + composers_sets.more_line(left)
+    fragment = _fixed_reply(text)
+    fragment["fetch"]["so_status"] = True
+    fragment["fetch"]["set_window"] = {
+        "first": min(shown + 1, total),
+        "last": min(shown + ref_status.MAX_LINES, total),
+        "total": total,
+        "next": left,
+        "carry": after,
+    }
+    return fragment
+
+
 def _fixed_reply(
     text: str,
     *,
@@ -992,6 +1028,8 @@ def _fetch_semantic_input(
         # AC-1138: "1"/"2" against an OPEN outstanding_detail offer - which detail list
         # to render, passed straight through to the MCP tool's own `detail` param.
         "outstanding_detail_pick": parse_output.get("outstanding_detail_pick"),
+        # CHAT-COMPOSER Lists L2: the report's group page start, present gate on only.
+        "outstanding_group_offset": parse_output.get("outstanding_group_offset"),
         # PLAN-chatbot-sales-report.md S4 wiring point 5 (AC-1652): the parser's OWN
         # channel value, never the message text - passed straight through to
         # `crm_sales_report`'s own `channel` param.
@@ -1534,23 +1572,55 @@ def run_fetch(
     # resolver never probes these kinds for anyone else, so this is the second lock.
     po_numbers = [w for w in jsc.array(parse_output.get("po_numbers")) if isinstance(w, str) and w.strip()]
     pr_numbers = [w for w in jsc.array(parse_output.get("pr_numbers")) if isinstance(w, str) and w.strip()]
-    if (po_numbers or pr_numbers) and db is not None and parse_output.get("ref_staff") is True:
+    from app.services.chatbot import composers
+
+    ref_page = parse_output.get("ref_page") if composers.enabled() else None
+    if (po_numbers or pr_numbers or isinstance(ref_page, dict)) and db is not None and (
+        parse_output.get("ref_staff") is True or isinstance(ref_page, dict)
+    ):
         access_ctx = ctx.get("access") if isinstance(ctx.get("access"), dict) else {}
         granted_raw = access_ctx.get("attributes")
         granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
+        if isinstance(ref_page, dict):
+            # CHAT-COMPOSER Lists L3: a later page of a cut card. Audience and grant are checked again on
+            # every page, and a refused page never falls through to the domain tool (no entity rides it).
+            if parse_output.get("ref_staff") is not True or "purchase_orders.placed" not in granted:
+                return _error_fragment("reference page refused", outcome="not_found")
+            from app.services.chatbot import ref_status
+
+            page = _ref_page_fragment(db, ref_status, ref_page)
+            return page or _error_fragment("reference page refused", outcome="not_found")
         if "purchase_orders.placed" in granted:
             from app.services.chatbot import ref_status
 
             cards: list[str] = []
+            cut: list[dict[str, Any]] = []
             if po_numbers:
-                cards += ref_status.lookup_purchase_orders(db, po_numbers).cards
+                looked = ref_status.lookup_purchase_orders(db, po_numbers)
+                cards += looked.cards
+                cut += looked.cut
             if pr_numbers:
-                cards += ref_status.lookup_purchase_requests(db, pr_numbers).cards
+                looked = ref_status.lookup_purchase_requests(db, pr_numbers)
+                cards += looked.cards
+                cut += looked.cut
             if trace is not None:
                 trace.add("ref_status", {"po": po_numbers, "pr": pr_numbers, "cards": len(cards)})
             if cards:
-                fragment = _fixed_reply("\n\n".join(cards))
+                text = "\n\n".join(cards)
+                carry = None
+                if composers.enabled() and cut:
+                    from app.services.chatbot.composers import sets as composers_sets
+
+                    total = int(cut[0]["lines"])
+                    carry = {"ref_cards": cut, "card": 0, "shown": ref_status.MAX_LINES, "total": total}
+                    more = composers_sets.next_count(total, 0, ref_status.MAX_LINES, ref_status.MAX_LINES)
+                    text += "\n\n" + composers_sets.more_line(more)
+                fragment = _fixed_reply(text)
                 fragment["fetch"]["so_status"] = True
+                if carry is not None:
+                    fragment["fetch"]["set_window"] = {
+                        "first": 1, "last": ref_status.MAX_LINES, "total": total, "next": more, "carry": carry,
+                    }
                 return fragment
     # SO-NUMBER-ASK, the SO list ("all my sales orders"): the customers in scope (the
     # links on a scoped or "my" turn, a resolved customer otherwise), behind the same SO

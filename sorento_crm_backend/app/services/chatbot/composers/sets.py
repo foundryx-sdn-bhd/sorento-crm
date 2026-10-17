@@ -18,3 +18,21 @@ def next_count(total: int, offset: int, shown: int, cap: int) -> int:
 def page_size(named: int | None, cap: int) -> int:
     """How many products one page lists: the named count, never past the cap."""
     return min(named, cap) if named else cap
+
+
+#: The range a cut code-lookup list adds to its intro (Lists L1); the capped form states no total,
+#: because the probe behind such a list may have stopped at its cap.
+RANGE = "({total}, showing {first} to {last})"
+RANGE_CAPPED = "(showing {first} to {last})"
+#: The last line of a capped list: the matches shown may not be all of them.
+NARROW = "Those are the first 20 matches. Send more of the code to narrow it."
+
+
+def ranged(sentence: str, fragment: str) -> str:
+    """`fragment` put ahead of the sentence's final stop (none: appended after a space); no space
+    before a full-width bracket."""
+    text = sentence.rstrip()
+    sep = "" if fragment[:1] == "\uff08" else " "
+    if text and text[-1] in ".!?\u3002\uff01\uff1f":
+        return f"{text[:-1]}{sep}{fragment}{text[-1]}"
+    return f"{text} {fragment}"

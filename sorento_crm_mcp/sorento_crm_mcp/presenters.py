@@ -2253,7 +2253,7 @@ def _outstanding_group(rows: list, *, name_key: str, total_key: str, outstanding
 
 
 def _outstanding_capped_group(
-    rows: list, *, name_key: str, total_key: str, outstanding_key: str
+    rows: list, *, name_key: str, total_key: str, outstanding_key: str, offset: int | None = None
 ) -> list[str]:
     """The second group of a block: the first `OUTSTANDING_GROUP_CAP` rows exactly as
     `_outstanding_group` prints them (R10's order, so the top of the ranking is what
@@ -2269,6 +2269,13 @@ def _outstanding_capped_group(
     the pending offer off the rendered text with anchored patterns (`^\\d+\\. ... list$` /
     `^Reply \\d+ for the ...\\.$`); this line starts with `...` and matches none of them.
     """
+    if offset is not None:
+        # CHAT-COMPOSER Lists L2: one page of the ranking and no trailer; the report prints
+        # the one `Reply "more"` line for the whole group pair.
+        return _outstanding_group(
+            rows[offset : offset + OUTSTANDING_GROUP_CAP],
+            name_key=name_key, total_key=total_key, outstanding_key=outstanding_key,
+        )
     shown = rows[:OUTSTANDING_GROUP_CAP]
     lines = _outstanding_group(
         shown, name_key=name_key, total_key=total_key, outstanding_key=outstanding_key
@@ -2295,7 +2302,9 @@ def _outstanding_second_group(report: dict, prefix: str) -> tuple[str, list]:
     return "", []
 
 
-def _outstanding_so_block(so: dict, by_location: list, second_rows: list, second_key: str) -> str:
+def _outstanding_so_block(
+    so: dict, by_location: list, second_rows: list, second_key: str, offset: int | None = None
+) -> str:
     lines = [
         "*Sales order outstanding*",
         # R7 (owner testing round 3, 13 Sep 2026): the COUNT opens both blocks, then the
@@ -2313,18 +2322,20 @@ def _outstanding_so_block(so: dict, by_location: list, second_rows: list, second
             by_location, name_key="code", total_key="ordered_qty", outstanding_key="outstanding_qty"
         )
     )
-    if second_key:
+    if second_key and not (offset and not second_rows[offset : offset + OUTSTANDING_GROUP_CAP]):
         lines.append("*_By customer_*" if second_key == "customer_name" else "*_By product_*")
         lines.extend(
             _outstanding_capped_group(
                 second_rows, name_key=second_key, total_key="ordered_qty",
-                outstanding_key="outstanding_qty",
+                outstanding_key="outstanding_qty", offset=offset,
             )
         )
     return "\n".join(lines)
 
 
-def _outstanding_do_block(do: dict, by_location: list, second_rows: list, second_key: str) -> str:
+def _outstanding_do_block(
+    do: dict, by_location: list, second_rows: list, second_key: str, offset: int | None = None
+) -> str:
     """R6/R7 (owner testing round 3, 13 Sep 2026): the DO block says OUTSTANDING, never
     "pending", and states the delivered figure beside it - "need to show the delivered
     also, so the by location and by customer needs to be the DO qty (O/S: {pending}) so
@@ -2349,12 +2360,12 @@ def _outstanding_do_block(do: dict, by_location: list, second_rows: list, second
             by_location, name_key="code", total_key="do_qty", outstanding_key="pending_qty"
         )
     )
-    if second_key:
+    if second_key and not (offset and not second_rows[offset : offset + OUTSTANDING_GROUP_CAP]):
         lines.append("*_By customer_*" if second_key == "customer_name" else "*_By product_*")
         lines.extend(
             _outstanding_capped_group(
                 second_rows, name_key=second_key, total_key="do_qty",
-                outstanding_key="pending_qty",
+                outstanding_key="pending_qty", offset=offset,
             )
         )
     return "\n".join(lines)
@@ -2388,11 +2399,32 @@ def _outstanding_header_lines(report: dict) -> list[str]:
     return lines
 
 
+def _outstanding_group_offset(report: dict) -> int | None:
+    """The route's `group_offset` echo (CHAT-COMPOSER Lists L2): an int >= 0, else None
+    (absent = today's body, every other client)."""
+    value = report.get("group_offset")
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _outstanding_group_total(report: dict) -> int:
+    """The longest second group among the blocks that print (SO and DO page together)."""
+    longest = 0
+    for prefix, count_key in (("so", "so_count"), ("do", "do_count")):
+        block = report.get(prefix)
+        if block is not None and block.get(count_key):
+            longest = max(longest, len(_outstanding_second_group(report, prefix)[1] or []))
+    return longest
+
+
 def _outstanding_report(report: dict) -> str:
     """The SO backlog / DO pending reply (PLAN-chatbot-outstanding-report.md, "The
     reply (contract for Phase 1)"). See the module-level note above for the
     `report` shape."""
     lines = _outstanding_header_lines(report)
+    offset = _outstanding_group_offset(report)
+    group_total = _outstanding_group_total(report) if offset is not None else 0
+    # Past the last row of every group: header, the end sentence and the offer only.
+    past_end = offset is not None and offset > 0 and group_total > 0 and offset >= group_total
 
     blocks: list[str] = []
     offer: list[str] = []
@@ -2405,7 +2437,8 @@ def _outstanding_report(report: dict) -> str:
             so_second_key, so_second_rows = _outstanding_second_group(report, "so")
             blocks.append(
                 _outstanding_so_block(
-                    so, report.get("so_by_location") or [], so_second_rows or [], so_second_key
+                    so, report.get("so_by_location") or [], so_second_rows or [], so_second_key,
+                    offset,
                 )
             )
             offer.append(_SO_LIST_OFFER)
@@ -2418,7 +2451,8 @@ def _outstanding_report(report: dict) -> str:
             do_second_key, do_second_rows = _outstanding_second_group(report, "do")
             blocks.append(
                 _outstanding_do_block(
-                    do, report.get("do_by_location") or [], do_second_rows or [], do_second_key
+                    do, report.get("do_by_location") or [], do_second_rows or [], do_second_key,
+                    offset,
                 )
             )
             offer.append(_DO_LIST_OFFER)
@@ -2431,8 +2465,13 @@ def _outstanding_report(report: dict) -> str:
     # the two copies are pinned by a test on each side.
     if report.get("so_refused"):
         text += "\n\n" + SO_NOT_ENABLED_MESSAGE
-    if blocks:
+    if past_end:
+        text += f"\n\nThat is all {group_total:,}."
+    elif blocks:
         text += "\n\n" + "\n\n".join(blocks)
+    left = group_total - (offset or 0) - OUTSTANDING_GROUP_CAP
+    if offset is not None and left > 0:
+        text += f'\n\nReply "more" to see the next {min(OUTSTANDING_GROUP_CAP, left):,}.'
     if len(offer) == 1:
         # R9 (owner testing round 3, 13 Sep 2026): one option is a sentence, not a list -
         # a numbered list of one asks the reader to choose from a single thing. The
@@ -2506,7 +2545,7 @@ def _outstanding_envelope(report: dict) -> dict:
         }
     so = report.get("so")
     do = report.get("do")
-    return {
+    envelope = {
         "result_type": "outstanding_report",
         "response": _outstanding_report(report),
         "has_result": bool(
@@ -2514,6 +2553,15 @@ def _outstanding_envelope(report: dict) -> dict:
             or (isinstance(do, dict) and do.get("do_count"))
         ),
     }
+    offset = _outstanding_group_offset(report)
+    if offset is not None:
+        total = _outstanding_group_total(report)
+        envelope["group_window"] = {
+            "offset": offset,
+            "shown": max(0, min(OUTSTANDING_GROUP_CAP, total - offset)),
+            "total": total,
+        }
+    return envelope
 
 
 #: The three lines the low stock report can answer with (AC-61). Written here, once, and

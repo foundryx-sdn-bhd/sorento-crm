@@ -1631,6 +1631,15 @@ async def get_outstanding_report(
             "the DO block. Filtering is unaffected - the caller sends scope=do."
         ),
     ),
+    group_offset: Optional[int] = Query(
+        None,
+        ge=0,
+        description=(
+            "ECHO ONLY (CHAT-COMPOSER Lists L2): the page start of the By customer / By "
+            "product group. Echoed onto the body so the MCP presenter prints that page; "
+            "absent = today's body."
+        ),
+    ),
     contact_id: Optional[str] = Query(
         None,
         description=(
@@ -1762,6 +1771,8 @@ async def get_outstanding_report(
         body["location_token"] = location_token.strip()
     if so_refused:
         body["so_refused"] = True
+    if group_offset is not None:
+        body["group_offset"] = group_offset
     return JSONResponse(content=body)
 
 
