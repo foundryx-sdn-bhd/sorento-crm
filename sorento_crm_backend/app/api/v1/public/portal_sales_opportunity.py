@@ -220,7 +220,8 @@ def _check_portal_project(db: Session, token: PortalToken, body: dict, current=N
     from app.services.project_link import check_portal_project_link
 
     contact = db.query(RespondContact).filter(RespondContact.id == token.contact_id).first()
-    check_portal_project_link(
+    # Store what the check returned (trimmed), not the raw value sent.
+    body["project_id"] = check_portal_project_link(
         db, contact=contact, project_id=body["project_id"], current=current
     )
 
