@@ -283,13 +283,26 @@ export function setDate(
   });
 }
 
-/** Sits on another line, a new line (`null`) or `'cancel'`; leaving Cancel takes the base date. */
+/** The date a split takes when it lands on `line`: AutoCount's current one, else its base (UAC A7). */
+export function targetDateOf(line: SplitLine): string | null {
+  return line.nowDate ?? line.baseDate;
+}
+
+/**
+ * Sits on another line, a new line (`null`) or `'cancel'` (UAC A7). Another line also gives
+ * the split that line's date; leaving Cancel takes the base date; its own line or a new line
+ * keeps the date it has.
+ */
 export function setSitsOn(
   lines: SplitLine[],
   lineId: string,
   splitId: string,
   on: string | null | 'cancel',
 ): SplitLine[] {
+  const target =
+    on && on !== 'cancel' && on !== lineId
+      ? lines.find((candidate) => candidate.lineId === on)
+      : undefined;
   return editLine(lines, lineId, (splits, line) => {
     const split = splits.find((candidate) => candidate.id === splitId);
     if (!split) return null;
@@ -303,6 +316,7 @@ export function setSitsOn(
       split.isCancel = false;
       split.deliveryDate = line.baseDate;
     }
+    if (target) split.deliveryDate = targetDateOf(target) ?? split.deliveryDate;
     split.sitsOnLineId = on;
     return splits;
   });
@@ -343,27 +357,73 @@ export function setPair(
   });
 }
 
-/** A new empty split on the line's own line and base date (UAC A8 "+ Add split"). */
+/**
+ * A new split under the line (UAC A5 "+ Split"): what is left on the line (0 when nothing
+ * is), at its base date, on a new line.
+ */
 export function addSplit(
   lines: SplitLine[],
   lineId: string,
 ): { lines: SplitLine[]; id: string } {
   const line = lines.find((candidate) => candidate.lineId === lineId);
   const id = nextSplitId(lineId, line ? splitsOf(line) : []);
+  const left = line ? Math.max(0, gapOf(line)) : 0;
   return {
     id,
     lines: editLine(lines, lineId, (splits, current) => [
       ...splits,
       {
         id,
-        qty: 0,
+        qty: left,
         deliveryDate: current.baseDate,
         isCancel: false,
-        sitsOnLineId: lineId,
+        sitsOnLineId: null,
         remark: '',
       },
     ]),
   };
+}
+
+/**
+ * What is left on a line becomes a split at `target` (the "N left" chip, UAC A9), merged
+ * into a split of the line already there. Nothing left: the lines come back unchanged.
+ * An empty target date is a split with no date yet ("New date": staff type it).
+ */
+export function placeRest(
+  lines: SplitLine[],
+  lineId: string,
+  target: MoveTarget,
+): SplitLine[] {
+  return editLine(lines, lineId, (splits, line) => {
+    const left = gapOf(line);
+    if (left <= 0) return null;
+    const isCancel = target.date === 'cancel';
+    const date = isCancel ? null : target.date || null;
+    const on = isCancel ? lineId : target.sitsOnLineId;
+    const existing = date
+      ? splits.find(
+          (candidate) =>
+            candidate.isCancel === isCancel &&
+            candidate.deliveryDate === date &&
+            candidate.sitsOnLineId === on,
+        )
+      : isCancel
+        ? splits.find((candidate) => candidate.isCancel)
+        : undefined;
+    if (existing) {
+      existing.qty += left;
+      return splits;
+    }
+    splits.push({
+      id: nextSplitId(lineId, splits),
+      qty: left,
+      deliveryDate: date,
+      isCancel,
+      sitsOnLineId: on,
+      remark: '',
+    });
+    return splits;
+  });
 }
 
 /** Zero-qty splits removed (UAC B1, on blur and on Save). `null` when there were none. */
@@ -434,6 +494,44 @@ export function fromPayload(payload: LineSplitsPayload): SplitLine[] {
       remark: split.remark ?? '',
     })),
   }));
+}
+
+/**
+ * Reads REMAIN in the sheet (UAC A4): no stored splits, or one split equal to the base on its
+ * own line and date (a remark may ride on it).
+ */
+export function readsRemain(line: SplitLine): boolean {
+  if (line.splits.length === 0) return true;
+  if (line.splits.length > 1) return false;
+  const only = line.splits[0];
+  return (
+    !only.isCancel &&
+    only.qty === line.baseQty &&
+    only.deliveryDate === line.baseDate &&
+    only.sitsOnLineId === line.lineId
+  );
+}
+
+function compareNullable<T extends string | number>(
+  a: T | null | undefined,
+  b: T | null | undefined,
+): number {
+  if (a == null || b == null) return a == null ? (b == null ? 0 : 1) : -1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * The sheet's order (UAC A2): item code, location, base delivery date (a line with none,
+ * one AutoCount added, last), then line no. A new array; the input is untouched.
+ */
+export function sortLines(lines: readonly SplitLine[]): SplitLine[] {
+  return [...lines].sort(
+    (a, b) =>
+      compareNullable(a.itemCode, b.itemCode) ||
+      compareNullable(a.location, b.location) ||
+      compareNullable(a.baseDate, b.baseDate) ||
+      compareNullable(a.lineNo, b.lineNo),
+  );
 }
 
 /** Lines grouped by item code and location, in the order the server listed them. */
