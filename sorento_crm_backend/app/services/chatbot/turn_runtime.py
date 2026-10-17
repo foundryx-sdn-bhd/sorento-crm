@@ -4056,7 +4056,12 @@ def make_tool_runner(
             )
             if probe_gate.get("gate_passed") is False:
                 no_subject_gate = probe_gate
-        exhausted = page_predicate is not None and bool(page_predicate.get("exhausted")) and not page_ids
+        exhausted = (
+            page_predicate is not None
+            and bool(page_predicate.get("exhausted"))
+            and not page_ids
+            and not page_predicate.get("miss_list")  # a miss list's end is written by the miss writer
+        )
         if exhausted:
             # Round 3 W2: every product of the carried set is listed already. No tool call:
             # the reply is the set's own header, closed by "That is all N.".
@@ -4623,9 +4628,7 @@ def page_the_set(
         shown_now = offset + listed
         if members_total and offset >= members_total:
             # Past the last page: the end-of-list reply, and it stays so on a further "more".
-            predicate["qualifying_total"] = members_total
             predicate["exhausted"] = True
-            predicate["miss_list"] = False
             shown_now = members_total
         predicate["next_carry"] = (
             {"set_key": {**key, "total": members_total, "shown": min(shown_now, members_total)}} if members_total else None

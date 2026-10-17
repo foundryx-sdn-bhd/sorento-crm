@@ -2841,7 +2841,14 @@ def breakdown_lines(breakdown: Any, set_noun: str) -> list[str]:
 
 
 def what_you_want_reply(
-    asked: str, lines: list[str], *, missing: str = "", leg: str = "", team: Any, between: str = ""
+    asked: str,
+    lines: list[str],
+    *,
+    missing: str = "",
+    leg: str = "",
+    team: Any,
+    between: str = "",
+    leg_tail: bool = False,
 ) -> str:
     """The ONE reply a miss has, the product-code miss's own (owner, 28 Sep 2026: "you do
     like here is what you want, but no incoming, do you want me to escalate..., I want
@@ -2855,7 +2862,7 @@ def what_you_want_reply(
         from app.services.chatbot import composers
 
         tail = f"Couldn't find {missing}." if composers.enabled() else f"Couldn't find: {missing}."
-    elif lines and leg:
+    elif (lines or leg_tail) and leg:
         tail = f"But no {leg} {composers_misses.PHRASE_MATCHED}."
     else:
         tail = "But none matched."
@@ -2886,17 +2893,25 @@ def described_members_reply(predicate: Any, team: Any) -> str | None:
     # CHAT-COMPOSER: more matching products than the page names them by code, no count lines;
     # the header states the range and a "more" line sits under the list.
     offset = int(jsc.get(predicate, "offset") or 0) if on else 0
+    ended = on and bool(jsc.get(predicate, "exhausted"))
     paged = on and (total > len(lines) > 0 or (offset > 0 and len(lines) > 0))
     lines = lines or ([] if on else breakdown_lines(jsc.get(members, "breakdown"), noun))
     leg = next(iter(require), "")
     noun_of_leg = (
         jsc.js_string(require[leg]).strip().lower() if leg == "attachment_type" else _MISS_NOUN.get(leg, "")
     )
+    if ended and total:
+        # CHAT-COMPOSER: "more" past the last page of a miss list: the end of the list, then the
+        # same miss sentence and offer every page carries.
+        if team and team != refer.SALESMAN_TEAM and jsc.truthy(jsc.get(predicate, "offer_team")):
+            team = _pretty_team(jsc.get(predicate, "offer_team"))
+        return what_you_want_reply(
+            f"{phrase} ({total:,}). That is all {total:,}.", [], leg=noun_of_leg, team=team, leg_tail=True
+        )
     if paged:
         from app.services.chatbot.composers import sets as composers_sets
 
-        # A paged list names the leg in every page header (the miss sentence stays last).
-        phrase = described_set_phrase(jsc.get(predicate, "description"), noun, require)
+        # Every page header is the leg-less phrase: the products exist, the leg is what is missing.
         if offset:
             # ...and a later page offers the team the first page offered.
             if team and team != refer.SALESMAN_TEAM and jsc.truthy(jsc.get(predicate, "offer_team")):
