@@ -65,6 +65,7 @@ def test_guard_a_non_sibling_picker_after_a_full_answer_still_fails():
 def test_guard_a_sibling_picker_with_a_failing_fact_check_still_fails():
     res = grade_turn(_lookup(SIBLINGS), item("code_lookup", code="srta100", fact="promotion"))
     assert res["checks"]["fact"] is False, res["checks"]
+    assert res["checks"]["no_picker"] is False, res["checks"]
     assert res["passed"] is False
 
 
