@@ -215,7 +215,8 @@ None is edited in S2; the flip PR retargets them.
 - OI-2: as recommended. The miss sentence stays; the crossdomain "No incoming for X." goes on the total-miss fold.
 - OI-3: in S2, same mechanism (drop the `origin == "incoming"` condition in I3). The word "inventory" in
   "But no inventory matched these." is an internal name (R5) and is fixed with S3's one miss grammar.
-- OI-4: asked of crew; until answered, unchanged (not in the card).
+- OI-4: crew ruled (a) 17 Oct: gate on, the key `estimated_arrival_date` prints the label "ETA" on every view
+  (relabel by key at print time in I2, beside "Container"); ms/zh keep "ETA" (label_catalog.py:368-379).
 - OI-5: acceptable (the owner kept the same shape on the main path; the picker text cannot change).
 - OI-6: verified 17 Oct: `CHAT_COMPOSER_ENABLED=true` in the shell reaches the replay process (`replay.env` does not
   set it). The turn tier itself is vacuous until crew brings `sorento_eval_base` to main's schema (crew fixing).
