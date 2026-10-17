@@ -3,26 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Split delivery (mockup v2, final)</title>
+<title>Split delivery (mockup v3)</title>
 <style>
 /* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same set the other lane mockups use */
-:root{--background:#fff;--foreground:#09090b;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--primary:#3b82f6;--primary-soft:#eff6ff;--destructive:#dc2626;--destructive-soft:#fef2f2;--destructive-line:#fecaca;--success:#15803d;--success-soft:#f0fdf4;--success-line:#bbf7d0;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--info:#1d4ed8;--info-soft:#eff6ff;--info-line:#bfdbfe;--page:#f7f7f8;--ease:cubic-bezier(.2,0,0,1)}
+:root{--background:#fff;--foreground:#09090b;--muted:#f4f4f5;--muted-fg:#71717a;--border:#e4e4e7;--grid:#d4d4d8;--input:#e4e4e7;--primary:#3b82f6;--primary-soft:#eff6ff;--destructive:#dc2626;--destructive-soft:#fef2f2;--destructive-line:#fecaca;--success:#15803d;--success-soft:#f0fdf4;--success-line:#bbf7d0;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--info:#1d4ed8;--info-soft:#eff6ff;--info-line:#bfdbfe;--page:#f7f7f8;--ease:cubic-bezier(.2,0,0,1)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
 h1{font-size:22px;margin:0 0 4px}
 .doc{max-width:1400px;margin:0 auto;padding:16px}
-.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:1000px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:1040px}
 .nav{position:sticky;top:0;z-index:50;background:var(--page);padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
 .nav a{font-size:12px;text-decoration:none;border:1px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;color:var(--muted-fg)}
 section{margin:0 0 34px}
 section>h2{font-size:15px;margin:0 0 4px}
-section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:1000px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:1040px}
 .nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:var(--foreground);color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
 .row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
 .mockbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 10px;font-size:12px;color:var(--muted-fg)}
 .mockbar b{color:var(--foreground);font-weight:500}
+.mut{color:var(--muted-fg)}
+.num{font-variant-numeric:tabular-nums}
+
+/* Frames */
 .desk{width:1280px;max-width:100%;flex:none;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
-.desk .screen{display:flex;background:#fff;position:relative;height:940px}
+.desk .screen{display:flex;background:#fff;position:relative;height:900px}
 .side{width:200px;flex:none;background:#0d0e12;color:#a1a1aa;font-size:12.5px;padding:18px 14px}
 .side .logo{color:#fff;font-weight:600;margin:0 0 18px}
 .side div{padding:6px 8px;border-radius:6px}
@@ -30,794 +34,503 @@ section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:10
 .main{flex:1;min-width:0;padding:20px 24px;overflow:hidden}
 .scrim{position:absolute;inset:0;background:rgba(9,9,11,.32)}
 .phone{width:375px;flex:none;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
-.phone .screen{height:800px;overflow:auto;background:#fff;position:relative}
+.phone .screen{height:780px;display:flex;flex-direction:column;background:#fff;position:relative}
 .cap{font-size:11px;color:var(--muted-fg);text-align:center;padding:6px;border-top:1px solid var(--border);background:#fff}
-.btn{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 10px;border-radius:6px;border:1px solid var(--input);background:#fff;font:500 12.5px Inter,ui-sans-serif,system-ui,sans-serif;white-space:nowrap;color:var(--foreground);cursor:pointer}
-.btn:focus-visible,.dv:focus-visible,.chip:focus-visible,.cell:focus-visible,.rh:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
-.btn.pri{background:var(--primary);border-color:var(--primary);color:#fff}
-.btn.icon{width:30px;justify-content:center;padding:0}
-.btn.ghost{border-color:transparent;background:transparent}
-.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}
-.btn svg{width:15px;height:15px}
-.seg{display:inline-flex;border:1px solid var(--input);border-radius:6px;overflow:hidden;background:#fff}
-.seg button{height:28px;padding:0 10px;display:inline-flex;align-items:center;gap:5px;font:500 12.5px Inter,ui-sans-serif,system-ui,sans-serif;border:0;background:#fff;color:var(--foreground);cursor:pointer}
-.seg button+button{border-left:1px solid var(--input)}
-.seg.pri button.on{background:var(--primary);color:#fff}
-.card{border:1px solid var(--border);border-radius:12px;background:#fff}
-.card>.hd{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;font-weight:600;font-size:13.5px}
-.num{font-variant-numeric:tabular-nums}
-.mut{color:var(--muted-fg)}
-/* DataGrid look: components/ui/data-grid-table.tsx */
-table.dg{border-collapse:collapse;table-layout:fixed;font-size:12.5px;width:100%}
-table.dg th{position:relative;height:32px;background:#fafafa;color:var(--muted-fg);font-weight:500;font-size:12px;text-align:left;padding:0 8px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-table.dg th.r,table.dg td.r{text-align:right}
-table.dg td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-table.dg tr.ctx:hover td{background:#fafafa}
-table.dg tr.click{cursor:pointer}
-table.dg tr.sel td{background:var(--primary-soft)}
-.inp{width:100%;height:28px;border:1px solid var(--input);border-radius:6px;padding:0 7px;font:12.5px Inter,ui-sans-serif,system-ui,sans-serif;background:#fff;color:var(--foreground)}
-.inp.r{text-align:right}
-select.inp{padding-right:2px}
-/* Badge light pills: components/ui/badge.tsx; verb colours follow OrderInquiryVerbPill */
-.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:0 7px;font-size:11px;line-height:19px;font-weight:500;white-space:nowrap;border:1px solid transparent}
-.pill.success,.pill.ORDER{background:var(--success-soft);color:var(--success);border-color:var(--success-line)}
-.pill.secondary,.pill.REMAIN{background:var(--muted);color:#3f3f46}
-.pill.warning,.pill.DELAY{background:var(--warning-soft);color:var(--warning);border-color:var(--warning-line)}
-.pill.info,.pill.ADVANCE{background:var(--info-soft);color:var(--info);border-color:var(--info-line)}
-.pill.destructive,.pill.CANCEL{background:var(--destructive-soft);color:var(--destructive);border-color:var(--destructive-line)}
-.tag{font-size:10.5px;color:var(--muted-fg);border:1px solid var(--border);border-radius:4px;padding:0 4px;line-height:16px;font-weight:500;white-space:nowrap}
 
-/* Full-screen split view: components/ui/dialog.tsx (full-screen variant) */
+/* Buttons, inputs, pills: components/ui/button.tsx, input.tsx, badge.tsx */
+.btn{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 10px;border-radius:6px;border:1px solid var(--input);background:#fff;font:500 12.5px Inter,ui-sans-serif,system-ui,sans-serif;white-space:nowrap;color:var(--foreground);cursor:pointer}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.xs{height:22px;padding:0 6px;font-size:11.5px;border-radius:5px}
+.btn.icon{width:24px;height:24px;padding:0;justify-content:center;border-color:transparent;background:transparent;color:var(--muted-fg)}
+.btn.icon:hover{background:var(--muted);color:var(--foreground)}
+.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}
+.btn svg{width:14px;height:14px}
+.btn:focus-visible,.remain:focus-visible,.seg button:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+.seg{display:inline-flex;border:1px solid var(--input);border-radius:6px;overflow:hidden;background:#fff}
+.seg button{height:28px;padding:0 10px;font:500 12.5px Inter,ui-sans-serif,system-ui,sans-serif;border:0;background:#fff;color:var(--foreground);cursor:pointer}
+.seg button+button{border-left:1px solid var(--input)}
+.seg button.on{background:var(--primary);color:#fff}
+.pill{display:inline-flex;align-items:center;border-radius:999px;padding:0 7px;font-size:10.5px;line-height:18px;font-weight:500;white-space:nowrap;border:1px solid transparent}
+.pill.REMAIN{background:var(--muted);color:#3f3f46}
+.pill.DELAY{background:var(--warning-soft);color:var(--warning);border-color:var(--warning-line)}
+.pill.ADVANCE{background:var(--info-soft);color:var(--info);border-color:var(--info-line)}
+.pill.CANCEL{background:var(--destructive-soft);color:var(--destructive);border-color:var(--destructive-line)}
+.search{position:relative;width:220px}
+.search input{width:100%;height:30px;border:1px solid var(--input);border-radius:6px;padding:0 26px 0 28px;font:12.5px Inter,ui-sans-serif,system-ui,sans-serif}
+.search svg{position:absolute;left:8px;top:8px;width:14px;height:14px;color:var(--muted-fg)}
+.search button{position:absolute;right:4px;top:4px}
+.sw{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;user-select:none;white-space:nowrap}
+.sw i{width:30px;height:17px;border-radius:9px;background:#d4d4d8;position:relative;transition:background .15s var(--ease)}
+.sw i::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff;transition:transform .15s var(--ease)}
+.sw[aria-checked=true] i{background:var(--primary)}
+.sw[aria-checked=true] i::after{transform:translateX(13px)}
+
+/* Full-screen view: components/ui/dialog.tsx (full-screen variant, today's LineSplitDialog shell) */
 .fs{position:absolute;inset:16px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.18);display:flex;flex-direction:column;overflow:hidden}
-.fsh{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px}
+.fsh{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .fsh .ttl{font-size:17px;font-weight:600}
 .fsh .sub{font-size:12.5px;color:var(--muted-fg)}
-.fsb{flex:1;display:flex;min-height:0}
-.board{flex:1;min-width:0;overflow:auto;padding:12px 14px 20px}
-.zoom{width:350px;flex:none;border-left:1px solid var(--border);overflow:auto;padding:12px 14px;background:#fff}
-.zoom.closed{display:none}
-.fsf{border-top:1px solid var(--border);padding:10px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
-.fsf .msg{font-size:12.5px}
-.fsf .bad{color:var(--destructive);font-weight:500}
-.fsf .acts{display:flex;gap:8px;align-items:center}
+.fsh .acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.stat{padding:6px 16px;font-size:12px;border-bottom:1px solid var(--border);display:flex;gap:14px;flex-wrap:wrap;align-items:center;min-height:30px}
+.stat .bad{color:var(--destructive);font-weight:500}
+.stat a{color:var(--primary);cursor:pointer;text-decoration:underline}
+.body{flex:1;min-height:0;overflow:auto}
 
-/* Matrix: rows = SO lines, columns = delivery dates; cells are @dnd-kit droppables, chips draggables */
-.grp{margin:0 0 18px}
-.gh{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;margin:0 0 6px}
-.mx{display:grid;border:1px solid var(--border);border-radius:10px;overflow:hidden;min-width:max-content}
-.mx>div{border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
-.ch{background:#fafafa;font-size:11.5px;color:var(--muted-fg);font-weight:500;padding:6px;display:flex;align-items:center;justify-content:center;white-space:nowrap}
-.ch.l{justify-content:flex-start}
-.ch.cx{color:var(--destructive)}
-.rh{padding:6px 8px;font-size:12px;cursor:pointer;background:#fff;display:flex;flex-direction:column;gap:2px;min-width:0}
-.rh.sel{background:var(--primary-soft);box-shadow:inset 3px 0 0 var(--primary)}
-.rh .t{font-weight:600;white-space:nowrap}
-.rh .m{color:var(--muted-fg);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rh .k{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
-.rh .gap{color:var(--destructive);font-weight:600;font-size:11px}
-.cell{min-height:52px;padding:4px;display:flex;flex-direction:column;gap:4px;background:#fff;transition:background .15s var(--ease)}
-.cell.orig{background:repeating-linear-gradient(0deg,#fafafa 0 2px,#fff 2px 4px)}
-.cell.newc{background:#fcfcfd}
-.cell.cxc{background:#fffafa}
-.cell.hot{background:var(--primary-soft);box-shadow:inset 0 0 0 2px var(--primary)}
-.newrow .rh{color:var(--muted-fg);font-style:italic}
-.chip{position:relative;background:#fff;border:1px solid var(--border);border-left-width:3px;border-radius:7px;padding:3px 6px;font-size:11px;cursor:grab;user-select:none;touch-action:none;box-shadow:0 1px 2px rgba(0,0,0,.05);line-height:1.25}
-.chip .q{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
-.chip .o{color:var(--muted-fg);font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chip .w{color:var(--warning);font-size:10.5px;white-space:nowrap}
-.chip.ADVANCE{border-left-color:var(--info)}
-.chip.DELAY{border-left-color:#d97706}
-.chip.REMAIN{border-left-color:#a1a1aa}
-.chip.CANCEL{border-left-color:var(--destructive);background:var(--destructive-soft)}
-.chip.ghost{opacity:.35}
-.chip.selc{box-shadow:0 0 0 2px var(--primary)}
-.overlay{position:fixed;z-index:200;pointer-events:none;transform:translate(-50%,-60%) scale(1.04);box-shadow:0 12px 28px rgba(0,0,0,.22);cursor:grabbing;width:96px}
-.moved{font-size:10.5px;color:var(--muted-fg)}
+/* The sheet: components/ui/table.tsx cells with rowSpan, as scm/components/SupplierSheet.tsx:134 */
+table.sh{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px;width:100%;min-width:1180px}
+table.sh th{position:sticky;top:0;z-index:2;background:#fafafa;color:#3f3f46;font-weight:600;font-size:11px;letter-spacing:.3px;text-transform:uppercase;text-align:center;padding:8px 6px;border-bottom:1px solid var(--grid);border-right:1px solid var(--grid);white-space:normal;line-height:1.2}
+table.sh th.chg{background:#f4f4f5}
+table.sh td{border-bottom:1px solid var(--grid);border-right:1px solid var(--grid);padding:3px 6px;vertical-align:middle;text-align:center;height:36px;background:#fff}
+table.sh td.m{color:#27272a}
+table.sh td.l{text-align:left}
+table.sh td.r{text-align:right}
+table.sh tr.itemtop td{border-top:2px solid #a1a1aa}
+table.sh td.base{background:#fcfcfd}
+table.sh tr.hl td.base{animation:hl 2.4s var(--ease)}
+@keyframes hl{0%,40%{background:var(--primary-soft)}100%{background:#fcfcfd}}
+table.sh td.split{background:#fff}
+table.sh td.split.first{box-shadow:none}
+table.sh .now{display:block;font-size:10.5px;line-height:1.3;color:var(--warning);margin-top:2px;white-space:normal}
+table.sh .lno{display:none;font-size:10.5px;color:var(--muted-fg)}
+.cell-in{width:100%;height:28px;border:1px solid transparent;border-radius:5px;padding:0 6px;font:12.5px Inter,ui-sans-serif,system-ui,sans-serif;background:transparent;color:var(--foreground);text-align:center}
+.cell-in:hover{border-color:var(--input)}
+.cell-in:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-soft);background:#fff}
+.cell-in.q{font-variant-numeric:tabular-nums;font-weight:600}
+.cell-in.rm{text-align:left;display:block;resize:none;field-sizing:content;min-height:28px;padding:5px 6px;line-height:1.35;white-space:pre-wrap;font-size:12px}
+.cell-in.badin{border-color:var(--destructive);background:var(--destructive-soft)}
+select.cell-in{text-align:left;padding-right:2px;cursor:pointer;color:#3f3f46}
+.dcell{display:flex;align-items:center;gap:4px}
+.dcell .cell-in{flex:1;min-width:0}
+.dcell svg{width:14px;height:14px;color:var(--muted-fg);flex:none}
+.remain{width:100%;height:28px;border:1px dashed transparent;border-radius:5px;background:transparent;font:600 11.5px Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:.4px;color:#71717a;cursor:text}
+.remain:hover{border-color:var(--input);color:var(--foreground)}
+.bal{display:block;font-weight:600;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap}
+.bal.ok{color:var(--success)}
+.bal.warn{color:var(--warning)}
+.bal.bad{color:var(--destructive)}
+.bal.none{color:#a1a1aa;font-weight:400}
+.balbox{display:flex;flex-direction:column;align-items:center;gap:4px}
+.added{font-size:11.5px;color:var(--muted-fg);font-style:italic}
+/* phone: same table, fewer columns, item column sticky */
+table.sh.narrow{min-width:980px}
+table.sh.narrow .c-line,table.sh.narrow .c-sod,table.sh.narrow .c-son,table.sh.narrow .c-loc{display:none}
+table.sh.narrow .lno{display:block}
+table.sh.narrow td.c-item,table.sh.narrow th.c-item{position:sticky;left:0;z-index:1;box-shadow:1px 0 0 var(--grid)}
+table.sh.narrow th.c-item{z-index:3}
 
-/* Zoom: bar (SupplyBar) + splits table */
-.zh{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin:0 0 8px}
-.zh .t{font-size:14px;font-weight:600}
-.zh .s{font-size:12px;color:var(--muted-fg)}
-.zh .mut{white-space:nowrap}
-.bar{position:relative;display:flex;height:34px;border-radius:7px;background:var(--muted);user-select:none;touch-action:none;margin:6px 0}
-.sg{height:100%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;overflow:hidden;white-space:nowrap;border-right:2px solid #fff;transition:width .15s var(--ease)}
-.dragging .sg{transition:none}
-.sg:first-child{border-radius:7px 0 0 7px}
-.sg:last-child{border-radius:0 7px 7px 0;border-right:0}
-.sg.ADVANCE{background:#dbeafe;color:var(--info)}
-.sg.DELAY{background:#fef3c7;color:var(--warning)}
-.sg.REMAIN{background:#e4e4e7;color:#3f3f46}
-.sg.CANCEL{background:#fecaca;color:var(--destructive)}
-.sg.gapseg{background:repeating-linear-gradient(135deg,#fef2f2 0 6px,#fecaca 6px 12px);color:var(--destructive)}
-.dv{position:absolute;top:-4px;bottom:-4px;width:14px;margin-left:-7px;cursor:ew-resize;display:flex;align-items:center;justify-content:center;z-index:2;border-radius:4px}
-.dv::before{content:"";width:4px;height:100%;border-radius:2px;background:var(--foreground);opacity:.75}
-.dv:hover::before,.dv.on::before{opacity:1;width:5px;background:var(--primary)}
-.sum{font-size:12px;margin:0 0 8px;display:flex;gap:12px;flex-wrap:wrap}
-.sum b{font-variant-numeric:tabular-nums}
-.sum .bad{color:var(--destructive);font-weight:600}
-.sum .ok{color:var(--success);font-weight:500}
+.toast{position:fixed;right:20px;bottom:20px;z-index:220;background:#18181b;color:#fff;border-radius:10px;padding:10px 14px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.2);animation:pin .2s var(--ease)}
+@keyframes pin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 
-/* Popover + context menu: components/ui/popover.tsx, components/ui/context-menu.tsx */
-.pop,.menu{position:fixed;z-index:210;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.14);font-size:12.5px;animation:pin .2s var(--ease)}
-@keyframes pin{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
-.pop{padding:10px;width:250px}
-.pop .pt{font-weight:600;margin:0 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.pop .prow{display:flex;align-items:center;gap:8px;margin:0 0 10px}
-.pop .pb{display:flex;justify-content:flex-end;gap:6px}
-.menu{padding:4px;min-width:230px}
-.menu button{display:flex;width:100%;justify-content:space-between;align-items:center;gap:16px;border:0;background:none;padding:6px 8px;border-radius:6px;font:12.5px Inter,ui-sans-serif,system-ui,sans-serif;color:var(--foreground);cursor:pointer;text-align:left}
-.menu button:hover,.menu button:focus{background:var(--muted);outline:none}
-.menu button.danger{color:var(--destructive)}
-.menu hr{border:0;border-top:1px solid var(--border);margin:4px 0}
-.menu .lbl{font-size:11px;color:var(--muted-fg);padding:4px 8px 2px}
-kbd{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid var(--input);border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--muted-fg);background:#fff}
-.toast{position:fixed;right:20px;bottom:20px;z-index:220;background:#18181b;color:#fff;border-radius:10px;padding:10px 12px;font-size:13px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.2);animation:pin .2s var(--ease)}
-.toast button{background:none;border:0;color:#93c5fd;font:600 13px Inter,ui-sans-serif,system-ui,sans-serif;cursor:pointer}
-
-/* Email + Excel previews */
-.mail{background:#fff;border:1px solid var(--border);border-radius:10px;padding:18px 22px;width:640px;max-width:100%}
+/* Email preview */
+.mail{background:#fff;border:1px solid var(--border);border-radius:10px;padding:18px 22px;width:900px;max-width:100%}
 .mail .subj{font-size:15px;font-weight:600;margin:0 0 8px}
-.mail h3{font-size:20px;margin:6px 0 12px;letter-spacing:.2px}
-table.em{border-collapse:collapse;width:100%;font-size:11.5px;margin:0 0 10px}
+.mail h3{font-size:18px;margin:6px 0 12px}
+table.em{border-collapse:collapse;width:100%;font-size:11.5px}
 table.em th{text-align:left;background:#f4f4f5;font-weight:600;padding:6px;border:1px solid #e4e4e7}
-table.em td{padding:6px;border:1px solid #e4e4e7;vertical-align:middle}
-table.em td.r,table.em th.r{text-align:right}
-table.em td.sub{border-top-style:dashed}
-.xl{background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;width:1000px;max-width:100%}
-.xl .tabs{display:flex;border-top:1px solid var(--border);background:#fafafa}
-.xl .tabs span{padding:6px 12px;font-size:12px;background:#fff;color:var(--success);font-weight:600;box-shadow:inset 0 2px 0 var(--success)}
-table.xs{border-collapse:collapse;width:100%;font-size:11.5px}
-table.xs th{background:#c00000;color:#fff;font-weight:600;padding:5px 6px;border:1px solid #9b0000;text-align:center}
-table.xs td{border:1px solid #d4d4d8;padding:5px 6px;text-align:center}
-table.xs td.l{text-align:left}
-table.xs .title td{font-weight:700;font-size:13px;border:0}
-.newcol{background:#fff7ed!important;color:#9a3412!important}
-.newcell{background:#fff7ed}
+table.em td{padding:6px;border:1px solid #e4e4e7}
+table.em .r{text-align:right}
 table.map{border-collapse:collapse;width:100%;font-size:12.5px;background:#fff;border:1px solid var(--border)}
 table.map th,table.map td{padding:7px 10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
 table.map th{background:#fafafa;color:var(--muted-fg);font-weight:500}
 table.map code{font-size:11.5px;background:var(--muted);padding:1px 4px;border-radius:4px}
-.note{font-size:12px;color:var(--muted-fg);max-width:1000px}
-/* Phone */
-.ph-h{padding:12px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff;z-index:3}
-.ph-b{padding:12px 16px 110px}
-.ph-f{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--border);padding:10px 16px;display:flex;flex-direction:column;gap:6px;z-index:3}
-.pl{display:flex;gap:6px;overflow-x:auto;padding:0 0 8px}
-.pl button{flex:none;border:1px solid var(--input);background:#fff;border-radius:999px;padding:4px 10px;font:12px Inter,ui-sans-serif,system-ui,sans-serif;cursor:pointer}
-.pl button.on{background:var(--primary);border-color:var(--primary);color:#fff}
-.pc{border:1px solid var(--border);border-left-width:3px;border-radius:10px;padding:10px;margin:0 0 8px}
-.pc.ADVANCE{border-left-color:var(--info)}.pc.DELAY{border-left-color:#d97706}.pc.REMAIN{border-left-color:#a1a1aa}.pc.CANCEL{border-left-color:var(--destructive)}
-.pc .r1{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 8px}
-.step{display:inline-flex;align-items:center;border:1px solid var(--input);border-radius:6px;overflow:hidden}
-.step button{width:34px;height:34px;border:0;background:#fafafa;font-size:16px;cursor:pointer}
-.step input{width:64px;height:34px;border:0;border-left:1px solid var(--input);border-right:1px solid var(--input);text-align:center;font:600 14px Inter,ui-sans-serif,system-ui,sans-serif}
-.pc .r2{display:grid;gap:6px}
-.pc .inp{height:34px}
+kbd{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid var(--input);border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--muted-fg);background:#fff}
+.note{font-size:12px;color:var(--muted-fg);max-width:1040px}
+.q{border:1px solid var(--border);background:#fff;border-radius:10px;padding:10px 14px;margin:0 0 8px;font-size:13px;max-width:1040px}
+.q b{font-weight:600}
+.q .rec{color:var(--success);font-weight:500}
 </style>
 </head>
 <body>
 <div class="doc">
-<h1>Split one SO line into delivery splits (OI-LINE-SPLIT, mockup v2, FINAL: owner OK 16 Oct 2026 23:47 "Ok proceed")</h1>
-<p class="intro">v2 after the owner's answers and Lavish notes: the whole SO is split at header level on the planning board (all lines together, drag and drop between dates AND between SO lines of the same item); the single-line panel is now a zoom on the right of the same view. Every line's splits must add up exactly to the line qty (Q2 b): there is no balance; a gap shows live and blocks Save. The word is "split" everywhere. Emails and the OI Excel print the splits as sub-rows; the OI Excel is ONE sheet (separate PR #1748). Section 2 is live.</p>
+<h1>Split delivery: one sheet, splits stacked under their line (OI-LINE-SPLIT, mockup v3)</h1>
+<p class="intro">v3 after the owner's hand test of PR #1749 (17 Oct ~12:40, FAIL): "supposed to be 1 page only view all products, and refer to the excel, when i split i can split vertically not horizontally". One full-screen page, one table with every line of the SO, columns as the staff's ORDER INQUIRY Excel. A split stacks DOWNWARD inside its line: the line's own cells (SO date to delivery date) are merged across its split rows, each split row has its own change quantity, change date and remark. A line that is not split reads REMAIN. No date columns, no cards, no side panel, no second step. Everything below is live: type in it.</p>
 <nav class="nav">
-<a href="#s1">1 Where it opens</a><a href="#s2">2 Split view (live)</a><a href="#s3">3 What purchasing gets</a><a href="#s4">4 OI Lines (read-only)</a><a href="#s5">5 Phone 375</a><a href="#s6">6 Keyboard</a><a href="#s7">7 Drag and drop library</a><a href="#s8">8 Component map</a>
+<a href="#s1">1 The sheet (live)</a><a href="#s2">2 Phone 375</a><a href="#s3">3 What purchasing gets</a><a href="#s4">4 Keyboard</a><a href="#s5">5 Changed from the built screen</a><a href="#s6">6 Questions</a><a href="#s7">7 Component map</a>
 </nav>
 
 <section id="s1">
-<h2><span class="nb">1</span>Where it opens</h2>
-<p class="why">On the Fulfilment board an SO's header gets "Split delivery", opening the whole-SO view. A line's right-click "Split delivery…" opens the same view with that line zoomed. Inside Confirm, the AutoCount change lightbox (WAS / NOW) gets the same button.</p>
-<div class="row">
- <div class="card" style="width:760px;max-width:100%">
-  <div class="hd"><span>SO417636 · GLOBAL INGRESS SDN BHD (PROJECT)</span><span style="display:flex;gap:8px"><button class="btn">Split delivery</button><button class="btn pri">Confirm</button></span></div>
-  <div style="position:relative">
-  <table class="dg">
-   <colgroup><col style="width:120px"><col style="width:90px"><col style="width:80px"><col style="width:120px"><col></colgroup>
-   <thead><tr><th>Product</th><th>Location</th><th class="r">Qty</th><th>Delivery date</th><th>Split</th></tr></thead>
-   <tbody>
-    <tr><td>CSK14B</td><td>BRW-BB</td><td class="r num">301</td><td>24/08/2026</td><td></td></tr>
-    <tr class="sel"><td>CSK14B</td><td>BRW-BB</td><td class="r num">417</td><td>20/10/2026</td><td><span class="pill secondary">Split 3</span></td></tr>
-    <tr><td>CSK14B</td><td>BRW-BB</td><td class="r num">192</td><td>20/11/2026</td><td></td></tr>
-    <tr><td>CSK14B</td><td>BRW-BB</td><td class="r num">504</td><td>20/12/2026</td><td><span class="pill secondary">Split 2</span></td></tr>
-    <tr><td>CSK11A</td><td>BRW-BB</td><td class="r num">335</td><td>02/01/2027</td><td></td></tr>
-   </tbody>
-  </table>
-  <div class="menu" style="position:absolute;left:300px;top:58px;animation:none">
-   <div class="lbl">Row menu (existing items unchanged)</div>
-   <button style="background:var(--muted)"><span>Split delivery…</span><kbd>S</kbd></button>
-  </div>
-  </div>
- </div>
- <div class="card" style="width:420px;max-width:100%">
-  <div class="hd">What changed · CSK14B · BRW-BB <span class="mut" style="font-weight:400;font-size:12px">BoardChangeTable lightbox</span></div>
-  <div style="padding:12px 16px">
-   <table class="dg"><colgroup><col style="width:110px"><col><col></colgroup>
-    <thead><tr><th></th><th>Was</th><th>Now</th></tr></thead>
-    <tbody><tr><td class="mut">Qty</td><td class="num">417</td><td class="num">14</td></tr><tr><td class="mut">Delivery date</td><td>20/10/2026</td><td>20/09/2026</td></tr></tbody>
-   </table>
-   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn">Close</button><button class="btn pri">Split delivery</button></div>
-  </div>
- </div>
-</div>
-</section>
-
-<section id="s2">
-<h2><span class="nb">2</span>Split view (live)</h2>
-<p class="why">Rows are the SO's lines, grouped by item and location; columns are delivery dates, then "New date" and "Cancel". Each card is one split. Drag a card to another date, to another line of the same item, to "New line" (AutoCount does not have it yet) or to "Cancel"; a small box asks how many (Enter = all). Each card keeps its own line: a card sitting on another line says "from the 417 line", and the row header says what moved where. Click a line to zoom it on the right: drag the dark dividers on its bar, type, right-click. Cmd/Ctrl+Z undoes. Save needs every line to add up exactly.</p>
+<h2><span class="nb">1</span>The sheet (live)</h2>
+<p class="why">Opened from a line's "Split delivery…" (board row menu, or the AutoCount change lightbox inside Confirm): the whole SO opens and that line is scrolled to and flashed (here CSK14B line 480). Click REMAIN or type a quantity to split a line; "+ Split" adds a row under the line filled with what is left; × removes a row. BALANCE = line qty minus the split rows; Save waits until every line is 0 (owner ruling Q2 b, unchanged). The case is the owner's Excel: CSK14B 417 @ 20/10/2026 split 14 / 236 / 167 and 504 @ 20/12/2026 split 37 / 467.</p>
 <div class="mockbar">
  <b>Mock controls:</b>
- <span>Case</span><div class="seg pri" id="caseSeg"><button data-case="A">SO417636 (owner Excel)</button><button data-case="C">SO402757 SRTWB7237 (dev DB)</button></div>
- <span>Moment</span><div class="seg pri" id="momSeg"><button data-mom="before">Before Confirm (AutoCount not changed yet)</button><button data-mom="confirm">Inside Confirm (AutoCount changed)</button></div>
- <button class="btn" id="resetDemo">Reset demo</button>
+ <span>Moment</span><div class="seg" id="momSeg"><button data-mom="before">Before Confirm</button><button data-mom="confirm">Inside Confirm (AutoCount changed)</button></div>
+ <button class="btn" id="resetExcel">Reset to the Excel case</button>
+ <button class="btn" id="resetRemain">Start from REMAIN</button>
 </div>
 <div class="desk">
  <div class="screen">
   <div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div>Project Sales</div><div class="on">Fulfilment planning</div><div>Order inquiries</div><div>Planning changes</div></div>
   <div class="main"><div style="font-size:22px;font-weight:600">Fulfilment planning</div></div>
   <div class="scrim"></div>
-  <div class="fs" id="fs"></div>
+  <div class="fs" id="fsDesk"></div>
  </div>
 </div>
 </section>
 
+<section id="s2">
+<h2><span class="nb">2</span>Phone 375</h2>
+<p class="why">The same sheet and the same state as section 1. SO date, S/O no, location and line no move into the title and the item cell; the item column stays pinned while the rest scrolls sideways.</p>
+<div class="row"><div class="phone"><div class="screen" id="fsPhone"></div><div class="cap">375 x 780</div></div></div>
+</section>
+
 <section id="s3">
 <h2><span class="nb">3</span>What purchasing gets</h2>
-<p class="why">Left: today's email for the same change (net numbers only). Right: the same email with the splits, each line printed once and its splits as sub-rows. Below: the OI Excel attachment, ONE sheet as the owner ruled (PR #1748), splits as rows and a new REMARK column at the end (orange). All redraw from section 2.</p>
-<div class="row">
- <div class="mail" id="mailToday" style="width:430px"></div>
- <div class="mail" id="mailNew"></div>
-</div>
-<div class="row" style="margin-top:20px"><div class="xl" id="xl"></div></div>
+<p class="why">Unchanged from the build (PR #1749): Send to purchasing and Confirm print one email line per split, each with the line's own QTY and DELIVERY and its NEW QTY, NEW DATE and REMARK (change word, then the remark). The OI Excel attachment keeps its one sheet with the REMARK column. Redraws from section 1.</p>
+<div class="mail" id="mail"></div>
 </section>
 
 <section id="s4">
-<h2><span class="nb">4</span>OI Lines tab (read-only)</h2>
-<p class="why">One row per SO line stays (owner rule, 25 Aug). A split line shows the chip; clicking the row expands its splits. No editing here.</p>
-<div class="card" style="width:980px;max-width:100%" id="oiLines"></div>
+<h2><span class="nb">4</span>Keyboard</h2>
+<p class="why">Excel habits. Listed in the Outline guide, not on screen.</p>
+<table class="map" style="max-width:820px">
+ <tr><th style="width:240px">Where</th><th>Keys</th></tr>
+ <tr><td>Any cell</td><td><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd> next / previous cell · <kbd>Enter</kbd> or <kbd>↓</kbd> the same column one row down · <kbd>Shift</kbd>+<kbd>Enter</kbd> or <kbd>↑</kbd> one row up</td></tr>
+ <tr><td>REMAIN cell</td><td>type a number or a date: the line splits and the row takes it</td></tr>
+ <tr><td>Change quantity / change date</td><td><kbd>Ctrl/Cmd</kbd>+<kbd>Enter</kbd> add a split row under this line (filled with what is left) · <kbd>Ctrl/Cmd</kbd>+<kbd>Backspace</kbd> remove this split row · dates type as d/m/yyyy (20/9/2026), or pick from the calendar</td></tr>
+ <tr><td>Anywhere</td><td><kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd> undo the last change · <kbd>Esc</kbd> closes a calendar or list</td></tr>
+</table>
 </section>
 
 <section id="s5">
-<h2><span class="nb">5</span>Phone 375</h2>
-<p class="why">A phone cannot hold the date grid, so it shows one line at a time (pick the line at the top); each split is a card with a qty stepper, date, the line it sits on and a remark. Moving qty to another line is "Sits on" (or right-click / long-press menu). The bar's dividers still drag (touch sensor).</p>
-<div class="row"><div class="phone"><div class="screen" id="phone"></div><div class="cap">375 x 800</div></div></div>
+<h2><span class="nb">5</span>Changed from the built screen (PR #1749)</h2>
+<table class="map" style="max-width:1040px">
+ <tr><th style="width:200px">Part</th><th>v3</th></tr>
+ <tr><td>Goes</td><td>The date-column grid with drag cards (<code>LineSplitGrid.tsx</code>), the zoom pane with the qty bar (<code>LineSplitZoom.tsx</code>), the "how many" move box (<code>LineSplitMoveBox.tsx</code>), the phone one-line-at-a-time view (<code>LineSplitPhone.tsx</code>).</td></tr>
+ <tr><td>Comes</td><td>One sheet component (<code>LineSplitSheet.tsx</code>) inside the same full-screen dialog (<code>LineSplitDialog.tsx</code> shell, header, Save, close guard).</td></tr>
+ <tr><td>Stays</td><td>The split table, API, Confirm engine, email and OI Excel output (backend unchanged). The pure model in <code>fulfilment-planning/lib/lineSplitModel.ts</code>: <code>setQty</code>, <code>setDate</code>, <code>setSitsOn</code> (AutoCount line and Cancel), <code>setRemark</code>, <code>addSplit</code>, <code>dropEmpty</code>, <code>gapOf</code>, <code>changeOf</code>, <code>toPayload</code>. Entries: board row menu, the Confirm change lightbox, the SO header button. Exact sums: Save waits for balance 0 on every line.</td></tr>
+ <tr><td>Small model changes</td><td><code>addSplit</code> fills the new row with what is left on the line (today 0). Lines sort by item, location, then delivery date (the Excel order) instead of line no.</td></tr>
+</table>
 </section>
 
 <section id="s6">
-<h2><span class="nb">6</span>Keyboard</h2>
-<p class="why">Listed in the Outline guide, not on screen.</p>
-<table class="map" style="max-width:820px">
- <tr><th style="width:220px">Focus</th><th>Keys</th></tr>
- <tr><td>A split card (Tab to it)</td><td><kbd>←</kbd> <kbd>→</kbd> previous / next date · <kbd>↑</kbd> <kbd>↓</kbd> previous / next line of the same item · <kbd>Shift</kbd>+arrow moves 10 instead of all · <kbd>N</kbd> new date · <kbd>S</kbd> split in two · <kbd>C</kbd> cancel this qty · <kbd>Delete</kbd> back to its own line and date · <kbd>Enter</kbd> zoom and edit qty · <kbd>Shift</kbd>+<kbd>F10</kbd> menu</td></tr>
- <tr><td>Bar divider (zoom)</td><td><kbd>←</kbd> <kbd>→</kbd> move 1 · <kbd>Shift</kbd>+arrows move 10</td></tr>
- <tr><td>Move box</td><td>type qty · <kbd>Enter</kbd> move · <kbd>Esc</kbd> cancel</td></tr>
- <tr><td>Anywhere</td><td><kbd>Cmd/Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Esc</kbd> closes a menu or box</td></tr>
-</table>
+<h2><span class="nb">6</span>Questions (also in the crew ask)</h2>
+<div class="q"><b>Q1 Drag and drop.</b> (a) None: type like the Excel, "+ Split" and × for rows. (b) Also a grip on a split row to drag it onto another line of the same item, which sets its AutoCount line. <span class="rec">Recommend (a)</span>: the hand test said the drag screen was too hard and the Excel has none; the AutoCount line is one pick from a list (Q2).</div>
+<div class="q"><b>Q2 AUTOCOUNT LINE column</b> (which AutoCount line carries the split, so Confirm moves its reservations there; staff-picked only, ruling Q3 a). (a) A visible column, "New line" until AutoCount has it, "Cancel" in the same list. (b) Hidden in a row menu. <span class="rec">Recommend (a)</span>: a hidden link gets missed and Confirm then tells purchasing to order and cancel the same qty.</div>
+<div class="q"><b>Q3 A new split row starts with</b> (a) what is left on the line (417: type 14, "+ Split" gives 403, type 236, "+ Split" gives 167) or (b) 0. <span class="rec">Recommend (a)</span>: three keystrokes per split, balance reaches 0 by itself.</div>
+<div class="q"><b>Q4 SO DATE and S/O NO columns</b> repeat on every row as in the Excel. (a) Keep them on desktop (merged per line), drop them on the phone. (b) Drop them (the title already names the SO). <span class="rec">Recommend (a)</span>: the owner asked for the Excel's look.</div>
 </section>
 
 <section id="s7">
-<h2><span class="nb">7</span>Drag and drop library</h2>
-<p class="why">Reuse what the app already ships; no new dependency.</p>
-<table class="map" style="max-width:1000px">
- <tr><th style="width:230px">Choice</th><th>Facts (measured in the repo)</th></tr>
- <tr><td><b>@dnd-kit</b> (use this)</td><td>Already installed: <code>@dnd-kit/core ^6.3.1</code>, <code>@dnd-kit/sortable ^10.0.0</code>, <code>@dnd-kit/modifiers ^9.0.0</code> (<code>sorento_crm_frontend/package.json:21-23</code>). MIT licence. Used today by 16 app files: DataGrid row and column drag (<code>components/ui/data-grid-table-dnd-rows.tsx</code>), Kanban (<code>components/ui/kanban.tsx</code>, Pointer + Keyboard sensors), the quotation lines grid, and drag a file onto a folder in Drive (<code>AttachmentDirectoriesView.tsx</code>: DndContext, DragOverlay, TouchSensor; <code>DriveGridView.tsx</code>: useDraggable / useDroppable). Size: core.esm.js 22 KB gzipped, sortable 4.7 KB, utilities 2.4 KB (unminified dist files gzipped; already in the bundle). Pointer, touch and keyboard sensors plus screen-reader announcements built in.</td></tr>
- <tr><td>Wrap</td><td>Split cards = <code>useDraggable</code>; each date-by-line cell = <code>useDroppable</code>; the floating card = <code>DragOverlay</code>; sensors Pointer + Touch (long-press) + Keyboard, the same set <code>AttachmentDirectoriesView.tsx</code> and <code>kanban.tsx</code> wire. The zoom's bar dividers use the slider keyboard pattern (<code>components/ui/slider.tsx</code>).</td></tr>
- <tr><td>Not this</td><td><code>react-dnd ^16</code> is also in package.json (:75-76) but no app or component file imports it; HTML5 backend has no touch support.</td></tr>
-</table>
-</section>
-
-<section id="s8">
-<h2><span class="nb">8</span>Component map</h2>
+<h2><span class="nb">7</span>Component map</h2>
 <table class="map">
  <tr><th style="width:250px">Element</th><th>Reuses (FE = sorento_crm_frontend/, PS = FE/app/(protected)/project-sales/)</th></tr>
- <tr><td>Whole-SO split view</td><td><code>FE/components/ui/dialog.tsx</code> full-screen (opened from <code>PS/fulfilment-planning/components/FulfilmentBoardPanel.tsx</code> SO header)</td></tr>
- <tr><td>Date-by-line grid + drag</td><td>@dnd-kit (section 7); cells styled as DataGrid cells (<code>FE/components/ui/data-grid-table.tsx</code>)</td></tr>
- <tr><td>Zoom panel, prev / next line</td><td>right pane of the same dialog; <code>FE/components/common/RecordNavigation.tsx</code></td></tr>
- <tr><td>Qty bar</td><td><code>PS/_shared/components/SupplyBar.tsx:42</code> + divider handles (<code>FE/components/ui/slider.tsx</code> keyboard)</td></tr>
- <tr><td>"How many" box</td><td><code>FE/components/ui/popover.tsx</code> + <code>Input inputMode="decimal"</code></td></tr>
- <tr><td>Splits table</td><td>DataGrid editable cells like <code>PS/_shared/components/InlineLineTable.tsx:326</code>, <code>FE/components/ui/date-picker.tsx</code></td></tr>
- <tr><td>Change pill</td><td><code>PS/_shared/components/OrderInquiryVerbPill.tsx</code> on <code>FE/components/ui/badge.tsx</code></td></tr>
- <tr><td>Right-click menu</td><td><code>FE/components/ui/context-menu.tsx</code> (as <code>PS/[projectId]/components/QuotationLinesGrid.tsx:1465</code>)</td></tr>
- <tr><td>"Sits on" line pick</td><td><code>FE/components/common/SearchableSelect.tsx:164</code></td></tr>
- <tr><td>Undo toast</td><td><code>FE/lib/toast.ts:48</code></td></tr>
- <tr><td>OI Lines expand</td><td><code>PS/order-inquiries/[id]/components/orderInquiryHeaderLinesColumns.tsx</code> <code>meta.expandedContent</code> (:453, :470)</td></tr>
- <tr><td>Email</td><td><code>email_templates</code> row <code>order_inquiry_handover_default</code>; context <code>BE/app/services/project_order_inquiry_service.py:12419</code>, saved lines <code>:4280-4295</code></td></tr>
- <tr><td>OI Excel</td><td><code>BE/app/services/order_inquiry_worklist_service.py</code> <code>export_xlsx</code>, one sheet after PR #1748; REMARK appended after the existing columns</td></tr>
+ <tr><td>Full-screen page</td><td><code>FE/components/ui/dialog.tsx</code> full-screen, today's <code>PS/fulfilment-planning/components/LineSplitDialog.tsx</code> shell; opened by <code>lineSplitOpener.tsx</code> from <code>BoardDecideControl.tsx</code>, <code>BoardChangeTable.tsx</code>, <code>FulfilmentBoardPanel.tsx</code></td></tr>
+ <tr><td>Sheet with merged cells</td><td><code>FE/components/ui/table.tsx</code> cells with <code>rowSpan</code>, the pattern of the supplier sheet (<code>FE/app/(protected)/scm/components/SupplierSheet.tsx:134</code>: Excel-like grid, merged cells, qty and remark inputs in the cells); sticky header like the DataGrid</td></tr>
+ <tr><td>Change quantity</td><td><code>FE/components/ui/input.tsx</code> <code>inputMode="decimal"</code>, clearable while typing (NUMBER-FIELDS, #1751)</td></tr>
+ <tr><td>Change date</td><td><code>FE/components/ui/date-picker.tsx:64</code> (typed DD/MM/YYYY + calendar)</td></tr>
+ <tr><td>Change word</td><td><code>PS/_shared/components/OrderInquiryVerbPill.tsx</code> on <code>FE/components/ui/badge.tsx</code>; word from <code>changeOf</code> (<code>lineSplitModel.ts:132</code>)</td></tr>
+ <tr><td>AutoCount line</td><td><code>FE/components/common/SearchableSelect.tsx:164</code>, options = lines of the same item and location, "New line", "Cancel"; <code>setSitsOn</code></td></tr>
+ <tr><td>Search, filter</td><td><code>FE/components/common/ListSearchInput.tsx</code>, <code>FE/components/ui/switch.tsx</code></td></tr>
+ <tr><td>+ Split, ×</td><td><code>FE/components/ui/button.tsx</code> (<code>size="sm"</code>, icon button with <code>aria-label</code>); remove is a staged row edit, nothing saved until Save</td></tr>
+ <tr><td>Saved toast</td><td><code>FE/lib/toast.ts:48</code></td></tr>
 </table>
-<p class="note" style="margin-top:10px">Data: SO417636 numbers come from the owner's Excel picture and the 13/10/2026 OI email (business data only; these lines are not in the dev DB yet, so its SO line numbers are not shown; the CSK11A 335 line is from the same email). SO402757 SRTWB7237 is from the dev DB (OI-2609-0009). Nothing here writes to AutoCount.</p>
+<p class="note" style="margin-top:10px">Data: SO417636. CSK14B rows are the owner's Excel (the state before AutoCount changed); their line numbers and the "Inside Confirm" figures are the shared dev DB (read-only): line 32 (301), 480 (417, now 14 @ 20/09/2026), 608 (192, now 632), 752 (504, now 649 @ 02/01/2027), and line 4768 added by AutoCount (751 @ 01/01/2030). Every other row is the dev DB's SO417636 as it is: 6 of its 29 products, 39 of its 292 lines. Nothing here writes to AutoCount.</p>
 </section>
 </div>
 
 <script>
 (function(){
-'use strict';
-var $ = function(s, r){ return (r || document).querySelector(s); };
-var $$ = function(s, r){ return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
-function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
-function fmt(iso){ return iso && iso !== 'cancel' ? iso.slice(8,10) + '/' + iso.slice(5,7) + '/' + iso.slice(0,4) : ''; }
-function fmtS(iso){ return iso && iso !== 'cancel' ? iso.slice(8,10) + '/' + iso.slice(5,7) + '/' + iso.slice(2,4) : ''; }
-var uid = 1; function nid(){ return 's' + (uid++); }
-function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-function byDate(a, b){ var x = a.d === 'cancel' ? '9999' : a.d, y = b.d === 'cancel' ? '9999' : b.d; return x < y ? -1 : x > y ? 1 : 0; }
-function first(arr, f){ for (var i = 0; i < arr.length; i++) if (f(arr[i])) return arr[i]; return null; }
+var SO = {no:'SO417636', date:'19/08/2026', customer:'GLOBAL INGRESS SDN BHD (PROJECT)', loc:'BRW-BB'};
+var DB = [["B2155-NL-BLUE",944,54,"2027-02-18"],["B2155-NL-BLUE",1392,136,"2027-03-20"],["B2155-NL-BLUE",1792,200,"2027-04-19"],["B2155-NL-BLUE",2192,224,"2027-05-19"],["B2155-NL-BLUE",2592,220,"2027-06-18"],["B2155-NL-BLUE",2992,224,"2027-07-18"],["B2155-NL-BLUE",3392,224,"2027-08-17"],["B2155-NL-BLUE",3792,224,"2027-09-16"],["B2155-NL-BLUE",4192,112,"2027-10-01"],["B2155-NL-BLUE",4592,2697,"2030-01-01"],["B2155-NL-BLUE",192,16,"2026-09-20"],["C-FH14",992,67,"2027-02-18"],["C-FH14",1408,168,"2027-03-20"],["C-FH14",1808,249,"2027-04-19"],["C-FH14",2208,280,"2027-05-19"],["C-FH14",2608,275,"2027-06-18"],["C-FH14",3008,280,"2027-07-18"],["C-FH14",3408,280,"2027-08-17"],["C-FH14",3808,280,"2027-09-16"],["C-FH14",4208,140,"2027-10-01"],["C-FH14",4608,3119,"2030-01-01"],["C-FH14",208,20,"2026-09-20"],["CB6633",384,407,"2026-09-20"],["CB6633",520,485,"2026-10-20"],["CB6633",592,478,"2026-11-20"],["CB6633",688,187,"2026-12-20"],["CB6633",736,485,"2027-01-02"],["CB6633",1168,672,"2027-02-18"],["CB6633",24,290,"2026-08-24"],["CSK11A",544,154,"2026-10-20"],["CSK11A",768,335,"2027-01-02"],["CSK11A",640,313,"2026-11-20"],["CSK14B",32,301,"2026-08-24"],["CSK14B",480,417,"2026-10-20"],["CSK14B",608,192,"2026-11-20"],["CSK14B",752,504,"2026-12-20"],["TPE-9101",400,816,"2026-09-20"],["TPE-9101",528,816,"2026-10-20"],["TPE-9101",600,817,"2026-11-20"]];
+var NOW = {480:{qty:14,date:'2026-09-20'},608:{qty:632,date:'2026-11-20'},752:{qty:649,date:'2027-01-02'}};
+var ADDED = {item:'CSK14B', label:4768, qty:751, date:'2030-01-01'};
+var OPEN_AT = 'L480';
 
-var CASES = {
- A: {
-  so:'SO417636', soDate:'19/08/2026', customer:'GLOBAL INGRESS SDN BHD (PROJECT)', project:'405U + 397U PANGSAPURI, ISKANDAR PUTERI',
-  lines:[
-   {id:'a1', item:'CSK14B', loc:'BRW-BB', wasQty:301, wasDate:'2026-08-24', nowQty:301, nowDate:'2026-08-24'},
-   {id:'a2', item:'CSK14B', loc:'BRW-BB', wasQty:417, wasDate:'2026-10-20', nowQty:14, nowDate:'2026-09-20'},
-   {id:'a3', item:'CSK14B', loc:'BRW-BB', wasQty:192, wasDate:'2026-11-20', nowQty:632, nowDate:'2026-11-20'},
-   {id:'a4', item:'CSK14B', loc:'BRW-BB', wasQty:504, wasDate:'2026-12-20', nowQty:649, nowDate:'2027-01-02'},
-   {id:'a5', item:'CSK11A', loc:'BRW-BB', wasQty:335, wasDate:'2027-01-02', nowQty:335, nowDate:'2027-01-02'}
-  ],
-  splits:{
-   a2:[{q:14, d:'2026-09-20', r:'Under pre-order, SO422271 already emailed', on:'a2'},{q:236, d:'2026-11-20', r:'', on:'a3'},{q:167, d:'2029-11-20', r:'Order', on:'a3'}],
-   a4:[{q:37, d:'2026-11-20', r:'Order', on:'a3'},{q:467, d:'2027-01-02', r:'Order', on:'a4'}]
-  },
-  open:'a2',
-  today:[['BRW-BB','CSK14B',417,14,'20/10/2026','20/09/2026'],['BRW-BB','CSK14B',192,632,'20/11/2026',''],['BRW-BB','CSK14B',504,649,'20/12/2026','02/01/2027'],['BRW-BB','CSK11A',335,'','02/01/2027','']],
-  todayNote:'The 13/10/2026 email.'
- },
- C: {
-  so:'SO402757', soDate:'08/05/2026', customer:'OIB CONSTRUCTION SDN BHD (PROJECT)', project:'MYRA COVE PHASE 2 / SEPANG [BLOCK B1 - 2ND BATCH (LEVEL 11 TO LEVEL 20) ]',
-  lines:[
-   {id:'c2', no:2, item:'SRTWB7237', loc:'BRW-IB', wasQty:51, wasDate:'2026-07-15', nowQty:2, nowDate:'2026-07-15'},
-   {id:'c18', no:18, item:'SRTWB7237', loc:'BRW-IB', wasQty:82, wasDate:'2026-11-01', nowQty:121, nowDate:'2026-11-01'}
-  ],
-  splits:{ c2:[{q:2, d:'2026-07-15', r:'', on:'c2'},{q:49, d:'2026-11-01', r:'', on:'c18'}] },
-  open:'c2',
-  today:[['BRW-IB','SRTWB7237',51,2,'15/07/2026','','CANCEL BALANCE 49'],['BRW-IB','SRTWB7237',82,121,'01/11/2026','','ORDER']],
-  todayNote:'Dev DB OI-2609-0009 rows for this item.'
- }
+var state = {mom:'before', lines:[], q:'', onlySplit:false, hist:[], seq:0, flash:OPEN_AT};
+
+function iso2(d){ if(!d) return ''; var p=d.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
+function parseD(t){ var m=(t||'').trim().match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}|\d{4})$/); if(!m) return null; var d=+m[1], mo=+m[2], y=+m[3]; if(y<100) y+=2000; var dt=new Date(y,mo-1,d); if(dt.getFullYear()!==y||dt.getMonth()!==mo-1||dt.getDate()!==d) return null; return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0'); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function sid(){ state.seq += 1; return 'S'+state.seq; }
+
+function build(){
+  var lines = DB.map(function(r){ return {id:'L'+r[1], label:r[1], item:r[0], loc:SO.loc, qty:r[2], date:r[3], now:null, added:false, splits:[], remark:''}; });
+  if(state.mom==='confirm'){
+    lines.forEach(function(l){ if(NOW[l.label]) l.now = NOW[l.label]; });
+    lines.push({id:'L'+ADDED.label, label:ADDED.label, item:ADDED.item, loc:SO.loc, qty:0, date:null, now:{qty:ADDED.qty,date:ADDED.date}, added:true, splits:[], remark:''});
+  }
+  lines.sort(function(a,b){ return a.item<b.item?-1:a.item>b.item?1:(a.added-b.added)||((a.date||'')<(b.date||'')?-1:(a.date||'')>(b.date||'')?1:a.label-b.label); });
+  return lines;
+}
+function excelCase(lines){
+  var by = {}; lines.forEach(function(l){ by[l.label]=l; });
+  by[32].remark = 'ALREADY RESERVE FROM BRW';
+  by[480].splits = [
+    {id:sid(), qty:14, date:'2026-09-20', on:'L480', remark:'UNDER PRE-ORDER, SO422271 ALREADY EMAIL FOR CHANGE THIS SO'},
+    {id:sid(), qty:236, date:'2026-11-20', on:null, remark:'ORDER'},
+    {id:sid(), qty:167, date:'2029-11-20', on:null, remark:'ORDER'}];
+  by[752].splits = [
+    {id:sid(), qty:37, date:'2026-11-20', on:null, remark:'ORDER'},
+    {id:sid(), qty:467, date:'2027-01-02', on:'L752', remark:'ORDER'}];
+  return lines;
+}
+function reset(excel){ state.lines = build(); if(excel) excelCase(state.lines); state.hist = []; }
+
+function lineById(id){ for(var i=0;i<state.lines.length;i++) if(state.lines[i].id===id) return state.lines[i]; return null; }
+function isSplit(l){ return l.splits.length>0; }
+function gap(l){ if(!isSplit(l)) return 0; return l.qty - l.splits.reduce(function(s,x){ return s+(x.qty||0); },0); }
+function word(s,l){ if(s.on==='cancel') return 'CANCEL'; if(!s.date||s.date===l.date) return 'REMAIN'; return s.date>l.date?'DELAY':'ADVANCE'; }
+function snap(){ state.hist.push(JSON.stringify(state.lines)); if(state.hist.length>100) state.hist.shift(); }
+function undo(){ if(!state.hist.length) return; state.lines = JSON.parse(state.hist.pop()); renderAll(); }
+function materialise(l){ if(!isSplit(l)) l.splits = [{id:sid(), qty:l.qty, date:l.date, on:l.id, remark:l.remark}]; }
+function tidy(l){
+  if(!isSplit(l)) return;
+  l.splits = l.splits.filter(function(s){ return s.qty>0; });
+  if(l.splits.length===1){ var s=l.splits[0]; if(s.qty===l.qty && s.date===l.date && s.on===l.id){ l.remark=s.remark; l.splits=[]; } }
+}
+function addSplit(l){ materialise(l); var g = Math.max(gap(l),0); var s = {id:sid(), qty:g, date:l.date, on:null, remark:''}; l.splits.push(s); return s; }
+function siblings(l){ return state.lines.filter(function(x){ return x.item===l.item && x.loc===l.loc && x.id!==l.id; }); }
+function openGaps(){ return state.lines.filter(function(l){ return gap(l)!==0 || l.splits.some(function(s){ return s.bad; }); }); }
+
+function visible(){
+  var q = state.q.trim().toUpperCase();
+  return state.lines.filter(function(l){ return (!q || l.item.toUpperCase().indexOf(q)>=0) && (!state.onlySplit || isSplit(l)); });
+}
+
+var ICON = {
+  x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'
 };
 
-var S = {caseKey:'A', moment:'confirm', sel:'a2', zoomOpen:true, drafts:{}, saved:{}, hist:[], expanded:{a2:true, c2:true}, selChip:null};
-function initCase(k){
- var c = CASES[k], d = {};
- Object.keys(c.splits).forEach(function(lid){ d[lid] = c.splits[lid].map(function(t){ return {id:nid(), q:t.q, d:t.d, r:t.r, on:t.on}; }); });
- S.drafts[k] = d; S.saved[k] = JSON.stringify(d); S.hist = [];
-}
-initCase('A'); initCase('C');
-
-function C(){ return CASES[S.caseKey]; }
-function D(){ return S.drafts[S.caseKey]; }
-function L(id){ return first(C().lines, function(l){ return l.id === id; }); }
-function gkey(l){ return l.item + ' · ' + l.loc; }
-function groups(){ var g = []; C().lines.forEach(function(l){ var k = gkey(l); var x = first(g, function(z){ return z.k === k; }); if (!x) { x = {k:k, item:l.item, loc:l.loc, lines:[]}; g.push(x); } x.lines.push(l); }); return g; }
-function groupOf(l){ var k = gkey(l); return first(groups(), function(g){ return g.k === k; }); }
-function splitsOf(lid){ var sp = D()[lid]; if (sp) return sp; var l = L(lid); return [{id:'imp-' + lid, q:l.wasQty, d:l.wasDate, r:'', on:lid}]; }
-function ensure(lid){ if (!D()[lid]) { var l = L(lid); D()[lid] = [{id:'imp-' + lid, q:l.wasQty, d:l.wasDate, r:'', on:lid}]; } return D()[lid]; }
-function isSplit(lid){ var sp = D()[lid]; if (!sp) return false; var l = L(lid); return !(sp.length === 1 && +sp[0].q === l.wasQty && sp[0].d === l.wasDate && sp[0].on === lid && !sp[0].r); }
-function sumOf(lid){ return splitsOf(lid).reduce(function(a, t){ return a + (+t.q || 0); }, 0); }
-function gapOf(lid){ return L(lid).wasQty - sumOf(lid); }
-function verbOf(d, l){ return d === 'cancel' ? 'CANCEL' : d > l.wasDate ? 'DELAY' : d < l.wasDate ? 'ADVANCE' : 'REMAIN'; }
-function verbLabel(v){ return v === 'CANCEL' ? 'CANCEL BALANCE' : v; }
-function pill(v, extra){ return '<span class="pill ' + v + '">' + esc(verbLabel(v)) + (extra ? ' ' + esc(extra) : '') + '</span>'; }
-function nowQ(l){ return S.moment === 'confirm' ? l.nowQty : l.wasQty; }
-function nowD(l){ return S.moment === 'confirm' ? l.nowDate : l.wasDate; }
-function short(l){ return l.no ? 'line ' + l.no : 'the ' + l.wasQty + ' line'; }
-function lineLabel(l){ return (l.no ? 'Line ' + l.no + ' · ' : '') + l.wasQty + ' on ' + fmt(l.wasDate); }
-function findSplit(sid){ var res = null; Object.keys(D()).forEach(function(lid){ D()[lid].forEach(function(t){ if (t.id === sid) res = {origin:lid, t:t}; }); }); if (!res && sid.indexOf('imp-') === 0) { var lid = sid.slice(4); res = {origin:lid, t:splitsOf(lid)[0]}; } return res; }
-/* every split of every origin in the group, with where it sits */
-function placed(g){
- var out = [];
- g.lines.forEach(function(o){ splitsOf(o.id).forEach(function(t){ out.push({t:t, origin:o, row:t.d === 'cancel' ? o.id : (t.on === 'pending' ? 'newline' : t.on), col:t.d}); }); });
- return out;
-}
-function planQty(rowId){ var l = L(rowId), g = groupOf(l); return placed(g).filter(function(p){ return p.row === rowId && p.col !== 'cancel'; }).reduce(function(a, p){ return a + (+p.t.q || 0); }, 0); }
-function leftOf(rowId){ return nowQ(L(rowId)) - planQty(rowId); }
-function movedOut(lid){ return splitsOf(lid).filter(function(t){ return t.d !== 'cancel' && t.on !== lid; }); }
-function movedIn(rowId){ var l = L(rowId); return placed(groupOf(l)).filter(function(p){ return p.row === rowId && p.origin.id !== rowId && p.col !== 'cancel'; }); }
-function gapsAll(){ return C().lines.filter(function(l){ return gapOf(l.id) !== 0; }); }
-function dirty(){ return JSON.stringify(D()) !== S.saved[S.caseKey]; }
-
-/* history + toast */
-function pushHist(){ S.hist.push(JSON.stringify(D())); if (S.hist.length > 80) S.hist.shift(); }
-function undo(){ if (!S.hist.length) return toast('Nothing to undo'); S.drafts[S.caseKey] = JSON.parse(S.hist.pop()); render(); }
-var toastTimer;
-function toast(msg, withUndo){
- var old = $('.toast'); if (old) old.remove();
- var el = document.createElement('div'); el.className = 'toast';
- el.innerHTML = '<span>' + esc(msg) + '</span>' + (withUndo ? '<button type="button">Undo</button>' : '');
- document.body.appendChild(el);
- if (withUndo) el.querySelector('button').onclick = function(){ el.remove(); undo(); };
- clearTimeout(toastTimer); toastTimer = setTimeout(function(){ el.remove(); }, 4000);
-}
-function tidy(lid){ var sp = D()[lid]; if (!sp) return false; var n = sp.length; D()[lid] = sp.filter(function(t){ return (+t.q || 0) > 0; }); return D()[lid].length < n; }
-
-/* ---------- mutations ---------- */
-function applyMove(origin, sid, qty, date, on){
- qty = Math.floor(+qty || 0); if (!date || qty <= 0) return;
- pushHist();
- var sp = ensure(origin), t = first(sp, function(z){ return z.id === sid; }); if (!t) return;
- if (date === 'cancel') on = origin;
- qty = Math.min(qty, +t.q);
- var ex = first(sp, function(z){ return z !== t && z.d === date && z.on === on; }), msg;
- var where = (date === 'cancel' ? 'Cancel' : fmt(date)) + (date !== 'cancel' && on !== origin ? (on === 'pending' ? ', new line' : ', ' + short(L(on))) : '');
- if (qty >= +t.q) {
-  if (ex) { ex.q = +ex.q + +t.q; ex.r = [ex.r, t.r].filter(Boolean).join('; '); sp.splice(sp.indexOf(t), 1); msg = 'Merged: ' + where; }
-  else { t.d = date; t.on = on; msg = t.q + ' to ' + where; }
- } else {
-  t.q = +t.q - qty;
-  if (ex) ex.q = +ex.q + qty; else sp.push({id:nid(), q:qty, d:date, r:'', on:on});
-  msg = qty + ' to ' + where;
- }
- render(); toast(msg, true);
-}
-function splitInTwo(origin, sid){
- var sp = ensure(origin), t = first(sp, function(z){ return z.id === sid; });
- if (!t || +t.q < 2) return toast('Too small to split');
- pushHist(); var a = Math.ceil(+t.q / 2), b = +t.q - a; t.q = a;
- sp.splice(sp.indexOf(t) + 1, 0, {id:nid(), q:b, d:t.d, r:'', on:t.on});
- render(); toast('Split into ' + a + ' + ' + b, true);
-}
-function giveBack(origin, sid){
- var l = L(origin), sp = ensure(origin), t = first(sp, function(z){ return z.id === sid; }); if (!t) return;
- if (t.d === l.wasDate && t.on === origin) return toast('Already on its own line and date');
- applyMove(origin, sid, t.q, l.wasDate, origin);
-}
-function addSplit(origin){
- pushHist(); var l = L(origin), sp = ensure(origin);
- sp.push({id:nid(), q:0, d:l.wasDate, r:'', on:origin});
- render();
- var el = document.querySelector('[data-fk="q-' + sp[sp.length - 1].id + '"]'); if (el) el.focus();
-}
-function setField(origin, sid, f, v){
- var sp = ensure(origin), t = first(sp, function(z){ return z.id === sid; }); if (!t) return;
- if (f === 'q') { v = String(v).replace(/[^0-9]/g, ''); v = v === '' ? 0 : +v; if (t.q === v) return; pushHist(); t.q = v; }
- else if (f === 'd') { if (!v) return; pushHist(); t.d = v; }
- else if (f === 'on') { pushHist(); if (v === 'cancel') { t.d = 'cancel'; t.on = origin; } else { if (t.d === 'cancel') t.d = L(origin).wasDate; t.on = v; } }
- else if (f === 'r') t.r = v;
- render();
-}
-
-/* ---------- render: whole-SO board ---------- */
-function colsOf(g){
- var ds = [];
- g.lines.forEach(function(l){ ds.push(l.wasDate); splitsOf(l.id).forEach(function(t){ if (t.d !== 'cancel') ds.push(t.d); }); });
- ds = ds.filter(function(v, i, a){ return a.indexOf(v) === i; }).sort();
- return ds.concat(['new', 'cancel']);
-}
-function chipHTML(p){
- var o = p.origin, t = p.t, v = verbOf(t.d, o), rowL = p.row === 'newline' ? null : L(p.row);
- var from = p.origin.id !== p.row ? '<div class="o" title="from ' + esc(lineLabel(o)) + '">from ' + esc(o.no ? 'line ' + o.no : o.wasQty + ' line') + '</div>' : '';
- var warn = (S.moment === 'confirm' && rowL && t.d !== 'cancel' && nowD(rowL) !== t.d) ? '<div class="w">AutoCount ' + fmtS(nowD(rowL)) + '</div>' : '';
- var rm = t.r ? '<div class="o" title="' + esc(t.r) + '">' + esc(t.r) + '</div>' : '';
- return '<div class="chip ' + v + (S.selChip === t.id ? ' selc' : '') + '" tabindex="0" role="button" aria-roledescription="draggable split" aria-label="' + esc(t.q + ' ' + verbLabel(v) + (t.d !== 'cancel' ? ' on ' + fmt(t.d) : '') + ' from ' + lineLabel(o)) + '" data-sid="' + t.id + '" data-origin="' + o.id + '" data-row="' + p.row + '" data-col="' + t.d + '" data-fk="chip-' + t.id + '"><div class="q">' + esc(t.q) + '</div>' + from + warn + rm + '</div>';
-}
-function rowHeadHTML(l){
- var sp = isSplit(l.id), gap = gapOf(l.id), out = movedOut(l.id), inn = movedIn(l.id), plan = planQty(l.id), conf = S.moment === 'confirm';
- var h = '<div class="rh' + (S.sel === l.id ? ' sel' : '') + '" tabindex="0" data-act="zoom" data-lid="' + l.id + '" data-fk="rh-' + l.id + '">';
- h += '<div class="t num">' + esc(lineLabel(l)) + '</div><div class="k">';
- if (sp) h += '<span class="pill secondary">Split ' + splitsOf(l.id).length + '</span>';
- if (gap > 0) h += '<span class="gap">Gap ' + gap + '</span>'; else if (gap < 0) h += '<span class="gap">Over ' + (-gap) + '</span>';
- if (conf) { var left = leftOf(l.id); h += left === 0 ? '<span class="pill success">Explained</span>' : left > 0 ? pill('ORDER', '+' + left) : pill('CANCEL', String(-left)); }
- h += '</div>';
- if (out.length) h += '<div class="m" title="moved out">→ ' + esc(out.map(function(t){ return t.q + (t.on === 'pending' ? ' to new line' : ' to ' + short(L(t.on))); }).join(', ')) + '</div>';
- if (inn.length) h += '<div class="m">← ' + esc(inn.map(function(p){ return p.t.q + ' from ' + short(p.origin); }).join(', ')) + '</div>';
- h += '<div class="m">Plan ' + plan + ' · AutoCount ' + nowQ(l) + (conf && nowD(l) !== l.wasDate ? ' on ' + fmtS(nowD(l)) : '') + '</div>';
- return h + '</div>';
-}
-function boardHTML(){
- var h = '';
- groups().forEach(function(g){
-  var cols = colsOf(g), all = placed(g);
-  var tmpl = '230px ' + cols.map(function(c){ return c === 'new' || c === 'cancel' ? '92px' : '96px'; }).join(' ');
-  h += '<div class="grp"><div class="gh">' + esc(g.item) + ' <span class="tag">' + esc(g.loc) + '</span><span class="mut" style="font-weight:400;font-size:12px">' + g.lines.length + ' line' + (g.lines.length > 1 ? 's' : '') + '</span></div>';
-  h += '<div class="mx" style="grid-template-columns:' + tmpl + '"><div class="ch l">SO line</div>' + cols.map(function(c){ return '<div class="ch' + (c === 'cancel' ? ' cx' : '') + '">' + (c === 'new' ? 'New date' : c === 'cancel' ? 'Cancel' : fmt(c)) + '</div>'; }).join('');
-  var rows = g.lines.map(function(l){ return l.id; }).concat(['newline']);
-  rows.forEach(function(r){
-   var l = r === 'newline' ? null : L(r);
-   if (r === 'newline') h += '<div class="rh" style="cursor:default"><div class="t" style="font-weight:500;color:var(--muted-fg);font-style:italic">New line</div><div class="m">not in AutoCount yet</div></div>';
-   else h += rowHeadHTML(l);
-   cols.forEach(function(c){
-    var chips = all.filter(function(p){ return p.row === r && p.col === c; }).map(chipHTML).join('');
-    var cls = 'cell' + (l && c === l.wasDate ? ' orig' : '') + (c === 'new' ? ' newc' : '') + (c === 'cancel' ? ' cxc' : '');
-    var drop = !(r === 'newline' && c === 'cancel');
-    h += '<div class="' + cls + '" data-grp="' + esc(g.k) + '" data-row="' + r + '" data-col="' + c + '"' + (drop ? ' data-drop="1"' : '') + (l && c === l.wasDate ? ' title="Original date of this line"' : '') + '>' + chips + '</div>';
-   });
+function sheet(narrow){
+  // narrow: the hidden cells are display:none, so only the remaining columns get a <col>
+  var cols = narrow
+    ? [118,58,106,84,196,150,170,78,34]
+    : [50,84,84,110,70,56,106,84,196,150,null,80,34];
+  var h = '<table class="sh'+(narrow?' narrow':'')+'"><colgroup>';
+  cols.forEach(function(w){ h += '<col'+(w?' style="width:'+w+'px"':'')+'>'; });
+  h += '</colgroup><thead><tr><th class="c-line">Line</th><th class="c-sod">SO date</th><th class="c-son">S/O no</th><th class="c-item">Item code</th><th class="c-loc">Location</th><th>Qty</th><th>Delivery date</th><th class="chg">Change quantity</th><th class="chg">Change date</th><th class="chg">AutoCount line</th><th class="chg">Remark</th><th>Balance</th><th aria-label="Row actions"></th></tr></thead><tbody>';
+  var prev = null;
+  visible().forEach(function(l){
+    var rows = isSplit(l) ? l.splits : [null];
+    var n = rows.length;
+    rows.forEach(function(s,i){
+      var cls = [];
+      if(i===0 && l.item!==prev) cls.push('itemtop');
+      if(i===0 && state.flash===l.id) cls.push('hl');
+      h += '<tr data-line="'+l.id+'" class="'+cls.join(' ')+'">';
+      if(i===0){
+        var rs = n>1 ? ' rowspan="'+n+'"' : '';
+        var nowTxt = l.now && !l.added ? '<span class="now">AutoCount now<br>'+l.now.qty+' · '+iso2(l.now.date)+'</span>' : '';
+        h += '<td class="base c-line m num"'+rs+'>'+l.label+'</td>';
+        h += '<td class="base c-sod m"'+rs+'>'+SO.date+'</td>';
+        h += '<td class="base c-son m"'+rs+'>'+SO.no+'</td>';
+        h += '<td class="base c-item m"'+rs+'><b style="font-weight:600">'+esc(l.item)+'</b><span class="lno">line '+l.label+'</span></td>';
+        h += '<td class="base c-loc m"'+rs+'>'+esc(l.loc)+'</td>';
+        h += '<td class="base m num"'+rs+'>'+(l.added?'0':l.qty)+'</td>';
+        h += '<td class="base m"'+rs+'>'+(l.added?'<span class="mut">–</span>':iso2(l.date))+nowTxt+'</td>';
+      }
+      if(l.added){
+        h += '<td colspan="2"><span class="added">Added in AutoCount: '+l.now.qty+' · '+iso2(l.now.date)+'</span></td><td><span class="mut">–</span></td><td></td><td class="base"><span class="bal none">–</span></td><td></td></tr>';
+        return;
+      }
+      if(s===null){
+        h += '<td><button class="remain" data-act="open" data-f="qty" data-k="'+l.id+'|-|qty" aria-label="Split line '+l.label+' quantity">REMAIN</button></td>';
+        h += '<td><button class="remain" data-act="open" data-f="date" data-k="'+l.id+'|-|date" aria-label="Split line '+l.label+' date">REMAIN</button></td>';
+        h += '<td><span class="mut">–</span></td>';
+        h += '<td><textarea rows="1" class="cell-in rm" data-f="remark0" data-line-id="'+l.id+'" data-k="'+l.id+'|-|remark" aria-label="Remark line '+l.label+'">'+esc(l.remark)+'</textarea></td>';
+      } else {
+        var w = word(s,l);
+        h += '<td class="split"><input class="cell-in q" inputmode="decimal" data-f="qty" data-line-id="'+l.id+'" data-sid="'+s.id+'" data-k="'+l.id+'|'+s.id+'|qty" value="'+(s.qty===''?'':s.qty)+'" aria-label="Split quantity"></td>';
+        if(w==='CANCEL'){
+          h += '<td class="split"><span class="pill CANCEL">CANCEL</span></td>';
+        } else {
+          var txt = s.bad!=null ? s.bad : iso2(s.date);
+          h += '<td class="split"><div class="dcell"><input class="cell-in'+(s.bad!=null?' badin':'')+'" data-f="date" data-line-id="'+l.id+'" data-sid="'+s.id+'" data-k="'+l.id+'|'+s.id+'|date" value="'+esc(txt)+'" placeholder="DD/MM/YYYY" aria-label="Split date">'+ICON.cal+'<span class="pill '+w+'">'+w+'</span></div></td>';
+        }
+        var opts = '<option value="self"'+(s.on===l.id?' selected':'')+'>Line '+l.label+' (this line)</option>';
+        siblings(l).forEach(function(t){
+          var fig = t.added ? 'new '+t.now.qty+' · '+iso2(t.now.date) : (t.now ? 'now '+t.now.qty+' · '+iso2(t.now.date) : t.qty+' · '+iso2(t.date));
+          opts += '<option value="'+t.id+'"'+(s.on===t.id?' selected':'')+'>Line '+t.label+' · '+fig+'</option>';
+        });
+        opts += '<option value="new"'+(s.on===null?' selected':'')+'>New line</option>';
+        opts += '<option value="cancel"'+(s.on==='cancel'?' selected':'')+'>Cancel</option>';
+        h += '<td class="split"><select class="cell-in" data-f="on" data-line-id="'+l.id+'" data-sid="'+s.id+'" data-k="'+l.id+'|'+s.id+'|on" aria-label="AutoCount line">'+opts+'</select></td>';
+        h += '<td class="split"><textarea rows="1" class="cell-in rm" data-f="remark" data-line-id="'+l.id+'" data-sid="'+s.id+'" data-k="'+l.id+'|'+s.id+'|remark" aria-label="Split remark">'+esc(s.remark)+'</textarea></td>';
+      }
+      if(i===0){
+        var g = gap(l), bal;
+        if(!isSplit(l)) bal = '';
+        else if(g===0) bal = '<span class="bal ok" title="Split '+l.qty+' of '+l.qty+'">0 ✓</span>';
+        else if(g>0) bal = '<span class="bal warn" title="Split '+(l.qty-g)+' of '+l.qty+'">'+g+' left</span>';
+        else bal = '<span class="bal bad" title="Split '+(l.qty-g)+' of '+l.qty+'">'+(-g)+' over</span>';
+        h += '<td class="base"'+(n>1?' rowspan="'+n+'"':'')+'><div class="balbox">'+bal+'<button class="btn xs" data-act="add" data-line-id="'+l.id+'" data-k="'+l.id+'|-|add">'+ICON.plus+'Split</button></div></td>';
+      }
+      h += '<td>'+(s?'<button class="btn icon" data-act="del" data-line-id="'+l.id+'" data-sid="'+s.id+'" aria-label="Remove split" title="Remove split">'+ICON.x+'</button>':'')+'</td>';
+      h += '</tr>';
+      prev = l.item;
+    });
   });
-  h += '</div></div>';
- });
- return h;
+  h += '</tbody></table>';
+  return h;
 }
 
-/* ---------- render: zoom ---------- */
-var drag = null;
-function segList(lid){ var l = L(lid); var segs = splitsOf(lid).slice().sort(byDate).map(function(t){ return {id:t.id, q:+t.q || 0, d:t.d, v:verbOf(t.d, l)}; }); var g = gapOf(lid); if (g > 0) segs.push({id:'gap', q:g}); return segs; }
-function barHTML(lid, compact){
- var l = L(lid), segs = segList(lid), scale = Math.max(l.wasQty, sumOf(lid)), h = '', cum = 0, divs = '';
- segs.forEach(function(s, i){
-  var w = scale ? s.q / scale * 100 : 0;
-  var label = s.id === 'gap' ? 'Gap ' + s.q : (w > (compact ? 16 : 11) ? s.q + (w > (compact ? 32 : 24) && s.d !== 'cancel' ? ' · ' + fmtS(s.d) : '') : (w > 4 ? String(s.q) : ''));
-  h += '<div class="sg ' + (s.id === 'gap' ? 'gapseg' : s.v) + '" style="width:' + w + '%" title="' + esc(s.id === 'gap' ? 'Gap ' + s.q : s.q + ' ' + verbLabel(s.v) + ' ' + fmt(s.d)) + '">' + esc(label) + '</div>';
-  cum += w;
-  if (i < segs.length - 1 && segs[i + 1].id !== 'gap' && s.id !== 'gap') divs += '<div class="dv" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Move qty between splits" aria-valuenow="' + s.q + '" data-lid="' + lid + '" data-a="' + i + '" data-fk="dv-' + (compact ? 'p' : 'd') + '-' + i + '" style="left:' + cum + '%"></div>';
- });
- return '<div class="bar' + (drag ? ' dragging' : '') + '" data-lid="' + lid + '">' + h + divs + '</div>';
-}
-function sumHTML(lid){
- var l = L(lid), s = sumOf(lid), g = gapOf(lid);
- return '<div class="sum"><span class="mut">Line <b style="color:var(--foreground)">' + l.wasQty + '</b></span><span class="mut">Split <b style="color:var(--foreground)">' + s + '</b></span>' + (g === 0 ? '<span class="ok">Adds up</span>' : g > 0 ? '<span class="bad">Gap ' + g + '</span>' : '<span class="bad">Over ' + (-g) + '</span>') + '</div>';
-}
-function onOptions(origin, t){
- var g = groupOf(L(origin));
- var opts = g.lines.map(function(x){ return '<option value="' + x.id + '"' + (t.d !== 'cancel' && t.on === x.id ? ' selected' : '') + '>' + esc((x.id === origin ? 'Own line, ' : '') + lineLabel(x)) + '</option>'; }).join('');
- return opts + '<option value="pending"' + (t.d !== 'cancel' && t.on === 'pending' ? ' selected' : '') + '>New line (not in AutoCount yet)</option><option value="cancel"' + (t.d === 'cancel' ? ' selected' : '') + '>Cancel</option>';
-}
-function zoomHTML(){
- var c = C(), l = L(S.sel), idx = c.lines.indexOf(l), sp = splitsOf(l.id).slice().sort(byDate);
- var h = '<div class="zh"><div><div class="t">' + esc(lineLabel(l)) + '</div><div class="s">' + esc(gkey(l)) + (S.moment === 'confirm' ? ' · AutoCount now ' + esc(l.nowQty + ' on ' + fmt(l.nowDate)) : '') + '</div></div>' +
-  '<div style="display:flex;align-items:center;gap:2px"><button class="btn icon ghost" data-act="prev" aria-label="Previous line"' + (idx === 0 ? ' aria-disabled="true"' : '') + '>‹</button><span class="mut num" style="font-size:12px">' + (idx + 1) + ' of ' + c.lines.length + '</span><button class="btn icon ghost" data-act="next" aria-label="Next line"' + (idx === c.lines.length - 1 ? ' aria-disabled="true"' : '') + '>›</button><button class="btn icon ghost" data-act="zclose" aria-label="Close zoom">✕</button></div></div>';
- h += barHTML(l.id, false) + sumHTML(l.id);
- h += '<table class="dg"><colgroup><col style="width:62px"><col style="width:120px"><col></colgroup><thead><tr><th class="r">Qty</th><th>Date</th><th>Sits on / remark</th></tr></thead><tbody>';
- sp.forEach(function(t){
-  var v = verbOf(t.d, l);
-  h += '<tr class="ctx" data-sid="' + t.id + '" data-origin="' + l.id + '"><td style="vertical-align:top"><input class="inp r num" inputmode="decimal" data-f="q" data-sid="' + t.id + '" data-origin="' + l.id + '" data-fk="q-' + t.id + '" value="' + esc(t.q) + '" aria-label="Qty"></td>' +
-   '<td style="vertical-align:top">' + (t.d === 'cancel' ? '<div style="height:28px;display:flex;align-items:center">' + pill('CANCEL') + '</div>' : '<input class="inp" type="date" data-f="d" data-sid="' + t.id + '" data-origin="' + l.id + '" data-fk="d-' + t.id + '" value="' + esc(t.d) + '" aria-label="Date"><div style="margin-top:3px">' + pill(v) + '</div>') + '</td>' +
-   '<td style="white-space:normal"><div style="display:flex;gap:4px"><select class="inp" data-f="on" data-sid="' + t.id + '" data-origin="' + l.id + '" data-fk="on-' + t.id + '" aria-label="Sits on">' + onOptions(l.id, t) + '</select><button class="btn icon ghost" data-act="menu" data-sid="' + t.id + '" data-origin="' + l.id + '" aria-label="More actions">⋯</button></div><input class="inp" style="margin-top:4px" data-f="r" data-sid="' + t.id + '" data-origin="' + l.id + '" data-fk="r-' + t.id + '" value="' + esc(t.r) + '" placeholder="Remark" aria-label="Remark"></td></tr>';
- });
- h += '</tbody></table><div style="margin-top:8px"><button class="btn" data-act="add" data-origin="' + l.id + '">+ Add split</button></div>';
- return h;
-}
-function fsHTML(){
- var c = C(), gaps = gapsAll(), n = C().lines.filter(function(l){ return isSplit(l.id); }).length;
- var h = '<div class="fsh"><div><div class="ttl">Split delivery · ' + esc(c.so) + '</div><div class="sub">' + esc(c.customer) + ' · ' + esc(c.project) + '</div></div><div style="display:flex;gap:6px;align-items:center">' + (S.zoomOpen ? '' : '<button class="btn" data-act="zopen">Zoom line</button>') + '<button class="btn icon ghost" aria-label="Close">✕</button></div></div>';
- h += '<div class="fsb"><div class="board" id="board">' + boardHTML() + '</div><div class="zoom' + (S.zoomOpen ? '' : ' closed') + '" id="zoom">' + (S.zoomOpen ? zoomHTML() : '') + '</div></div>';
- h += '<div class="fsf"><div class="msg">' + (gaps.length ? '<span class="bad">' + esc(gaps.map(function(l){ var g = gapOf(l.id); return lineLabel(l) + (g > 0 ? ': gap ' + g : ': over ' + (-g)); }).join('; ')) + '</span>' : '<span class="mut">' + n + ' line' + (n === 1 ? '' : 's') + ' split · every line adds up</span>') + '</div>' +
-  '<div class="acts">' + (dirty() ? '<span class="mut" style="font-size:12px">Unsaved</span>' : '') + '<button class="btn" data-act="cancel">Cancel</button><button class="btn pri" data-act="save"' + (gaps.length ? ' aria-disabled="true"' : '') + '>Save</button></div></div>';
- return h;
+function statusHtml(){
+  var split = state.lines.filter(isSplit).length;
+  var bad = openGaps();
+  var h = '<span class="mut">'+state.lines.length+' lines · '+new Set(state.lines.map(function(l){return l.item;})).size+' products · '+split+' split</span>';
+  bad.forEach(function(l){ var g=gap(l); h += '<span class="bad">'+esc(l.item)+' line '+l.label+': '+(g>0?g+' left':g<0?(-g)+' over':'date to fix')+'</span> <a data-act="goto" data-line-id="'+l.id+'">Show</a>'; });
+  return h;
 }
 
-/* ---------- email + excel + OI lines + phone ---------- */
-function emailRows(){
- var rows = [], conf = S.moment === 'confirm';
- C().lines.forEach(function(l){
-  var left = conf ? leftOf(l.id) : 0;
-  if (isSplit(l.id)) {
-   var subs = splitsOf(l.id).slice().sort(byDate).map(function(t){ var v = verbOf(t.d, l); return {q:+t.q, iso:t.d === 'cancel' ? '' : t.d, at:t.d === 'cancel' ? l.wasDate : t.d, rem:verbLabel(v) + (t.r ? ' · ' + t.r : '')}; });
-   if (left > 0) subs.push({q:left, iso:l.nowDate, at:l.nowDate, rem:'ORDER (new qty)'});
-   if (left < 0) subs.push({q:-left, iso:'', at:l.wasDate, rem:'CANCEL BALANCE'});
-   rows.push({l:l, subs:subs});
-  } else if (conf && (left !== 0 || l.nowDate !== l.wasDate)) {
-   var own = l.wasQty + left;
-   rows.push({l:l, subs:[{q:own, iso:l.nowDate !== l.wasDate ? l.nowDate : '', at:l.nowDate, rem:left > 0 ? 'ORDER +' + left : left < 0 ? 'CANCEL BALANCE ' + (-left) : verbLabel(verbOf(l.nowDate, l))}]});
-  }
- });
- return rows;
+function frame(id, narrow){
+  var bad = openGaps().length>0;
+  var head = narrow
+    ? '<div class="fsh" style="padding:10px 12px"><div><div class="ttl" style="font-size:15px">Split delivery</div><div class="sub">'+SO.no+' · '+SO.date+' · '+SO.loc+'</div></div><div class="acts"><button class="btn ghost" aria-label="Close">Close</button><button class="btn pri" data-act="save"'+(bad?' aria-disabled="true"':'')+'>Save</button></div></div>'
+    : '<div class="fsh"><div><div class="ttl">Split delivery</div><div class="sub">'+SO.no+' · '+SO.date+' · '+esc(SO.customer)+'</div></div><div class="acts"><div class="search">'+ICON.search+'<input data-f="q" data-k="q" placeholder="Search item code" value="'+esc(state.q)+'">'+(state.q?'<button class="btn icon" data-act="clearq" aria-label="Clear search">'+ICON.x+'</button>':'')+'</div><span class="sw" role="switch" tabindex="0" data-act="only" aria-checked="'+state.onlySplit+'"><i></i>Split lines only</span><button class="btn ghost">Close</button><button class="btn pri" data-act="save"'+(bad?' aria-disabled="true"':'')+'>Save</button></div></div>';
+  return head + '<div class="stat">'+statusHtml()+'</div><div class="body">'+sheet(narrow)+'</div>';
 }
-function mailHead(c){ return '<table class="em"><tr><th>S/O NO</th><th>SO DATE</th><th>CUSTOMER</th><th>PROJECT</th></tr><tr><td>' + esc(c.so) + '</td><td>' + esc(c.soDate) + '</td><td>' + esc(c.customer) + '</td><td>' + esc(c.project) + '</td></tr></table>'; }
-function renderMail(){
- var c = C(), hasRem = c.today[0][6];
- $('#mailToday').innerHTML = '<div class="subj">OI: ' + esc(c.lines[0].loc) + ' @ ' + esc(c.so) + ' <span class="pill secondary" style="margin-left:6px">Today</span></div><h3>ORDER, ADVANCE, DELAY, CANCEL BALANCE</h3>' + mailHead(c) +
-  '<table class="em"><tr><th>LOCATION</th><th>ITEM CODE</th><th class="r">QTY</th><th class="r">NEW QTY</th><th>DELIVERY</th><th>NEW DATE</th>' + (hasRem ? '<th>REMARK</th>' : '') + '</tr>' +
-  c.today.map(function(r){ return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td class="r">' + r[2] + '</td><td class="r">' + r[3] + '</td><td>' + r[4] + '</td><td>' + r[5] + '</td>' + (hasRem ? '<td>' + r[6] + '</td>' : '') + '</tr>'; }).join('') + '</table><div class="mut" style="font-size:11.5px">' + esc(c.todayNote) + '</div>';
- var rows = emailRows();
- var n = '<div class="subj">OI: ' + esc(c.lines[0].loc) + ' @ ' + esc(c.so) + ' <span class="pill info" style="margin-left:6px">With the splits</span></div><h3>ORDER, ADVANCE, DELAY, CANCEL BALANCE</h3>' + mailHead(c) +
-  '<table class="em"><tr><th>LOCATION</th><th>ITEM CODE</th><th class="r">QTY</th><th class="r">NEW QTY</th><th>DELIVERY</th><th>NEW DATE</th><th>REMARK</th></tr>';
- if (!rows.length) n += '<tr><td colspan="7" class="mut">No change</td></tr>';
- rows.forEach(function(row){
-  var l = row.l, k = row.subs.length;
-  row.subs.forEach(function(s, i){
-   n += '<tr>' + (i === 0 ? '<td rowspan="' + k + '">' + esc(l.loc) + '</td><td rowspan="' + k + '">' + esc(l.item) + '</td><td class="r" rowspan="' + k + '">' + l.wasQty + '</td>' : '') + '<td class="r' + (i ? ' sub' : '') + '">' + s.q + '</td>' + (i === 0 ? '<td rowspan="' + k + '">' + fmt(l.wasDate) + '</td>' : '') + '<td class="' + (i ? 'sub' : '') + '">' + fmt(s.iso) + '</td><td class="' + (i ? 'sub' : '') + '">' + esc(s.rem) + '</td></tr>';
+
+function mail(){
+  var rows = '';
+  state.lines.forEach(function(l){
+    if(!isSplit(l)) return;
+    l.splits.forEach(function(s){
+      var w = word(s,l);
+      var rem = (w==='CANCEL'?'CANCEL BALANCE':w) + (s.remark?', '+s.remark:'');
+      rows += '<tr><td>'+esc(l.loc)+'</td><td>'+esc(l.item)+'</td><td class="r">'+l.qty+'</td><td class="r">'+(s.qty||0)+'</td><td>'+iso2(l.date)+'</td><td>'+(w==='CANCEL'?'':iso2(s.date))+'</td><td>'+esc(rem)+'</td></tr>';
+    });
   });
- });
- $('#mailNew').innerHTML = n + '</table><div class="mut" style="font-size:11.5px">Raised by (CS) on 16/10/2026. OI Excel attached.</div>';
+  if(!rows) rows = '<tr><td colspan="7" class="mut">No split lines: the email prints AutoCount\'s changes as today.</td></tr>';
+  return '<div class="subj">OI: '+SO.loc+' @ '+SO.no+'</div><h3>ORDER, ADVANCE, DELAY, CANCEL BALANCE</h3><table class="em"><tr><th>LOCATION</th><th>ITEM CODE</th><th class="r">QTY</th><th class="r">NEW QTY</th><th>DELIVERY</th><th>NEW DATE</th><th>REMARK</th></tr>'+rows+'</table>';
 }
-function renderExcel(){
- var c = C(), rows = [];
- emailRows().forEach(function(row){ row.subs.forEach(function(s){ rows.push({l:row.l, q:s.q, at:s.at, rem:s.rem}); }); });
- rows.sort(function(a, b){ return a.l.item < b.l.item ? -1 : a.l.item > b.l.item ? 1 : a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
- var h = '<div style="padding:8px 10px;font-size:12px" class="mut">' + esc(c.so) + ' OI Excel: one sheet (PR #1748); TOTAL QTY, SUPPLIER, PO NO, TAKEN and the other existing columns unchanged and left blank here; REMARK appended at the end</div><div style="overflow-x:auto"><table class="xs"><tr class="title"><td colspan="9">ORDER INQUIRY</td></tr><tr><th>SO DATE</th><th>S/O NO</th><th>ITEM CODE</th><th>QTY</th><th>DELIVERY DATE</th><th>PROJECT/CUSTOMER</th><th>LOCATION</th><th>…</th><th class="newcol">REMARK</th></tr>' +
-  (rows.length ? rows.map(function(r){ return '<tr><td>' + esc(c.soDate) + '</td><td>' + esc(c.so) + '</td><td>' + esc(r.l.item) + '</td><td>' + r.q + '</td><td>' + fmt(r.at) + '</td><td class="l">' + esc(c.project) + '</td><td>' + esc(r.l.loc) + '</td><td></td><td class="l newcell">' + esc(r.rem) + '</td></tr>'; }).join('') : '<tr><td colspan="9" class="mut">No rows</td></tr>') +
-  '</table></div><div class="tabs"><span>ORDER INQUIRY</span></div>';
- $('#xl').innerHTML = h;
-}
-function renderOiLines(){
- var c = C(), conf = S.moment === 'confirm';
- var h = '<div class="hd">Lines · ' + esc(c.so) + '</div><table class="dg"><colgroup><col style="width:36px"><col style="width:120px"><col style="width:90px"><col style="width:90px"><col style="width:120px"><col style="width:100px"><col></colgroup><thead><tr><th></th><th>Product</th><th>Location</th><th class="r">SO qty</th><th>Delivery date</th><th>Split</th><th>Change</th></tr></thead><tbody>';
- c.lines.forEach(function(l){
-  var sp = isSplit(l.id), open = sp && S.expanded[l.id];
-  h += '<tr class="' + (sp ? 'click' : '') + '" data-act="oiexp" data-lid="' + l.id + '"><td class="mut">' + (sp ? (open ? '▾' : '▸') : '') + '</td><td>' + esc(l.item) + '</td><td>' + esc(l.loc) + '</td><td class="r num">' + nowQ(l) + '</td><td>' + fmt(nowD(l)) + '</td><td>' + (sp ? '<span class="pill secondary">Split ' + splitsOf(l.id).length + '</span>' : '') + '</td><td>' + (conf && (l.nowQty !== l.wasQty || l.nowDate !== l.wasDate) ? '<span class="mut">Was ' + l.wasQty + ' on ' + fmt(l.wasDate) + '</span>' : '') + '</td></tr>';
-  if (open) {
-   h += '<tr><td></td><td colspan="6" style="padding:4px 8px 10px;white-space:normal"><table class="dg" style="background:#fafafa"><colgroup><col style="width:80px"><col style="width:110px"><col style="width:130px"><col style="width:230px"><col></colgroup><thead><tr><th class="r">Qty</th><th>Date</th><th>Change</th><th>Sits on</th><th>Remark</th></tr></thead><tbody>' +
-    splitsOf(l.id).slice().sort(byDate).map(function(t){ return '<tr><td class="r num">' + t.q + '</td><td>' + fmt(t.d) + '</td><td>' + pill(verbOf(t.d, l)) + '</td><td class="mut">' + (t.d === 'cancel' ? '' : t.on === 'pending' ? 'New line (not in AutoCount yet)' : esc((t.on === l.id ? 'Own line' : lineLabel(L(t.on))))) + '</td><td>' + esc(t.r) + '</td></tr>'; }).join('') + '</tbody></table></td></tr>';
+
+var desk = document.getElementById('fsDesk'), phone = document.getElementById('fsPhone');
+function renderAll(focus){
+  var act = document.activeElement, k = act && act.getAttribute && act.getAttribute('data-k'), host = act && act.closest && act.closest('#fsDesk,#fsPhone');
+  var selS = null; try{ selS = act.selectionStart; }catch(e){}
+  var deskScroll = desk.querySelector('.body') ? desk.querySelector('.body').scrollTop : null;
+  var phScroll = phone.querySelector('.body') ? [phone.querySelector('.body').scrollTop, phone.querySelector('.body').scrollLeft] : null;
+  desk.innerHTML = frame('d', false);
+  phone.innerHTML = frame('p', true);
+  if(deskScroll!=null) desk.querySelector('.body').scrollTop = deskScroll;
+  if(phScroll) { phone.querySelector('.body').scrollTop = phScroll[0]; phone.querySelector('.body').scrollLeft = phScroll[1]; }
+  document.getElementById('mail').innerHTML = mail();
+  Array.prototype.forEach.call(document.querySelectorAll('textarea.rm'), fit);
+  var target = focus || (k && host ? {host:host, k:k, sel:selS} : null);
+  if(target){
+    var el = (target.host||desk).querySelector('[data-k="'+target.k+'"]');
+    if(el){ el.focus({preventScroll:!!target.noScroll}); if(target.select && el.select) el.select(); else if(target.sel!=null){ try{ el.setSelectionRange(target.sel,target.sel); }catch(e){} } }
   }
- });
- $('#oiLines').innerHTML = h + '</tbody></table>';
-}
-function renderPhone(){
- var c = C(), l = L(S.sel), sp = splitsOf(l.id).slice().sort(byDate), gaps = gapsAll();
- var h = '<div class="ph-h"><div style="font-weight:600;font-size:16px">Split delivery</div><div class="mut" style="font-size:12px">' + esc(c.so) + '</div><div class="pl" style="margin-top:8px">' +
-  c.lines.map(function(x){ var g = gapOf(x.id); return '<button data-act="zoom" data-lid="' + x.id + '" class="' + (x.id === l.id ? 'on' : '') + '">' + esc(x.item + ' ' + x.wasQty) + (g ? ' ⚠' : '') + '</button>'; }).join('') + '</div></div>';
- h += '<div class="ph-b"><div style="font-size:12.5px;font-weight:600">' + esc(lineLabel(l)) + '</div>' + barHTML(l.id, true) + sumHTML(l.id);
- sp.forEach(function(t){
-  var v = verbOf(t.d, l);
-  h += '<div class="pc ' + v + '" data-sid="' + t.id + '" data-origin="' + l.id + '"><div class="r1"><div class="step"><button data-act="step" data-by="-1" data-sid="' + t.id + '" data-origin="' + l.id + '" aria-label="Less">−</button><input inputmode="decimal" data-f="q" data-sid="' + t.id + '" data-origin="' + l.id + '" data-fk="pq-' + t.id + '" value="' + esc(t.q) + '" aria-label="Qty"><button data-act="step" data-by="1" data-sid="' + t.id + '" data-origin="' + l.id + '" aria-label="More">+</button></div>' + pill(v) + '<button class="btn icon ghost" data-act="menu" data-sid="' + t.id + '" data-origin="' + l.id + '" aria-label="More actions">⋯</button></div><div class="r2">' +
-   (t.d === 'cancel' ? '' : '<input class="inp" type="date" data-f="d" data-sid="' + t.id + '" data-origin="' + l.id + '" data-fk="pd-' + t.id + '" value="' + esc(t.d) + '" aria-label="Date">') +
-   '<select class="inp" data-f="on" data-sid="' + t.id + '" data-origin="' + l.id + '" data-fk="pon-' + t.id + '" aria-label="Sits on">' + onOptions(l.id, t) + '</select><input class="inp" data-f="r" data-sid="' + t.id + '" data-origin="' + l.id + '" data-fk="pr-' + t.id + '" value="' + esc(t.r) + '" placeholder="Remark" aria-label="Remark"></div></div>';
- });
- h += '<button class="btn" style="width:100%;justify-content:center;height:36px" data-act="add" data-origin="' + l.id + '">+ Add split</button></div>';
- h += '<div class="ph-f">' + (gaps.length ? '<div style="font-size:12px;color:var(--destructive);font-weight:500">' + gaps.length + ' line' + (gaps.length > 1 ? 's do' : ' does') + ' not add up</div>' : '') + '<div style="display:flex;gap:8px"><button class="btn" style="flex:1;justify-content:center;height:36px" data-act="cancel">Cancel</button><button class="btn pri" style="flex:1;justify-content:center;height:36px" data-act="save"' + (gaps.length ? ' aria-disabled="true"' : '') + '>Save</button></div></div>';
- $('#phone').innerHTML = h;
-}
-function render(){
- var ae = document.activeElement, fk = ae && ae.getAttribute && ae.getAttribute('data-fk'), sS = null, sE = null;
- try { if (fk && ae.selectionStart != null) { sS = ae.selectionStart; sE = ae.selectionEnd; } } catch (e) {}
- var bs = $('#board') ? $('#board').scrollLeft : 0, bt = $('#board') ? $('#board').scrollTop : 0;
- $$('#caseSeg button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-case') === S.caseKey); });
- $$('#momSeg button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-mom') === S.moment); });
- $('#fs').innerHTML = fsHTML();
- if ($('#board')) { $('#board').scrollLeft = bs; $('#board').scrollTop = bt; }
- renderMail(); renderExcel(); renderOiLines(); renderPhone();
- if (fk) { var el = document.querySelector('[data-fk="' + fk + '"]'); if (el) { el.focus({preventScroll:true}); try { if (sS != null) el.setSelectionRange(sS, sE); } catch (e) {} } }
+  state.flash = null;
 }
 
-/* ---------- popover + menu ---------- */
-var pop = null;
-function closePop(){ var p = $('.pop'); if (p) p.remove(); pop = null; }
-function closeMenu(){ var m = $('.menu.live'); if (m) m.remove(); }
-function place(el, x, y){ document.body.appendChild(el); var r = el.getBoundingClientRect(); el.style.left = clamp(x, 8, window.innerWidth - r.width - 8) + 'px'; el.style.top = clamp(y, 8, window.innerHeight - r.height - 8) + 'px'; }
-function openMove(origin, sid, col, row, x, y){
- closePop(); closeMenu();
- var f = findSplit(sid); if (!f) return; var max = +f.t.q; if (!max) return;
- var on = col === 'cancel' ? origin : (row === 'newline' ? 'pending' : row);
- pop = {origin:origin, sid:sid, col:col, on:on};
- var where = col === 'cancel' ? 'Cancel' : (col === 'new' ? '<input class="inp" type="date" id="popd" style="width:140px">' : esc(fmt(col)));
- var lineTxt = col === 'cancel' ? '' : (on === origin ? '' : ' · ' + (on === 'pending' ? 'new line' : esc(short(L(on)))));
- var el = document.createElement('div'); el.className = 'pop'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Move qty');
- el.innerHTML = '<div class="pt">Move to ' + where + lineTxt + '</div><div class="prow"><input class="inp r num" id="popq" inputmode="decimal" style="width:90px" value="' + max + '"><span class="mut">of ' + max + '</span></div><div class="pb"><button class="btn" data-act="pop-cancel">Cancel</button><button class="btn pri" data-act="pop-ok">Move</button></div>';
- place(el, x, y);
- var fi = col === 'new' ? $('#popd') : $('#popq'); fi.focus(); try { if (col !== 'new') fi.select(); } catch (e) {}
-}
-function popOk(){
- if (!pop) return;
- var q = $('#popq').value, d = pop.col === 'new' ? $('#popd').value : pop.col;
- if (!d) { $('#popd').focus(); return; }
- var p = pop; closePop(); applyMove(p.origin, p.sid, q, d, p.on);
-}
-function openMenu(origin, sid, x, y){
- closeMenu(); closePop();
- var f = findSplit(sid); if (!f) return; var t = f.t, g = groupOf(L(origin));
- var el = document.createElement('div'); el.className = 'menu live'; el.setAttribute('role', 'menu');
- var h = '<button role="menuitem" data-m="split"><span>Split in two</span><kbd>S</kbd></button><button role="menuitem" data-m="new"><span>Move to new date…</span><kbd>N</kbd></button><button role="menuitem" data-m="cancel"><span>Cancel this qty</span><kbd>C</kbd></button><button role="menuitem" data-m="back"><span>Back to its own line and date</span><kbd>Del</kbd></button><hr><div class="lbl">Sits on</div>' +
-  g.lines.map(function(x){ return '<button role="menuitemradio" aria-checked="' + (t.on === x.id && t.d !== 'cancel') + '" data-m="on" data-on="' + x.id + '"><span>' + esc((x.id === origin ? 'Own line, ' : '') + lineLabel(x)) + '</span><span>' + (t.on === x.id && t.d !== 'cancel' ? '✓' : '') + '</span></button>'; }).join('') +
-  '<button role="menuitemradio" data-m="on" data-on="pending"><span>New line (not in AutoCount yet)</span><span>' + (t.on === 'pending' ? '✓' : '') + '</span></button>';
- el.innerHTML = h; el.dataset.origin = origin; el.dataset.sid = sid;
- place(el, x, y); var b = el.querySelector('button'); if (b) b.focus();
+function fit(t){ t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }
+function scrollToLine(host, id, smooth){
+  var body = host.querySelector('.body'), tr = host.querySelector('tr[data-line="'+id+'"]');
+  if(body && tr) body.scrollTo({top: Math.max(0, tr.offsetTop - 80), behavior: smooth?'smooth':'auto'});
 }
 
-/* ---------- pointer drag (simulates @dnd-kit useDraggable + DragOverlay + useDroppable) ---------- */
-var pd = null, overlay = null, hot = null;
-function hitCell(x, y){ var el = document.elementFromPoint(x, y); var c = el && el.closest && el.closest('.cell[data-drop]'); if (!c || !pd) return null; return c.getAttribute('data-grp') === pd.grp ? c : null; }
-document.addEventListener('pointerdown', function(e){
- var dv = e.target.closest && e.target.closest('.dv');
- if (dv) {
+function toast(t){ var d=document.createElement('div'); d.className='toast'; d.textContent=t; document.body.appendChild(d); setTimeout(function(){ d.remove(); }, 2600); }
+
+function onInput(e){
+  var el = e.target, f = el.getAttribute('data-f'); if(!f) return;
+  var host = el.closest('#fsDesk,#fsPhone');
+  if(f==='q'){ state.q = el.value; renderAll(); return; }
+  var l = lineById(el.getAttribute('data-line-id')); if(!l) return;
+  if(el.tagName==='TEXTAREA') fit(el);
+  if(f==='remark0'){ l.remark = el.value; document.getElementById('mail').innerHTML = mail(); return; }
+  var s = l.splits.filter(function(x){ return x.id===el.getAttribute('data-sid'); })[0]; if(!s) return;
+  if(f==='remark'){ s.remark = el.value; document.getElementById('mail').innerHTML = mail(); return; }
+  if(f==='qty'){
+    var v = el.value.replace(/[^\d]/g,'');
+    snap(); s.qty = v===''?'':parseInt(v,10); renderAll({host:host, k:el.getAttribute('data-k'), sel:v.length});
+  }
+}
+function onChange(e){
+  var el = e.target, f = el.getAttribute('data-f'); if(!f) return;
+  var host = el.closest('#fsDesk,#fsPhone');
+  var l = lineById(el.getAttribute('data-line-id')); if(!l) return;
+  var s = l.splits.filter(function(x){ return x.id===el.getAttribute('data-sid'); })[0]; if(!s) return;
+  if(f==='date'){
+    var d = parseD(el.value); snap();
+    if(d){ s.date = d; delete s.bad; } else { s.bad = el.value; }
+    renderAll({host:host, k:el.getAttribute('data-k'), noScroll:true});
+  }
+  if(f==='on'){
+    snap(); var v = el.value;
+    if(v==='cancel'){ s.on='cancel'; s.date=null; delete s.bad; }
+    else { if(s.on==='cancel') s.date = l.date; s.on = v==='self'? l.id : v==='new' ? null : v; }
+    renderAll({host:host, k:el.getAttribute('data-k'), noScroll:true});
+  }
+}
+function onClick(e){
+  var b = e.target.closest('[data-act]'); if(!b) return;
+  var act = b.getAttribute('data-act'), host = b.closest('#fsDesk,#fsPhone');
+  var l = lineById(b.getAttribute('data-line-id') || (b.getAttribute('data-k')||'').split('|')[0]);
+  if(act==='open'){ snap(); materialise(l); var f=b.getAttribute('data-f'); renderAll({host:host, k:l.id+'|'+l.splits[0].id+'|'+f, select:true, noScroll:true}); }
+  if(act==='add'){ snap(); var s = addSplit(l); renderAll({host:host, k:l.id+'|'+s.id+'|qty', select:true, noScroll:true}); }
+  if(act==='del'){ snap(); l.splits = l.splits.filter(function(x){ return x.id!==b.getAttribute('data-sid'); }); if(l.splits.length===0) l.splits=[]; tidy(l); renderAll(); }
+  if(act==='only'){ state.onlySplit = !state.onlySplit; renderAll(); }
+  if(act==='clearq'){ state.q=''; renderAll(); }
+  if(act==='goto'){ state.q=''; state.onlySplit=false; state.flash=l.id; renderAll(); scrollToLine(host, l.id, true); var first = host.querySelector('tr[data-line="'+l.id+'"] [data-k]'); if(first) first.focus({preventScroll:true}); }
+  if(act==='save'){ if(b.getAttribute('aria-disabled')==='true') return; state.lines.forEach(tidy); renderAll(); toast('Splits saved for '+SO.no); }
+}
+function rowsOf(host){ return Array.prototype.slice.call(host.querySelectorAll('[data-k]')).filter(function(x){ return /\|(qty|date|remark|on)$/.test(x.getAttribute('data-k')); }); }
+function onKey(e){
+  var el = e.target, host = el.closest && el.closest('#fsDesk,#fsPhone');
+  if((e.metaKey||e.ctrlKey) && !e.shiftKey && (e.key==='z'||e.key==='Z') && host){ e.preventDefault(); undo(); return; }
+  if(!host) return;
+  if(el.getAttribute('data-act')==='only' && (e.key===' '||e.key==='Enter')){ e.preventDefault(); el.click(); return; }
+  var k = el.getAttribute('data-k'); if(!k) return;
+  var parts = k.split('|'), l = lineById(parts[0]), f = parts[2];
+  if(!l) return;
+  if((e.metaKey||e.ctrlKey) && e.key==='Enter' && !l.added){ e.preventDefault(); snap(); var s = addSplit(l); renderAll({host:host, k:l.id+'|'+s.id+'|qty', select:true, noScroll:true}); return; }
+  if((e.metaKey||e.ctrlKey) && e.key==='Backspace' && parts[1]!=='-'){ e.preventDefault(); snap(); l.splits = l.splits.filter(function(x){ return x.id!==parts[1]; }); tidy(l); renderAll({host:host, k:l.id+'|-|'+f}); return; }
+  if(el.tagName==='SELECT' && (e.key==='ArrowUp'||e.key==='ArrowDown')) return;
+  var down = (e.key==='Enter' && !e.shiftKey) || e.key==='ArrowDown', up = (e.key==='Enter' && e.shiftKey) || e.key==='ArrowUp';
+  if(!down && !up) return;
+  if(el.tagName==='BUTTON' && e.key==='Enter') return;
+  if(f==='date' && e.key==='Enter') el.dispatchEvent(new Event('change',{bubbles:true}));
   e.preventDefault();
-  var bar = dv.closest('.bar'), lid = dv.getAttribute('data-lid'), a = +dv.getAttribute('data-a');
-  ensure(lid); pushHist(); var segs = segList(lid), l = L(lid);
-  drag = {lid:lid, x0:e.clientX, w:bar.getBoundingClientRect().width, scale:Math.max(l.wasQty, sumOf(lid)), qa:segs[a].q, qb:segs[a + 1].q, ida:segs[a].id, idb:segs[a + 1].id, fk:dv.getAttribute('data-fk')};
-  return;
- }
- var chip = e.target.closest && e.target.closest('.chip[data-sid]');
- if (!chip || e.button !== 0) return;
- pd = {chip:chip, sid:chip.getAttribute('data-sid'), origin:chip.getAttribute('data-origin'), row:chip.getAttribute('data-row'), col:chip.getAttribute('data-col'), grp:chip.closest('.cell').getAttribute('data-grp'), x0:e.clientX, y0:e.clientY, started:false};
-});
-function setPair(lid, ida, idb, qa, qb, delta){ var sp = ensure(lid), tot = qa + qb, na = clamp(qa + delta, 0, tot); sp.forEach(function(t){ if (t.id === ida) t.q = na; if (t.id === idb) t.q = tot - na; }); }
-document.addEventListener('pointermove', function(e){
- if (drag) { setPair(drag.lid, drag.ida, drag.idb, drag.qa, drag.qb, Math.round((e.clientX - drag.x0) / drag.w * drag.scale)); render(); var dv = document.querySelector('[data-fk="' + drag.fk + '"]'); if (dv) dv.classList.add('on'); return; }
- if (!pd) return;
- if (!pd.started) {
-  if (Math.abs(e.clientX - pd.x0) + Math.abs(e.clientY - pd.y0) < 5) return;
-  pd.started = true; pd.chip.classList.add('ghost');
-  overlay = pd.chip.cloneNode(true); overlay.classList.remove('ghost'); overlay.classList.add('overlay'); document.body.appendChild(overlay);
- }
- overlay.style.left = e.clientX + 'px'; overlay.style.top = e.clientY + 'px';
- var c = hitCell(e.clientX, e.clientY);
- if (hot && hot !== c) hot.classList.remove('hot');
- hot = c; if (c) c.classList.add('hot');
-});
-document.addEventListener('pointerup', function(e){
- if (drag) { var lid = drag.lid; drag = null; if (tidy(lid)) toast('Empty split removed', true); render(); return; }
- if (!pd) return;
- var p = pd; pd = null;
- if (overlay) { overlay.remove(); overlay = null; }
- if (hot) { hot.classList.remove('hot'); }
- if (!p.started) { S.sel = p.origin; S.zoomOpen = true; S.selChip = p.sid; render(); var ch = document.querySelector('[data-fk="chip-' + p.sid + '"]'); if (ch) ch.focus({preventScroll:true}); return; }
- p.chip.classList.remove('ghost');
- var c = hot; hot = null;
- if (!c) return;
- var row = c.getAttribute('data-row'), col = c.getAttribute('data-col');
- if (row === p.row && col === p.col) return;
- openMove(p.origin, p.sid, col, row, e.clientX + 10, e.clientY + 10);
+  var same = rowsOf(host).filter(function(x){ return x.getAttribute('data-k').split('|')[2]===f; });
+  var cur = host.querySelector('[data-k="'+k+'"]') || el;
+  var i = same.indexOf(cur); var nx = same[i + (down?1:-1)];
+  if(nx){ nx.focus(); if(nx.select) nx.select(); }
+}
+function onTyping(e){
+  // typing a digit or a date on a REMAIN cell splits the line and puts the key in the new row
+  var el = e.target; if(!(el.classList && el.classList.contains('remain'))) return;
+  if(e.key.length!==1 || e.metaKey || e.ctrlKey) return;
+  if(!/[\d\/]/.test(e.key)) return;
+  e.preventDefault();
+  var host = el.closest('#fsDesk,#fsPhone'), l = lineById(el.getAttribute('data-k').split('|')[0]), f = el.getAttribute('data-f');
+  snap(); materialise(l);
+  var s = l.splits[0];
+  if(f==='qty'){ s.qty = /\d/.test(e.key)?parseInt(e.key,10):s.qty; renderAll({host:host, k:l.id+'|'+s.id+'|qty', sel:1, noScroll:true}); }
+  else { renderAll({host:host, k:l.id+'|'+s.id+'|date', noScroll:true}); var d = host.querySelector('[data-k="'+l.id+'|'+s.id+'|date"]'); if(d){ d.value = e.key; } }
+}
+function onFocusOut(e){
+  var el = e.target, k = el.getAttribute && el.getAttribute('data-k'); if(!k) return;
+  var id = k.split('|')[0], l = lineById(id); if(!l || !isSplit(l)) return;
+  setTimeout(function(){
+    var a = document.activeElement, still = a && a.getAttribute && (a.getAttribute('data-k')||'').split('|')[0]===id;
+    if(still) return;
+    var before = JSON.stringify(l.splits); tidy(l);
+    if(JSON.stringify(l.splits)!==before) renderAll();
+  }, 0);
+}
+[desk, phone].forEach(function(h){
+  h.addEventListener('input', onInput);
+  h.addEventListener('change', onChange);
+  h.addEventListener('click', onClick);
+  h.addEventListener('keydown', onKey);
+  h.addEventListener('keydown', onTyping);
+  h.addEventListener('focusout', onFocusOut);
 });
 
-/* ---------- clicks, menus, inputs, keys ---------- */
-document.addEventListener('click', function(e){
- var mi = e.target.closest && e.target.closest('.menu.live button');
- if (mi) {
-  var m = mi.closest('.menu'), origin = m.dataset.origin, sid = m.dataset.sid, act = mi.getAttribute('data-m'), r = mi.getBoundingClientRect(), f = findSplit(sid);
-  closeMenu(); if (!f) return;
-  if (act === 'split') splitInTwo(origin, sid);
-  else if (act === 'new') openMove(origin, sid, 'new', f.t.on === 'pending' ? 'newline' : f.t.on, r.left, r.top);
-  else if (act === 'cancel') applyMove(origin, sid, f.t.q, 'cancel', origin);
-  else if (act === 'back') giveBack(origin, sid);
-  else if (act === 'on') { var on = mi.getAttribute('data-on'); applyMove(origin, sid, f.t.q, f.t.d === 'cancel' ? L(origin).wasDate : f.t.d, on); }
-  return;
- }
- if (!(e.target.closest && e.target.closest('.menu'))) closeMenu();
- var cb = e.target.closest && e.target.closest('[data-case]'); if (cb) { S.caseKey = cb.getAttribute('data-case'); S.sel = C().open; S.hist = []; S.selChip = null; render(); return; }
- var mb = e.target.closest && e.target.closest('[data-mom]'); if (mb) { S.moment = mb.getAttribute('data-mom'); render(); return; }
- var b = e.target.closest && e.target.closest('[data-act]');
- if (!b) { if (pop && !(e.target.closest && e.target.closest('.pop'))) closePop(); return; }
- if (b.getAttribute('aria-disabled') === 'true') return;
- var a = b.getAttribute('data-act'), c = C(), idx = c.lines.indexOf(L(S.sel)), bo = b.getAttribute('data-origin'), bs = b.getAttribute('data-sid');
- if (a === 'pop-ok') return popOk();
- if (a === 'pop-cancel') return closePop();
- if (a === 'menu') { var rr = b.getBoundingClientRect(); return openMenu(bo, bs, rr.left - 200, rr.bottom + 4); }
- if (a === 'add') return addSplit(bo);
- if (a === 'zoom') { S.sel = b.getAttribute('data-lid'); S.zoomOpen = true; return render(); }
- if (a === 'zclose') { S.zoomOpen = false; return render(); }
- if (a === 'zopen') { S.zoomOpen = true; return render(); }
- if (a === 'prev' && idx > 0) { S.sel = c.lines[idx - 1].id; return render(); }
- if (a === 'next' && idx < c.lines.length - 1) { S.sel = c.lines[idx + 1].id; return render(); }
- if (a === 'step') { var f = findSplit(bs); if (f) setField(bo, bs, 'q', Math.max(0, +f.t.q + +b.getAttribute('data-by'))); return; }
- if (a === 'save') { Object.keys(D()).forEach(function(k){ tidy(k); }); S.saved[S.caseKey] = JSON.stringify(D()); render(); return toast('Splits saved'); }
- if (a === 'cancel') { S.drafts[S.caseKey] = JSON.parse(S.saved[S.caseKey]); S.hist = []; render(); return toast('Changes discarded'); }
- if (a === 'oiexp') { var lid = b.getAttribute('data-lid'); if (isSplit(lid)) { S.expanded[lid] = !S.expanded[lid]; renderOiLines(); } return; }
-});
-$('#resetDemo').addEventListener('click', function(){ initCase('A'); initCase('C'); S.sel = C().open; S.selChip = null; render(); toast('Demo reset'); });
-document.addEventListener('contextmenu', function(e){
- var host = e.target.closest && (e.target.closest('.chip[data-sid]') || e.target.closest('tr.ctx') || e.target.closest('.pc'));
- if (!host) return; e.preventDefault(); openMenu(host.getAttribute('data-origin'), host.getAttribute('data-sid'), e.clientX, e.clientY);
-});
-document.addEventListener('input', function(e){
- var f = e.target.getAttribute && e.target.getAttribute('data-f'); if (f !== 'q' && f !== 'r') return;
- setField(e.target.getAttribute('data-origin'), e.target.getAttribute('data-sid'), f, e.target.value);
-});
-document.addEventListener('change', function(e){
- var f = e.target.getAttribute && e.target.getAttribute('data-f'); if (f !== 'd' && f !== 'on') return;
- setField(e.target.getAttribute('data-origin'), e.target.getAttribute('data-sid'), f, e.target.value);
-});
-document.addEventListener('focusout', function(e){
- if (e.target.getAttribute && e.target.getAttribute('data-f') === 'q') { var o = e.target.getAttribute('data-origin'); setTimeout(function(){ if (!drag && tidy(o)) { render(); toast('Empty split removed', true); } }, 0); }
-});
-document.addEventListener('keydown', function(e){
- var ae = document.activeElement;
- if (pop && e.key === 'Enter' && ae && ae.closest && ae.closest('.pop')) { e.preventDefault(); return popOk(); }
- if (e.key === 'Escape') { closePop(); closeMenu(); return; }
- var typing = ae && /INPUT|SELECT|TEXTAREA/.test(ae.tagName);
- if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); return undo(); }
- if (ae && ae.classList && ae.classList.contains('dv') && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-  e.preventDefault(); var lid = ae.getAttribute('data-lid'), a = +ae.getAttribute('data-a');
-  ensure(lid); pushHist(); var segs = segList(lid); setPair(lid, segs[a].id, segs[a + 1].id, segs[a].q, segs[a + 1].q, (e.shiftKey ? 10 : 1) * (e.key === 'ArrowLeft' ? -1 : 1)); render(); return;
- }
- if (ae && ae.classList && ae.classList.contains('rh') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); S.sel = ae.getAttribute('data-lid'); S.zoomOpen = true; return render(); }
- if (ae && ae.classList && ae.classList.contains('chip')) {
-  var sid = ae.getAttribute('data-sid'), origin = ae.getAttribute('data-origin'), row = ae.getAttribute('data-row'), col = ae.getAttribute('data-col'), f = findSplit(sid); if (!f) return;
-  var o = L(origin), g = groupOf(o), cols = colsOf(g).filter(function(c){ return c !== 'new'; }), rows = g.lines.map(function(l){ return l.id; }).concat(['newline']);
-  var amt = e.shiftKey ? Math.min(10, +f.t.q) : +f.t.q, rc = ae.getBoundingClientRect();
-  function refocus(){ var el = document.querySelector('[data-fk="chip-' + sid + '"]'); if (el) el.focus({preventScroll:true}); }
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-   e.preventDefault(); var ci = cols.indexOf(col), to = cols[ci + (e.key === 'ArrowLeft' ? -1 : 1)];
-   if (!to) { if (e.key === 'ArrowRight') openMove(origin, sid, 'new', row, rc.right + 6, rc.top); return; }
-   applyMove(origin, sid, amt, to, to === 'cancel' ? origin : (row === 'newline' ? 'pending' : row)); refocus(); return;
-  }
-  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-   e.preventDefault(); if (col === 'cancel') return; var ri = rows.indexOf(row), tr = rows[ri + (e.key === 'ArrowUp' ? -1 : 1)]; if (!tr) return;
-   applyMove(origin, sid, amt, col, tr === 'newline' ? 'pending' : tr); refocus(); return;
-  }
-  if (e.key === 'n' || e.key === 'N') { e.preventDefault(); return openMove(origin, sid, 'new', row, rc.right + 6, rc.top); }
-  if (e.key === 's' || e.key === 'S') { e.preventDefault(); return splitInTwo(origin, sid); }
-  if (e.key === 'c' || e.key === 'C') { e.preventDefault(); return applyMove(origin, sid, f.t.q, 'cancel', origin); }
-  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); return giveBack(origin, sid); }
-  if (e.key === 'Enter') { e.preventDefault(); S.sel = origin; S.zoomOpen = true; render(); var q = document.querySelector('[data-fk="q-' + sid + '"]'); if (q) { q.focus(); q.select(); } return; }
-  if (e.key === 'F10' && e.shiftKey) { e.preventDefault(); return openMenu(origin, sid, rc.left, rc.bottom + 4); }
- }
- var menu = ae && ae.closest && ae.closest('.menu.live');
- if (menu && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); var items = $$('button', menu), k = items.indexOf(ae); items[(k + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus(); }
-});
-
-render();
+function setMom(m){
+  state.mom = m;
+  Array.prototype.forEach.call(document.querySelectorAll('#momSeg button'), function(b){ b.classList.toggle('on', b.getAttribute('data-mom')===m); });
+  reset(true); state.flash = OPEN_AT; renderAll(); scrollToLine(desk, OPEN_AT, false); scrollToLine(phone, OPEN_AT, false);
+}
+document.getElementById('momSeg').addEventListener('click', function(e){ var b=e.target.closest('button'); if(b) setMom(b.getAttribute('data-mom')); });
+document.getElementById('resetExcel').addEventListener('click', function(){ reset(true); state.flash=OPEN_AT; renderAll(); scrollToLine(desk, OPEN_AT, true); });
+document.getElementById('resetRemain').addEventListener('click', function(){ reset(false); state.flash=OPEN_AT; renderAll(); scrollToLine(desk, OPEN_AT, true); });
+setMom('before');
 })();
 </script>
 </body>

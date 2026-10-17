@@ -1,6 +1,6 @@
 # PLAN: split one SO line into delivery tranches in Order Inquiries (OI-LINE-SPLIT)
 
-Status: Hand test (owner OK on mock v2, 16 Oct 23:47). PR #1749 head c3a4b4acd: CI green, reviewer READY (re-check c3a4b4acd), security ready (c3a4b4acd); hand test filed (laneboard/scripts/1749.md, targeted reseed crew/state/handtest/OI-LINE-SPLIT-reseed/). Waiting on the owner. Track: full (L): migration, new
+Status: Mock v3 (owner hand test of #1749 FAIL 17 Oct ~12:40 MYT: the split screen must be ONE Excel-like sheet, splits stacked DOWNWARD under their line; mock v3 filed as crew ask, build waits for the owner's OK). Before that: PR #1749 head c3a4b4acd: CI green, reviewer READY, security ready. Track: full (L): migration, new
 endpoint with RBAC, engine change. Lead pattern: tester red tests, one coder (Opus: tangled engine in
 a 13k-line service), reviewer + security-reviewer, browser pass 1280/375. Stacked on #1748
 (OI Excel one sheet; merged into this branch at c1f8f57d8).
@@ -153,3 +153,16 @@ NULL (the base the split was made against, same on every row of one origin), `cr
   email/delivery/notification cancelled by id (UTC timestamps: never compare with now()). After the
   owner's step 14 crew cancels that Confirm's email by id. After merge: drop sorento_oils_throwaway,
   gc worktree, archive plan/UAC/card; #1748 merges first, then merge main + single alembic head.
+- 17 Oct hand test FAIL (owner, verbatim in the brief): "split delivery too hard to use, supposed to be 1
+  page only view all products, and refer to the excel, when i split i can split vertically not
+  horizontally". Mock v3 (`documentation/mockups/OI-LINE-SPLIT/index.html`): one full-screen page, one
+  table of every SO line with the Excel's columns (LINE, SO DATE, S/O NO, ITEM CODE, LOCATION, QTY,
+  DELIVERY DATE | CHANGE QUANTITY, CHANGE DATE, AUTOCOUNT LINE, REMARK, BALANCE); a split's rows stack
+  under its line with the line's cells merged (rowSpan, as `scm/components/SupplierSheet.tsx:134`);
+  unsplit lines read REMAIN; typing in REMAIN or "+ Split" splits; balance per line, Save waits for 0.
+  FE only: LineSplitGrid / LineSplitZoom / LineSplitMoveBox / LineSplitPhone give way to one
+  LineSplitSheet in the same dialog; backend, model, email and Excel stay. Model deltas: `addSplit`
+  fills the new row with what is left; lines sort by item, location, delivery date. Open Q1-Q4 in the
+  mock section 6 (drag none vs grip; AutoCount line column visible; new row = what is left; SO DATE and
+  S/O NO columns kept). Dev DB facts (read-only): SO417636 = 292 lines, 29 products, one location
+  BRW-BB; CSK14B AutoCount lines 32, 480 (old 417), 608 (old 192), 752 (old 504), 4768 (751 @ 01/01/2030).
