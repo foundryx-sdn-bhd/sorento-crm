@@ -1,4 +1,5 @@
 """Dynamic list query metadata, advanced search, and export."""
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -32,6 +33,7 @@ from app.services.workflow_submission_dynamic_list_query import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _config_dict(raw: Any) -> Dict[str, Any] | None:
@@ -254,8 +256,10 @@ def export_rows(
         rows = ListQueryExportService(db).export_rows(body)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
-        raise handle_internal_error(str(e))
+    except Exception:
+        # Logged, never echoed: a database error's text carries the SQL and the schema.
+        logger.exception("list_query.export_failed resource=%s", body.resource)
+        raise handle_internal_error()
     return {"data": rows, "total": len(rows)}
 
 

@@ -662,6 +662,13 @@ class TestCancelledShowsNoOutstanding:
         assert row["due_date"] is None
         assert row["outstanding_as_of"] is None
 
+    def test_sorting_by_outstanding_ranks_it_as_blank(self, world, api):
+        """Its stored balance is the largest, but the cell is blank, so it sorts with the blanks."""
+        world.doc("IV-OPEN", outstanding="10.00", as_of="2026-10-26 09:00:00")
+        self._cancelled(world)
+        rows = _data(api(VIEW).get(LIST, params={"sort": "outstanding", "dir": "desc"}))
+        assert [r["doc_no"] for r in rows] == ["IV-OPEN", "IV-CANX"]
+
     def test_detail_has_no_outstanding(self, world, api):
         doc = self._cancelled(world)
         body = api(VIEW).get(f"{LIST}/{doc.id}").json()
@@ -728,6 +735,34 @@ class TestExportHardening:
             self.URL, json={**self.BODY, "record_ids": ["nope"]}
         )
         assert res.status_code == 400, res.text
+        assert "SELECT" not in res.text.upper()
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            {"customer_id": "urn:uuid:12345678-1234-5678-1234-567812345678"},
+            {"record_ids": ["{12345678-1234-5678-1234-567812345678}"]},
+        ],
+    )
+    def test_a_uuid_form_postgres_rejects_is_still_a_plain_answer(self, world, api, extra):
+        """Python's UUID() accepts `urn:uuid:`, braces and missing hyphens; Postgres does not.
+        The value is canonicalised before it reaches SQL, so this is never a 500 with SQL."""
+        world.doc("IV-1")
+        res = api(VIEW, EXPORT, raise_server_exceptions=False).post(
+            self.URL, json={**self.BODY, **extra}
+        )
+        assert res.status_code in (200, 400), res.text
+        assert "SELECT" not in res.text.upper()
+
+    def test_an_unexpected_export_error_does_not_echo_its_text(self, world, api, monkeypatch):
+        from app.services.list_query_export_service import ListQueryExportService
+
+        def boom(self, body):
+            raise RuntimeError("SELECT secret FROM finance.billing_documents")
+
+        monkeypatch.setattr(ListQueryExportService, "export_rows", boom)
+        res = api(VIEW, EXPORT, raise_server_exceptions=False).post(self.URL, json=self.BODY)
+        assert res.status_code == 500
         assert "SELECT" not in res.text.upper()
 
     def test_export_without_view_is_403(self, world, api):

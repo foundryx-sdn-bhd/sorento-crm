@@ -14,10 +14,10 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Iterable, Optional
 
-from sqlalchemy import exists, func, or_
+from sqlalchemy import case, exists, func, or_
 from sqlalchemy.orm import Query, Session
 
-from app.models.finance import BillingDocument, BillingDocumentLine
+from app.models.finance import CANCELLED, BillingDocument, BillingDocumentLine
 from app.models.order import Customer, SalesOrder, SalesOrderLine
 from app.models.product import Product
 from app.models.sales_agent import SalesAgent
@@ -43,17 +43,19 @@ _SORT_COLUMNS = {
     "tax_total": BillingDocument.tax_total,
     "total": BillingDocument.total,
     "status": BillingDocument.status,
-    "outstanding": BillingDocument.outstanding,
-    "due_date": BillingDocument.due_date,
+    # A cancelled document shows no outstanding (UAC S5-7), so it sorts with the blanks.
+    "outstanding": case((BillingDocument.status == CANCELLED, None), else_=BillingDocument.outstanding),
+    "due_date": case((BillingDocument.status == CANCELLED, None), else_=BillingDocument.due_date),
 }
 
 
-def _is_uuid(value: Any) -> bool:
+def _canonical_uuid(value: Any) -> Optional[str]:
+    """The hyphenated form, or None. `uuid.UUID` also takes `urn:uuid:`, braces and no hyphens,
+    which Postgres refuses, so the canonical string is what reaches SQL, never the raw input."""
     try:
-        uuid.UUID(str(value))
-    except ValueError:
-        return False
-    return True
+        return str(uuid.UUID(str(value)))
+    except (ValueError, TypeError):
+        return None
 
 
 def _num(value: Optional[Decimal]) -> Optional[float]:
@@ -156,7 +158,7 @@ def _agent_names(db: Session, agent_ids: set[str]) -> dict[str, str]:
 
 def _outstanding_fields(doc: BillingDocument) -> dict[str, Any]:
     """A cancelled document is owed nothing, whatever balance was last synced onto it."""
-    if doc.status == "cancelled":
+    if doc.status == CANCELLED:
         return {"outstanding": None, "due_date": None, "outstanding_as_of": None}
     return {
         "outstanding": _num(doc.outstanding),
@@ -374,9 +376,14 @@ def export_rows(
     unknown = [key for key in field_keys if key not in _EXPORT_FIELDS]
     if unknown:
         raise ValueError(f"Unknown or non-exportable field: {unknown[0]}")
-    for label, value in [("customer_id", customer_id), *[("record_ids", v) for v in record_ids or []]]:
-        if value is not None and not _is_uuid(value):
-            raise ValueError(f"Invalid {label}")
+    if customer_id is not None:
+        customer_id = _canonical_uuid(customer_id)
+        if customer_id is None:
+            raise ValueError("Invalid customer_id")
+    if record_ids:
+        record_ids = [_canonical_uuid(v) for v in record_ids]
+        if None in record_ids:
+            raise ValueError("Invalid record_ids")
     q = _filtered(
         db,
         query=quick_search,
