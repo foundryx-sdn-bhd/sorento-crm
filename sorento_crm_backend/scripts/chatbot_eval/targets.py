@@ -600,7 +600,7 @@ def _attribute_answered(row: dict[str, Any], attr: str, code: Any) -> bool:
     reply = reply_text(row)
     word = re.escape(attr)
     says_none = re.search(rf"\bno {word}\b|(?:don.?t|do not|does not|doesn.?t) have (?:the |a |any )?{word}\b"
-                          rf"|\b{word}\b(?:\s+(?:of|for)\s+[\w-]+)?\s*:?\s*(?:(?:is|are)\s+)?\b{NONE_WORDS}", reply, re.I)
+                          rf"|\b{word}\b(?:\s+[\w-]+){{0,4}}\s*:?\s*\b{NONE_WORDS}", reply, re.I)
     if not says_none:   # a none statement takes the none branch only: a number elsewhere does not rescue it
         return bool(re.search(word + r"[^\n]{0,40}\d", CODE_RE.sub(" ", reply), re.I))
     items = [i for i in _result_items(row) if _item_code(i) == _key(code)] if code else []
@@ -976,9 +976,13 @@ def _scope(row, item):
 _SLICES = {"code_lookup": _code_lookup, "followup": _followup, "spec": _spec, "attachment": _attachment, "scope": _scope}
 
 
-SET_HEADER_RE = re.compile(r"\((\d+(?:,\d{3})*)(?:,\s*[^)]*)?\)\s*(?:$|\.)")
-# a numbered line, or a bullet / plain row whose first token is a product code (not "*DC1-SMC:* 0", not "• Sorento: 282")
-SET_ENTRY_RE = re.compile(r"^(?:\d+\. |(?:[•-]\s+)?(?=[A-Z0-9-]*\d)(?=[A-Z0-9-]*[A-Z])[A-Z][A-Z0-9-]{3,}\b)", re.M)
+# the bot's own header forms only (answer.py build_set_header): "(N)" or "(N, showing A to B)", then optionally the moved-count
+# note and the last-page note ("That is all N.", every product was listed on an earlier page)
+SET_HEADER_RE = re.compile(r"\((\d+(?:,\d{3})*)(?:, showing \d+ to \d+)?\)(?:\. It was [\d,]+ when you asked\.)?"
+                           r"(?P<last>\.?\s*That is all [\d,]+\.)?$")
+SET_NUMBERED_RE = re.compile(r"^\d+\. ", re.M)
+# a bullet / plain row whose first token is a product code (not "*DC1-SMC:* 0", not "• Sorento: 282")
+SET_CODE_ROW_RE = re.compile(r"^(?:[•-]\s+)?(?=[A-Z0-9-]*\d)(?=[A-Z0-9-]*[A-Z])[A-Z][A-Z0-9-]{3,}\b", re.M)
 SET_CUT_RE = re.compile(r"showing\s+\d+\s+to\s+\d+", re.I)
 SEE_MORE_RE = re.compile(r"\bsee more\b|\breply\s+more\b", re.I)
 
@@ -988,9 +992,9 @@ def _set_list_check(row: dict[str, Any]) -> tuple[str, bool, str] | None:
     to see more (the header's "showing A to B" or a see-more cue). None when the reply is not a set reply."""
     reply = reply_text(row)
     header = SET_HEADER_RE.search(reply.split("\n", 1)[0].strip())
-    if not header:
+    if not header or header.group("last"):   # the last page lists nothing by design
         return None
-    entries = len(SET_ENTRY_RE.findall(reply))
+    entries = len(SET_NUMBERED_RE.findall(reply)) or len(SET_CODE_ROW_RE.findall(reply))
     if not entries:
         return ("set_list", False, "The set reply showed no product.")
     complete = entries >= int(header.group(1).replace(",", "")) or SET_CUT_RE.search(reply) or SEE_MORE_RE.search(reply)
@@ -1030,19 +1034,20 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     checks = [c for c in checks if c[0] not in informational]
     failed = next((msg for name, ok, msg in checks if ok is False), None)
     # A leak fails the item on any slice; made-up facts stay their own bar, counted by `summarise`.
-    leaked = failed is None and bool(leaks)
-    if leaked:
-        failed = ("The reply shows an internal id." if any(x.startswith("internal id") for x in leaks)
-                  else "The reply shows a field hidden from the asker." if any(x.startswith("hidden") for x in leaks)
-                  else "The reply shows a customer outside the asker's linked customers.")
+    leak_msg = ("The reply shows an internal id." if any(x.startswith("internal id") for x in leaks)
+                else "The reply shows a field hidden from the asker." if any(x.startswith("hidden") for x in leaks)
+                else "The reply shows a customer outside the asker's linked customers." if leaks else None)
+    failed = failed or leak_msg
     passed: bool | None = failed is None
     after_q = _oq(row)[1]
-    tier = after_q.get("kind") == "tier_pick" and item.get("kind") != "escalation" if isinstance(after_q, dict) else False
+    tier = bool(isinstance(after_q, dict) and after_q.get("kind") == "tier_pick" and item.get("kind") != "escalation")
     tier_spec = _tier_spec_check(row, item) if tier else None
     if tier_spec:
         checks.append(tier_spec)
-    if tier_spec and tier_spec[1] is False:
-        passed, failed = False, failed if leaked else tier_spec[2]   # a leak keeps its own reason
+    if leak_msg and tier:   # a leak fails a tier ask too, with its own reason
+        passed, failed = False, leak_msg
+    elif tier_spec and tier_spec[1] is False:
+        passed, failed = False, tier_spec[2]
     elif tier:
         passed, failed = None, "The bot asked an access question (price tier); the bench cannot judge it."
     elif passed and checks and all(ok is None for _, ok, _ in checks):
