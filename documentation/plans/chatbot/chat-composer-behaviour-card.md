@@ -85,7 +85,8 @@ blocks. Changes: dates always dd/mm/yyyy (TRAIN cp0-0654e3e74a prints "2026-09-2
 miss says it once: today "But no incoming matched these.\nNo incoming for SRT5734-WH." says it twice
 (TRAIN cp0-5430419641).
 
-**Price.** Changes: a price answer shows Product Code, Description, List Price; un-asked empty fields go (today
+**Price.** Changes (amended 17 Oct, S5/S6 design OI-4: a filled Dimensions stays per owner ruling D12): a price
+answer leaves out EMPTY un-asked fields (today
 "*Dimensions:* Not defined", TRAIN cp0-245d689a0c); a missing price says "No list price on record for X."; money with
 thousands separator everywhere.
 
