@@ -1492,7 +1492,7 @@ class _Candidate:
 class _CustomerIndex:
     """The acting company's live customers, indexed once by dealer key."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, company_id: str):
         from app.models.order import Customer
 
         self.by_family: Dict[str, List[_Candidate]] = {}
@@ -1501,8 +1501,10 @@ class _CustomerIndex:
             Tuple[str, str, Optional[str]], Tuple[Optional[_Candidate], List[_Candidate], bool, Optional[str]]
         ] = {}
         self.fuzzy_lookups = 0
+        # The acting company by name, not only through the session's scope listener: a session
+        # without the listeners (the dry-run script, gate 6) read every company's customers.
         q = db.query(Customer.id, Customer.customer_code, Customer.customer_name, Customer.account_level).filter(
-            Customer.is_active.is_(True)
+            Customer.is_active.is_(True), Customer.company_id == company_id
         )
         for cid, code, name, level in q:
             cand = _Candidate(str(cid), code, name, dealer_key(name), customer_account_keys(name, level))
@@ -1567,6 +1569,10 @@ class _CustomerIndex:
             if len(written) == 1:
                 exact = written
         if len(exact) == 1:
+            if branch_key(name) != family and branch_key(exact[0].name) != branch_key(name):
+                # The file writes a branch ("<NAME> (KL)") the one ledger of the name lacks: not
+                # an exact match, so a pick that suggests that ledger (gate 6).
+                return None, exact, False, "no_branch"
             return exact[0], [], False, None
         if len(exact) > 1:
             return None, exact[:_MAX_SUGGESTIONS], False, "several"
@@ -1613,6 +1619,21 @@ def _parse_picks(picks: Optional[dict]) -> Dict[str, str]:
     return picks
 
 
+def _acting_company(db: Session) -> str:
+    """The one company the import reads customers of and writes targets for. A session scoped to
+    every company (or to none) would match one company's file against another's ledgers."""
+    from app.models.base import get_company_scope
+
+    scope = get_company_scope(db)
+    if not isinstance(scope, frozenset) or len(scope) != 1:
+        raise AppException(
+            status_code=422,
+            message="Import dealer targets for one company at a time: choose the company first.",
+            code="IMPORT_NEEDS_ONE_COMPANY",
+        )
+    return next(iter(scope))
+
+
 def run(
     db: Session,
     data: bytes,
@@ -1629,6 +1650,7 @@ def run(
     from app.schemas.sales import SalesTargetCreate, SalesTargetUpdate
     from app.services.sales import target_service
 
+    company_id = _acting_company(db)
     picks = _parse_picks(picks)
     parsed = parse_workbook(data, year=year)
     rows_by_key = {(r.sheet, r.row): r for r in parsed.rows}
@@ -1642,7 +1664,9 @@ def run(
     wanted = sorted({code.strip().upper() for code in codes})
     by_code = {}
     if wanted:
-        for c in db.query(Customer).filter(func.upper(func.trim(Customer.customer_code)).in_(wanted)):
+        for c in db.query(Customer).filter(
+            func.upper(func.trim(Customer.customer_code)).in_(wanted), Customer.company_id == company_id
+        ):
             by_code[c.customer_code.strip().upper()] = c
     picked_ids = sorted({v for v in picks.values() if v != "skip"})
     valid_ids = []
@@ -1652,13 +1676,18 @@ def run(
         except ValueError:
             continue
     by_id = (
-        {c.id: c for c in db.query(Customer).filter(Customer.id.in_(valid_ids), Customer.is_active.is_(True))}
+        {
+            c.id: c
+            for c in db.query(Customer).filter(
+                Customer.id.in_(valid_ids), Customer.is_active.is_(True), Customer.company_id == company_id
+            )
+        }
         if valid_ids
         else {}
     )
     by_name_payouts = [s.payout_by_name for s in parsed.schemes if s.payout_by_name is not None]
     index = (
-        _CustomerIndex(db)
+        _CustomerIndex(db, company_id)
         if by_name_payouts or any(r.status == "mapped" and not r.code for r in parsed.rows)
         else None
     )
@@ -1701,6 +1730,12 @@ def run(
             res.status = "needs_pick"
             if why == "several":
                 res.reason = "more than one customer has this name and account"
+            elif why == "no_branch":
+                branch = next(
+                    (b.strip() for b in re.findall(r"\(([^)]*)\)", res.name_in_file or "") if not _is_account_marker(b)),
+                    "",
+                )
+                res.reason = f'no ledger of this name has the branch "{branch}"; pick one of its ledgers or skip'
             elif why == "account_needed":
                 res.reason = "this name has several ledgers and the file names no account; add an ACCOUNT column or pick one"
             elif why == "no_account":
@@ -1820,6 +1855,13 @@ def run(
         problem = None
         for scheme in schemes:
             ids = [customer_of(code).id for code in scheme.codes]
+            if len(set(ids)) < len(ids):
+                # Several rows of one target name the same ledger (three "A/C I" rows, gate 6).
+                twice = next(i for i in ids if ids.count(i) > 1)
+                numbers = sorted(key_to_row[c].row for c, i in zip(scheme.codes, ids) if i == twice and c in key_to_row)
+                listed = ", ".join(str(n) for n in numbers[:-1]) + f" and {numbers[-1]}" if len(numbers) > 1 else str(numbers[0] if numbers else "")
+                problem = f"rows {listed} are one CRM customer; a target lists each account once"
+                break
             if scheme.payout_by_name is not None:
                 payout = by_name_customer.get(scheme.payout_by_name)
                 if payout is None:

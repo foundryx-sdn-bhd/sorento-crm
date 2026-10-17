@@ -33,6 +33,8 @@ _CATEGORIES = (
     ("no customer has this name", "NO_NAME_MATCH"),
     ("no ledger of this name has the account", "NAME_WITHOUT_ACCOUNT"),
     ("the file names no account", "NAME_NEEDS_ACCOUNT"),
+    ("has the branch", "NAME_WITHOUT_BRANCH"),
+    ("are one CRM customer", "ACCOUNT_REPEATED"),
     ("which has no row in the file", "PAY_TO_ACCOUNT_NOT_FOUND"),
     ("looks wrong: Excel", "RATE_ABOVE_LIMIT"),
     ("more than 200 characters", "CELL_TOO_LONG"),
@@ -102,7 +104,16 @@ def _mask(reason: str) -> str:
         parts.append(f'cell "{_shape(quoted[0])}"')
     if category == "OTHER" and '"' not in reason:
         # The target service's own words (no file content in them), digits masked.
-        parts.append(re.sub(r"\d", "9", reason.split(":", 1)[-1].strip()))
+        # Row numbers are layout and stay; every other digit is masked (gate 6).
+        words = reason.split(":", 1)[-1].strip()
+        parts.append("".join(
+            piece if re.fullmatch(r"rows? [\d, and]+", piece) else re.sub(r"\d", "9", piece)
+            for piece in re.split(r"(rows? \d+(?:(?:, | and )\d+)*)", words)
+        ))
+    rows = re.search(r"rows? \d+(?:(?:, | and )\d+)*", reason)
+    if category != "OTHER" and rows:
+        # The rows a reason points at ("shares a target with row 46") are layout too.
+        parts.append(rows.group(0))
     return ", ".join(parts)
 
 
@@ -114,6 +125,11 @@ def main(argv=None) -> int:
     ap.add_argument("--masked", action="store_true", help="only failing rows, digits masked, no codes or names")
     args = ap.parse_args(argv)
 
+    # The scope filter is a session listener the API installs at startup; without it
+    # `company_scope` below filters nothing (gate 6). Installed before any session opens.
+    from app.services import company_scope as scope_module
+
+    scope_module.register_company_scope_listeners()
     from app.database import SessionLocal
     from app.models.base import company_scope
     from app.services.sales import dealer_target_import, team_service

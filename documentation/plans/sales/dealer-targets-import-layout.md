@@ -115,3 +115,16 @@ mapped and every sheet was read (`gate_passes`).
   file writes neither way, the row stays a pick.
 - The same threshold written twice in one period with the same rate is one tier, with a warning
   on the row. Different rates at one threshold still fail with "repeats in one period".
+
+## Sixth real-file gate (17 Oct, round 5)
+
+- The import reads and writes for ONE acting company, the session's single-company scope; any
+  other scope (all companies, none) fails with "Import dealer targets for one company at a time"
+  (`IMPORT_NEEDS_ONE_COMPANY`). The customer lookups (name index, CUSTOMER CODE, picks) filter
+  on that company by name as well, so a session without the scope listeners cannot read another
+  company's ledgers. The dry-run script installs the listeners before it opens a session.
+- A file name with a bracketed branch ("<NAME> (KL)") that the one ledger of the name lacks waits
+  on a pick ("no ledger of this name has the branch"), suggesting that ledger.
+- Rows of one target that land on the same CRM customer (three "A/C I" rows of one dealer) fail
+  with "rows 2, 3 and 4 are one CRM customer; a target lists each account once".
+- The masked dry run keeps the row numbers a reason points at.
