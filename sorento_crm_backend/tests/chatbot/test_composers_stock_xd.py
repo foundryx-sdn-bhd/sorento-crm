@@ -97,9 +97,10 @@ def test_block_numbers_from_n():
     assert stock.block(3, _stock_item()) == NUMBERED.replace("1. ", "3. ", 1)
 
 
-@pytest.mark.parametrize("gate", [False, True])
+@pytest.mark.parametrize("gate", [False])
 def test_stock_miss_incoming_rows_unchanged(monkeypatch, gate):
-    """Origin inventory (incoming rows under a stock miss): S2 owns it, same both states."""
+    """Origin inventory (incoming rows under a stock miss), gate off. S2 numbers the gate-on rows
+    (test_composers_s2_incoming.py)."""
     _gate(monkeypatch, gate)
     inc = {
         "fields": [
