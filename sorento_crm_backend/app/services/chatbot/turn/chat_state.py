@@ -250,7 +250,9 @@ def _subject_text(subject: dict[str, Any]) -> str:
             value = [" to ".join(value)]
         elif key == "sort":
             value = [" ".join(value)]
-        parts.append(f"{key} {', '.join(value) if isinstance(value, list) else value}")
+        joined = ', '.join(value) if isinstance(value, list) else value
+        # The held domain is the domain of the last answer.
+        parts.append(f"last answer: {joined}" if key == "domain" else f"{key} {joined}")
     return "; ".join(parts)
 
 
@@ -325,6 +327,22 @@ def _message_domains(verdict: dict[str, Any]) -> list[str]:
     if asks:
         return asks
     return [verdict["domain_hint"]] if verdict.get("domain_hint") else []
+
+
+def _held_quantity(focus: Focus) -> tuple[dict[str, Any], Any]:
+    """The quantity of an answered stock check, per product code, and the one quantity all
+    of them share (None when they differ or none was answered)."""
+    by_code: dict[str, Any] = {}
+    for task in focus.tasks or ():
+        if getattr(task, "kind", None) == "stock_qty" and getattr(task, "status", None) == task_mod.ANSWERED:
+            for slot in task.slots:
+                if isinstance(slot.value, (int, float)) and not isinstance(slot.value, bool):
+                    by_code[str(slot.label).casefold()] = slot.value
+    for row in focus.products:
+        if isinstance(row, dict) and row.get("quantity") is not None:
+            by_code.setdefault(str(row.get("canonical_code") or row.get("raw") or "").casefold(), row["quantity"])
+    values = set(by_code.values())
+    return by_code, (next(iter(values)) if len(values) == 1 else None)
 
 
 def _clear_axis(focus: Focus, axis: str) -> None:
@@ -783,10 +801,19 @@ def apply_changes(
     # Values come from the parse as stated; a restated held row (current_message false) goes.
     dropped_entities = [{"kind": e.get("hint")} for e in _entities(out) if e.get("current_message") is False]
     entities = [copy.deepcopy(e) for e in _entities(out) if e.get("current_message") is not False]
-    if "product" in set_axes and len(held_products) == 1 and held_products[0].get("quantity") is not None:
+    # The quantity of the answered check (or of the held row) carries onto the refined, kept
+    # or swapped item when the message states none; a stated quantity wins.
+    qty_by_code, shared_qty = _held_quantity(state.focus)
+    if shared_qty is not None and out.get("demand_qty") is None:
         mine = [e for e in entities if e.get("hint") == "product"]
-        if len(mine) == 1 and mine[0].get("quantity") is None and out.get("demand_qty") is None:
-            mine[0]["quantity"] = held_products[0]["quantity"]
+        if "product" in set_axes and len(held_products) == 1 and len(mine) == 1 and mine[0].get("quantity") is None:
+            mine[0]["quantity"] = shared_qty
+        for row in focus.products:
+            if isinstance(row, dict) and row.get("quantity") is None:
+                code = str(row.get("canonical_code") or row.get("raw") or "").casefold()
+                filled = qty_by_code.get(code, shared_qty if len(focus.products) == 1 else None)
+                if filled is not None:
+                    row["quantity"] = filled
     picked_kinds = {"product" for _ in data_picks}
     if pending is not None or state.pending is not None:
         for position in roster_picks:

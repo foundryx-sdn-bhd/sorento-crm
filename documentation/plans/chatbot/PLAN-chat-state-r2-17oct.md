@@ -48,3 +48,8 @@ passes both arms: no TRAIN signal for the held-out 62.5%), refine 1/1 of 5, swit
   fcd44fe521 vs the family rule; round-32 gold on aad2aaec55 vs round 11 "pick drops the typed entity".
 - Every class is below the >= 8 phrasings bar: fresh paraphrase tests per class + EVAL-SETS Deliverable A (crew relays path).
 - Test DB: sorento_chatstate_throwaway2 (fresh, current schema).
+
+## Proof log (posted on the r2 PR when it opens)
+
+- r2-INT: red 459967eff9 (combined schema) + the read-once test red after the merge 697df41293; fix 7833e7365e.
+- r2 round 1: red 18bb534d6c (22 red: r2-A held qty 9, r2-D last-answer domain 8, r2-B/D prompt text 2, r2-C combined publish 3).
