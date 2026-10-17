@@ -9,7 +9,7 @@ Additive only and idempotent (`IF NOT EXISTS`) so a DB that converged through `c
 can take it in any order. Downgrade drops the table.
 
 Revision ID: ols_0001_so_line_splits
-Revises: ctg_0001_contact_tags
+Revises: sr_0001_sample_requests
 Create Date: 2026-10-17
 """
 import sqlalchemy as sa
@@ -17,7 +17,7 @@ from alembic import op
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "ols_0001_so_line_splits"
-down_revision = "ctg_0001_contact_tags"
+down_revision = "sr_0001_sample_requests"
 branch_labels = None
 depends_on = None
 
