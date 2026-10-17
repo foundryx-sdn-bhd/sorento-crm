@@ -39,10 +39,13 @@ CONTINUATION for a code with a count.
 A bare code. A bare code after an answer, with no count and no purpose word, reuses that answer's domain (after an
 ETA answer, its ETA; after a stock answer, its stock), as BARE ENTITY CONTINUATION says.
 
-When deliver. "When deliver", "when will X be delivered" or "bila hantar" about a product (and a customer) asks
-about a delivery not made yet: status "outstanding", domain_hint "order", intent_hint "check_order", the product and
-the customer as entities, no "delivery" attribute. It is not a delivery list ask, so the assistant never asks which
-period for it.
+When deliver. These words are ADDED to the "outstanding" word list of ORDER_STATUS FILTER and count as the current
+message's own explicit words: "when deliver", "when will ... be delivered", "bila hantar", "几时送", and their
+misspellings ("wen deliver", "whn deliver", "deliverd"). Such a message about a product (and a customer) is status
+"outstanding", domain_hint "order", intent_hint "check_order", the product and the customer as entities, and
+requested_attributes stays [] (never "delivery"). It is not a delivery list ask, so the assistant never asks which
+period for it. An arrival ask ("when ... arrive", "ETA", "sampai dari kilang", "到货") stays incoming, and a
+"delivered" / "sudah hantar" ask stays status "delivered".
 """
 
 

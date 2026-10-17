@@ -59,6 +59,7 @@ ALLOWED = {
     # has no seam for a recorded parse. A developer tool and its own test, not core, not on any
     # request path. Listed by file, not by directory, like the parity script above.
     "scripts/chatbot_eval/replay.py",
+    "scripts/chatbot_eval/parser_gold.py",
     "tests/chatbot_eval/test_replay.py",
     # EVAL-BENCH (#1745) live replay test: drives `replay.py live` through the real engine and
     # patches `engine`, `head.parser` and `lanes.ideate` directly to block the network and the
