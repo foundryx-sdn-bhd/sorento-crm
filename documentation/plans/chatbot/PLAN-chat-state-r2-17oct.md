@@ -80,11 +80,14 @@ No refine failure is a parse failure; r2-B now emits the named spec (fcd44fe521,
   asks "How many units?". r2-A's tests stop at `apply_changes`, which is why they went green while the carry was dead.
   Fix: the quantities apply carried become the fetch's last source, by own code, with r2 round 2's limits (clear wins,
   own code only, never onto a new subject). Tests go through the fetch seam, >= 8 phrasings (TRAIN + fresh paraphrases).
-- **QTY-ONTO-REFINED-SET (253d58ba8b, 665ba3e897): owner ruling.** A refine of a held product with a stated quantity
-  lands on 19-20 family codes; the grader wants no "how many" ask, reviewer S-A2 says a quantity fills only its own code.
+- **QTY-ONTO-REFINED-SET (253d58ba8b, 665ba3e897): ruled (a), crew 18 Oct** (owner line "don't re-ask what the user
+  gave"): the one held quantity rides onto every code a refine of the SAME held subject lands on; never onto a new
+  subject or another named product (S-A2 keeps holding for those). Part of R3-A.
 - **SPEC-OVER-HELD-NO-MEMBER (#1755, fcd44fe521; train2 up to 19 incl. 10 size refines):** no family member has the
   value -> `narrow_held_family` returns the verdict unchanged (held_family.py:86-88) and the turn widens to the catalogue;
-  a numeric size never narrows (string `spec_value` only, held_family.py:71). Gold ruling first, then #1755.
+  a numeric size never narrows (string `spec_value` only, held_family.py:71). Crew 18 Oct: (a) in principle, "held,
+  none match" says so plainly (owner CP0: say plainly what is not on record); routed to CHAT-CLOSED-LISTS after
+  EVAL-BENCH's gold card on fcd44fe521. Grader items queued for EVAL-BENCH round 35.
 - **Grader (EVAL-BENCH):** cp0-75e516bd40 flipped only because r2-C turns CLOSED LISTS on and #1755 card R2
   (grounding.py:795-806) puts "Water Closet" for the typed "toilet"; same lookup (47 ids) and reply as main, the grader
   reads words only (targets.py:807-847). G-HELD-BEFORE targets.py:823-828. train2: 7 refines while the bot's own
