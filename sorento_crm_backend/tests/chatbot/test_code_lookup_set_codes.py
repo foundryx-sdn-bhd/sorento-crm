@@ -124,16 +124,17 @@ def test_a_set_code_is_in_listed_codes(db):
 
 def test_a_word_holding_a_set_code_lists_it_and_the_near_set_variant_survives_product_near_codes(db):
     """The typed word holds the base set code, and the variant is only near it; six product
-    codes near the word score no higher and must not push the set variant out of the cap."""
+    codes near the word score no higher (under the FOLDED code trigrams: lower case, spaces and
+    dashes removed) and must not push the set variant out of the cap."""
     ids = _mk_products(db, BASE_PARTS + VARIANT_PARTS)
     _mk_set(db, BASE, [ids[c] for c in BASE_PARTS], name="S-trap 250")
     _mk_set(db, VARIANT, [ids[c] for c in VARIANT_PARTS], name="P-trap 250")
     typed = _fold(BASE)
-    sim_variant = candidates.similarity(candidates.trigrams(typed), candidates.trigrams(VARIANT))
-    decoys = [f"ZZSTWC8608-R{n}" for n in range(6)]
+    sim_variant = candidates.similarity(candidates.trigrams(typed), candidates.trigrams(_fold(VARIANT)))
+    decoys = [f"ZZSTWC8608-RX{n}" for n in range(6)]
     _mk_products(db, decoys)
     for d in decoys:
-        sim_d = candidates.similarity(candidates.trigrams(typed), candidates.trigrams(d))
+        sim_d = candidates.similarity(candidates.trigrams(typed), candidates.trigrams(_fold(d)))
         assert candidates.NEAR_CODE <= sim_d <= sim_variant + 1e-9, (d, sim_d, sim_variant)
 
     line = _entry_line(_lines(db, f"stock {typed}", code_lookup=True), typed)
