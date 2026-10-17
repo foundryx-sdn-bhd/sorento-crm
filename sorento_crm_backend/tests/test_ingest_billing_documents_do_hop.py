@@ -187,3 +187,15 @@ class TestSoRefPathStillLinks:
         line = env.lines(env.doc(f"{MARKER}:IV:SOREF").id)[0]
         assert str(line.sales_order_line_id) == env.so_line_id
         assert line.from_line_ref == SO_LINE_REF
+
+
+class TestDoHopBounds:
+    def test_a_key_beyond_bigint_stays_unlinked_and_is_not_a_failure(self, env):
+        ref = f"{BOOK}:DO:{2**63}:7001"
+        line = _push_do_invoice(env, "BIG1", ref)  # asserts the record was created, not failed
+        assert line.sales_order_line_id is None
+        _assert_from_kept(line, ref)
+        ref = f"{BOOK}:DO:5001:{'9' * 40}"
+        line = _push_do_invoice(env, "BIG2", ref)
+        assert line.sales_order_line_id is None
+        _assert_from_kept(line, ref)

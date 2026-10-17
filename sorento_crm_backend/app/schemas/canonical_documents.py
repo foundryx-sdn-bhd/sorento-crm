@@ -27,7 +27,7 @@ what a customer is charged.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Annotated, Any, Optional
 
@@ -581,6 +581,10 @@ def ar_outstanding_errors(payload: CanonicalArOutstanding) -> dict[str, str]:
     errors: dict[str, str] = {}
     if not payload.customer_ref and not payload.customer_code:
         errors["customer_ref"] = "customer_ref or customer_code is required"
+    # as_of is naive UTC; a clock a day ahead is tolerated, a reading from the future is not
+    # (it would win the stale guard against every honest push after it).
+    if payload.as_of > datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1):
+        errors["as_of"] = "as_of cannot be in the future"
     seen: set[str] = set()
     duplicates: set[str] = set()
     for document in payload.documents:

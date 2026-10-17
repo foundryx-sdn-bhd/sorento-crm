@@ -28,7 +28,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.models.base import set_company_scope
 from app.models.order import Customer
@@ -51,8 +51,8 @@ DEBTOR = "SRT_DB:debtor:1234"
 DEBTOR2 = "SRT_DB:debtor:5678"
 C1_REF, C1_CODE = "SRT_DB:ZZFIN-C1", "ZZFIN-C1"
 C2_REF, C2_CODE = "SRT_DB:ZZFIN-C2", "ZZFIN-C2"
-T1 = "2026-10-26T09:00:00"
-T2 = "2026-10-27T09:00:00"
+T1 = "2026-10-10T09:00:00"
+T2 = "2026-10-11T09:00:00"
 IV1, IV2, CN1, IV_C2 = "SRT_DB:IV:88213", "SRT_DB:IV:88214", "SRT_DB:CN:4410", "SRT_DB:IV:99001"
 
 
@@ -163,14 +163,14 @@ class TestPushWritesTheFigures:
         iv1, cn1 = _doc(env, IV1), _doc(env, CN1)
         assert iv1.outstanding == Decimal("1100.00")
         assert iv1.due_date == date(2026, 11, 25)
-        assert iv1.outstanding_as_of == datetime(2026, 10, 26, 9, 0, 0)
+        assert iv1.outstanding_as_of == datetime(2026, 10, 10, 9, 0, 0)
         assert cn1.outstanding == Decimal("-200.00")  # an unapplied credit note is negative
         assert cn1.due_date is None
-        assert cn1.outstanding_as_of == datetime(2026, 10, 26, 9, 0, 0)
+        assert cn1.outstanding_as_of == datetime(2026, 10, 10, 9, 0, 0)
 
         customer = _customer(env)
         assert customer.ar_outstanding == Decimal("15230.40")
-        assert customer.ar_as_of == datetime(2026, 10, 26, 9, 0, 0)
+        assert customer.ar_as_of == datetime(2026, 10, 10, 9, 0, 0)
 
     def test_a_later_changed_push_for_the_same_debtor_is_updated(self, env):
         _seed(env)
@@ -183,9 +183,9 @@ class TestPushWritesTheFigures:
         assert _ok(_push(env, later))["outcome"] == "updated"
         iv1 = _doc(env, IV1)
         assert iv1.outstanding == Decimal("900.00") and iv1.due_date == date(2026, 11, 30)
-        assert iv1.outstanding_as_of == datetime(2026, 10, 27, 9, 0, 0)
+        assert iv1.outstanding_as_of == datetime(2026, 10, 11, 9, 0, 0)
         assert _customer(env).ar_outstanding == Decimal("900.00")
-        assert _customer(env).ar_as_of == datetime(2026, 10, 27, 9, 0, 0)
+        assert _customer(env).ar_as_of == datetime(2026, 10, 11, 9, 0, 0)
 
     def test_customer_resolves_by_code_when_the_ref_is_unknown(self, env):
         _seed(env)
@@ -215,7 +215,7 @@ class TestAbsentMeansPaid:
         assert _ok(_push(env, second))["outcome"] == "updated"
         iv1 = _doc(env, IV1)
         assert iv1.outstanding == Decimal("0.00")
-        assert iv1.outstanding_as_of == datetime(2026, 10, 27, 9, 0, 0)
+        assert iv1.outstanding_as_of == datetime(2026, 10, 11, 9, 0, 0)
         assert _doc(env, CN1).outstanding == Decimal("-200.00")
 
     def test_another_customers_documents_never_change(self, env):
@@ -247,6 +247,22 @@ class TestAbsentMeansPaid:
         assert _doc(env, IV1).outstanding == Decimal("0.00")
         assert _doc(env, CN1).outstanding == Decimal("0.00")
         assert _customer(env).ar_outstanding == Decimal("0.00")
+
+
+    def test_a_cancelled_document_is_left_untouched_when_absent(self, env):
+        _seed(env)
+        _push(env, _debtor())
+        _unscoped(env)
+        env.db.execute(
+            text("UPDATE billing_documents SET status = 'cancelled' WHERE source_ref = :r"),
+            {"r": IV1},
+        )
+        env.db.commit()
+        assert _ok(_push(env, _debtor(as_of=T2, total=0, documents=[])))["outcome"] == "updated"
+        iv1 = _doc(env, IV1)
+        assert iv1.outstanding == Decimal("1100.00")
+        assert iv1.outstanding_as_of == datetime(2026, 10, 10, 9, 0, 0)
+        assert _doc(env, CN1).outstanding == Decimal("0.00")
 
 
 # ===================================================================== S5-3
@@ -292,7 +308,7 @@ class TestStaleAndIdentical:
         assert out["outcome"] == "unchanged", out
         assert "stale_ignored" in out["warnings"], out
         assert _figures(env) == before
-        assert _customer(env).ar_as_of == datetime(2026, 10, 27, 9, 0, 0)
+        assert _customer(env).ar_as_of == datetime(2026, 10, 11, 9, 0, 0)
 
     def test_an_identical_repush_is_unchanged_and_writes_nothing(self, env):
         _seed(env)
@@ -342,6 +358,15 @@ class TestCustomerMustResolve:
         assert _record(res, DEBTOR)["outcome"] == "created"
         assert _doc(env, IV1).outstanding == Decimal("1100.00")
 
+    def test_an_as_of_in_the_future_fails_by_as_of(self, env):
+        _seed(env)
+        before = _figures(env)
+        res = _push(env, _debtor(as_of="2099-01-01T00:00:00"))
+        assert res.status_code == 200, res.text
+        out = _record(res, DEBTOR)
+        assert out["outcome"] == "failed" and "as_of" in out["errors"]
+        assert _figures(env) == before
+
     def test_validation_names_the_field(self, env):
         _seed(env)
         no_as_of = _debtor()
@@ -380,7 +405,7 @@ class TestNeverCoveredStaysNull:
         doc = _doc(env, IV1)
         assert doc.description == "EDITED"
         assert doc.outstanding == Decimal("1100.00")
-        assert doc.outstanding_as_of == datetime(2026, 10, 26, 9, 0, 0)
+        assert doc.outstanding_as_of == datetime(2026, 10, 10, 9, 0, 0)
 
 
 # ===================================================================== dry run
@@ -416,7 +441,7 @@ class TestReadBack:
         assert rec["customer_id"] == str(customer.id)
         assert rec["customer_code"] == C1_CODE
         assert Decimal(str(rec["ar_outstanding"])) == Decimal("15230.40")
-        assert str(rec["ar_as_of"]).startswith("2026-10-26T09:00:00")
+        assert str(rec["ar_as_of"]).startswith("2026-10-10T09:00:00")
         docs = {d["source_ref"]: d for d in rec["documents"]}
         # Only this customer's documents with a non-null outstanding: IV2 was never covered.
         assert set(docs) == {IV1, CN1}

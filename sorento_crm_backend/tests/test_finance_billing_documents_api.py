@@ -643,3 +643,107 @@ class TestExport:
         exported = [row.get("doc_no") for row in res.json()["data"]]
         assert exported == ["IV-MINE"]
         assert res.json()["total"] == 1
+
+
+# ===================================================================== fix round
+class TestCancelledShowsNoOutstanding:
+    """UAC S5-7: a cancelled document is shown with no outstanding."""
+
+    def _cancelled(self, world, **kw):
+        return world.doc(
+            "IV-CANX", status="cancelled", outstanding="75.00", due_date="2026-11-01",
+            as_of="2026-10-26 09:00:00", **kw,
+        )
+
+    def test_list_row_has_no_outstanding(self, world, api):
+        self._cancelled(world)
+        row = _data(api(VIEW).get(LIST))[0]
+        assert row["outstanding"] is None
+        assert row["due_date"] is None
+        assert row["outstanding_as_of"] is None
+
+    def test_detail_has_no_outstanding(self, world, api):
+        doc = self._cancelled(world)
+        body = api(VIEW).get(f"{LIST}/{doc.id}").json()
+        assert body["outstanding"] is None and body["due_date"] is None
+        assert body["outstanding_as_of"] is None
+
+    def test_related_cancelled_note_has_no_outstanding(self, world, api):
+        iv = world.doc("IV-PARENT")
+        world.doc(
+            "CN-CANX", document_type="credit_note", status="cancelled", against=iv,
+            outstanding="-20.00", as_of="2026-10-26 09:00:00",
+        )
+        notes = api(VIEW).get(f"{LIST}/{iv.id}").json()["related"]["notes"]
+        assert notes[0]["outstanding"] is None
+
+    def test_open_only_excludes_it(self, world, api):
+        self._cancelled(world)
+        world.doc("IV-OPEN", outstanding="10.00", as_of="2026-10-26 09:00:00")
+        assert _nos(api(VIEW).get(LIST, params={"open_only": "true"})) == ["IV-OPEN"]
+
+
+class TestRelatedNotesCurrency:
+    def test_note_rows_carry_their_currency(self, world, api):
+        iv = world.doc("IV-PARENT2")
+        cn = world.doc("CN-USD", document_type="credit_note", against=iv)
+        world.db.execute(
+            text("UPDATE billing_documents SET currency_code = 'USD' WHERE id = :id"), {"id": cn.id}
+        )
+        world.db.expire_all()
+        notes = api(VIEW).get(f"{LIST}/{iv.id}").json()["related"]["notes"]
+        assert notes[0]["currency_code"] == "USD"
+
+
+class TestListCustomerNameFallback:
+    def test_linked_customer_name_fills_a_null_snapshot(self, world, api):
+        doc = world.doc("IV-NONAME", customer=world.customer)
+        world.db.execute(
+            text("UPDATE billing_documents SET customer_name = NULL WHERE id = :id"), {"id": doc.id}
+        )
+        world.db.expire_all()
+        row = _data(api(VIEW).get(LIST))[0]
+        assert row["customer_name"] == world.customer.customer_name
+
+    def test_own_snapshot_wins(self, world, api):
+        world.doc("IV-SNAP", customer=world.customer, customer_name="Snapshot Name")
+        assert _data(api(VIEW).get(LIST))[0]["customer_name"] == "Snapshot Name"
+
+
+class TestExportHardening:
+    URL = "/api/v1/list-query/export"
+    BODY = {"resource": "finance_billing_documents", "fields": [{"field_key": "doc_no"}]}
+
+    def test_malformed_customer_id_is_a_plain_400(self, world, api):
+        world.doc("IV-1")
+        res = api(VIEW, EXPORT, raise_server_exceptions=False).post(
+            self.URL, json={**self.BODY, "customer_id": "not-a-uuid"}
+        )
+        assert res.status_code == 400, res.text
+        assert "SELECT" not in res.text.upper()
+
+    def test_malformed_record_ids_is_a_plain_400(self, world, api):
+        world.doc("IV-1")
+        res = api(VIEW, EXPORT, raise_server_exceptions=False).post(
+            self.URL, json={**self.BODY, "record_ids": ["nope"]}
+        )
+        assert res.status_code == 400, res.text
+        assert "SELECT" not in res.text.upper()
+
+    def test_export_without_view_is_403(self, world, api):
+        world.doc("IV-1")
+        res = api(EXPORT, raise_server_exceptions=False).post(self.URL, json=self.BODY)
+        assert res.status_code == 403, res.text
+
+    def test_export_needs_the_finance_module(self, world, api, monkeypatch):
+        from app.config import settings
+        from app.modules.runtime import guards
+
+        world.doc("IV-1")
+        client = api(VIEW, EXPORT, raise_server_exceptions=False)
+        monkeypatch.setattr(settings, "module_guard_strict", True, raising=False)
+        monkeypatch.setattr(guards, "_roles_bypass_module", lambda db, uid: False)
+        monkeypatch.setattr(guards, "_all_modules_effectively_enabled", lambda db, tid: False)
+        monkeypatch.setattr(guards, "is_module_enabled", lambda db, tid, key: False)
+        res = client.post(self.URL, json=self.BODY)
+        assert res.status_code == 403, res.text

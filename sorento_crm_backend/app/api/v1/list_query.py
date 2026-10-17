@@ -8,6 +8,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.list_query_metadata import ListQueryField
 from app.models.user import UserListColumnConfig, UserPermission
+from app.modules.runtime.guards import module_allowed_with_api_key
 from app.schemas.list_query import (
     ListExportRequest,
     ListQueryFieldResponse,
@@ -240,6 +241,15 @@ def export_rows(
     slug = adapter.export_slug
     if not slug or not UserPermissionService(db).check_user_has_permission(current_user["id"], slug):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Export permission required")
+    if body.resource == "finance_billing_documents":
+        # The export reads what the finance routes read: same module gate, and the view slug
+        # that guards every billing figure on them.
+        if not module_allowed_with_api_key(db, current_user, "finance"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Module not enabled: finance")
+        if not UserPermissionService(db).check_user_has_permission(
+            current_user["id"], "finance.billing_documents.view"
+        ):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
     try:
         rows = ListQueryExportService(db).export_rows(body)
     except ValueError as e:

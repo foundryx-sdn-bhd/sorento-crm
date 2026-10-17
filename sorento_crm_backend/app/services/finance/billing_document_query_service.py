@@ -9,6 +9,7 @@ the session's identity map.
 """
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from decimal import Decimal
 from typing import Any, Iterable, Optional
@@ -45,6 +46,14 @@ _SORT_COLUMNS = {
     "outstanding": BillingDocument.outstanding,
     "due_date": BillingDocument.due_date,
 }
+
+
+def _is_uuid(value: Any) -> bool:
+    try:
+        uuid.UUID(str(value))
+    except ValueError:
+        return False
+    return True
 
 
 def _num(value: Optional[Decimal]) -> Optional[float]:
@@ -103,7 +112,11 @@ def _filtered(
     if open_only:
         # Still owed: a synced, non-zero balance. An unapplied credit note is negative and
         # counts; NULL (never synced) and 0 (paid) do not.
-        q = q.filter(BillingDocument.outstanding.isnot(None), BillingDocument.outstanding != 0)
+        q = q.filter(
+            BillingDocument.status != "cancelled",
+            BillingDocument.outstanding.isnot(None),
+            BillingDocument.outstanding != 0,
+        )
     if sales_order_id:
         # A correlated EXISTS, never a join: a document with two lines on the order is one row.
         q = q.filter(
@@ -141,15 +154,40 @@ def _agent_names(db: Session, agent_ids: set[str]) -> dict[str, str]:
     return {str(row[0]): (row[1] or "").strip() for row in rows}
 
 
-def _row(doc: BillingDocument, agent_names: dict[str, str]) -> dict[str, Any]:
+def _outstanding_fields(doc: BillingDocument) -> dict[str, Any]:
+    """A cancelled document is owed nothing, whatever balance was last synced onto it."""
+    if doc.status == "cancelled":
+        return {"outstanding": None, "due_date": None, "outstanding_as_of": None}
+    return {
+        "outstanding": _num(doc.outstanding),
+        "due_date": _iso(doc.due_date),
+        "outstanding_as_of": _iso(doc.outstanding_as_of),
+    }
+
+
+def _customer_names(db: Session, docs: list[BillingDocument]) -> dict[str, str]:
+    """The linked customer's name for documents whose own snapshot is blank, in one query."""
+    ids = {d.customer_id for d in docs if d.customer_id and not d.customer_name}
+    if not ids:
+        return {}
+    rows = db.query(Customer.id, Customer.customer_name).filter(Customer.id.in_(ids))
+    return {str(cid): name for cid, name in rows if name}
+
+
+def _row(
+    doc: BillingDocument,
+    agent_names: dict[str, str],
+    customer_names: Optional[dict[str, str]] = None,
+) -> dict[str, Any]:
     name = agent_names.get(str(doc.sales_agent_id)) if doc.sales_agent_id else None
+    customer_name = doc.customer_name or (customer_names or {}).get(str(doc.customer_id))
     return {
         "id": str(doc.id),
         "document_type": doc.document_type,
         "doc_no": doc.doc_no,
         "doc_date": _iso(doc.doc_date),
         "customer_id": str(doc.customer_id) if doc.customer_id else None,
-        "customer_name": doc.customer_name,
+        "customer_name": customer_name,
         "debtor_code": doc.debtor_code,
         "agent_code": doc.agent_code,
         "agent_name": name or doc.agent_code,
@@ -158,15 +196,14 @@ def _row(doc: BillingDocument, agent_names: dict[str, str]) -> dict[str, Any]:
         "tax_total": _num(doc.tax_total),
         "total": _num(doc.total),
         "status": doc.status,
-        "outstanding": _num(doc.outstanding),
-        "due_date": _iso(doc.due_date),
-        "outstanding_as_of": _iso(doc.outstanding_as_of),
+        **_outstanding_fields(doc),
     }
 
 
 def serialize_list(db: Session, docs: list[BillingDocument]) -> list[dict[str, Any]]:
     names = _agent_names(db, {str(d.sales_agent_id) for d in docs if d.sales_agent_id})
-    return [_row(doc, names) for doc in docs]
+    customer_names = _customer_names(db, docs)
+    return [_row(doc, names, customer_names) for doc in docs]
 
 
 # ------------------------------------------------------------------------------- record
@@ -227,7 +264,11 @@ def document_detail(db: Session, doc: BillingDocument) -> dict[str, Any]:
     if against is None and doc.against_doc_no:
         against = {"id": None, "doc_no": doc.against_doc_no}
 
-    body = _row(doc, _agent_names(db, {str(doc.sales_agent_id)} if doc.sales_agent_id else set()))
+    body = _row(
+        doc,
+        _agent_names(db, {str(doc.sales_agent_id)} if doc.sales_agent_id else set()),
+        _customer_names(db, [doc]),
+    )
     body.update(
         {
             "currency_rate": _num(doc.currency_rate),
@@ -269,8 +310,9 @@ def document_detail(db: Session, doc: BillingDocument) -> dict[str, Any]:
                         "document_type": note.document_type,
                         "doc_no": note.doc_no,
                         "doc_date": _iso(note.doc_date),
+                        "currency_code": note.currency_code,
                         "total": _num(note.total),
-                        "outstanding": _num(note.outstanding),
+                        "outstanding": _outstanding_fields(note)["outstanding"],
                     }
                     for note in notes
                 ],
@@ -332,6 +374,9 @@ def export_rows(
     unknown = [key for key in field_keys if key not in _EXPORT_FIELDS]
     if unknown:
         raise ValueError(f"Unknown or non-exportable field: {unknown[0]}")
+    for label, value in [("customer_id", customer_id), *[("record_ids", v) for v in record_ids or []]]:
+        if value is not None and not _is_uuid(value):
+            raise ValueError(f"Invalid {label}")
     q = _filtered(
         db,
         query=quick_search,

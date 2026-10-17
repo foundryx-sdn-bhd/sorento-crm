@@ -287,6 +287,7 @@ class ArOutstandingIngestService(MasterRefResolver):
             .filter(
                 BillingDocument.company_id == self.company_id,
                 BillingDocument.customer_id == customer_id,
+                BillingDocument.status != "cancelled",
                 BillingDocument.outstanding.isnot(None),
                 BillingDocument.outstanding != 0,
             )

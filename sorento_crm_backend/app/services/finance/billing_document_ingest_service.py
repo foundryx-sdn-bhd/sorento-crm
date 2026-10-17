@@ -161,6 +161,9 @@ def _q(value: Optional[Decimal], exp: Decimal) -> Optional[Decimal]:
     return None if value is None else value.quantize(exp, rounding=ROUND_HALF_UP)
 
 
+_BIGINT_MAX = 2**63 - 1
+
+
 class _DocumentTypeChanged(Exception):
     """The ref already names a document of another type (A2: refs carry the type)."""
 
@@ -578,9 +581,11 @@ class BillingDocumentIngestService(MasterRefResolver):
         ):
             return None
         book, _, doc_key, dtl_key = parts
+        if int(doc_key) > _BIGINT_MAX or int(dtl_key) > _BIGINT_MAX:
+            return None  # cannot name a stored row; never let it reach the column compare
         key = (OrderLine.__tablename__, "do_ref", ref)
         if key not in self._memo:
-            row = (
+            rows = (
                 self.db.query(OrderLine.sales_order_line_id)
                 .join(Order, Order.id == OrderLine.order_id)
                 .filter(
@@ -589,9 +594,11 @@ class BillingDocumentIngestService(MasterRefResolver):
                     Order.doc_key == int(doc_key),
                     OrderLine.dtl_key == int(dtl_key),
                 )
-                .first()
+                .limit(2)
+                .all()
             )
-            self._memo[key] = str(row[0]) if row and row[0] else None
+            # Exactly one DO line, as the SO path: two is ambiguous, never a guess.
+            self._memo[key] = str(rows[0][0]) if len(rows) == 1 and rows[0][0] else None
         return self._memo[key]
 
     def _demand_class(
