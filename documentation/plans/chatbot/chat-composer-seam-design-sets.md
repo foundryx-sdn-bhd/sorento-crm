@@ -17,6 +17,22 @@ inside a 3,000-line function may land); every new sentence gets ms/zh in `LANE_L
 no word rule (owner R9: "more" pages via the parser's continuation flag); pickers stay uncapped (#1436); the numbered
 sibling-variant picker after a full code answer stays (R12 exception).
 
+## Lead decisions + crew answers 17 Oct (override anything below that disagrees)
+
+- Q1 (c): this slice STACKS on #1744's head 3f3bf8101 (merged into crew/chat-composer-sets). #1744 is ungated and stays
+  unmerged until the owner's robust chatbot hand test (owner rule 16 Oct); crew adds #1744 + this slice to the next combined
+  build. Consequence: the "waits for #1744" seams (M2, F1) are built now; gate-off identity is proven against the stacked
+  base (main + #1760 + #1747 + #1744), not main.
+- Q2: a page lists up to 50 products AND never exceeds one WhatsApp message (~4,000 characters including the "more" line):
+  the page ends at whichever comes first, and "showing X to Y" states the real range. Never split into several messages
+  (owner D3).
+- Q3 (a): "more" continues only the list the LAST reply showed (the set carry lasts one turn, as today); anything else is
+  parsed as a new ask.
+- Q4 (a): no "more" line on the last page; a later "more" gets "That is all N." (ms/zh catalogued in LANE_LABELS, gate on).
+- Q5 (a): page only when the parse has `continuation` true AND names no product, attribute or ask of its own (parser fields,
+  no word rule); no prompt change. (b) a prompt sentence only if TRAIN shows misses.
+- Next slice (not this one): outstanding (20), ref_status (10), find "Showing X of Y", task.py "and N others".
+
 ## Design decisions (proposed, for the lead)
 
 - D1. Build on #1744 (option (a), crew Q1 (a)): the coder works on a local merge of #1744's head 3f3bf8101e so the red
