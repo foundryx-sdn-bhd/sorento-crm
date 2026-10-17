@@ -144,4 +144,4 @@ def test_catalog_exposes_and_forwards_group_offset():
         return client.calls
 
     calls = asyncio.run(call())
-    assert calls and calls[0]["query"].get("group_offset") == 20, calls
+    assert calls and calls[0]["query"].get("group_offset") == "20", calls
