@@ -282,33 +282,42 @@ def test_skip_bad_signature(client, db, enqueued):
     assert _chat_jobs(enqueued) == []
 
 
-def test_skip_contact_without_custom_fields(client, db, enqueued):
-    """The human-takeover flag is unknown, so the n8n copy decides, as today."""
+def test_the_webhook_contact_block_needs_no_custom_fields(client, db, enqueued):
+    """respond.io's signed webhook never carries `custom_fields` (crew, 8,434 rows,
+    11-15 Oct): the takeover flag is read by the JOB through a contact lookup, so the
+    webhook gate must not require it."""
     _mode(db, "all")
     body = _event()
     body["contact"].pop("custom_fields")
     assert _post(client, body).status_code == 200
-    assert _chat_jobs(enqueued) == []
-
-
-@pytest.mark.parametrize("value", [True, "true", "TRUE", 1, "1"])
-def test_skip_human_intervened_contact(client, db, enqueued, value):
-    _mode(db, "all")
-    body = _event()
-    body["contact"]["custom_fields"] = [{"name": "is_human_intervened", "value": value}]
-    assert _post(client, body).status_code == 200
-    assert _chat_jobs(enqueued) == []
-
-
-def test_human_intervened_false_enqueues(client, db, enqueued):
-    _mode(db, "all")
-    body = _event()
-    body["contact"]["custom_fields"] = [
-        {"name": "lifecycle", "value": "dealer"},
-        {"name": "is_human_intervened", "value": "false"},
-    ]
-    assert _post(client, body).status_code == 200
     assert len(_chat_jobs(enqueued)) == 1
+
+
+def test_skip_over_the_rate_limit(client, db, enqueued):
+    """The producer's own gate: more than 30 messages from one contact inside a second get
+    n8n's fixed rate-limit reply. The n8n copy still sends it; this path stays out."""
+    from app.services.chatbot import direct_ingress
+
+    _mode(db, "all")
+    queue_service.redis_conn.set(direct_ingress.rate_key(CONTACT_ID), 30, ex=5)
+    try:
+        assert _post(client, _event()).status_code == 200
+        assert _chat_jobs(enqueued) == []
+    finally:
+        queue_service.redis_conn.delete(direct_ingress.rate_key(CONTACT_ID))
+
+
+def test_under_the_rate_limit_counts_and_enqueues(client, db, enqueued):
+    from app.services.chatbot import direct_ingress
+
+    _mode(db, "all")
+    queue_service.redis_conn.delete(direct_ingress.rate_key(CONTACT_ID))
+    try:
+        assert _post(client, _event()).status_code == 200
+        assert len(_chat_jobs(enqueued)) == 1
+        assert int(queue_service.redis_conn.get(direct_ingress.rate_key(CONTACT_ID))) == 1
+    finally:
+        queue_service.redis_conn.delete(direct_ingress.rate_key(CONTACT_ID))
 
 
 @pytest.mark.parametrize(

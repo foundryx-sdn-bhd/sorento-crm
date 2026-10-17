@@ -135,6 +135,26 @@ def stub_engine_seams(monkeypatch):
     monkeypatch.setattr(engine_mod, "_ai_allowed", lambda session_factory, contact: True)
 
 
+@pytest.fixture(autouse=True)
+def lookup(monkeypatch):
+    """The respond.io contact lookup the job makes before the turn (n8n's findcontact).
+    `records[contact]` is what respond.io returns; a missing entry is a failed lookup."""
+    records: dict[str, Any] = {}
+    calls: list[str] = []
+
+    def _fake(db, contact_id):
+        calls.append(contact_id)
+        return records.get(contact_id, {
+            "id": contact_id,
+            "firstName": "ZZT",
+            "phone": "+60000000901",
+            "custom_fields": [{"name": "is_human_intervened", "value": "false"}],
+        })
+
+    monkeypatch.setattr(direct_ingress, "_lookup_contact", _fake)
+    return types.SimpleNamespace(records=records, calls=calls)
+
+
 @pytest.fixture()
 def sender(monkeypatch):
     """A configured sender on the default workspace, and every POST it receives."""
@@ -441,3 +461,50 @@ def _switches_with(real, *, mode: str, contacts: str):
         )
 
     return _read
+
+
+# --------------------------------------------------------------------------- #
+# The producer's takeover gate, read through the contact lookup
+# --------------------------------------------------------------------------- #
+
+
+def test_the_looked_up_contact_is_the_envelope_contact(contacts, stub_engine_seams, sender, lookup):
+    contact = contacts("lookup")
+    lookup.records[contact] = {
+        "id": contact,
+        "firstName": "ZZT",
+        "custom_fields": [
+            {"name": "is_human_intervened", "value": None},
+            {"name": "lifecycle", "value": "dealer"},
+        ],
+    }
+    chat_turns.run_direct_turn_job(_payload(contact, _message_id()))
+    assert lookup.calls == [contact]
+    stored = _turns(contact)[0].envelope["contact"]
+    assert stored["custom_fields"] == lookup.records[contact]["custom_fields"]
+
+
+@pytest.mark.parametrize("value", [True, "true"])
+def test_human_takeover_runs_no_turn(contacts, stub_engine_seams, sender, lookup, value):
+    """n8n's If1 drops a message whose contact is human-intervened; so does this path, and
+    the n8n copy is dropped by the producer too, so the bot stays silent as today."""
+    contact = contacts("takeover")
+    lookup.records[contact] = {
+        "id": contact,
+        "custom_fields": [{"name": "is_human_intervened", "value": value}],
+    }
+    outcome = chat_turns.run_direct_turn_job(_payload(contact, _message_id()))
+    assert outcome["skipped"] == "human_intervened"
+    assert outcome["sent"] is False
+    assert _turns(contact) == []
+    assert sender.posts == []
+
+
+def test_failed_lookup_runs_no_turn(contacts, stub_engine_seams, sender, lookup, monkeypatch):
+    """A lookup that fails leaves the message to the n8n copy rather than guessing."""
+    contact = contacts("lookupfail")
+    monkeypatch.setattr(direct_ingress, "_lookup_contact", lambda db, contact_id: None)
+    outcome = chat_turns.run_direct_turn_job(_payload(contact, _message_id()))
+    assert outcome["skipped"] == "lookup_failed"
+    assert _turns(contact) == []
+    assert sender.posts == []

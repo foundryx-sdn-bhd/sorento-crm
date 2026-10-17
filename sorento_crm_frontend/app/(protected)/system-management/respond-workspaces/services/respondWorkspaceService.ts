@@ -21,6 +21,9 @@ export interface RespondWorkspace {
    *  a message back into a real customer's WhatsApp conversation. */
   chatbot_retry_ingress_url: string | null;
   has_chatbot_retry_key: boolean;
+  /** CHAT-SPEED: the thin n8n sender a webhook-started turn posts to. Key write-only. */
+  chatbot_sender_url: string | null;
+  has_chatbot_sender_key: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -79,6 +82,8 @@ export interface RespondWorkspaceChatbotRetryBody {
   chatbot_retry_ingress_url?: string | null;
   /** Write-only: sent when the admin types a new key or asks for the stored one to go. */
   chatbot_retry_ingress_key?: string | null;
+  chatbot_sender_url?: string | null;
+  chatbot_sender_key?: string | null;
 }
 
 export interface IdeationProductOption {

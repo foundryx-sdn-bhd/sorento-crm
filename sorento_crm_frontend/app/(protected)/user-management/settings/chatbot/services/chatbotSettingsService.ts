@@ -35,7 +35,15 @@ export interface ChatbotSettings {
   /** S7 mode: the CRM orders turns per contact and owns the tail. */
   chatbot_ordering_enabled: boolean;
   chatbot_unsupported_domains: string[];
+  /** CHAT-SPEED: does the respond.io webhook start the turn itself. */
+  chatbot_direct_ingress_mode: ChatbotDirectIngressMode;
+  /** respond.io contact ids, one per line, for the `contacts` mode. */
+  chatbot_direct_ingress_contacts: string | null;
 }
+
+export type ChatbotDirectIngressMode = 'off' | 'contacts' | 'all';
+
+const DIRECT_INGRESS_MODES: readonly ChatbotDirectIngressMode[] = ['off', 'contacts', 'all'];
 
 /**
  * What a settings row that predates these columns reads as.
@@ -57,6 +65,8 @@ const FALLBACKS: ChatbotSettings = {
   chatbot_business_lane_enabled: false,
   chatbot_ordering_enabled: false,
   chatbot_unsupported_domains: [],
+  chatbot_direct_ingress_mode: 'off',
+  chatbot_direct_ingress_contacts: null,
 };
 
 function pickChatbotSettings(row: Record<string, unknown> | null | undefined): ChatbotSettings {
@@ -67,6 +77,15 @@ function pickChatbotSettings(row: Record<string, unknown> | null | undefined): C
     chatbot_unsupported_domains: Array.isArray(row?.chatbot_unsupported_domains)
       ? (row.chatbot_unsupported_domains as string[])
       : FALLBACKS.chatbot_unsupported_domains,
+    chatbot_direct_ingress_mode: DIRECT_INGRESS_MODES.includes(
+      row?.chatbot_direct_ingress_mode as ChatbotDirectIngressMode,
+    )
+      ? (row?.chatbot_direct_ingress_mode as ChatbotDirectIngressMode)
+      : FALLBACKS.chatbot_direct_ingress_mode,
+    chatbot_direct_ingress_contacts:
+      typeof row?.chatbot_direct_ingress_contacts === 'string'
+        ? row.chatbot_direct_ingress_contacts
+        : null,
   };
 }
 

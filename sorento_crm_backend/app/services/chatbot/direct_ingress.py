@@ -51,6 +51,9 @@ STALE_AFTER_SECONDS = 120.0
 # A sender source that is a person or a system, not the customer. respond.io marks the
 # customer's own messages `contact`; the rule is a deny list so an unknown future source
 # (respond.io renames things) still lets the customer through, guarded by `traffic`.
+# The producer's per-contact burst limit (Redis INCR, 1 s TTL, more than 30 is dropped).
+RATE_LIMIT_PER_SECOND = 30
+
 STAFF_SENDER_SOURCES = frozenset({"user", "api", "workflow", "ai_agent", "echo", "broadcast"})
 
 SENDER_KEY_HEADER = "X-Chatbot-Sender-Key"
@@ -106,7 +109,8 @@ def message_age_seconds(message: dict[str, Any], now: float | None = None) -> fl
 
 def _human_intervened(contact: dict[str, Any]) -> bool | None:
     """The contact's `is_human_intervened` custom field: True, False, or None when the
-    webhook body did not carry `custom_fields` at all (so the flag is unknown)."""
+    record carries no `custom_fields` at all. Only True stops a turn, as in the producer's
+    If1 (a null value passes there too)."""
     fields = contact.get("custom_fields")
     if not isinstance(fields, list):
         return None
@@ -179,15 +183,34 @@ def skip_reason(
         # `worker_fast` process this turn would be holding, so the turn would wait on a job
         # that cannot start until it finishes.
         return "not_text"
-    contact = payload.get("contact") if isinstance(payload.get("contact"), dict) else {}
-    # Conservative until the producer's own gates are confirmed (plan, "Human takeover"):
-    # an unknown flag is not a "no".
-    intervened = _human_intervened(contact)
-    if intervened is None:
-        return "takeover_unknown"
-    if intervened:
-        return "human_intervened"
+    # Last, so only a message this path would otherwise take counts against the limit.
+    if _over_rate_limit(contact_id):
+        return "rate_limited"
+    # The takeover flag is NOT in the signed webhook body (crew, 8,434 rows: no
+    # `custom_fields`), so the job reads it through the contact lookup, before the turn.
     return None
+
+
+def rate_key(contact_id: str) -> str:
+    return f"chatbot:direct:rate:{contact_id}"
+
+
+def _over_rate_limit(contact_id: str) -> bool:
+    """The producer's own gate (`sorento-main`, crew 18 Oct): more than
+    `RATE_LIMIT_PER_SECOND` messages from one contact inside a second. The n8n copy still
+    gets the producer's fixed rate-limit reply; this path just stays out of the burst.
+    A redis error reads as over the limit: the job could not be enqueued on it anyway."""
+    from app.services.queue_service import redis_conn
+
+    key = rate_key(contact_id)
+    try:
+        count = int(redis_conn.incr(key))
+        if count == 1:
+            redis_conn.expire(key, 1)
+    except Exception:  # noqa: BLE001
+        logger.warning("direct ingress: rate limit unreadable for %s", contact_id, exc_info=True)
+        return True
+    return count > RATE_LIMIT_PER_SECOND
 
 
 # --------------------------------------------------------------------------- #
@@ -195,35 +218,69 @@ def skip_reason(
 # --------------------------------------------------------------------------- #
 
 
-def envelope_for(payload: dict[str, Any]):
-    """The turn envelope: the respond.io body verbatim, its own contact block, and the
-    ingress that tells the engine to order it."""
+def _contact_id(payload: dict[str, Any]) -> str:
+    contact = payload.get("contact") if isinstance(payload.get("contact"), dict) else {}
+    message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
+    return str(contact.get("id") or message.get("contactId") or "").strip()
+
+
+def _lookup_contact(db: Any, contact_id: str) -> dict[str, Any] | None:
+    """respond.io's contact record, `custom_fields` included: the call n8n's `findcontact`
+    makes, so the engine reads the same contact on both paths. None when it fails."""
+    from app.services.integration_service import RespondClient
+
+    try:
+        record = RespondClient.for_contact_id(db, contact_id).get_contact_by_identifier(contact_id)
+    except Exception:  # noqa: BLE001 - the n8n copy answers a message this path cannot
+        logger.warning("direct ingress: contact lookup failed for %s", contact_id, exc_info=True)
+        return None
+    if isinstance(record, dict) and "id" not in record and isinstance(record.get("data"), dict):
+        record = record["data"]
+    return record if isinstance(record, dict) else None
+
+
+def envelope_for(payload: dict[str, Any], contact: dict[str, Any]):
+    """The turn envelope: the respond.io body verbatim, the looked-up contact record, and
+    the ingress that tells the engine to order it."""
     from app.services.chatbot.contracts import DIRECT_INGRESS, Envelope
 
-    message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
-    contact = dict(payload.get("contact") or {}) if isinstance(payload.get("contact"), dict) else {}
-    if not contact.get("id"):
-        contact["id"] = str(message.get("contactId") or "")
-    return Envelope(message=payload, contact=contact, ingress=DIRECT_INGRESS)
+    block = dict(contact)
+    block["id"] = str(block.get("id") or _contact_id(payload))
+    return Envelope(message=payload, contact=block, ingress=DIRECT_INGRESS)
 
 
 def run(payload: dict[str, Any], session_factory: Callable[[], Any] | None = None) -> dict[str, Any]:
     """Run the turn, then hand its actions to the sender. Returns what happened, for the log.
 
-    `{turn_id, status, duplicate, sent}`. A duplicate (the n8n copy ran first) or a turn
-    with no actions sends nothing.
+    `{turn_id, status, duplicate, sent, skipped}`. The contact is looked up first; a
+    failed lookup or a human takeover runs no turn at all (`skipped` names which). A
+    duplicate (the n8n copy ran first) or a turn with no actions sends nothing.
     """
     from app.database import SessionLocal
     from app.services.chatbot import run_turn
 
     factory = session_factory or SessionLocal
-    envelope = envelope_for(payload)
+    contact_id = _contact_id(payload)
+    skipped = {"turn_id": None, "status": None, "duplicate": False, "sent": False}
+    db = factory()
+    try:
+        record = _lookup_contact(db, contact_id)
+    finally:
+        db.close()
+    if record is None:
+        return {**skipped, "skipped": "lookup_failed"}
+    if _human_intervened(record) is True:
+        # The producer drops this message too (its If1), so nobody answers it: as today.
+        return {**skipped, "skipped": "human_intervened"}
+
+    envelope = envelope_for(payload, record)
     result = run_turn(envelope, session_factory=factory, offload=False)
     outcome = {
         "turn_id": result.turn_id,
         "status": result.status,
         "duplicate": bool(result.duplicate),
         "sent": False,
+        "skipped": None,
     }
     if result.duplicate or not result.actions:
         return outcome
