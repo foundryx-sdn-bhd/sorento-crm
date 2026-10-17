@@ -48,6 +48,9 @@ ALLOWED = {
     # (engine H57), so there is no route through `/chat/turn` that exercises the queue.
     # Not core, not on any request path.
     "scripts/chatbot_queue_replay.py",
+    # CHAT-STATE (#1747): a maintenance script that publishes an unlabelled parser prompt
+    # version (`head/chat_state_prompt`). Not core, not on any request path.
+    "scripts/publish_chat_state_prompt.py",
     # Chatbot memory lane A S2 (contract section 4/5): the contact's memory/facts
     # surface is a `user_management.contacts` route, so it cannot live under
     # `app/services/chatbot/`, yet its vocabulary, precedence and row-lock rules
