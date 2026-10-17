@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getStockStatus, getStockStatusSummaries } from './stockStatusService';
+import { getStockStatus, loadStockStatusSummary } from './stockStatusService';
 
 export const STOCK_STATUS_KEY = 'stock-status';
 export const STOCK_STATUS_SUMMARY_KEY = 'stock-status-summary';
@@ -15,17 +15,15 @@ export function useStockStatus(productId: string | null, soDueBy: string | null,
 }
 
 /**
- * On hand and SO for every item on one page of a list, in one request. Keyed by the sorted
- * id set, so the same page asks once however its rows re-render.
+ * One item's On hand and SO for a list chip. Batched under the hood
+ * (`loadStockStatusSummary`): a page of chips shares one request.
  */
-export function useStockStatusSummaries(productIds: string[]) {
-  const ids = Array.from(new Set(productIds.filter(Boolean))).sort().slice(0, 200);
+export function useStockStatusSummary(productId: string | null | undefined) {
   return useQuery({
-    queryKey: [STOCK_STATUS_SUMMARY_KEY, ids.join(',')],
-    queryFn: () => getStockStatusSummaries(ids),
-    enabled: ids.length > 0,
+    queryKey: [STOCK_STATUS_SUMMARY_KEY, productId],
+    queryFn: () => loadStockStatusSummary(productId as string),
+    enabled: Boolean(productId),
     staleTime: 60_000,
     retry: 1,
-    select: (rows) => new Map(rows.map((row) => [row.product_id, row])),
   });
 }

@@ -436,6 +436,11 @@ export const MENU_SIDEBAR: MenuConfig = [
         permission: 'inventory.stock.view',
       },
       {
+        title: 'Stock status',
+        path: '/inventory-management/stock-status',
+        permission: 'inventory.stock.view',
+      },
+      {
         title: 'Stock Batches',
         path: '/inventory-management/stock-batches',
         permission: 'inventory.stock_batches.view',
@@ -1961,6 +1966,11 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
       {
         title: 'Stock',
         path: '/inventory-management/stock',
+        permission: 'inventory.stock.view',
+      },
+      {
+        title: 'Stock status',
+        path: '/inventory-management/stock-status',
         permission: 'inventory.stock.view',
       },
       {
