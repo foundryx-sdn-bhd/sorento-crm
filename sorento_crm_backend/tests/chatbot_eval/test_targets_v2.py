@@ -2539,3 +2539,8 @@ def test_r30e_a_letter_inside_a_product_code_does_not_make_a_filter_word():
 def test_r30e_a_size_without_a_space_in_a_search_term_is_carried():
     res = _r30d("300mm", {"scope_terms": ["300mm basin"]})
     assert res["checks"].get("applied") is True, res["checks"]
+
+
+def test_r30e_a_uuid_segment_is_not_a_carried_filter_word():
+    res = _r30d("1234", {"product_ids": ["4d3a600b-1234-4d5e-8f90-123456789abc"]})
+    assert res["checks"].get("applied") is False, res["checks"]
