@@ -203,6 +203,10 @@ class Focus:
     # next code the parser marks as a continuation repeats that ask in the same direction and a pointer at one of these codes narrows it.
     # Written by `engine._run_turn` around `find.as_linked_products`; a topic reset drops it.
     relation: str | None = None
+    # CHAT-STATE: the numbered list the last reply showed, `[{position, label, code, ...}]`,
+    # so "the second one" has something to point at. Rides inside the focus like `tasks`
+    # (a second key could disagree); written by `turn/tail.py::last_list_after`.
+    last_list: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -291,6 +295,19 @@ class State:
     # `{pending, focus}` set aside. Rides on the state so every lane's tail (answer, canned,
     # clarify, out_of_scope) writes the live question back; never serialised.
     quoted_live: Any = None
+    # CHAT-STATE: set once by `turn/chat_state.apply_changes` when the parser's
+    # `state_changes` were applied ("answer" / "new_ask" / "refine" / "carry"); None on
+    # every other turn. Never serialised.
+    state_led: str | None = None
+    # CHAT-STATE: the turn ran on the state path (the prompt in use or a dry-run emission asks
+    # for `state_changes`), so the tail records the list it showed. Never serialised.
+    state_path: bool = False
+    # CHAT-STATE: held slots the parser said `skip` for, set aside for this turn only
+    # (`{"customers": [...], "date_window": {...}}`) and put back by the tail. Never serialised.
+    held_aside: dict[str, Any] | None = None
+    # CHAT-STATE: a question the state change itself raises (an unclear held slot): the
+    # engine asks it instead of fetching. Never serialised.
+    slot_ask: Any = None
 
 
 # --------------------------------------------------------------------------- #
@@ -324,6 +341,8 @@ def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire["tasks"] = [task_to_wire(task) for task in (focus.tasks or ())]
     wire["extra"] = {k: list(v) for k, v in (focus.extra or {}).items()}
     wire["relation"] = focus.relation
+    if focus.last_list:
+        wire["last_list"] = [dict(row) for row in focus.last_list]
     return wire
 
 
@@ -394,6 +413,10 @@ def focus_from_wire(raw: Any) -> Focus:
         )
     relation = raw.get("relation")
     focus.relation = relation if isinstance(relation, str) else None
+    last_list = raw.get("last_list")
+    focus.last_list = (
+        [dict(row) for row in last_list if isinstance(row, dict)] if isinstance(last_list, list) else None
+    ) or None
     extra = raw.get("extra")
     if isinstance(extra, dict):
         focus.extra = {
