@@ -1,6 +1,6 @@
 # UAC: CHAT-CODE-LOOKUP
 
-Status: AGREED for R1, R2, R4, R5, R6, Q5 (crew answers 17 Oct, card Q1/Q2/Q4/Q5 (a)); R3 HELD for the owner (Q3). Plan: `PLAN-chat-code-lookup-17oct.md`.
+Status: AGREED for R1, R2, R4, R5, R6, Q5 (crew answers 17 Oct, card Q1/Q2/Q4/Q5 (a)); R3 DROPPED (owner ruling 17 Oct: keep the sibling picker after a full answer). Plan: `PLAN-chat-code-lookup-17oct.md`.
 
 Every criterion runs with the lane gate ON (parser prompt carrying the lane marker) unless it says gate OFF.
 
@@ -17,7 +17,8 @@ Every criterion runs with the lane gate ON (parser prompt carrying the lane mark
 - U1.2 A parser pick that is on the candidate block is kept as the product code; the resolver looks it up exactly and
   the bot answers that product, naming the code used, with no did-you-mean.
 - U1.3 A parser pick that is NOT on the candidate block is not trusted as a correction: the turn behaves as gate OFF.
-- U1.4 Parser says none: today's did-you-mean list, unchanged.
+- U1.4 Parser says none (two or more codes equally close, or none fits): today's did-you-mean list, unchanged.
+- U1.6 One clearly meant code: answered, no did-you-mean picker (owner, 17 Oct).
 - U1.5 Code never picks: no score, rule or word list in code chooses between candidates.
 - Examples: "Check stock CBCM66631" -> CBMC66631 stock; "Check stock chs2072 x 72 units" -> CSH2072, 72 units.
 
@@ -27,11 +28,9 @@ Every criterion runs with the lane gate ON (parser prompt carrying the lane mark
 - U2.2 A set code plus an attribute ("SRTWC8608-RL P-TRAP") answers the set variant the parser picks (SRTWC8608-P-RL),
   no question, no unrelated suggestions.
 
-## R3 no picker after a full answer (HELD: owner ruling pending, not built)
+## R3 dropped (owner, 17 Oct)
 
-- U3.1 An exact-code answer (stock, ETA, product info) leaves no open product_pick question; siblings, if named, are
-  one plain line.
-- Example: "Srtbf11415 ETA" -> ETA of SRTBF11415; SRTBF11415-NEW named, nothing to pick.
+- U3.1 Unchanged: an exact-code answer keeps today's sibling picker (`answer.py:4846-4848`).
 
 ## R4 asked attribute carried
 

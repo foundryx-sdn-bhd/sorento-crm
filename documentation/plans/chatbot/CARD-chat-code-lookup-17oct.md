@@ -109,3 +109,6 @@ Request: the held-out code-lookup fails counted by failing check name (no items)
 - Q4 (a): set-only codes resolve like product codes.
 - Q5 (a): "when deliver <code> to <customer>" = outstanding status, no period ask.
 - The 9 grader / gold / harness suspicions go to EVAL-BENCH; crew asks it for held-out code-lookup fails by check name.
+- OWNER RULING on Q3 (17 Oct): KEEP the sibling picker after a full answer (`answer.py:4846-4848` stands); R3 is
+  dropped. Typo with one clearly meant code: answer it, no did-you-mean picker; ask only when two or more codes are
+  equally close (R1). cp0-3903d0aaab's picker is therefore right: a grader / gold item for EVAL-BENCH.
