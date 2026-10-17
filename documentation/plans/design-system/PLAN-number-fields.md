@@ -191,3 +191,12 @@ so its timing is covered by tests only.
 - Portal: "1e1000000" refused with 400 (no abs() overflow); "too large" says "Quantity is too large.".
 - Product picker Save from the "By hand" tab with a bad rule number shows a visible message (never a silent no-op).
 - Follow-up, not this lane: no lower bound on order line / SPO allocation quantity (large negatives reach the DB).
+
+## Round 6 and 7 (17 Oct)
+
+- Reviewer r6 READY; its two nits fixed red-first: the product picker reopens on "By rule" with no leftover refusal;
+  the collection number gate also walks a rule tree whose top level has no `kind`.
+- Merging origin/main brought main's new Sample Request form (#1718): its payload builder defaulted a blank / 0 /
+  fraction / bad qty to 1 and a blank loan period to 2. Now validate() refuses them with "Enter a whole number of at
+  least 1." under the box, nothing sent; both boxes use NumberInput. Main's new nested DataGrid site
+  (SampleRequestDetail.tsx) added to the inventory baseline (that test was red on main too).
