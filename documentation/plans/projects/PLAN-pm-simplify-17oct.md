@@ -1,6 +1,7 @@
 # PLAN: simplify the project PO and delivery schedule parts (PM-SIMPLIFY)
 
-Status: mock v1 filed for the owner (17 Oct 2026), waiting on the mock OK and questions Q1-Q5. No code until the owner OKs the mock. Track: not chosen yet
+Status: mock v1 reviewed by crew (17 Oct 2026); Q4 and Q5 answered (a). Refilling the mock on the
+real project case (masked rows), then the owner gets the mock with Q1-Q3. No code until the owner OKs the mock. Track: not chosen yet
 (decided by the diff once the mock is approved).
 
 Owner 15 Oct: "the PO part and the delivery schedule part are badly designed, too complicated ->
@@ -138,9 +139,12 @@ component map, existing components only).
   (b) only via a revised schedule upload. Recommendation (a).
 - Q3. One page per PO (merge the three pages)? Recommendation yes.
 - Q4. Delivered quantities: (a) AutoCount only, read-only; (b) also recorded in the CRM.
-  Recommendation (a).
+  **Answered (crew, 17 Oct): (a).** Owner rule: AutoCount is the source of truth.
 - Q5. Build: (a) keep the split-by choice in one dialog; (b) always split by delivery date, no
-  dialog. Recommendation (a).
+  dialog. **Answered (crew, 17 Oct): (a)**, no behaviour removed.
+
+Crew, 17 Oct: Q1, Q2 and Q3 go to the owner with the mock refilled on the real project case
+(masked rows from the crew-data-request). Defects D1-D5 are fixed in the build regardless.
 
 UAC draft: `pm-simplify-17oct-acceptance-criteria.md`. UI word for a schedule row is "Area" (24 Sep ruling J6); "phase" below is the code name (`delivery_phases`).
 

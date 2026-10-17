@@ -1,6 +1,7 @@
 # UAC: simplify the project PO and delivery schedule parts (PM-SIMPLIFY)
 
-Status: DRAFT, written against the recommended answers to Q1-Q5 in
+Status: DRAFT, written against the recommended answers to Q1-Q3 (Q4 and Q5 answered (a) by crew,
+17 Oct) in
 `PLAN-pm-simplify-17oct.md`. Rewritten once the owner OKs mock v1
 (`mockups/po-schedule-simplify-v1.html`) and answers the questions. Nothing here is built.
 

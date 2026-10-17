@@ -1,0 +1,10 @@
+{"rows":[
+{"job":"Create a PO from a scan, to a usable PO","before":"3 pages + 2 dialogs, 10 clicks, 3 sign-offs","after":"1 page + 1 dialog, 3 clicks, 1 sign-off","why":"PO record and PO review are one page; Approve and Countersign go (Q1)"},
+{"job":"Change one delivery's date","before":"Not possible on the schedule; edit the date on every draft SO line for that area, or upload a revision (5-field dialog, review, confirm)","after":"2 clicks, 1 field","why":"Date edited in place on the Deliveries tab; draft SO lines follow (Q2)"},
+{"job":"Upload a revised schedule","before":"5 fields","after":"1 field (the file)","why":"PO, schedule and issuer known from the page"},
+{"job":"See a partial delivery","before":"Shown nowhere","after":"0 extra clicks","why":"Delivered and Outstanding columns on the PO's lines, from AutoCount"},
+{"job":"Ordered / scheduled / delivered / outstanding for every item","before":"7 screens, about 15 clicks, and still not answerable","after":"1 screen, 2 clicks from the project","why":"PO page, Lines tab"},
+{"job":"Build sales orders","before":"2 dialogs, 3 fields","after":"1 dialog, 1 field","why":"PO and confirmed schedule known from the page (Q5)"},
+{"job":"Tabs and pages for one PO","before":"3 project tabs + 3 pages","after":"1 project tab + 1 page","why":"Orders tab + PO page (Q3)"}
+],
+"note":"Today's figures: browser walk on the sandbox copy, 17 Oct 2026, sidebar clicks from /; screenshots in documentation/plans/projects/evidence/pm-simplify-17oct/. Proposed figures are counted on this mock."}
