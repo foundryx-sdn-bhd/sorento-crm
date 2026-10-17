@@ -218,6 +218,11 @@ class SalesOpportunity(CompanyScopedMixin, Base):
     customer_id = Column(
         UUID(as_uuid=False), ForeignKey("customers.id", ondelete="RESTRICT"), nullable=True
     )
+    # FORMS-PROJECT: the explicit project link, picked by a person (no name matching).
+    # Nullable; deleting the project unlinks the form, never deletes it.
+    project_id = Column(
+        UUID(as_uuid=False), ForeignKey("projects.projects.id", ondelete="SET NULL"), nullable=True
+    )
     # Required when `customer_id` is null (check below): a showroom that is not a customer
     # yet (round 4, N10). Kept as history once the opportunity is Won onto a real customer.
     prospect_name = Column(String(200), nullable=True)
@@ -273,6 +278,7 @@ class SalesOpportunity(CompanyScopedMixin, Base):
         Index("ix_sales_opportunities_customer_id", "customer_id"),
         Index("ix_sales_opportunities_sales_agent_id", "sales_agent_id"),
         Index("ix_sales_opportunities_status_id", "status_id"),
+        Index("ix_sales_opportunities_project_id", "project_id"),
         Index("ix_sales_opportunities_expected_close_date", "expected_close_date"),
         {"schema": SCHEMA},
     )

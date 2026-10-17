@@ -1035,6 +1035,11 @@ class StockInquiry(Base):
     item_description = Column(Text, nullable=True)
     project_customer = Column(Text, nullable=True)
     project_name = Column(Text, nullable=True)
+    # FORMS-PROJECT: the explicit project link, picked by a person (no name matching).
+    # Nullable; deleting the project unlinks the form, never deletes it.
+    project_id = Column(
+        UUID(as_uuid=False), ForeignKey("projects.projects.id", ondelete="SET NULL"), nullable=True
+    )
     quantity = Column(Text, nullable=True)
     delivery_date = Column(Text, nullable=True)
     remark = Column(Text, nullable=True)
@@ -1086,6 +1091,7 @@ class StockInquiry(Base):
         Index("ix_stock_inquiries_delivery_date", "delivery_date"),
         Index("ix_stock_inquiries_created_at", "created_at"),
         Index("ix_stock_inquiries_inquiry_number", "inquiry_number"),
+        Index("ix_stock_inquiries_project_id", "project_id"),
     )
 
 
