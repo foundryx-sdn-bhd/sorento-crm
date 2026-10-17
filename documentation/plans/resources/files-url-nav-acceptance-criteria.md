@@ -12,3 +12,5 @@ Plan: `PLAN-files-url-nav.md`. Final: behaviour card answered 17 Oct (1a 2a 3a 4
 - AC-8 Deleting the folder you are in returns you to its parent without adding a Back step into the deleted folder.
 - AC-9 Changing folder by any route (including Back/Forward) clears the search box, returns to page 1 and clears the row selection, same as a drill click today.
 - AC-10 Other query params (e.g. `attachment_id` deep link) survive folder navigation where they still apply.
+- AC-11 (crew audit 17 Oct) Open A > B > C, reload, Back, Back, open D, Back: A is shown with its contents and breadcrumb; the page never stays on a loading skeleton. Replay: `evidence/files-url-nav-replay.sh`.
+- AC-12 (crew audit 17 Oct) After a reload into a folder deep in a long tree, its tree row is highlighted and scrolled into view.

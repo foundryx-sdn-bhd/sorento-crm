@@ -1,6 +1,6 @@
 # PLAN - Files page: every folder has its own URL
 
-Status: **Built, reviewer READY (4986dc18 + nits), sandbox browser pass PASS at 1280 and 375. Awaiting owner hand test on PR #1759. Track: small fix (frontend only, no migration, no auth/RBAC change, no new ingest).**
+Status: **Built; crew audit round 2 (17 Oct) fixed: reload -> Back -> Back -> open -> Back stuck skeleton (native pushState wrote stale Next router trees) and tree scroll-into-view. Reviewer READY on ccb75637 (+ should-fixes taken in 3bf9b4f9). Sandbox pass PASS at 1280 and 375. Awaiting owner hand test on PR #1759. Track: small fix (frontend only, no migration, no auth/RBAC change, no new ingest).**
 UAC: `documentation/plans/resources/files-url-nav-acceptance-criteria.md`
 Lane: FILES-URL-NAV, base `origin/main` 20c191d8.
 
@@ -32,9 +32,15 @@ Paths below are under `sorento_crm_frontend/app/(protected)/resource-management/
   root = no param. Every existing link and quick-access pin keeps working.
 - `AttachmentDirectoriesView` derives `selectedId` from `useSearchParams()` instead of
   `useState` (`useFolderUrl.ts`). Selecting a folder (tree, drill, breadcrumb, mobile drawer)
-  does a native `history.pushState`, copying every other query param. Not `router.push`: it
-  re-requested the page on every click (about 1s on dev, measured); Next 15 syncs native
-  history into `useSearchParams` with no round trip (now about 200ms to the new breadcrumb). Deleting the folder you are in
+  navigates with `router.push` / `router.replace`, copying every other query param.
+- NOT native `history.pushState` (tried in round 1 for speed, reverted after the crew audit):
+  Next 15.5's patched pushState copies the current entry's router tree into each new entry;
+  after a reload those trees name page segments the new document never loaded, and Back
+  onto one left the page on the loading skeleton for good.
+- The router round trip (about 1s on dev) is hidden by a `pending` folder shown at once and
+  dropped as soon as the URL moves (its own navigation landing, Back / Forward, or a newer
+  navigation that discarded it).
+- The tree scrolls the open folder's row into view (`block: 'nearest'`). Deleting the folder you are in
   `router.replace`s to its parent so Back never lands on a deleted folder.
 - The panel resets search / page / selection whenever the folder changes from ANY source
   (Back/Forward included), not only on a drill click.
