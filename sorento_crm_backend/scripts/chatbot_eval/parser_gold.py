@@ -136,6 +136,26 @@ def _parse_one(message: str, config: Any, factory: Any) -> Any:
     return parser.parse(config, user_block)
 
 
+def _pinned_version(session_factory: Any, version_id: str) -> int:
+    """The stored version number of a pinned parser prompt. ValueError when the id is not a stored
+    version of the parser prompt (the registry would fall back silently) or when it carries a label
+    (a labelled version is what production reads; a gold run pins an unlabelled one)."""
+    from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
+    from scripts.chatbot_eval import replay
+
+    if not replay._pin_resolves(session_factory, version_id):
+        raise ValueError("prompt_version_id is not a stored version of the parser prompt")
+    db = session_factory()
+    try:
+        number = db.query(AIPromptVersion.version).filter(AIPromptVersion.id == version_id).scalar()
+        labelled = db.query(AIPromptLabel.id).filter(AIPromptLabel.version_id == version_id).first() is not None
+    finally:
+        db.close()
+    if labelled:
+        raise ValueError("prompt_version_id carries a label; pin an unlabelled version")
+    return int(number)
+
+
 def run_live(rows: list[dict[str, Any]], *, session_factory: Any, version_id: str, repeats: int, max_usd: float,
              require_key_last4: str, on_row: Any = None) -> list[dict[str, Any]]:
     """Each gold message x `repeats` through the parser alone; stops cleanly at the spend cap or a wrong key."""
@@ -168,7 +188,7 @@ def run_live(rows: list[dict[str, Any]], *, session_factory: Any, version_id: st
                 for case in rows:
                     for repeat in range(repeats):
                         before = total["usd"]
-                        row: dict[str, Any] = {"id": case["id"], "repeat": repeat}
+                        row: dict[str, Any] = {"id": case["id"], "repeat": repeat, "prompt_version": config.prompt_version}
                         try:
                             verdict = dict(_parse_one(case["message"], config, factory))
                             passed, reasons = grade_parse(verdict, case["expect"])
@@ -213,6 +233,11 @@ def _cmd_live(args: argparse.Namespace) -> int:
     if not os.path.abspath(app.__file__).startswith(os.getcwd() + os.sep):
         return _refuse(f"app is imported from {app.__file__}, not from the cwd")
     from app.database import SessionLocal
+
+    try:
+        _pinned_version(SessionLocal, args.prompt_version_id)
+    except ValueError as exc:
+        return _refuse(str(exc))
 
     with open(args.out, "w") as fh:
         os.chmod(args.out, 0o600)
