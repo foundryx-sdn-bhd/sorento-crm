@@ -661,6 +661,32 @@ def _followup(row, item):
     return first + _followup_checks(row, item, kind, gold) + [c for c in needless if c not in first]
 
 
+def _words_of(*xs: Any) -> set[str]:
+    """Lower-case words of the strings among `xs` (a bool or number is no phrase)."""
+    return {w for x in xs if isinstance(x, str) for w in re.findall(r"[a-z0-9]+", x.lower())}
+
+
+def _entity_words(row: dict[str, Any], hints: frozenset[str] = frozenset({"specification", "category", "brand"})) -> set[str]:
+    """The words of this turn's spec / category / brand entity phrases (raw, label, canonical_code; a real spec value
+    stands for itself)."""
+    out: set[str] = set()
+    for e in _entities(row):
+        if e.get("hint") not in hints and not e.get("spec_key"):
+            continue
+        value = e.get("spec_value")
+        if value is not None and not isinstance(value, bool):   # a real spec value: the phrase around it is not the value
+            out |= _words_of(value)
+        else:
+            out |= _words_of(e.get("raw"), e.get("label"), e.get("canonical_code"))
+    return out
+
+
+def _header_words(row: dict[str, Any]) -> set[str]:
+    """The words of the bot's set header phrase ("Here's what you want: <phrase> (N...)"), empty when there is none."""
+    m = re.search(r"^Here's what you want:\s*(.*?)\s*\(\d", reply_text(row), re.M)
+    return _words_of(m.group(1)) if m else set()
+
+
 def _followup_checks(row, item, kind, gold):
     # real traces carry a memory event with `focus.after`; older / hand-built rows do not. The rules that only make
     # sense against real traces (a stale old subject staying in memory, the lookup after a refine) apply to those.
@@ -751,11 +777,16 @@ def _followup_checks(row, item, kind, gold):
         values |= {_val(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "warehouse"}
         values |= {_val(e.get("canonical_code") or e.get("raw")) for e in (_mem_focus(row, "after").get("warehouse") or [])
                    if isinstance(e, dict)}
+        fwords = set(_val(flt.get("value")).split())
+        blind = payload_omitted or not _entities(row)   # the entities cannot be read: the set header names the filter
+        header_names = bool(fwords) and blind and fwords <= _header_words(row)
+        phrase_read = bool(fwords) and fwords <= _entity_words(row)   # the words may be split across entities
         checks = [
             # narrowing may keep a part of the list: a non-empty subset of the gold subject or of what was held before
             ("subject", (want <= after_subject or bool(after_subject and (after_subject <= want or after_subject <= before_subject)))
              if want else None, "The subject was dropped when narrowing down."),
-            ("filter", True if _val(flt.get("value")) in values else (None if payload_omitted else False),
+            ("filter", True if (_val(flt.get("value")) in values or phrase_read or header_names)
+             else (None if payload_omitted else False),
              "The new filter was not applied."),
         ]
         if real:  # asking instead of looking up is not a refine that worked
@@ -772,7 +803,16 @@ def _followup_checks(row, item, kind, gold):
                 held = set()
             carried = bool(_squash(flt.get("value"))) and any(_squash(flt.get("value")) in _squash(_dump(t.get("args")))
                                                               for t in _tools(row))
-            checks.append(("applied", fv in held or carried, "The filter was read but never applied to a lookup."))
+            words_held = set()
+            if fv not in held_before:
+                words_held = (_words_of(*(x for e in (extra.get("specification") or []) + (extra.get("category") or [])
+                                          for x in ((e.get("raw"), e.get("label"), e.get("spec_value")) if isinstance(e, dict) else (e,))),
+                                        *(_mem_focus(row, "after").get("brands") or []),
+                                        *(s for t in _tools(row) for s in _strings(t.get("args"))))
+                              | _entity_words(row, frozenset({"category"})))
+            applied_by_words = bool(fwords) and fwords <= words_held
+            checks.append(("applied", fv in held or carried or applied_by_words or header_names,
+                           "The filter was read but never applied to a lookup."))
         prev = " ".join(str(row.get("prev_bot_message") or "").lower().split())
         if prev:  # the same answer again is no refinement
             checks.append(("changed_answer", " ".join(reply_text(row).lower().split()) != prev,
@@ -793,10 +833,13 @@ def _followup_checks(row, item, kind, gold):
         # new subject and a change
         expanded = bool(gold.get("code_unresolved") and want and _mem_before and not want & _mem_before
                         and all(any(covered(a, {w}) for a in after_subject) for w in want))
+        # a fact switch on the products already held: every gold code is held before the turn (a family literal by cover)
+        same_subject = bool(want and _mem_before and all(
+            w in _mem_before or (family and any(_covered(m, {w}) for m in _mem_before)) for w in want))
         return [
             ("old_dropped", not carried_old(), "The old subject was carried into the new ask."),
             ("new_subject", new_subject_ok(), "The new subject was not picked up."),
-            ("changed", expanded or not (_mem_before and after_subject == _mem_before), "The subject did not change."),
+            ("changed", expanded or same_subject or not (_mem_before and after_subject == _mem_before), "The subject did not change."),
         ]
     if kind == "and_x" and gold.get("variant") == "new_fact":
         return [
