@@ -470,17 +470,18 @@ def test_summary_gives_each_item_its_on_hand_and_so_on_the_panels_rules_in_one_c
     _so(db, p, bb, 30)
     _so(db, p, bb, 7, transferable=False)         # F out
     _so(db, p, bb, 4, purchasing_status="covered")
+    _so(db, p, bb, 12, delivered=5)               # outstanding 7, ordered less delivered
     _on_hand(db, q, bb, 2)
 
     r = TestClient(app).get(SUMMARY_URL, params={"product_ids": f"{p.id},{q.id}"})
 
     assert r.status_code == 200, r.text
     by_id = {s["product_id"]: s for s in r.json()}
-    assert by_id[str(p.id)] == {"product_id": str(p.id), "on_hand": 11, "so_qty": 34}
+    assert by_id[str(p.id)] == {"product_id": str(p.id), "on_hand": 11, "so_qty": 41}
     assert by_id[str(q.id)] == {"product_id": str(q.id), "on_hand": 2, "so_qty": 0}
     # The same figures the panel prints for the item.
     panel = _get(app, p)["totals"]
-    assert (panel["on_hand"], panel["so_qty"]) == (11, 34)
+    assert (panel["on_hand"], panel["so_qty"]) == (11, 41)
 
 
 def test_summary_refuses_more_than_200_ids_and_ignores_ids_that_are_not_uuids(scm_app):
