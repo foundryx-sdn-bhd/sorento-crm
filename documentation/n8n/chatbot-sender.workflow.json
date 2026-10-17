@@ -1,0 +1,480 @@
+{
+  "name": "sorento-chatbot-sender",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatbot-sender",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "0440d3a2-e3ca-4408-b774-d4e02ca59f8f",
+      "name": "chatbot-sender",
+      "webhookId": "18154871-70aa-4bd9-bc10-715031306404",
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "REPLACE_WITH_HEADER_AUTH_CREDENTIAL (header X-Chatbot-Sender-Key)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// CHAT-SPEED sender: one item per action, IN ORDER (the CRM's contract: execute in order).\n// The body mirrors POST /api/v1/external/chat/turn's response plus `contact_id`.\nconst body = $json.body || {};\nconst contactId = String(body.contact_id || '').trim();\nconst actions = Array.isArray(body.actions) ? body.actions : [];\nif (!contactId || !body.turn_id) {\n  throw new Error('chatbot-sender: body has no contact_id or turn_id');\n}\n// A webhook-started turn is never a test turn; refuse one anyway (D14 containment).\nif (body.is_test === true || actions.some((a) => a && a.dry_run === true)) {\n  return [];\n}\nreturn actions\n  .filter((a) => a && typeof a.kind === 'string')\n  .map((action, index) => ({ json: { turn_id: body.turn_id, contact_id: contactId, index, action } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "de462024-f6a9-4d8e-bdc2-2592af3f6979",
+      "name": "explode-actions"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        440,
+        0
+      ],
+      "id": "6569c8c5-085b-47ef-a7c6-11d367faee8c",
+      "name": "each-action-in-order"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action.kind }}",
+                    "rightValue": "send_message",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "send_message"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action.kind }}",
+                    "rightValue": "send_attachments",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "send_attachments"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action.kind }}",
+                    "rightValue": "assign_conversation",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "assign_conversation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action.kind }}",
+                    "rightValue": "add_comment",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "add_comment"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action.kind }}",
+                    "rightValue": "update_contact_fields",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "update_contact_fields"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "47600b4d-83d1-4a40-96e0-7fb91e3ea250",
+      "name": "action-kind"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_SENDMSG_SUB_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contact_id": "={{ $json.contact_id }}",
+            "text": "={{ $json.action.text }}",
+            "quick_replies": "={{ $json.action.quick_replies }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        900,
+        -300
+      ],
+      "id": "61d40ccb-f6e3-44d3-9183-a8fcc33348f3",
+      "name": "send_message (spine's sendmsg sub)"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_SEND_ATTACHMENTS_SUB_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contact_id": "={{ $json.contact_id }}",
+            "attachments_src": "={{ $json.action.attachments_src }}",
+            "reply": "={{ $json.action.reply }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        900,
+        -150
+      ],
+      "id": "6f01d366-f2c8-403b-886a-4ad69e7419b3",
+      "name": "send_attachments (spine's send-attachments sub)"
+    },
+    {
+      "parameters": {
+        "resource": "CONVERSATIONS",
+        "contactId": "={{ $json.contact_id }}",
+        "assignmentType": "userId",
+        "assigneeUserId": "={{ $json.action.respond_user_id }}"
+      },
+      "type": "@respond-io/n8n-nodes-respond-io.respondio",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ],
+      "id": "4fabaf56-217c-4037-b51f-393de1350a33",
+      "name": "assign_conversation",
+      "credentials": {
+        "respondIoApi": {
+          "name": "REPLACE_WITH_RESPOND_IO_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "COMMENTS",
+        "contactId": "={{ $json.contact_id }}",
+        "comment": "={{ ($json.action.mention_user_ids || []).map((id) => '{' + '{@user.' + id + '}' + '}').join(' ') }}{{ ($json.action.mention_user_ids || []).length ? '\\n' : '' }}{{ $json.action.text }}"
+      },
+      "type": "@respond-io/n8n-nodes-respond-io.respondio",
+      "typeVersion": 1,
+      "position": [
+        900,
+        150
+      ],
+      "id": "9ca8fbb6-3ad1-42d5-aa77-641024b21740",
+      "name": "add_comment",
+      "credentials": {
+        "respondIoApi": {
+          "name": "REPLACE_WITH_RESPOND_IO_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_UPDATE_CONTACT_FIELDS_NODE_OR_SUB_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contact_id": "={{ $json.contact_id }}",
+            "fields": "={{ $json.action.fields }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        900,
+        300
+      ],
+      "id": "6bf29981-b641-499a-9c55-b0c081e57238",
+      "name": "update_contact_fields (spine's field write)"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        900,
+        450
+      ],
+      "id": "d8ff9dc7-f569-4f92-bfe0-d9c2c2c8fd3f",
+      "name": "unknown-kind (logged, skipped)"
+    }
+  ],
+  "connections": {
+    "chatbot-sender": {
+      "main": [
+        [
+          {
+            "node": "explode-actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "explode-actions": {
+      "main": [
+        [
+          {
+            "node": "each-action-in-order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "each-action-in-order": {
+      "main": [
+        [],
+        [
+          {
+            "node": "action-kind",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "action-kind": {
+      "main": [
+        [
+          {
+            "node": "send_message (spine's sendmsg sub)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "send_attachments (spine's send-attachments sub)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "assign_conversation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "add_comment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "update_contact_fields (spine's field write)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "unknown-kind (logged, skipped)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send_message (spine's sendmsg sub)": {
+      "main": [
+        [
+          {
+            "node": "each-action-in-order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send_attachments (spine's send-attachments sub)": {
+      "main": [
+        [
+          {
+            "node": "each-action-in-order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "assign_conversation": {
+      "main": [
+        [
+          {
+            "node": "each-action-in-order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "add_comment": {
+      "main": [
+        [
+          {
+            "node": "each-action-in-order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update_contact_fields (spine's field write)": {
+      "main": [
+        [
+          {
+            "node": "each-action-in-order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "unknown-kind (logged, skipped)": {
+      "main": [
+        [
+          {
+            "node": "each-action-in-order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

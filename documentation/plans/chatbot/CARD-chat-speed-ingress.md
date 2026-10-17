@@ -1,11 +1,9 @@
 # CARD: CHAT-SPEED, cut the wait before the CRM sees a WhatsApp message (17 Oct)
 
-Status: card filed; Q1-Q5 answered by crew (17 Oct): the measurement picks option D. It waits
-on the owner's one OK. No code yet. Track: size L, cloud lane (CHAT-SPEED, chatbot
-design step 4). Scope is the ingress plumbing only (respond.io -> n8n -> CRM). The parser output
-schema and the engine answer path are out of scope (CHAT-STATE, CHAT-CLOSED-LISTS,
-CHAT-CODE-LOOKUP and CHAT-COMPOSER own them). Paths are under `sorento_crm_backend/` unless
-they say otherwise.
+Status: owner OK 18 Oct on option D; building on `PLAN-chat-speed-ingress.md` (red-first).
+Two findings changed the build, recorded in the plan: media stays on the n8n path (single
+`worker_fast` process), and the takeover flag comes from a respond.io contact lookup in the
+job (the webhook body carries no `custom_fields`).
 
 ## Where the time goes (crew measurement, dev copy of prod, 2,349 WhatsApp turns, 8 Sep-13 Oct)
 

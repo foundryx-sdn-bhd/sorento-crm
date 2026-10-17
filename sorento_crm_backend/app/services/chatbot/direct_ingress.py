@@ -334,9 +334,14 @@ def send(
                 "reply was not handed to n8n.",
             )
             return False
+        # `/chat/turn`'s own response keys plus `contact_id`, so the sender can run the
+        # spine's action executor unchanged (`documentation/n8n/chatbot-sender.md`).
         body = {
             "turn_id": turn_id,
             "contact_id": contact_id,
+            "is_test": False,
+            "duplicate": False,
+            "delegate": None,
             "branch_kind": branch_kind,
             "actions": actions,
             "reply": reply,
