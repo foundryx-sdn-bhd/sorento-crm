@@ -4584,19 +4584,6 @@ def page_the_set(
     # W4: a carry that holds the resolver's own description replays it exactly (specs,
     # brand, LOOKUP ids); an older carry falls back to its class words.
     described = "specs" in key or "brand" in key or "product_ids" in key
-    outcome = resolve_product_set(
-        db,
-        require=key.get("require") or {},
-        specs=list(key.get("specs") or []) if described else [],
-        free_terms=None,
-        scope_terms=None if described else list(key.get("scope_terms") or []),
-        limit=answer_mod.SET_ID_CAP,
-        product_ids=(list(key.get("product_ids") or []) or None) if described else None,
-        brand=key.get("brand") if described else None,
-        brand_is_default=bool(key.get("brand_default")) if described else False,
-        access_levels=entitled,
-        stock_policy=stock_policy,
-    )
     if key.get("miss_list") and _composers_on():
         # CHAT-COMPOSER: the carried set is a zero-qualifying described list (its leg kept in
         # the key); the next page is the same producer's next members, rendered by the miss writer.
@@ -4633,9 +4620,30 @@ def page_the_set(
         for field in ("description", "row_labels", "brand"):
             if outcome.get(field):
                 predicate[field] = outcome[field]
-        more = bool(listed) and offset + listed < members_total
-        predicate["next_carry"] = {"set_key": {**key, "total": members_total, "shown": offset + listed}} if more else None
+        shown_now = offset + listed
+        if members_total and offset >= members_total:
+            # Past the last page: the end-of-list reply, and it stays so on a further "more".
+            predicate["qualifying_total"] = members_total
+            predicate["exhausted"] = True
+            predicate["miss_list"] = False
+            shown_now = members_total
+        predicate["next_carry"] = (
+            {"set_key": {**key, "total": members_total, "shown": min(shown_now, members_total)}} if members_total else None
+        )
         return predicate, []
+    outcome = resolve_product_set(
+        db,
+        require=key.get("require") or {},
+        specs=list(key.get("specs") or []) if described else [],
+        free_terms=None,
+        scope_terms=None if described else list(key.get("scope_terms") or []),
+        limit=answer_mod.SET_ID_CAP,
+        product_ids=(list(key.get("product_ids") or []) or None) if described else None,
+        brand=key.get("brand") if described else None,
+        brand_is_default=bool(key.get("brand_default")) if described else False,
+        access_levels=entitled,
+        stock_policy=stock_policy,
+    )
     total = int(outcome.get("qualifying_total") or 0)
     # SET-STOCK-RENDER R4: a page steps by product CODE, every company's product of a
     # listed code riding with it, as `shown` counts codes.

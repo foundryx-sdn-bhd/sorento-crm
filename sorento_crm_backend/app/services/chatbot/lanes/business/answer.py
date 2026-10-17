@@ -2895,10 +2895,10 @@ def described_members_reply(predicate: Any, team: Any) -> str | None:
     if paged:
         from app.services.chatbot.composers import sets as composers_sets
 
+        # A paged list names the leg in every page header (the miss sentence stays last).
+        phrase = described_set_phrase(jsc.get(predicate, "description"), noun, require)
         if offset:
-            # A later page of the same list names the leg in its header (the miss sentence stays last),
-            # and offers the team the first page offered.
-            phrase = described_set_phrase(jsc.get(predicate, "description"), noun, require)
+            # ...and a later page offers the team the first page offered.
             if team and team != refer.SALESMAN_TEAM and jsc.truthy(jsc.get(predicate, "offer_team")):
                 team = _pretty_team(jsc.get(predicate, "offer_team"))
         remaining = composers_sets.next_count(total, offset, len(lines), SET_LIST_MAX)
