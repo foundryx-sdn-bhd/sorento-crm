@@ -2457,3 +2457,29 @@ def test_r30b_the_whole_filter_phrase_in_one_argument_string_is_carried():
     res = _r30b({"key": "spec", "value": "black matt"}, [BLACK_SPEC],
                 [("crm_master_products_list", {"product_ids": [UA], "scope_terms": ["black matt basin"]})])
     assert res["checks"].get("applied") is True, res["checks"]
+
+
+# round 30c: one lookup argument carries a phrase; pins for header credit
+def test_r30c_header_credit_needs_the_payload_omitted_even_when_the_value_is_new():
+    res = _r30b({"key": "spec", "value": "chrome"}, [], [("crm_master_products_list", {"product_ids": [UA]})],
+                reply="Here's what you want: chrome taps (3)\n" + R30B_LIST)
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30c_header_credit_never_covers_a_value_held_before_the_turn():
+    res = _r30b({"key": "spec", "value": "chrome"}, [], [("crm_master_products_list", {"product_ids": [UA]})],
+                reply="Here's what you want: chrome taps (3)\n" + R30B_LIST, omitted=True,
+                extra_before={"specification": [{"spec_value": "chrome", "raw": "chrome"}]})
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30c_every_filter_word_in_one_argument_list_of_one_call_is_carried():
+    res = _r30b({"key": "spec", "value": "black matt"}, [BLACK_SPEC],
+                [("crm_master_products_list", {"product_ids": [UA], "scope_terms": ["black", "matt"]})])
+    assert res["checks"].get("applied") is True, res["checks"]
+
+
+def test_r30c_words_in_different_keys_of_the_same_call_are_not_pooled():
+    res = _r30b({"key": "spec", "value": "black matt"}, [BLACK_SPEC],
+                [("crm_master_products_list", {"product_ids": [UA], "scope_terms": ["black"], "query": "matt"})])
+    assert res["checks"].get("applied") is False, res["checks"]
