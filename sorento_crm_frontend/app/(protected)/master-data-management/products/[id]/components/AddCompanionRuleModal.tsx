@@ -10,7 +10,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
@@ -43,7 +44,8 @@ export function AddCompanionRuleModal({
 }: AddCompanionRuleModalProps) {
   const [hostIds, setHostIds] = useState<string[]>([]);
   const [supplierId, setSupplierId] = useState('');
-  const [ratio, setRatio] = useState('1');
+  const [ratio, setRatio] = useState<number | null>(1);
+  const [checked, setChecked] = useState(false);
   const hostRefsRef = useRef<Map<string, ProductVariantRef>>(new Map());
 
   const { data: suppliers = [] } = useSupplierSelectQuery();
@@ -53,7 +55,8 @@ export function AddCompanionRuleModal({
     if (!open) return;
     setHostIds([]);
     setSupplierId('');
-    setRatio('1');
+    setRatio(1);
+    setChecked(false);
   }, [open]);
 
   // The companion cannot host itself. Existing rules are left selectable - the caller
@@ -77,19 +80,23 @@ export function AddCompanionRuleModal({
     return { value: id, label: ref ? displayProduct(ref) : '' };
   });
 
-  const ratioValue = Number(ratio);
-  const canSave =
-    hostIds.length > 0 && Number.isFinite(ratioValue) && ratioValue > 0 && !create.isPending;
+  // A ratio has to be a number above zero; the field's own min of 0 is only its floor.
+  const ratioError = (): string | undefined => {
+    return numberFieldError(ratio, { min: 0, minExclusive: true });
+  };
+  const canSave = hostIds.length > 0 && !create.isPending;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canSave) return;
+    setChecked(true);
+    if (ratioError()) return;
     try {
       await create.mutateAsync({
         companion_product_id: companionProductId,
         host_product_ids: hostIds,
         supplier_id: supplierId || null,
-        ratio,
+        ratio: String(ratio),
       });
       onOpenChange(false);
     } catch {
@@ -137,14 +144,14 @@ export function AddCompanionRuleModal({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="companion-rule-ratio">Ratio</Label>
-              <Input
+              <NumberInput
                 id="companion-rule-ratio"
-                type="number"
                 min={0}
                 step="0.0001"
                 value={ratio}
-                onChange={(e) => setRatio(e.target.value)}
+                onValueChange={setRatio}
                 disabled={create.isPending}
+                error={checked ? ratioError() : undefined}
               />
             </div>
           </DialogBody>

@@ -174,15 +174,24 @@ describe('ReserveAddDialog: picking a row seeds the quantity (AC-3.2)', () => {
     expect(onDone).toHaveBeenCalled();
   });
 
-  it('will not add on a zero or negative quantity', () => {
+  it('will not add on a zero, negative or blank quantity - Add stays enabled and says why', () => {
     renderDialog([SITE_POOL], '24');
 
+    // NUMBER-FIELDS: the button is never disabled without a reason; pressing it names the gap.
     fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '0' } });
-    expect(screen.getByRole('button', { name: 'Add the location' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add the location' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add the location' }));
+    expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '-3' } });
-    expect(screen.getByRole('button', { name: 'Add the location' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add the location' }));
+    expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add the location' }));
+    expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
     expect(onAdd).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
   });
 });
 

@@ -11,9 +11,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { numberFieldError } from '@/lib/number-field';
 import { fromMinor, toMinor } from '../../_shared/lib/supplyComposition';
 import { availableForProjectOf } from '../../_shared/lib/poolShare';
 import type {
@@ -37,6 +38,11 @@ const NUMBER_COL = 'w-[130px] min-w-[130px] max-w-[130px]';
  * NOT a DataGrid, the same carve-out `BorrowAddDialog` documents: a small fixed table inside
  * a dialog, with no column config, sort, resize or pagination to earn.
  */
+/** A quantity to add must be a number above zero. */
+function qtyError(raw: string) {
+  return numberFieldError(raw, { min: 0, minExclusive: true });
+}
+
 export function ReserveAddDialog({
   lineNo,
   itemCode,
@@ -70,8 +76,8 @@ export function ReserveAddDialog({
 
   const selected =
     candidates.find((location) => locationKey(location) === selectedKey) ?? first;
-  const amount = Number.parseFloat(qty);
-  const valid = Boolean(selected) && Number.isFinite(amount) && amount > 0;
+  const quantityMessage = qtyError(qty);
+  const [showErrors, setShowErrors] = React.useState(false);
 
   return (
     <Dialog open onOpenChange={(next) => !next && onDone()}>
@@ -84,7 +90,11 @@ export function ReserveAddDialog({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (!valid || !selected) return;
+            if (!selected) return;
+            if (quantityMessage) {
+              setShowErrors(true);
+              return;
+            }
             onAdd(selected, qty.trim());
             onDone();
           }}
@@ -199,12 +209,12 @@ export function ReserveAddDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor={`reserve-qty-${lineNo}`}>Quantity</Label>
-              <Input
+              <NumberInput
                 id={`reserve-qty-${lineNo}`}
-                type="number"
                 min="0"
                 step="any"
                 value={qty}
+                error={showErrors ? quantityMessage : undefined}
                 onChange={(event) => setQty(event.target.value)}
                 className="h-9 w-40 tabular-nums"
               />
@@ -215,7 +225,7 @@ export function ReserveAddDialog({
             <Button type="button" variant="outline" onClick={onDone}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!valid}>
+            <Button type="submit" disabled={!selected}>
               Add the location
             </Button>
           </DialogFooter>

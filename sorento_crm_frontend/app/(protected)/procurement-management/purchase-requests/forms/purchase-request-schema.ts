@@ -1,8 +1,11 @@
 import { z } from 'zod';
+import { numberFieldError } from '@/lib/number-field';
+
+export const QUANTITY_RULES = { min: 0, minExclusive: true } as const;
 
 /** Accepts number or string (e.g. from API or input) so "Expected number, received string" is avoided. */
 const quantitySchema = z
-  .union([z.number(), z.string()])
+  .union([z.number(), z.nan(), z.string()])
   .optional()
   .nullable();
 
@@ -70,7 +73,7 @@ function hasValue(v: number | string | null | undefined): boolean {
 /** A line the user has actually touched - mirrors the portal's own
  *  `cleanLineItems` keep-predicate (`line-items.ts`), so a blank filler row from
  *  "Add item" never gets refused for a unit price it was never asked to carry. */
-function lineHasContent(line: {
+export function lineHasContent(line: {
   item_code?: string | null;
   quantity?: number | string | null;
   unit_price?: number | string | null;
@@ -102,6 +105,33 @@ export const PurchaseRequestFormSchema = PurchaseRequestSchema.superRefine(
         message: 'Sales type is required.',
       });
     }
+    // Quantity is required, above 0, on every line that has anything in it (the server
+    // refuses a null, missing or <= 0 line quantity). Sentence per the shared helper.
+    data.products.forEach((line, index) => {
+      if (!lineHasContent(line)) return;
+      const sentence = numberFieldError(line.quantity, QUANTITY_RULES);
+      if (sentence) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['products', index, 'quantity'],
+          message: sentence,
+        });
+      }
+    });
+    // Bad input in a price or total box (NaN) is told with the shared sentence, never saved as blank.
+    data.products.forEach((line, index) => {
+      const fields = data.request_type === 'sponsorship_form' ? (['total'] as const) : (['unit_price', 'total'] as const);
+      for (const key of fields) {
+        const value = line[key];
+        if (typeof value === 'number' && Number.isNaN(value)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['products', index, key],
+            message: numberFieldError(value, { min: 0, optional: true }) as string,
+          });
+        }
+      }
+    });
     // #1227: sponsorship forms only, mandatory unit price on every real line - purchase
     // requests are unchanged. Same idiom as the sales_type rule above.
     if (data.request_type === 'sponsorship_form') {

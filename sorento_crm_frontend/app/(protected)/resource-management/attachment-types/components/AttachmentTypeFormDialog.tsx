@@ -20,6 +20,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -214,12 +215,13 @@ export default function AttachmentTypeFormDialog({
                 <FormItem>
                   <FormLabel>Max File Size (MB) *</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       placeholder="10"
-                      {...field}
-                      value={field.value || ''}
-                      onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                      name={field.name}
+                      ref={field.ref}
+                      onBlur={field.onBlur}
+                      value={field.value}
+                      onValueChange={field.onChange}
                     />
                   </FormControl>
                   <FormMessage />
@@ -234,17 +236,13 @@ export default function AttachmentTypeFormDialog({
                 <FormItem>
                   <FormLabel>Max attachments per record</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={1}
                       placeholder="Leave blank for unlimited"
-                      value={field.value ?? ''}
-                      onChange={(e) => {
-                        const raw = e.target.value.trim();
-                        // Blank clears the cap (NULL = unlimited); don't coerce to 0,
-                        // which would read as "no uploads allowed".
-                        field.onChange(raw === '' ? null : parseInt(raw, 10));
-                      }}
+                      value={field.value ?? null}
+                      // Blank clears the cap (NULL = unlimited); never 0, which would read as
+                      // "no uploads allowed".
+                      onValueChange={field.onChange}
                     />
                   </FormControl>
                   <p className="text-xs text-muted-foreground">
@@ -339,14 +337,11 @@ export default function AttachmentTypeFormDialog({
                   <FormItem>
                     <FormLabel>Maximum validity (months)</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
                         min={1}
                         placeholder="Leave blank for no limit"
-                        value={field.value ?? ''}
-                        onChange={(e) =>
-                          field.onChange(e.target.value === '' ? null : Number(e.target.value))
-                        }
+                        value={field.value ?? null}
+                        onValueChange={field.onChange}
                       />
                     </FormControl>
                     <p className="text-xs text-muted-foreground">

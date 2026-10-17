@@ -743,3 +743,19 @@ describe('SupplyCompositionSection', () => {
     expect(container.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i);
   });
 });
+
+// NUMBER-FIELDS round 4 (S3): bad input in a quantity is never read as 0 at Confirm.
+import { typeBadInput } from '@/test-utils/badInput';
+
+describe('SupplyCompositionSection bad number input (S3)', () => {
+  it('a Buy box holding bad input is not confirmed as 0: nothing is sent and the sentence shows on that box', async () => {
+    renderSection();
+    await screen.findByText('Line 1 · CB6633');
+    typeBadInput(screen.getByLabelText('Buy on line 1'));
+    const confirm = confirmButton();
+    if (!(confirm as HTMLButtonElement).disabled) fireEvent.click(confirm);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(confirmSupply).not.toHaveBeenCalled();
+    expect(screen.getByText(/Enter a number/)).toBeInTheDocument();
+  });
+});

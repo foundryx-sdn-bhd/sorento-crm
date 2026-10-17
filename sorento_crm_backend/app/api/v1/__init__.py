@@ -269,14 +269,14 @@ api_router.include_router(
 )
 api_router.include_router(lookup.router, prefix="/lookup", tags=["lookup"])
 
-# Form comments span four kinds in two modules (complaints, procurement), so the module guard is
+# Form comments span five kinds in three modules (complaints, procurement, projects), so the module guard is
 # "either enabled" and the kind's own view permission is the real gate (see form_comments.py).
 # JWT-only guard on purpose: posting a comment is a staff-session action, no API key.
 api_router.include_router(
     form_comments.router,
     prefix="/form-comments",
     tags=["form-comments"],
-    dependencies=[Depends(require_any_module_enabled("procurement", "complaints"))],
+    dependencies=[Depends(require_any_module_enabled("procurement", "complaints", "projects"))],
 )
 
 # Activities & Notes - generic per-entity panel (consumed by tickets et al.).

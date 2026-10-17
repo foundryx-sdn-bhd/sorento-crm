@@ -14,11 +14,12 @@ import {
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { formatDateInMalaysia } from '@/lib/helpers';
+import { numberFieldError } from '@/lib/number-field';
 import { useCreateOrderInquiryReserveRequest } from '../hooks/useOrderInquiry';
 import { useReserveRowOptions } from '../hooks/useReserveRowOptions';
 import { rowRequestable } from '../lib/reserveEligibility';
@@ -54,6 +55,10 @@ interface RequestReserveDialogRow {
   /** The pool warehouse id/code Requested defaults Location to. */
   defaultLocation: string;
   locationOptions: SearchableSelectOption[];
+}
+
+function requestedError(value: string, remainingQty: number) {
+  return numberFieldError(value, { min: 1, max: remainingQty, integer: true });
 }
 
 export function RequestReserveDialog({
@@ -112,7 +117,10 @@ export function RequestReserveDialog({
       }),
     [worklistRows, resolved, defaultWarehouseId],
   );
-  const [requested, setRequested] = React.useState<Record<string, number>>({});
+  // What the operator typed, as text: empty and partial drafts stay as typed. The final
+  // value is checked when the request is sent or parked.
+  const [requested, setRequested] = React.useState<Record<string, string>>({});
+  const [showErrors, setShowErrors] = React.useState(false);
   const [location, setLocation] = React.useState<Record<string, string>>({});
   const [note, setNote] = React.useState('');
   const [sending, setSending] = React.useState(false);
@@ -130,11 +138,12 @@ export function RequestReserveDialog({
   React.useEffect(() => {
     if (!open) return;
     setRequested(
-      Object.fromEntries(rows.map((row) => [row.id, Number(row.remaining || '0')])),
+      Object.fromEntries(rows.map((row) => [row.id, String(Number(row.remaining || '0'))])),
     );
     setLocation(Object.fromEntries(rows.map((row) => [row.id, row.defaultLocation])));
     setNote('');
     setPark(false);
+    setShowErrors(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, rowsSignature]);
 
@@ -154,8 +163,8 @@ export function RequestReserveDialog({
   // renders keys focus off `data`'s own identity, only off `columns`', which IS now
   // frozen; `project_datagrid_inline_data_render_loop` is the `columns` lesson, not a
   // claim that `data` is stable too.
-  const stateRef = React.useRef({ requested, location });
-  stateRef.current = { requested, location };
+  const stateRef = React.useRef({ requested, location, showErrors });
+  stateRef.current = { requested, location, showErrors };
 
   const columns = React.useMemo<ColumnDef<RequestReserveDialogRow>[]>(
     () => [
@@ -202,19 +211,22 @@ export function RequestReserveDialog({
               <Label htmlFor={`reserve-requested-${row.original.id}`} className="sr-only">
                 Requested
               </Label>
-              <Input
+              <NumberInput
                 id={`reserve-requested-${row.original.id}`}
-                type="number"
                 min={1}
                 max={remainingQty}
-                value={stateRef.current.requested[row.original.id] ?? remainingQty}
+                value={stateRef.current.requested[row.original.id] ?? String(remainingQty)}
+                error={
+                  stateRef.current.showErrors
+                    ? requestedError(
+                        stateRef.current.requested[row.original.id] ?? String(remainingQty),
+                        remainingQty,
+                      )
+                    : undefined
+                }
                 onChange={(event) => {
-                  const raw = Number(event.target.value);
-                  // Nit (review round, ported): a typed 0 (or a blank field) can never
-                  // be sent - clamped up to 1, `min={1}` above's own floor, rather than
-                  // down to 0.
-                  const capped = Math.min(Math.max(raw || 1, 1), remainingQty);
-                  setRequested((prev) => ({ ...prev, [row.original.id]: capped }));
+                  const typed = event.target.value;
+                  setRequested((prev) => ({ ...prev, [row.original.id]: typed }));
                 }}
               />
             </>
@@ -263,12 +275,20 @@ export function RequestReserveDialog({
   });
 
   async function handleSend() {
+    // Only the final values are checked: any row outside 1..remaining blocks the send.
+    const blocked = rows.some((row) =>
+      requestedError(requested[row.id] ?? row.remaining, Number(row.remaining || '0')),
+    );
+    if (blocked) {
+      setShowErrors(true);
+      return;
+    }
     setSending(true);
     try {
       await createMutation.mutateAsync({
         rows: rows.map((row) => ({
           row_id: row.id,
-          qty_requested: requested[row.id] ?? Number(row.remaining || '0'),
+          qty_requested: Number(requested[row.id] ?? row.remaining ?? '0'),
           warehouse_id: location[row.id] ?? row.defaultLocation,
         })),
         note: note.trim() ? note.trim() : null,

@@ -204,6 +204,10 @@ def _assert_entity_visible(db: Session, action_key: str, entity_id: str, actor_i
         from app.services.scm.stock_debt_snapshot_service import StockDebtSnapshotService
 
         StockDebtSnapshotService(db).get_own(entity_id, actor_id)
+    elif action_key == "sample_request.delete":
+        from app.services import sample_request_service
+
+        sample_request_service.assert_deletable(db, entity_id, actor_id)
     elif action_key in ("customer.unassign_sales_agent", "customer.remove_from_group"):
         from app.services.contact_customer_service import get_customer_in_scope
 

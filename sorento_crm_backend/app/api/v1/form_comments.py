@@ -26,7 +26,7 @@ router = APIRouter()
 _VIEW_PERMISSION = VIEW_PERMISSION
 
 
-_MODULE = {"complaint": "complaints"}  # every other kind is procurement
+_MODULE = {"complaint": "complaints", "sample_request": "projects"}  # every other kind is procurement
 MAX_FILES = 5
 MAX_FILE_BYTES = 25 * 1024 * 1024
 

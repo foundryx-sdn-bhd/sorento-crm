@@ -646,14 +646,23 @@ describe('BorrowAddDialog', () => {
     expect(screen.getByRole('button', { name: 'Add the borrow' })).toBeEnabled();
   });
 
-  it('adds nothing on a zero or negative quantity', () => {
+  it('adds nothing on a zero, negative or blank quantity - Add stays enabled and says why', () => {
     renderDialog();
 
+    // NUMBER-FIELDS: the button is never disabled without a reason; pressing it names the gap.
     fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '0' } });
-    expect(screen.getByRole('button', { name: 'Add the borrow' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add the borrow' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add the borrow' }));
+    expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '-5' } });
-    expect(screen.getByRole('button', { name: 'Add the borrow' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add the borrow' }));
+    expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add the borrow' }));
+    expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
+    expect(onAdd).not.toHaveBeenCalled();
   });
 
   it('hands back the chosen candidate, the quantity and an empty reason (no same-agent donor)', () => {

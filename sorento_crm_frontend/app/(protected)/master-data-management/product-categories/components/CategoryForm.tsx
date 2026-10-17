@@ -19,6 +19,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { nullableNumber, requiredNumber } from '@/lib/number-field-schema';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
@@ -35,13 +37,13 @@ const CategorySchema = z.object({
   description: z.string().max(500).optional().nullable(),
   is_active: z.boolean(),
   is_searchable: z.boolean(),
-  display_order: z.number().int().min(0),
+  display_order: requiredNumber({ min: 0, integer: true }),
   // .nullable() checks for null BEFORE z.coerce.number() runs, so a cleared
   // input (which this form's onChange already turns into null, never '')
   // stays null instead of coercing to 0 (R2: unset must stay unset so a
   // category opts in, not out, by default).
-  chatbot_max_qty: z.coerce.number().int().min(0, { message: 'Max quantity cannot be negative.' }).nullable(),
-  chatbot_eta_offset_days: z.coerce.number().int().min(0, { message: 'ETA offset cannot be negative.' }).nullable(),
+  chatbot_max_qty: nullableNumber({ min: 0, integer: true }),
+  chatbot_eta_offset_days: nullableNumber({ min: 0, integer: true }),
 });
 
 type CategorySchemaType = z.infer<typeof CategorySchema>;
@@ -202,10 +204,12 @@ export default function CategoryForm({ open, onOpenChange, categoryId, copyFromC
                 <FormItem>
                   <FormLabel>Display Order</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                    <NumberInput
+                      name={field.name}
+                      ref={field.ref}
+                      onBlur={field.onBlur}
+                      value={field.value}
+                      onValueChange={field.onChange}
                     />
                   </FormControl>
                   <FormMessage />
@@ -222,15 +226,14 @@ export default function CategoryForm({ open, onOpenChange, categoryId, copyFromC
                     <FormItem>
                       <FormLabel>Max quantity (assistant)</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           min={0}
                           disabled={!canEditChatbotLimits}
-                          {...field}
-                          value={field.value ?? ''}
-                          onChange={(e) =>
-                            field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)
-                          }
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value ?? null}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormMessage />
@@ -245,15 +248,14 @@ export default function CategoryForm({ open, onOpenChange, categoryId, copyFromC
                     <FormItem>
                       <FormLabel>ETA offset (days)</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           min={0}
                           disabled={!canEditChatbotLimits}
-                          {...field}
-                          value={field.value ?? ''}
-                          onChange={(e) =>
-                            field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)
-                          }
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value ?? null}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormMessage />

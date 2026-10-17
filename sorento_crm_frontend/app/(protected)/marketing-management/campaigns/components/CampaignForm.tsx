@@ -17,6 +17,8 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,7 +40,10 @@ const CampaignSchema = z.object({
   description: z.string().optional(),
   start_date: z.string().min(1, 'Start date is required'),
   end_date: z.string().optional(),
-  budget: z.string().optional(),
+  budget: z.string().optional().superRefine((value, ctx) => {
+    const message = numberFieldError(value, { min: 0, optional: true });
+    if (message) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+  }),
   target_audience: z.string().optional(),
   status: z.enum(['planning', 'active', 'completed', 'cancelled']),
 });
@@ -282,8 +287,7 @@ export default function CampaignForm({ campaignId, onSuccess }: CampaignFormProp
                   <FormItem>
                     <FormLabel>Budget (MYR)</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
                         min="0"
                         step="0.01"
                         placeholder="0.00"

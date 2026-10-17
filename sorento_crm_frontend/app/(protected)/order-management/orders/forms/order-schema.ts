@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { optionalNumber } from '@/lib/number-field-schema';
 
 export const OrderSchema = z.object({
   order_number: z
@@ -28,7 +29,7 @@ export const OrderSchema = z.object({
   delivery_remarks_cs: z.string().optional().nullable(),
   delivery_remarks: z.string().optional().nullable(),
   salesman: z.string().optional().nullable(),
-  trips: z.number().int().optional().nullable(),
+  trips: optionalNumber({ min: 0, integer: true }),
   warehouse: z.string().optional().nullable(),
   delivery_days: z.number().int().optional().nullable(),
   kpi_warning: z.boolean().optional(),

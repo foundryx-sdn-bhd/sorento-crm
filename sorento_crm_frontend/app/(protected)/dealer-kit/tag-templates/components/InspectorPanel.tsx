@@ -25,6 +25,7 @@ import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -158,18 +159,15 @@ function NumberInput({
       <Label htmlFor={id} className="text-xs text-muted-foreground">
         {label}
       </Label>
-      <Input
+      <LiveNumberInput
         id={id}
-        type="number"
         className="h-7 px-2 text-xs"
-        value={value ?? ''}
+        value={value}
         step={step}
         min={min}
         max={max}
-        onChange={(e) => {
-          const n = parseFloat(e.target.value);
-          if (!isNaN(n)) onChange(n);
-        }}
+        rules={{ min, max }}
+        onCommit={onChange}
       />
     </div>
   );

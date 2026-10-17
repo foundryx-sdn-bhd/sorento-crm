@@ -25,6 +25,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
@@ -283,6 +284,8 @@ export default function Page() {
     localBuyRoutingEnabled: Boolean(settings?.localBuyRoutingEnabled),
     // Off is the shipped state (PLAN-borrow-location-only-8oct.md).
     borrowFromOrderEnabled: Boolean(settings?.borrowFromOrderEnabled),
+    // Off is the shipped state (SR-CORE).
+    sampleRequestRequireProject: Boolean(settings?.sampleRequestRequireProject),
     priceTagGuardedClasses: settings?.priceTagGuardedClasses ?? [],
     purchaseRequestDefaultApproverUserId:
       settings?.purchaseRequestDefaultApproverUserId &&
@@ -353,6 +356,7 @@ export default function Page() {
       planGrain: settings.planGrain ?? 'product',
       localBuyRoutingEnabled: Boolean(settings.localBuyRoutingEnabled),
       borrowFromOrderEnabled: Boolean(settings.borrowFromOrderEnabled),
+      sampleRequestRequireProject: Boolean(settings.sampleRequestRequireProject),
       priceTagGuardedClasses: settings.priceTagGuardedClasses ?? [],
       purchaseRequestDefaultApproverUserId:
         settings.purchaseRequestDefaultApproverUserId &&
@@ -405,6 +409,7 @@ export default function Page() {
         plan_grain: values.planGrain,
         local_buy_routing_enabled: values.localBuyRoutingEnabled,
         borrow_from_order_enabled: values.borrowFromOrderEnabled,
+        sample_request_require_project: values.sampleRequestRequireProject,
         price_tag_guarded_classes: values.priceTagGuardedClasses,
         purchase_request_default_approver_user_id:
           values.purchaseRequestDefaultApproverUserId ===
@@ -903,17 +908,11 @@ export default function Page() {
                 <FormItem>
                   <FormLabel>Delete countdown (seconds)</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={600}
                       value={field.value}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '') return;
-                        const n = parseInt(v, 10);
-                        if (!Number.isNaN(n)) field.onChange(n);
-                      }}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormDescription>
@@ -932,17 +931,11 @@ export default function Page() {
                 <FormItem>
                   <FormLabel>Change countdown (seconds)</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={600}
                       value={field.value}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '') return;
-                        const n = parseInt(v, 10);
-                        if (!Number.isNaN(n)) field.onChange(n);
-                      }}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormDescription>
@@ -963,17 +956,11 @@ export default function Page() {
                     Auto-mark price tags collected after (days)
                   </FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={AUTO_COLLECT_DAYS_MIN}
                       max={AUTO_COLLECT_DAYS_MAX}
                       value={field.value}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '') return;
-                        const n = parseInt(v, 10);
-                        if (!Number.isNaN(n)) field.onChange(n);
-                      }}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormDescription>
@@ -992,21 +979,12 @@ export default function Page() {
                 <FormItem>
                   <FormLabel>Chatbot file link expiry (days)</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={3650}
                       placeholder="Never expires"
                       value={field.value ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '') {
-                          field.onChange(null);
-                          return;
-                        }
-                        const n = parseInt(v, 10);
-                        if (!Number.isNaN(n)) field.onChange(n);
-                      }}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormMessage />
@@ -1081,17 +1059,11 @@ export default function Page() {
                   <FormItem>
                     <FormLabel>Standard lead time (days)</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
                         min={0}
                         max={10950}
                         value={field.value}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === '') return;
-                          const n = parseInt(v, 10);
-                          if (!Number.isNaN(n)) field.onChange(n);
-                        }}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormMessage />
@@ -1106,17 +1078,11 @@ export default function Page() {
                   <FormItem>
                     <FormLabel>Takeover cooldown (seconds)</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
                         min={0}
                         max={3600}
                         value={field.value}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === '') return;
-                          const n = parseInt(v, 10);
-                          if (!Number.isNaN(n)) field.onChange(n);
-                        }}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormDescription>
@@ -1136,17 +1102,11 @@ export default function Page() {
                   <FormItem>
                     <FormLabel>Undo grace window (seconds)</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
                         min={0}
                         max={600}
                         value={field.value}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === '') return;
-                          const n = parseInt(v, 10);
-                          if (!Number.isNaN(n)) field.onChange(n);
-                        }}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormDescription>
@@ -1222,6 +1182,28 @@ export default function Page() {
                         />
                         <Label htmlFor="borrow-from-order-enabled">
                           Borrow from another order
+                        </Label>
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="sampleRequestRequireProject"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <div className="flex items-center space-x-2 rounded-lg bg-accent/60 p-4">
+                        <Switch
+                          id="sample-request-require-project"
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                        <Label htmlFor="sample-request-require-project">
+                          Sample requests need a registered project
                         </Label>
                       </div>
                     </FormControl>

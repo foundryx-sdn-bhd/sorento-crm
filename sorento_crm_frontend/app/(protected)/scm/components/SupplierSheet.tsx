@@ -37,6 +37,7 @@
 
 import { cn } from '@/lib/utils';
 import { fmtInt } from '../lib/format';
+import { LiveNumberInput } from '@/components/ui/number-input';
 
 export interface SupplierSheetColumn {
   /** Their heading, in their own words (or ours, on a no-file document). */
@@ -140,17 +141,18 @@ export function SupplierSheet({
         )}
       >
         {isEditableCell && colIndex === qtyAt ? (
-          <input
-            type="number"
+          <LiveNumberInput
             min={0}
+            rules={{ min: 0 }}
             aria-label="Qty to load"
             className="h-8 w-20 rounded-sm border border-input bg-background px-1.5 text-center tabular-nums"
+            errorClassName="text-center"
             value={
               qtyFor
                 ? qtyFor(row.row_key as string)
                 : (typeof rowCell.value === 'number' ? rowCell.value : 0)
             }
-            onChange={(e) => onQtyChange?.(row.row_key as string, Math.max(0, Number(e.target.value) || 0))}
+            onCommit={(next) => onQtyChange?.(row.row_key as string, next)}
           />
         ) : isEditableCell && colIndex === remarkAt ? (
           <input

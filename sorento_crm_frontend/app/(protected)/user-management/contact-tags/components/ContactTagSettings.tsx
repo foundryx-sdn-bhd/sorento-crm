@@ -11,6 +11,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
@@ -310,6 +312,8 @@ interface BodyProps {
   set: (section: string, v: unknown) => void;
   editing: boolean;
   catalog: SettingsCatalog;
+  /** Set once a Save found a wrong number; the sentences then follow the typing. */
+  showNumberErrors?: boolean;
 }
 
 function GroupBody({
@@ -318,6 +322,7 @@ function GroupBody({
   set,
   editing,
   catalog,
+  showNumberErrors,
 }: BodyProps & { id: string }) {
   switch (id) {
     case 'access_types':
@@ -464,7 +469,15 @@ function GroupBody({
         <AgentFields s={s} set={set} editing={editing} catalog={catalog} />
       );
     case 'media':
-      return <MediaBody s={s} set={set} editing={editing} catalog={catalog} />;
+      return (
+        <MediaBody
+          s={s}
+          set={set}
+          editing={editing}
+          catalog={catalog}
+          showNumberErrors={showNumberErrors}
+        />
+      );
     case 'stock_visibility':
     case 'spec_visibility': {
       const v = (s[id] ?? {}) as Record<string, unknown>;
@@ -614,7 +627,7 @@ function AgentFields({ s, set, editing, catalog }: BodyProps) {
   );
 }
 
-function MediaBody({ s, set, editing }: BodyProps) {
+function MediaBody({ s, set, editing, showNumberErrors }: BodyProps) {
   const media = (s.media ?? {}) as Record<string, Record<string, unknown>>;
   const updMod = (m: string, k: string, v: unknown) => {
     const body = put(media[m], k, v);
@@ -626,17 +639,11 @@ function MediaBody({ s, set, editing }: BodyProps) {
     return (
       <Labelled label={label}>
         {editing ? (
-          <Input
-            type="number"
+          <NumberInput
             min={0}
-            value={v ?? ''}
-            onChange={(e) =>
-              updMod(
-                m,
-                k,
-                e.target.value === '' ? undefined : Number(e.target.value),
-              )
-            }
+            value={v ?? null}
+            onValueChange={(n) => updMod(m, k, n ?? undefined)}
+            error={showNumberErrors ? mediaNumberError(v) : undefined}
           />
         ) : (
           <span className="text-sm">{v}</span>
@@ -695,6 +702,21 @@ function MediaBody({ s, set, editing }: BodyProps) {
 
 // ------------------------------------------------------------------ section
 
+/** A media override left empty inherits; a typed one must be 0 or more. */
+function mediaNumberError(v: number | undefined) {
+  return numberFieldError(v, { min: 0, optional: true });
+}
+
+/** True when any typed media number is wrong (the mapped value is a number or absent). */
+function mediaHasNumberError(settings: S): boolean {
+  const media = (settings.media ?? {}) as Record<string, Record<string, unknown>>;
+  return Object.values(media).some((body) =>
+    Object.values(body ?? {}).some(
+      (v) => typeof v === 'number' && mediaNumberError(v) !== undefined,
+    ),
+  );
+}
+
 /** Drop a group's empty maps; arrays stay (an empty list is a real "none"). */
 function cleaned(settings: S): S {
   const out: S = {};
@@ -739,6 +761,7 @@ export default function ContactTagSettings({
 }) {
   const [draft, setDraft] = useState<S>(() => ({ ...(tag.settings ?? {}) }));
   const [error, setError] = useState<string | null>(null);
+  const [showNumberErrors, setShowNumberErrors] = useState(false);
   const { catalog, data: loadedCatalog } = useSettingsCatalog();
   const s: S = editing ? draft : (tag.settings ?? {});
   const save = useSaveTagSettings(tag.id, onDone);
@@ -819,6 +842,7 @@ export default function ContactTagSettings({
                     set={setSection}
                     editing={editing}
                     catalog={catalog}
+                    showNumberErrors={showNumberErrors}
                   />
                 </div>
               ) : !editing ? (
@@ -852,6 +876,10 @@ export default function ContactTagSettings({
             <Button
               onClick={() => {
                 setError(null);
+                if (mediaHasNumberError(draft)) {
+                  setShowNumberErrors(true);
+                  return;
+                }
                 save.mutate(cleaned(draft), {
                   onError: (e: Error) => setError(e.message),
                 });

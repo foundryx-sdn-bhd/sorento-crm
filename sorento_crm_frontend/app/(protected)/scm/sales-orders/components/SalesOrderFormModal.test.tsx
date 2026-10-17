@@ -278,6 +278,19 @@ describe('SalesOrderFormModal - payload and validation are unchanged', () => {
     ).toBeInTheDocument();
   });
 
+  it('NUMBER-FIELDS: a picked product with a blank quantity is told, not dropped, and nothing is sent', async () => {
+    const { onSubmit } = await renderModal();
+    fillHeader();
+    fireEvent.click(screen.getByRole('button', { name: FIRST_PAGE[0].label }));
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create sales order' }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '3' } });
+    expect(screen.queryByText(/^Enter a number/)).not.toBeInTheDocument();
+  });
+
   it('still refuses a submit with no customer', async () => {
     const { onSubmit } = await renderModal();
     fireEvent.change(screen.getByLabelText('Select type'), { target: { value: 'dealer' } });

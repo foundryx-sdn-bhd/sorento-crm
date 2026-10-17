@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { LoaderCircleIcon, Save, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { numberFieldError } from '@/lib/number-field';
 import type {
   ProductSupplier,
   ProductSupplierSourcingTerms,
@@ -70,6 +71,10 @@ export function draftToPatch(d: SupplierTermsDraft): Partial<ProductSupplierSour
 export function termsError(d: SupplierTermsDraft): string | null {
   const lead = numOrNull(d.standard_lead_time_days);
   if (lead === null || lead < 0) return 'Enter a lead time in days.';
+  // A typed figure that cannot be read (bad input) is never taken as "nothing on file".
+  for (const raw of [d.unit_cost, d.moq, d.order_multiple]) {
+    if (raw.trim() !== '' && numOrNull(raw) === null) return numberFieldError(raw, { min: 0, optional: true }) ?? null;
+  }
   const cost = numOrNull(d.unit_cost);
   if (cost !== null && cost < 0) return 'A price cannot be negative.';
   if (cost !== null && !d.currency.trim()) return 'Choose the currency this price is in.';
@@ -171,9 +176,8 @@ export function ProductSupplierTermsRow({
           <Label htmlFor={`lead-${ps.id}`} className="text-xs text-muted-foreground">
             Lead time (days)
           </Label>
-          <Input
+          <NumberInput
             id={`lead-${ps.id}`}
-            type="number"
             min={0}
             className="h-8"
             value={draft.standard_lead_time_days}
@@ -184,9 +188,8 @@ export function ProductSupplierTermsRow({
           <Label htmlFor={`cost-${ps.id}`} className="text-xs text-muted-foreground">
             Unit cost
           </Label>
-          <Input
+          <NumberInput
             id={`cost-${ps.id}`}
-            type="number"
             min={0}
             step="0.01"
             className="h-8"
@@ -213,9 +216,8 @@ export function ProductSupplierTermsRow({
           <Label htmlFor={`moq-${ps.id}`} className="text-xs text-muted-foreground">
             Minimum order
           </Label>
-          <Input
+          <NumberInput
             id={`moq-${ps.id}`}
-            type="number"
             min={0}
             className="h-8"
             value={draft.moq}
@@ -226,9 +228,8 @@ export function ProductSupplierTermsRow({
           <Label htmlFor={`mult-${ps.id}`} className="text-xs text-muted-foreground">
             Order multiple
           </Label>
-          <Input
+          <NumberInput
             id={`mult-${ps.id}`}
-            type="number"
             min={1}
             className="h-8"
             value={draft.order_multiple}

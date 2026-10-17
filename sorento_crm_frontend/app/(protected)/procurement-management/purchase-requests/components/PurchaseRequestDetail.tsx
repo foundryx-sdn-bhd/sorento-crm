@@ -88,6 +88,8 @@ import PurchaseRequestAttachmentsSection from './PurchaseRequestAttachmentsSecti
 import PurchaseRequestConversationPanel from './PurchaseRequestConversationPanel';
 import { PurchaseRequestSignoffFooter } from './PurchaseRequestSignoffFooter';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { numberFieldError } from '@/lib/number-field';
+import { QUANTITY_RULES } from '../forms/purchase-request-schema';
 import { usePublicViewLinksEnabled } from '@/hooks/usePublicViewLinksEnabled';
 import {
   purchaseRequestNumberReplyPhrase,
@@ -145,7 +147,14 @@ function PurchaseRequestLineItemsGrid({
         id: 'quantity',
         accessorFn: (row) => row.quantity ?? '',
         header: ({ column }) => <DataGridColumnHeader title="Qty" column={column} />,
-        cell: ({ row }) => row.original.quantity ?? ' - ',
+        // An external-intake line can arrive with no quantity: staff see what to enter,
+        // not a dash.
+        cell: ({ row }) =>
+          row.original.quantity ?? (
+            <span className="whitespace-normal break-words text-xs text-destructive">
+              {numberFieldError(null, QUANTITY_RULES)}
+            </span>
+          ),
         size: 100,
         meta: { headerTitle: 'Qty' },
       },

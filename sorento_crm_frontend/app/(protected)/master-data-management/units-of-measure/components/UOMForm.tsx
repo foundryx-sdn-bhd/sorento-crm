@@ -16,6 +16,7 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -190,13 +191,14 @@ export default function UOMForm({ uomId, onSuccess }: UOMFormProps) {
                   <FormItem>
                     <FormLabel>Conversion Factor</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
                         step="0.0001"
                         placeholder="1.0000"
-                        {...field}
-                        value={field.value ?? ''}
-                        onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                        name={field.name}
+                        ref={field.ref}
+                        onBlur={field.onBlur}
+                        value={field.value ?? null}
+                        onValueChange={field.onChange}
                       />
                     </FormControl>
                     <FormDescription>
@@ -214,16 +216,15 @@ export default function UOMForm({ uomId, onSuccess }: UOMFormProps) {
                   <FormItem>
                     <FormLabel>Decimal Places</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
                         min={0}
                         max={4}
                         step="1"
-                        {...field}
-                        value={field.value ?? 0}
-                        onChange={(e) =>
-                          field.onChange(e.target.value === '' ? 0 : parseInt(e.target.value, 10))
-                        }
+                        name={field.name}
+                        ref={field.ref}
+                        onBlur={field.onBlur}
+                        value={field.value ?? null}
+                        onValueChange={field.onChange}
                       />
                     </FormControl>
                     <FormDescription>

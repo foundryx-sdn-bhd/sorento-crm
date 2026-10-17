@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sample request form v3</title>
+<!-- SR-CORE form mock v3 (16 Oct), after the owner's hand-test note: drop the section-by-section form and follow the
+     Purchase Request / Sponsorship Form / Stock Inquiry layout, product lines in a table, searchable customer.
+     Built ONLY from existing components; every callout names its component and repo path. FE = sorento_crm_frontend/.
+     Business data from paper Form C (10 Oct). No person names or phones (public repo). -->
+<style>
+:root{--fg:#09090b;--muted:#71717a;--border:#e4e4e7;--muted-bg:#f4f4f5;--primary:#1b84ff;--destructive:#dc2626;--callout:#e11d74;
+  --font:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:#f4f4f5;color:var(--fg);font:14px/1.45 var(--font)}
+.doc{max-width:1760px;margin:0 auto;padding:24px 16px 64px}
+.doc>h1{font-size:22px;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 8px;max-width:980px}
+h2.ft{font-size:15px;margin:32px 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.layout{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.scroll{overflow-x:auto;max-width:100%}
+.frame{background:#fff;border:1px solid var(--border);border-radius:12px;position:relative;overflow:hidden}
+.w1280{width:1280px}.w375{width:375px;flex:none}
+.notes{flex:1 1 360px;min-width:300px;max-width:620px}
+.notes ol{margin:0;padding:0;list-style:none}
+.notes li{display:flex;gap:10px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.notes li b{display:block;margin-bottom:2px}
+.ref{display:block;color:var(--muted);font-size:12px;margin-top:4px;font-family:ui-monospace,Menlo,monospace;word-break:break-word}
+.co{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:22px;height:22px;padding:0 3px;border-radius:50%;background:var(--callout);color:#fff;font-size:12px;font-weight:700;box-shadow:0 0 0 2px #fff}
+.pin{position:absolute;z-index:5;right:-8px;top:-8px}.rel{position:relative}
+.muted{color:var(--muted)}.xs{font-size:12px}.b{font-weight:600}
+.shell{display:flex}.side{width:232px;flex:none;border-right:1px solid var(--border);padding:16px 12px;background:#fcfcfd;font-size:13px}
+.side .brand{font-weight:700;font-size:16px;margin:0 8px 18px}.side .grp{color:var(--muted);font-size:11px;text-transform:uppercase;margin:14px 8px 6px}
+.side .it{padding:6px 8px;border-radius:6px}.side .it.on{background:#e9f3ff;color:var(--primary);font-weight:600}
+.main{flex:1;min-width:0}.topbar{height:52px;border-bottom:1px solid var(--border)}.content{padding:20px 28px 28px}
+.phdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.phdr h1{font-size:20px;font-weight:600;margin:0}
+.crumb{font-size:12px;color:var(--muted)}
+.card{border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.card.b2{border-width:2px}
+.dtitle{text-align:center;font-size:20px;font-weight:600;border-bottom:1px solid var(--border);padding-bottom:16px;margin:8px 0 24px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px 40px}.span2{grid-column:span 2}
+.grid1{display:grid;grid-template-columns:1fr;gap:16px}
+.f label{display:block;font-size:14px;font-weight:500;margin-bottom:6px}.req{color:var(--destructive)}
+.inp{border:1px solid var(--border);border-radius:6px;padding:7px 10px;min-height:36px;display:flex;justify-content:space-between;align-items:center;gap:6px;background:#fff;font-size:14px}
+.inp.ph{color:var(--muted)}.inp.ro{background:var(--muted-bg)}.inp.ta{min-height:64px;align-items:flex-start}
+.meta{font-size:12px;color:var(--muted)}
+.chk{display:inline-flex;align-items:center;gap:6px;margin-right:18px;font-size:14px}
+.box{width:16px;height:16px;border:1px solid #a1a1aa;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+.box.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.rad{width:16px;height:16px;border:1px solid #a1a1aa;border-radius:50%;display:inline-block}.rad.on{border:5px solid var(--primary)}
+.badge2{display:inline-flex;border-radius:6px;background:var(--muted-bg);padding:1px 8px;font-size:12px;font-weight:500}
+.pill{display:inline-flex;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:600;background:#f1f5f9;color:#334155}
+table.t{border-collapse:collapse;width:100%;table-layout:fixed;font-size:13px}
+table.t th{background:#fafafa;color:var(--muted);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+table.t td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.cellinp{border:1px solid var(--border);border-radius:6px;padding:4px 8px;min-height:32px;font-size:13px;background:#fff}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--primary);background:var(--primary);color:#fff;border-radius:6px;padding:7px 14px;font:500 13px var(--font);white-space:nowrap}
+.btn.out{background:#fff;color:var(--fg);border-color:var(--border)}.btn.ghost{background:transparent;border-color:transparent;color:var(--fg)}
+.btn.sm{padding:4px 10px;font-size:12px}.btn.red{background:#fff;color:var(--destructive);border-color:#fca5a5}
+.dd{border:1px solid var(--border);border-radius:6px;margin-top:4px;box-shadow:0 2px 6px rgba(0,0,0,.08);font-size:13px;background:#fff}
+.dd div{padding:6px 10px}.dd div.hl{background:var(--muted-bg)}
+.trash{color:var(--destructive)}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Sample Request form, mock v3 (create / edit)</h1>
+<p class="sub">After the owner's hand test (16 Oct): the section-by-section form is dropped. Staff and portal forms now follow the Purchase Request / Sponsorship Form screens: one document card with the header fields on top, then the product lines in a table (one row per product, a product search box in each row), then the footer fields, in the paper Consignment Requisition Form's order. Customer is the same searchable customer box PR / SF use. Data: paper Form C (10 Oct), company and product names only.</p>
+<p class="sub"><b>Unchanged from v2:</b> the list, the detail page (it already uses this document card, so create, edit and view now look the same), the portal landing and the printed requisition.</p>
+
+<!-- ============ FRAME 1: STAFF NEW ============ -->
+<h2 class="ft">1. Staff, New Sample Request (1280 wide). Purchase Request / Sponsorship Form document card</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Project Sales</div><div class="it">Projects</div><div class="it on">Sample Requests</div></div>
+  <div class="main"><div class="topbar"></div><div class="content">
+    <div class="phdr rel"><div><h1>New Sample Request</h1><div class="crumb">Project Sales / Sample Requests</div></div><span class="btn out sm">Cancel</span><span class="co pin" style="right:auto;left:230px;top:0">1</span></div>
+    <div class="card b2 rel" style="max-width:1024px;margin:0 auto;padding:24px 40px 32px"><span class="co pin">2</span>
+      <div style="display:flex;gap:8px"><span class="badge2">Sample Request</span><span class="pill">Draft</span></div>
+      <div class="dtitle">Consignment Requisition Form</div>
+      <div class="grid2">
+        <div class="f"><label>Sales Person</label><div class="inp ro">(signed-in salesperson)</div></div>
+        <div class="f"><label>Date</label><div class="inp ro">10/10/2026</div></div>
+        <div class="f span2 rel"><span class="co pin">3</span><label>Customer Name <span class="req">*</span></label><div class="inp">JV PERKASA SDN BHD (PROJECT)</div><div class="meta" style="margin-top:2px">300-J099</div></div>
+        <div class="f rel"><span class="co pin">4</span><label>Project Title</label><div class="inp">52 double-storey terraces, Taman Nusa Duta Fasa 10</div></div>
+        <div class="f"><label>Registered project (optional)</label><div class="inp ph">Search a project by code or title<span>&times;</span></div></div>
+        <div class="f"><label>Quotation (optional)</label><div class="inp ph">Pick a registered project first</div></div>
+        <div class="f"><label>For</label><div class="inp ph">e.g. FOR UNIT - TOWER A &amp; B</div></div>
+        <div class="f rel"><span class="co pin">5</span><label>Request Delivery Date</label><div style="display:flex;gap:12px;align-items:center"><div class="inp ph" style="width:180px">dd/mm/yyyy</div><span class="chk"><span class="box on">&#10003;</span>Immediate arrangement</span></div></div>
+        <div class="f"><label>Ship To</label><div class="inp">CHENXIN PLUMBING SDN BHD</div></div>
+        <div class="f span2"><label>Shipping Address</label><div class="inp ta">(address), Johor Bahru</div></div>
+        <div class="f"><label>Contact Person</label><div class="inp">Site supervisor</div></div>
+        <div class="f"><label>Contact Phone / Note</label><div class="inp ph">Phone, and a note such as "call 1 day before"</div></div>
+        <div class="f rel"><span class="co pin">6</span><label>Consignment No (internal)</label><div class="inp ro muted">Set by the coordinator</div></div>
+        <div class="f"><label>PO No (internal)</label><div class="inp ro muted">Set by the coordinator</div></div>
+      </div>
+
+      <div class="rel" style="display:flex;justify-content:space-between;align-items:center;margin:28px 0 10px"><span class="co pin" style="right:auto;left:90px;top:-4px">7</span>
+        <p class="b" style="margin:0">Line items</p><span class="btn out sm">+ Add row</span></div>
+      <div class="card" style="overflow:hidden">
+      <table class="t lt"><thead><tr><th style="width:56px">No.</th><th style="width:300px">Item Code <span class="req">*</span></th><th style="width:240px">Or (alternative)</th><th style="width:90px">Qty</th><th>Remark</th><th style="width:48px"></th></tr></thead><tbody>
+        <tr class="rel"><td class="muted">1</td><td colspan="4"><span class="chk"><span class="box on">&#10003;</span><b>Mount &amp; label sample board</b></span> <span class="cellinp" style="display:inline-block;width:360px">NUSA DUTA FASA 10</span></td><td></td></tr>
+        <tr><td class="muted">2</td><td><div class="cellinp">SRT73-CR</div><div class="meta">Sorento, product name</div></td><td><div class="cellinp muted">Search products...</div></td><td><div class="cellinp">1</div></td><td><div class="cellinp muted">Remark</div></td><td class="trash">&#128465;</td></tr>
+        <tr><td class="muted">3</td><td><div class="cellinp">CB313</div><div class="meta">Cabana, product name</div></td><td><div class="cellinp muted">Search products...</div></td><td><div class="cellinp">1</div></td><td><div class="cellinp muted">Remark</div></td><td class="trash">&#128465;</td></tr>
+        <tr><td class="muted">4</td><td><div class="cellinp">CB2829</div><div class="meta">Cabana, product name</div></td><td><div class="cellinp">CB2805A</div><div class="meta">Cabana, product name</div></td><td><div class="cellinp">1</div></td><td><div class="cellinp muted">Remark</div></td><td class="trash">&#128465;</td></tr>
+        <tr class="rel"><td class="muted">5</td><td><div class="cellinp">tpe9101</div><div class="dd"><div class="hl"><b>TPE-9101</b><br><span class="meta">product name</span></div></div></td><td></td><td><div class="cellinp">1</div></td><td></td><td class="trash">&#128465;</td></tr>
+        <tr><td class="muted">6</td><td><div class="cellinp">cb2829ss-cr</div><div class="dd"><div class="muted">cb2829ss-cr is not in the product list. Pick the product you mean, or ask purchasing to add it as a new product before you request it.</div></div></td><td></td><td><div class="cellinp">1</div></td><td></td><td class="trash">&#128465;</td></tr>
+      </tbody></table></div>
+
+      <div class="grid2 rel" style="margin-top:24px"><span class="co pin">8</span>
+        <div class="f span2"><label>Delivery <span class="req">*</span></label><span class="chk"><span class="rad on"></span>Deliver-Van</span><span class="chk"><span class="rad"></span>Self-Deliver</span><span class="chk"><span class="rad"></span>Self-Collection</span></div>
+        <div class="f"><label>Loan Period</label><div style="display:flex;gap:8px"><div class="inp" style="width:80px">2</div><div class="inp" style="width:140px">Months</div></div></div>
+        <div class="f"><label>Goods Taken From</label><span class="chk"><span class="box"></span>Demo Sets</span><span class="chk"><span class="box"></span>New Goods</span></div>
+        <div class="f span2"><label>Purpose</label><div class="inp ta ph">Purpose</div></div>
+      </div>
+    </div>
+    <div class="rel" style="max-width:1024px;margin:20px auto 0;display:flex;justify-content:flex-end;gap:12px"><span class="co pin" style="right:auto;left:-28px;top:4px">9</span><span class="btn out">Cancel</span><span class="btn out">Save as draft</span><span class="btn">Submit</span></div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">1</span><div><b>Page = PageHeader "New Sample Request" + outline Cancel</b> As New Purchase Request / New Sponsorship Form.<span class="ref">FE app/(protected)/procurement-management/purchase-requests/new/page.tsx; sponsorship-forms/new/page.tsx</span></div></li>
+  <li><span class="co">2</span><div><b>One document card, the same as Purchase Request / Sponsorship Form edit</b> border-2, type badge + status pill, centred title, 2-column field grid. The sample request detail page already uses this card, so create, edit and view are one layout. The title is the paper form's name.<span class="ref">PurchaseRequestDocumentEditCard.tsx:295-329 (max-w-5xl, Card border-2, grid sm:grid-cols-2 gap-x-10 gap-y-5, DocField)</span></div></li>
+  <li><span class="co">3</span><div><b>Customer Name = the same searchable customer box Purchase Request / Sponsorship Form use.</b> It lists debtors with their code underneath. A customer without a debtor code can be typed (the box accepts free text), and the request then shows "No debtor code".<span class="ref">PR/components/RequestCustomerField.tsx (AsyncCombobox, lookupCustomersForRequest, placeholder "Customer name")</span></div></li>
+  <li><span class="co">4</span><div><b>Project in the Sponsorship Form's order</b> Project Title (free text) then Registered project (optional, the same project search). With the switch "Sample requests need a registered project" ON, the registered project is required and the title follows it. Quotation unlocks once a project is picked.<span class="ref">PurchaseRequestForm.tsx:669 (Project Title), :689 (SearchableSelect searchProjectsForLink, clearable, "Search a project by code or title")</span></div></li>
+  <li><span class="co">5</span><div><b>The paper form's header order</b> Request Delivery Date (Input type=date) or "Immediate arrangement", For (scope), Ship To, Shipping Address (Textarea, like the Sponsorship Form's Delivery Address), Contact Person and phone/note (like PIC).<span class="ref">PurchaseRequestForm.tsx:648 (Delivery Address Textarea), :631 (PIC Input), :845 (Input type=date)</span></div></li>
+  <li><span class="co">6</span><div><b>"For Internal Purpose" fields</b> sit in the same grid. Read-only on this form; the coordinator sets them from the request page (gear "Set consignment / PO no").<span class="ref">same DocField grid</span></div></li>
+  <li><span class="co">7</span><div><b>Line items = the Purchase Request line table</b> "Line items" + outline "Add row", one row per product with No., Item Code, Qty, Remark and a delete icon. Two differences, both from the owner's rule that every line is a product from the list: Item Code is a product search box instead of a plain text box, and an "Or (alternative)" column holds the "X OR Y" lines. Row 1 is the board: "Mount &amp; label sample board" with its label, exactly where the paper and the PDF print it; it is not a product line. The search ignores dashes and case (row 5), and an unknown code shows the not-in-list message (row 6).<span class="ref">PurchaseRequestForm.tsx:929-969 (DataGrid, Add row, columns :185-386); product box = AsyncCombobox + product lookup as in portal SubmissionForm.tsx:1834-1848</span></div></li>
+  <li><span class="co">8</span><div><b>The paper form's footer, below the table</b> Delivery (Deliver-Van / Self-Deliver / Self-Collection, required), Loan Period (number + Days / Months, default 2 months), Goods Taken From (Demo Sets / New Goods, neither ticked = either), Purpose. The words match the printed requisition.<span class="ref">Input / SearchableSelect / Checkbox / RadioGroup from components/ui</span></div></li>
+  <li><span class="co">9</span><div><b>Footer buttons as the PR form</b> Cancel, then the save actions on the right. Sample requests keep a draft, so it is "Save as draft" + "Submit" (the portal PR form's pair). Edit shows the same card with the same fields.<span class="ref">PurchaseRequestForm.tsx:980-1057 (flex justify-end gap-4); portal SubmissionForm.tsx:2087-2127</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 2: PORTAL NEW 1280 ============ -->
+<h2 class="ft">2. Portal, New Sample Request (1280 wide). Portal Purchase Request / Sponsorship Form layout</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div style="max-width:1280px;margin:0 auto;padding:24px 32px">
+  <div class="rel" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span class="btn ghost sm">&larr; Back</span><span class="co pin" style="right:auto;left:90px;top:0">10</span></div>
+  <div class="card b2 rel" style="padding:24px 40px 32px"><span class="co pin">11</span>
+    <div style="display:flex;gap:8px"><span class="badge2">Sample Request</span></div>
+    <div class="dtitle">Consignment Requisition Form</div>
+    <div class="grid2">
+      <div class="f span2 rel"><span class="co pin">12</span><label>Customer Name <span class="req">*</span></label><div class="inp">JV PERKASA SDN BHD (PROJECT)</div><div class="meta" style="margin-top:2px">300-J099</div></div>
+      <div class="f"><label>Project Title</label><div class="inp">52 double-storey terraces, Taman Nusa Duta Fasa 10</div></div>
+      <div class="f"><label>Registered project</label><div class="inp ph">Search your registered projects...</div></div>
+      <div class="f"><label>For</label><div class="inp ph">e.g. FOR UNIT - TOWER A &amp; B</div></div>
+      <div class="f"><label>Request Delivery Date</label><div style="display:flex;gap:12px;align-items:center"><div class="inp ph" style="width:170px">dd/mm/yyyy</div><span class="chk"><span class="box on">&#10003;</span>Immediate arrangement</span></div></div>
+      <div class="f"><label>Ship To</label><div class="inp">CHENXIN PLUMBING SDN BHD</div></div>
+      <div class="f"><label>Contact Person</label><div class="inp">Site supervisor</div></div>
+      <div class="f span2"><label>Shipping Address</label><div class="inp ta">(address), Johor Bahru</div></div>
+      <div class="f span2"><label>Contact Phone / Note</label><div class="inp ph">Phone, and a note such as "call 1 day before"</div></div>
+    </div>
+  </div>
+  <div class="card rel" style="margin-top:16px;padding:16px 20px"><span class="co pin">13</span>
+    <div class="b" style="font-size:16px;margin-bottom:12px">Items</div>
+    <table class="t lt"><thead><tr><th style="width:40px">#</th><th style="width:260px">Item code</th><th style="width:220px">Or (alternative)</th><th style="width:100px">Quantity</th><th>Remark</th><th style="width:48px"></th></tr></thead><tbody>
+      <tr><td class="muted">1</td><td colspan="4"><span class="chk"><span class="box on">&#10003;</span><b>Mount &amp; label sample board</b></span> <span class="cellinp" style="display:inline-block;width:320px">NUSA DUTA FASA 10</span></td><td></td></tr>
+      <tr><td class="muted">2</td><td><div class="cellinp">SRT73-CR</div><div class="meta">product name</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp">1</div></td><td><div class="cellinp muted">&nbsp;</div></td><td class="trash">&#128465;</td></tr>
+      <tr><td class="muted">3</td><td><div class="cellinp">CB2829</div><div class="meta">product name</div></td><td><div class="cellinp">CB2805A</div><div class="meta">product name</div></td><td><div class="cellinp">1</div></td><td><div class="cellinp muted">&nbsp;</div></td><td class="trash">&#128465;</td></tr>
+    </tbody></table>
+    <div style="margin-top:12px"><span class="btn out sm">+ Add item</span></div>
+  </div>
+  <div class="card b2" style="margin-top:16px;padding:20px 40px">
+    <div class="grid2">
+      <div class="f span2"><label>Delivery <span class="req">*</span></label><span class="chk"><span class="rad on"></span>Deliver-Van</span><span class="chk"><span class="rad"></span>Self-Deliver</span><span class="chk"><span class="rad"></span>Self-Collection</span></div>
+      <div class="f"><label>Loan Period</label><div style="display:flex;gap:8px"><div class="inp" style="width:80px">2</div><div class="inp" style="width:140px">Months</div></div></div>
+      <div class="f"><label>Goods Taken From</label><span class="chk"><span class="box"></span>Demo Sets</span><span class="chk"><span class="box"></span>New Goods</span></div>
+      <div class="f span2"><label>Purpose</label><div class="inp ta ph">&nbsp;</div></div>
+    </div>
+  </div>
+  <div class="rel" style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><span class="co pin" style="right:auto;left:-28px;top:4px">14</span><span class="btn ghost">Cancel</span><span class="btn out">Save as draft</span><span class="btn">Submit sample request</span></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">10</span><div><b>Page shell of the portal Purchase Request / Sponsorship Form</b> Back on the left, no branded header, plain page.<span class="ref">FE app/(auth)/portal/components/SubmissionForm.tsx:2144-2151</span></div></li>
+  <li><span class="co">11</span><div><b>The portal PR / SF document card</b> border-2, type badge, centred title, 2-column grid (1 column on a phone).<span class="ref">SubmissionForm.tsx:2780-2846 (PurchaseRequestFormSection), FieldInput :2885</span></div></li>
+  <li><span class="co">12</span><div><b>Customer Name = the portal's searchable debtor box</b> (the same one on the portal PR / SF), limited to the contact's own debtors; a name can be typed when there is no debtor code. Registered project = the portal project search.<span class="ref">SubmissionForm.tsx:3012 (debtor-async, AsyncCombobox, "Search debtors..."), :3029 (project-async)</span></div></li>
+  <li><span class="co">13</span><div><b>The portal "Items" table</b> of PR / SF: #, Item code (product search per row), Quantity, Remark, delete; "+ Add item" below. Plus the "Or (alternative)" column and the board row 1, as on staff. On a phone it scrolls sideways inside its own box, like the PR / SF table.<span class="ref">SubmissionForm.tsx:1787-2005 (Items card, table, AsyncCombobox lookupProducts :1834-1848, Add item :1993)</span></div></li>
+  <li><span class="co">14</span><div><b>Portal footer</b> Cancel, Save as draft, Submit, at the end of the page (Delete draft on a saved draft). After submit the same cards show read-only with the status badge.<span class="ref">SubmissionForm.tsx:2087-2127 (footer), :1541-1553 (status badge), :1633 (read-only)</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 3: PORTAL 375 ============ -->
+<h2 class="ft">3. Portal on a phone (375 wide)</h2>
+<div class="layout">
+<div class="frame w375"><div style="padding:16px 12px 24px">
+  <span class="btn ghost sm">&larr; Back</span>
+  <div class="card b2" style="margin-top:12px;padding:16px 14px">
+    <div><span class="badge2">Sample Request</span></div>
+    <div class="dtitle" style="font-size:17px">Consignment Requisition Form</div>
+    <div class="grid1">
+      <div class="f"><label>Customer Name <span class="req">*</span></label><div class="inp">JV PERKASA SDN BHD (PROJECT)</div><div class="meta">300-J099</div></div>
+      <div class="f"><label>Project Title</label><div class="inp">52 double-storey terraces, Taman Nusa Duta Fasa 10</div></div>
+      <div class="f"><label>Request Delivery Date</label><span class="chk"><span class="box on">&#10003;</span>Immediate arrangement</span></div>
+      <div class="f muted xs">... the other header fields, one per row</div>
+    </div>
+  </div>
+  <div class="card rel" style="margin-top:12px;padding:12px"><span class="co pin">15</span>
+    <div class="b" style="margin-bottom:8px">Items</div>
+    <div style="overflow-x:auto"><table class="t lt" style="width:640px"><thead><tr><th style="width:36px">#</th><th style="width:200px">Item code</th><th style="width:170px">Or (alternative)</th><th style="width:80px">Quantity</th><th>Remark</th></tr></thead><tbody>
+      <tr><td class="muted">2</td><td><div class="cellinp">SRT73-CR</div></td><td></td><td><div class="cellinp">1</div></td><td></td></tr>
+      <tr><td class="muted">3</td><td><div class="cellinp">CB2829</div></td><td><div class="cellinp">CB2805A</div></td><td><div class="cellinp">1</div></td><td></td></tr>
+    </tbody></table></div>
+    <div style="margin-top:10px"><span class="btn out sm">+ Add item</span></div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px"><span class="btn out" style="justify-content:center">Save as draft</span><span class="btn" style="justify-content:center">Submit sample request</span></div>
+</div></div>
+<div class="notes"><ol>
+  <li><span class="co">15</span><div><b>On a phone</b> the card is one column and the Items table scrolls sideways inside its own box, the same as the portal PR / SF table today. The page itself never scrolls sideways.<span class="ref">SubmissionForm.tsx:1787 (overflow-x-auto table)</span></div></li>
+</ol></div>
+</div>
+
+</div>
+</body>
+</html>

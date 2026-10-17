@@ -9,9 +9,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { formatCurrency } from '@/lib/helpers';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import {
   getSalesOpportunityProductOptions,
   type SalesOpportunityProductOption,
@@ -42,12 +44,27 @@ export interface LineDraft {
 export function lineAmount(line: Pick<LineDraft, 'qty' | 'unitPrice'>): number | null {
   if (line.unitPrice.trim() === '') return null;
   const price = Number(line.unitPrice);
-  const qty = Number(line.qty);
-  if (!Number.isFinite(price) || !Number.isFinite(qty)) return null;
+  // A blank or invalid qty is pending (null), never 0: Number('') is 0.
+  const qty = parseNumberDraft(line.qty);
+  if (!Number.isFinite(price) || qty === null) return null;
   return Math.round(qty * price * 100) / 100;
 }
 
-/** The live total across every line - what Expected amount defaults to while untouched. */
+/** The rules a picked product row's numbers are held to when the form is saved. */
+export function lineQtyError(line: Pick<LineDraft, 'qty'>): string | undefined {
+  return numberFieldError(line.qty, { min: 0.01 });
+}
+export function linePriceError(line: Pick<LineDraft, 'unitPrice'>): string | undefined {
+  return numberFieldError(line.unitPrice, { min: 0, optional: true });
+}
+/** True when a row that will be sent (it has a product) holds a number that cannot be. */
+export function lineHasNumberError(line: LineDraft): boolean {
+  return Boolean(line.productId) && Boolean(lineQtyError(line) || linePriceError(line));
+}
+
+/** The live total across every line - what Expected amount defaults to while untouched.
+ *  A line whose amount is pending (blank qty) is skipped, never added as 0; the row's own
+ *  qty error blocks the save. */
 export function sumLineAmounts(lines: Pick<LineDraft, 'qty' | 'unitPrice'>[]): number {
   return lines.reduce((sum, line) => sum + (lineAmount(line) ?? 0), 0);
 }
@@ -61,8 +78,11 @@ export function OpportunityLineRow({
   line,
   onChange,
   onRemove,
+  showErrors = false,
 }: {
   line: LineDraft;
+  /** Set once a save was attempted: the row's number messages then follow the fields live. */
+  showErrors?: boolean;
   onChange: (patch: Partial<LineDraft>) => void;
   onRemove: () => void;
 }) {
@@ -120,23 +140,23 @@ export function OpportunityLineRow({
       </div>
       <div className="flex w-20 flex-col gap-1.5">
         <Label htmlFor={`Qty-${line.key}`}>Qty</Label>
-        <Input
+        <NumberInput
           id={`Qty-${line.key}`}
-          type="number"
           min="0.01"
           step="0.01"
           value={line.qty}
+          error={showErrors && line.productId ? lineQtyError(line) : undefined}
           onChange={(e) => onChange({ qty: e.target.value })}
         />
       </div>
       <div className="flex w-28 flex-col gap-1.5">
         <Label htmlFor={`UnitPrice-${line.key}`}>Unit price</Label>
-        <Input
+        <NumberInput
           id={`UnitPrice-${line.key}`}
-          type="number"
           min="0"
           step="0.01"
           value={line.unitPrice}
+          error={showErrors && line.productId ? linePriceError(line) : undefined}
           onChange={(e) => onChange({ unitPrice: e.target.value })}
         />
       </div>

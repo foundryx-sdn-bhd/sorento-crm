@@ -11,7 +11,8 @@
  */
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { formatCurrency } from '@/lib/helpers';
@@ -44,6 +45,23 @@ export function lineDraftAmount(line: LineDraft): number | null {
   return Math.round(qty * price * 100) / 100;
 }
 
+/** What is wrong with a line's numbers, if anything. Qty is required; unit price may stay blank. */
+export function lineDraftErrors(line: LineDraft): { qty?: string; unitPrice?: string } {
+  return {
+    qty: numberFieldError(line.qty, { min: 0.01 }),
+    unitPrice: numberFieldError(line.unitPrice, { min: 0, optional: true }),
+  };
+}
+
+/** True when any line that will be sent (a product is picked) has a wrong number. */
+export function linesHaveNumberErrors(lines: LineDraft[]): boolean {
+  return lines.some((l) => {
+    if (!l.productId) return false;
+    const e = lineDraftErrors(l);
+    return Boolean(e.qty || e.unitPrice);
+  });
+}
+
 /** Sum of every line's own amount (a line with no price contributes nothing, not a blocker). */
 export function sumLineDraftAmounts(lines: LineDraft[]): number {
   return lines.reduce((acc, line) => acc + (lineDraftAmount(line) ?? 0), 0);
@@ -66,12 +84,16 @@ export function PortalOpportunityLineRow({
   line,
   onChange,
   onRemove,
+  showErrors = false,
 }: {
   line: LineDraft;
   onChange: (patch: Partial<LineDraft>) => void;
   onRemove: () => void;
+  /** Set once a Save found a wrong number; the sentences then follow the typing. */
+  showErrors?: boolean;
 }) {
   const amount = lineDraftAmount(line);
+  const errors = showErrors ? lineDraftErrors(line) : {};
 
   return (
     <div className="flex flex-col gap-2">
@@ -103,24 +125,24 @@ export function PortalOpportunityLineRow({
       <div className="flex items-end gap-2">
         <div className="w-16 flex flex-col gap-1.5">
           <Label htmlFor={`qty-${line.key}`}>Qty</Label>
-          <Input
+          <NumberInput
             id={`qty-${line.key}`}
-            type="number"
             min="0.01"
             step="0.01"
             value={line.qty}
             onChange={(e) => onChange({ qty: e.target.value })}
+            error={errors.qty}
           />
         </div>
         <div className="w-24 flex flex-col gap-1.5">
           <Label htmlFor={`unit-price-${line.key}`}>Unit price</Label>
-          <Input
+          <NumberInput
             id={`unit-price-${line.key}`}
-            type="number"
             min="0"
             step="0.01"
             value={line.unitPrice}
             onChange={(e) => onChange({ unitPrice: e.target.value })}
+            error={errors.unitPrice}
           />
         </div>
         <div className="flex-1 flex flex-col gap-1.5">

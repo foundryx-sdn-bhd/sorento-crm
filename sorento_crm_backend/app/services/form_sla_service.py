@@ -41,6 +41,8 @@ FORM_SLA_TYPES = (
     "workflow_submission",
     # Price tag request: single marketing stage, configured via form_sla_configs.
     "price_tag_request",
+    # SR-CORE: the detail page carries the SLA tab; no stage config ships, so it reads empty.
+    "sample_request",
 )
 
 
@@ -124,6 +126,7 @@ _ENTITY_NUMBER_SOURCE: dict = {
     # r9 D14: without this the price tag SLA notification showed a uuid prefix,
     # which tells the reader nothing about which request is late.
     "price_tag_request": ("price_tag_requests", "doc_number", True),
+    "sample_request": ("projects.sample_requests", "request_no", False),
 }
 
 
@@ -251,6 +254,8 @@ def _form_detail_link(source_entity_type: str, source_entity_id: str) -> str:
         return f"/ticket-management/tickets/{source_entity_id}"
     if source_entity_type == "price_tag_request":
         return f"/dealer-kit/price-tag-requests/{source_entity_id}"
+    if source_entity_type == "sample_request":
+        return f"/project-sales/sample-requests/{source_entity_id}"
     return f"/{source_entity_type.replace('_', '-')}/{source_entity_id}"
 
 

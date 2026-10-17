@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { createBundle } from '../../services/catalogueService';
 import { PICKER_PAGE_SIZE, listPickerProducts } from '../../services/productPickerService';
@@ -42,11 +44,13 @@ export function BundleDialog({
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
-  const [price, setPrice] = useState('');
-  const [components, setComponents] = useState<{ productId: string; quantity: number }[]>([
+  const [price, setPrice] = useState<number | null>(null);
+  const [components, setComponents] = useState<{ productId: string; quantity: number | null }[]>([
     { productId: '', quantity: 1 },
   ]);
   const [saving, setSaving] = useState(false);
+  // Numbers are checked when Create bundle is pressed; afterwards the messages follow the fields.
+  const [checked, setChecked] = useState(false);
 
   /**
    * Labels for products we have already seen in a dropdown.
@@ -58,24 +62,35 @@ export function BundleDialog({
   const seenProducts = useRef(new Map<string, { code: string; name: string }>());
 
   const usable = components.filter((component) => component.productId);
-  const canSave = Boolean(name.trim()) && Number(price) >= 0 && price !== '' && usable.length > 0;
+  const canSave = Boolean(name.trim()) && usable.length > 0;
+  const priceError = checked ? numberFieldError(price, { min: 0 }) : undefined;
+  const quantityError = (component: { productId: string; quantity: number | null }) =>
+    checked && component.productId ? numberFieldError(component.quantity, { min: 1 }) : undefined;
 
   const reset = () => {
     setName('');
-    setPrice('');
+    setPrice(null);
+    setChecked(false);
     setComponents([{ productId: '', quantity: 1 }]);
   };
 
   const save = async () => {
     if (!canSave) return;
+    setChecked(true);
+    if (
+      numberFieldError(price, { min: 0 }) ||
+      usable.some((component) => numberFieldError(component.quantity, { min: 1 }))
+    ) {
+      return;
+    }
     setSaving(true);
     try {
       await createBundle(
         name.trim(),
-        price,
+        String(parseNumberDraft(price)),
         usable.map((component) => ({
           productId: component.productId,
-          quantity: Math.max(1, component.quantity),
+          quantity: parseNumberDraft(component.quantity) as number,
         })),
       );
       await queryClient.invalidateQueries({ queryKey: ['dealer-kit', 'bundles'] });
@@ -116,14 +131,14 @@ export function BundleDialog({
           <Label htmlFor="dk-bundle-price" className="text-xs">
             Bundle price
           </Label>
-          <Input
+          <NumberInput
             id="dk-bundle-price"
-            type="number"
             min={0}
             step="0.01"
             value={price}
             placeholder="1800.00"
-            onChange={(event) => setPrice(event.target.value)}
+            onValueChange={setPrice}
+            error={priceError}
           />
         </div>
 
@@ -186,22 +201,21 @@ export function BundleDialog({
                 />
               </div>
 
-              <Input
-                type="number"
-                min={1}
-                className="sm:w-24"
-                aria-label={`Quantity for product ${index + 1}`}
-                value={component.quantity}
-                onChange={(event) =>
-                  setComponents((current) =>
-                    current.map((row, position) =>
-                      position === index
-                        ? { ...row, quantity: Math.max(1, Number(event.target.value) || 1) }
-                        : row,
-                    ),
-                  )
-                }
-              />
+              <div className="sm:w-24">
+                <NumberInput
+                  min={1}
+                  aria-label={`Quantity for product ${index + 1}`}
+                  value={component.quantity}
+                  error={quantityError(component)}
+                  onValueChange={(quantity) =>
+                    setComponents((current) =>
+                      current.map((row, position) =>
+                        position === index ? { ...row, quantity } : row,
+                      ),
+                    )
+                  }
+                />
+              </div>
 
               <Button
                 variant="ghost"

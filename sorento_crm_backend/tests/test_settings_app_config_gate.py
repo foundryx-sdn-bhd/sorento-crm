@@ -58,6 +58,11 @@ EXPECTED_FIELDS = {
     # must reach every reserve-permission holder (Eling, CS), who does not hold
     # `user_management.settings.view` either - a warehouse id is not sensitive.
     "oi_reserve_default_pool_warehouse_id",
+    # PLAN-sample-request-core-15oct.md (SR-CORE) ruling 3: the staff sample request
+    # form must know whether a registered project is required, and the salespeople
+    # filling it do not hold `user_management.settings.view`. One boolean, not
+    # sensitive. (The quotation switch was removed 16 Oct.)
+    "sample_request_require_project",
 }
 
 # Named individually rather than derived, so the test reads as the list of things
@@ -202,10 +207,12 @@ def test_app_config_open_to_a_caller_with_zero_permissions(api, db):
         # section 6c F1: `_seed_settings` does not set this column either, so it
         # carries null (no configured default) the same as every other unset id here.
         "oi_reserve_default_pool_warehouse_id": None,
+        # SR-CORE: the project switch ships OFF (soft transition).
+        "sample_request_require_project": False,
     }
 
 
-def test_app_config_projects_exactly_eight_fields_and_leaks_nothing(api, db):
+def test_app_config_projects_exactly_the_expected_fields_and_leaks_nothing(api, db):
     client, _allow = api
     _seed_settings(db)
 
@@ -219,6 +226,15 @@ def test_app_config_projects_exactly_eight_fields_and_leaks_nothing(api, db):
     serialized = str(body)
     for secret in ("CAPABILITY", "zzt-smtp"):
         assert secret not in serialized
+
+
+def test_ac_sr_20_app_config_has_no_quotation_switch(api, db):
+    """AC-SR-20 (16 Oct): one switch only; the quotation key is gone from app-config."""
+    client, _allow = api
+    _seed_settings(db)
+    body = client.get(APP_CONFIG_ENDPOINT).json()
+    assert "sample_request_require_project" in body
+    assert "sample_request_require_quotation" not in body
 
 
 def test_app_config_returns_nulls_when_no_settings_row_exists(api, db):
@@ -237,6 +253,9 @@ def test_app_config_returns_nulls_when_no_settings_row_exists(api, db):
     # because the sweep's default is a real number rather than "nothing
     # configured yet".
     expected["price_tag_auto_collect_days"] = 7
+    # SR-CORE: a missing row reads the switches OFF, the same as their column default,
+    # so a fresh install never demands a project.
+    expected["sample_request_require_project"] = False
     assert resp.json() == expected
 
 

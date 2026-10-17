@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { wholeNumberRangeError } from './whole-number-range';
+import { numberFieldError } from './number-field';
 
 describe('wholeNumberRangeError', () => {
   it('accepts a whole number inside the bounds', () => {
@@ -27,3 +28,13 @@ describe('wholeNumberRangeError', () => {
     );
   });
 });
+
+describe('wholeNumberRangeError shares the numberFieldError sentence', () => {
+  it('S11: a valid-format value out of range returns exactly numberFieldError output', () => {
+    expect(wholeNumberRangeError('11', 1, 10)).toBe(numberFieldError('11', { min: 1, max: 10, integer: true }));
+    expect(wholeNumberRangeError('11', 1, 10, { allowBlank: true })).toBe(
+      numberFieldError('11', { min: 1, max: 10, integer: true, optional: true }),
+    );
+  });
+});
+

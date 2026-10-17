@@ -11,6 +11,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -36,6 +38,10 @@ const PRIORITY_OPTIONS = [
 // but never sent on write.
 type LineDraft = { sku: string; qty_ordered: string; uom: string };
 
+/** A picked product needs a quantity above zero. */
+const qtyError = (raw: string) =>
+  numberFieldError(raw, { min: 0, minExclusive: true });
+
 const emptyLine = (): LineDraft => ({ sku: '', qty_ordered: '', uom: '' });
 
 export function SalesOrderFormModal({
@@ -58,6 +64,7 @@ export function SalesOrderFormModal({
   /** Labels of every product this modal has seen come back from the server, so a line whose
    *  product is not on the page currently loaded still reads as `CODE · Name`. */
   const [productLabels, setProductLabels] = useState<Record<string, string>>({});
+  const [showErrors, setShowErrors] = useState(false);
 
   const orderTypeOptions = useOrderTypeOptions();
   const customerOptions = useCustomerOptions();
@@ -92,6 +99,7 @@ export function SalesOrderFormModal({
     setRequestedDate('');
     setLines([emptyLine()]);
     setError(null);
+    setShowErrors(false);
     setProductLabels({});
   }, [open]);
 
@@ -107,8 +115,13 @@ export function SalesOrderFormModal({
     if (!orderType) return setError('Select an order type.');
     if (!customer) return setError('Select a customer.');
     // uom is display-only and dropped by the service before the write payload.
-    const cleanedLines = lines
-      .filter((l) => l.sku && Number(l.qty_ordered) > 0)
+    const picked = lines.filter((l) => l.sku);
+    // A line with a product but no usable quantity is told, never dropped.
+    if (picked.some((l) => qtyError(l.qty_ordered))) {
+      setShowErrors(true);
+      return;
+    }
+    const cleanedLines = picked
       .map((l) => ({ sku: l.sku, qty_ordered: Number(l.qty_ordered), uom: l.uom }));
     if (cleanedLines.length === 0) {
       return setError('Add at least one line with a product and quantity.');
@@ -211,10 +224,10 @@ export function SalesOrderFormModal({
                     {idx === 0 ? (
                       <Label className="mb-1 block text-2xs text-muted-foreground">Qty</Label>
                     ) : null}
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={0}
                       value={line.qty_ordered}
+                      error={showErrors && line.sku ? qtyError(line.qty_ordered) : undefined}
                       onChange={(e) => updateLine(idx, { qty_ordered: e.target.value })}
                       className="text-right tabular-nums"
                     />
