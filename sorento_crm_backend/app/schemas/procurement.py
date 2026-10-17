@@ -1000,6 +1000,8 @@ class StockInquiryBase(BaseModel):
     item_description: Optional[str] = None
     project_customer: Optional[str] = None
     project_name: Optional[str] = None
+    # FORMS-PROJECT: the explicit project link; `project_name` above stays free text.
+    project_id: Optional[str] = None
     quantity: Optional[str] = None
     delivery_date: Optional[str] = None
     remark: Optional[str] = None
@@ -1059,6 +1061,7 @@ class StockInquiryUpdate(BaseModel):
     item_description: Optional[str] = None
     project_customer: Optional[str] = None
     project_name: Optional[str] = None
+    project_id: Optional[str] = None
     quantity: Optional[str] = None
     delivery_date: Optional[str] = None
     remark: Optional[str] = None
@@ -1131,6 +1134,9 @@ class StockInquiryResponse(StockInquiryBase):
     # Requestor display name, resolved live from the FK so a contact rename
     # fixes every screen with no backfill. Read-only, response-only.
     salesperson_contact_name: Optional[str] = None
+    # The linked project as `CODE - Title`, so the UI never shows the bare UUID.
+    project_code: Optional[str] = None
+    project_label: Optional[str] = None
     system_id: Optional[str] = None
     form_type: Optional[str] = None
     inquiry_number: Optional[str] = None
@@ -1391,6 +1397,8 @@ class PurchaseRequestUpdateAndReply(PurchaseRequestHeaderUpdate):
 class PurchaseRequestHeaderListResponse(PurchaseRequestHeaderBase):
     """Response for list endpoint (no lines)."""
     id: str
+    project_code: Optional[str] = None
+    project_label: Optional[str] = None  # `CODE - Title` (FORMS-PROJECT)
     # Requestor display name, resolved live from the FK (read-only, response-only).
     requested_by_contact_name: Optional[str] = None
     request_number: Optional[str] = None
@@ -1442,6 +1450,7 @@ class PurchaseRequestHeaderResponse(PurchaseRequestHeaderBase):
     # Resolved for display (AC-L3): the office-side detail page shows a project CODE, never a
     # UUID, matching what the portal already resolves for contacts.
     project_code: Optional[str] = None
+    project_label: Optional[str] = None  # `CODE - Title` (FORMS-PROJECT)
     # Requestor display name, resolved live from the FK (read-only, response-only).
     requested_by_contact_name: Optional[str] = None
     request_number: Optional[str] = None

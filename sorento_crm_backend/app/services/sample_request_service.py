@@ -231,28 +231,11 @@ def _check_refs(db: Session, data: Dict[str, Any]) -> None:
 
 def assert_portal_project_allowed(db: Session, *, contact, project_id: Optional[str]) -> None:
     """A project picked in the portal must be one `projects_for_contact` returns (AC-SR-42)."""
-    if not project_id:
-        return
-    from app.models.base import company_scope
-    from app.services.sponsorship_link_service import contact_company_ids
+    from app.services.project_link import check_portal_project_link
 
-    company_ids = contact_company_ids(db, contact=contact)
-    allowed = False
-    if company_ids and _is_uuid(project_id):
-        with company_scope(db, frozenset(company_ids)):
-            allowed = (
-                db.query(Project.id)
-                .filter(Project.id == project_id, Project.company_id.in_(company_ids))
-                .first()
-                is not None
-            )
-    if not allowed:
-        raise AppException(
-            status_code=422,
-            message="Pick one of your own projects.",
-            code="SAMPLE_REQUEST_PROJECT_NOT_ALLOWED",
-            details={"field": "project_id"},
-        )
+    check_portal_project_link(
+        db, contact=contact, project_id=project_id, code="SAMPLE_REQUEST_PROJECT_NOT_ALLOWED"
+    )
 
 
 def portal_customers(db: Session, contact_id: str, q: str = "") -> List[Dict[str, Any]]:

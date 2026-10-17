@@ -43,6 +43,7 @@ from app.services.crockford import (
     crockford_token,
 )
 from app.services.document_number import display_document_number
+from app.services.project_link import attach_project_display
 from app.services.error_handler import (
     AppException,
     handle_not_found,
@@ -1038,7 +1039,7 @@ class PortalService:
                 raise handle_validation_error(
                     "This submission must be resent via Submit - draft saves are disabled."
                 )
-            self._apply_payload(kind, row, payload)
+            self._apply_payload(kind, row, payload, token=token)
             row.portal_draft_at = _utcnow()
             self._replace_request_lines_if_needed(kind, row, payload)
             self.db.commit()
@@ -1055,7 +1056,7 @@ class PortalService:
         kind = kind.strip().lower()
         row = self._fetch_for_edit(kind, token, submission_id)
         if payload:
-            self._apply_payload(kind, row, payload)
+            self._apply_payload(kind, row, payload, token=token)
             self._replace_request_lines_if_needed(kind, row, payload)
 
         # Status transition + notification.
@@ -1361,7 +1362,7 @@ class PortalService:
                 respond_inbox_url=respond_inbox_url,
                 status="draft",
             )
-            self._apply_payload(kind, row, payload)
+            self._apply_payload(kind, row, payload, token=token)
             return row
         if kind == "stock_inquiry":
             row = StockInquiry(
@@ -1370,7 +1371,7 @@ class PortalService:
                 respond_inbox_url=respond_inbox_url,
                 status="draft",
             )
-            self._apply_payload(kind, row, payload)
+            self._apply_payload(kind, row, payload, token=token)
             return row
         if kind in ("purchase_request", "sponsorship_form"):
             row = PurchaseRequestHeader(
@@ -1381,7 +1382,7 @@ class PortalService:
                 status="draft",
                 source="portal",
             )
-            self._apply_payload(kind, row, payload)
+            self._apply_payload(kind, row, payload, token=token)
             return row
         raise handle_validation_error(f"Unsupported submission type: {kind!r}.")
 
@@ -1441,7 +1442,7 @@ class PortalService:
             raise handle_validation_error("This submission is not editable.")
         return row
 
-    def _apply_payload(self, kind: str, row: Any, payload: dict) -> None:
+    def _apply_payload(self, kind: str, row: Any, payload: dict, *, token: PortalToken) -> None:
         editable = self._editable_fields(kind)
         requestor_field = self._requestor_contact_field(kind)
         for field in editable:
@@ -1485,6 +1486,13 @@ class PortalService:
                             "Pick a registered project from the list - the project field "
                             "does not take free text."
                         )
+                    # FORMS-PROJECT: only a project of one of the contact's companies,
+                    # on every write (draft, submit, revision), for every kind.
+                    from app.services.project_link import check_portal_project_link
+
+                    check_portal_project_link(
+                        self.db, contact=self.get_contact(token), project_id=value
+                    )
                 if field == "customer_id":
                     from app.services.debtor_type import link_customer
 
@@ -1637,6 +1645,7 @@ class PortalService:
                 "contact_number",
                 "customer_address",
                 "project_title",
+                "project_id",  # FORMS-PROJECT; checked against the contact's companies
             )
         if kind == "stock_inquiry":
             return (
@@ -1646,6 +1655,7 @@ class PortalService:
                 "item_description",
                 "project_customer",
                 "project_name",
+                "project_id",  # FORMS-PROJECT; checked against the contact's companies
                 "quantity",
                 "delivery_date",
                 "remark",
@@ -1668,16 +1678,16 @@ class PortalService:
                 "needed_by_date",
                 "notes",
                 "price_mode",
+                "project_id",  # FORMS-PROJECT; checked against the contact's companies
             )
         return (
             "customer_name",
             "customer_id",  # the picked customer; None = free text (FORM-ROUTING-CONDITIONS)
             "pic",
             "project_title",
-            # AC-F3: the link itself. Ownership and the per-contact requirement are
-            # enforced in submit_draft, not here, because a DRAFT is allowed to be
-            # incomplete -- blocking on save would stop somebody parking a half-filled
-            # form, which is what drafts are for.
+            # AC-F3: the link itself. Ownership is checked on every write
+            # (`_apply_payload`, FORMS-PROJECT); the per-contact REQUIREMENT stays in
+            # submit_draft, because a DRAFT is allowed to be incomplete.
             "project_id",
             "purpose",
             "delivery_address",
@@ -1982,9 +1992,11 @@ class PortalService:
                 "contact_number": row.contact_number,
                 "customer_address": row.customer_address,
                 "project_title": row.project_title,
+                "project_id": str(row.project_id) if row.project_id else None,
                 "technical_team_response": row.technical_team_response,
             }
         )
+        attach_project_display(self.db, [base])
         return base
 
     def _serialize_stock_inquiry_summary(
@@ -2041,8 +2053,10 @@ class PortalService:
                 "purchasing_response": row.purchasing_response,
                 "salesperson_contact_id": salesperson_contact_id,
                 "salesperson_contact_name": self._resolve_contact_name_by_id(salesperson_contact_id),
+                "project_id": str(row.project_id) if row.project_id else None,
             }
         )
+        attach_project_display(self.db, [base])
         return base
 
     def _serialize_request_summary(
@@ -2141,4 +2155,5 @@ class PortalService:
                 ],
             }
         )
+        attach_project_display(self.db, [base])
         return base

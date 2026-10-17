@@ -1585,7 +1585,7 @@ class PortalRevisionService:
             for key, value in (payload or {}).items()
             if key not in adapter.frozen_on_revise
         }
-        portal._apply_payload(source_entity_type, row, clean_payload)  # noqa: SLF001
+        portal._apply_payload(source_entity_type, row, clean_payload, token=token)  # noqa: SLF001
         if adapter.apply_lines is not None:
             adapter.apply_lines(self.db, row, clean_payload)
         self.db.flush()

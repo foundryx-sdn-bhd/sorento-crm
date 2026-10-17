@@ -4,7 +4,7 @@ UAC: documentation/plans/forms/forms-project-acceptance-criteria.md.
 
 * staff saves (stock inquiry, sales opportunity, price tag office edit) take a project the
   editor can see and refuse anything else (AC-FP-11/12);
-* staff reads carry `project_code` + `project_name`, never only a UUID (AC-FP-30);
+* staff reads carry `project_code` + `project_label`, never only a UUID (AC-FP-30);
 * staff list reads filter by `project_id` (AC-FP-31);
 * portal saves (complaint, PR, SF, stock inquiry drafts and revisions, price tag, sales
   opportunity) take only a project of one of the contact's companies (AC-FP-20/21).
@@ -51,6 +51,10 @@ def _other_company(db) -> str:
     )
     db.flush()
     return company_id
+
+
+def _label(project) -> str:
+    return f"{project.project_code} - {project.title}"
 
 
 def _project(db, company_id: str, owner: str):
@@ -184,7 +188,8 @@ def test_stock_inquiry_detail_and_list_carry_code_and_title_and_filter(world):
     svc = _si_service(world.db)
     detail = svc.get_inquiry_for_response(str(linked.id))
     assert detail["project_code"] == world.own.project_code
-    assert detail["project_name"] == world.own.title
+    assert detail["project_label"] == _label(world.own)
+    assert detail["project_name"] == "Residensi Typed"
     rows = svc.list_inquiries(limit=200, project_id=world.own_id)["data"]
     ids = {str(r.id) for r in rows}
     assert str(linked.id) in ids and str(unlinked.id) not in ids
@@ -195,7 +200,7 @@ def test_stock_inquiry_response_schema_declares_the_link():
     from app.schemas.procurement import StockInquiryResponse
 
     fields = StockInquiryResponse.model_fields
-    assert {"project_id", "project_code", "project_name"} <= set(fields)
+    assert {"project_id", "project_code", "project_label"} <= set(fields)
 
 
 # ---------------------------------------------------------- sales opportunity
@@ -249,7 +254,7 @@ def test_opportunity_serializers_and_list_filter(world):
     body = svc.serialize(world.db, linked)
     assert body["project_id"] == world.own_id
     assert body["project_code"] == world.own.project_code
-    assert body["project_name"] == world.own.title
+    assert body["project_label"] == _label(world.own)
     result = svc.list_opportunities(world.db, project_id=world.own_id, limit=200)
     rows = result["data"] if isinstance(result, dict) else result[0]
     listed = svc.serialize_list(world.db, rows) if rows and not isinstance(rows[0], dict) else rows
@@ -274,7 +279,7 @@ def test_opportunity_create_schemas_accept_the_link():
         PortalSalesOpportunityUpdate,
     ):
         assert "project_id" in schema.model_fields, schema.__name__
-    assert {"project_id", "project_code", "project_name"} <= set(
+    assert {"project_id", "project_code", "project_label"} <= set(
         SalesOpportunityResponse.model_fields
     )
 
@@ -337,7 +342,7 @@ def test_price_tag_schemas_declare_the_link():
     for schema in (PriceTagRequestCreate, PriceTagRequestUpdate, PriceTagRequestOfficeUpdate):
         assert "project_id" in schema.model_fields, schema.__name__
     for schema in (PriceTagRequestResponse, PriceTagRequestListItem):
-        assert {"project_id", "project_code", "project_name"} <= set(schema.model_fields)
+        assert {"project_id", "project_code", "project_label"} <= set(schema.model_fields)
 
 
 # ------------------------------------------------- complaint / PR list filters
@@ -381,7 +386,7 @@ def test_purchase_request_list_filters_by_project_and_detail_has_the_title(world
     assert str(linked.id) in ids and str(other.id) not in ids
     detail = svc.get_request(str(linked.id))
     assert detail.project_code == world.own.project_code
-    assert detail.project_name == world.own.title
+    assert detail.project_label == _label(world.own)
 
 
 # ------------------------------------------------------------------- portal
@@ -400,6 +405,7 @@ def test_portal_draft_takes_one_of_the_contacts_projects(world, kind):
     )
     assert body.get("project_id") == world.own_id
     assert body.get("project_code") == world.own.project_code
+    assert body.get("project_label") == _label(world.own)
 
 
 @pytest.mark.parametrize(

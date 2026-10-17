@@ -22,7 +22,7 @@ from app.services.sla_scope import open_tracker_scope
 from app.schemas.complaints import ComplaintCreate, ComplaintUpdate
 from app.services.contact_brand_scope import complaint_in_scope_clauses, in_scope_product_codes
 from app.services.error_handler import handle_not_found
-from app.services.project_link import apply_project_link
+from app.services.project_link import apply_project_link, project_label
 from app.services.response_gate import (
     ALLOWED_RESPONSE_STATUSES,
     assert_response_write_allowed,
@@ -349,6 +349,7 @@ class ComplaintService:
             if project:
                 data["project_code"] = project[0]
                 data["project_name"] = project[1]
+        data["project_label"] = project_label(data["project_code"], data["project_name"])
         data["view_url"] = (
             view_url_override
             if view_url_override is not None
@@ -427,6 +428,7 @@ class ComplaintService:
         root_cause_ids: Optional[List[str]] = None,
         resolution_ids: Optional[List[str]] = None,
         customer_names: Optional[List[str]] = None,
+        project_id: Optional[str] = None,
     ):
         """Build the filtered + sorted complaints query shared by ``list_complaints``
         and ``neighbours`` so the two can never drift.
@@ -488,6 +490,8 @@ class ComplaintService:
         res_ids = [str(i).strip() for i in (resolution_ids or []) if str(i).strip()]
         if res_ids:
             q = q.filter(Complaint.resolution_id.in_(res_ids))
+        if project_id:
+            q = q.filter(Complaint.project_id == str(project_id))
         # A customer-scoped contact (PLAN-chatbot-customer-scope-29sep.md D5, AC-CS-47):
         # complaints carry the customer's NAME and no id, so the rows are those whose trimmed,
         # lower-cased name is one of the linked customers'. `None` = not scoped; an empty
@@ -722,6 +726,7 @@ class ComplaintService:
         root_cause_ids: Optional[List[str]] = None,
         resolution_ids: Optional[List[str]] = None,
         customer_names: Optional[List[str]] = None,
+        project_id: Optional[str] = None,
     ):
         """List complaints. assigned_to filters by respond_user_id (assignee). status filters by complaint status.
 
@@ -740,6 +745,7 @@ class ComplaintService:
             root_cause_ids=root_cause_ids,
             resolution_ids=resolution_ids,
             customer_names=customer_names,
+            project_id=project_id,
         )
 
         from sqlalchemy.orm import joinedload

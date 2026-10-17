@@ -1,5 +1,6 @@
 """Complaints API routes."""
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Request, Body, File, UploadFile
 from fastapi.responses import JSONResponse
@@ -265,6 +266,7 @@ async def get_complaints(
     space_id: Optional[str] = Query(
         None, description="Respond.io workspace id, required together with contact_id."
     ),
+    project_id: Optional[UUID] = Query(None, description="Only complaints linked to this project"),
     current_user: dict = Depends(require_permission_with_api_key("complaint_management.complaints.view")),
     db: Session = Depends(get_db)
 ):
@@ -286,6 +288,7 @@ async def get_complaints(
             root_cause_ids=_csv_ids(root_cause_ids),
             resolution_ids=_csv_ids(resolution_ids),
             customer_names=customer_names,
+            project_id=str(project_id) if project_id else None,
         )
         return result
     except HTTPException:
