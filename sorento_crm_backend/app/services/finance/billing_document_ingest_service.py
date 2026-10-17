@@ -56,7 +56,7 @@ from app.models.finance import (
     BillingDocument,
     BillingDocumentLine,
 )
-from app.models.order import Customer, SalesOrder, SalesOrderLine
+from app.models.order import Customer, Order, OrderLine, SalesOrder, SalesOrderLine
 from app.models.product import Product
 from app.models.sales_agent import SalesAgent
 from app.schemas.canonical_documents import (
@@ -484,7 +484,7 @@ class BillingDocumentIngestService(MasterRefResolver):
             "tax_rate": _q(line.tax_rate, _FOUR),
             "tax_amount": _q(line.tax_amount, _MONEY),
             "line_total": _q(line.line_total, _MONEY),
-            "sales_order_line_id": self._so_line(line.from_line_ref),
+            "sales_order_line_id": self._so_line(line.from_doc_type, line.from_line_ref),
             "from_doc_type": line.from_doc_type,
             "from_doc_no": line.from_doc_no,
             "from_line_ref": line.from_line_ref,
@@ -544,10 +544,16 @@ class BillingDocumentIngestService(MasterRefResolver):
             warnings.append(WARN_PRODUCT_UNRESOLVED)
         return entity_id
 
-    def _so_line(self, ref: Optional[str]) -> Optional[str]:
-        """The anchor's sales order line whose `source_ref` this is; None unless exactly one."""
+    def _so_line(self, from_doc_type: Optional[str], ref: Optional[str]) -> Optional[str]:
+        """The anchor's sales order line a billing line came from; None unless exactly one.
+
+        From a sales order, `ref` is that line's `source_ref`. From a delivery order (S3-1:
+        most invoices are "Transfer from DO"), `ref` is `{book}:DO:{DocKey}:{DtlKey}` and the
+        hop goes through the CRM's own DO line, found exactly, to its resolved SO line."""
         if not ref:
             return None
+        if from_doc_type == "DO":
+            return self._so_line_via_do(ref)
         key = (SalesOrderLine.__tablename__, "ref", ref)
         if key not in self._memo:
             rows = (
@@ -560,6 +566,32 @@ class BillingDocumentIngestService(MasterRefResolver):
                 .all()
             )
             self._memo[key] = str(rows[0][0]) if len(rows) == 1 else None
+        return self._memo[key]
+
+    def _so_line_via_do(self, ref: str) -> Optional[str]:
+        """The `sales_order_line_id` of the anchor's DO line named by `{book}:DO:{DocKey}:{DtlKey}`.
+        Exact on book, DocKey and DtlKey; a ref that does not parse, or a line that is not
+        there, is None, never a guess."""
+        parts = ref.rsplit(":", 3)
+        if len(parts) != 4 or parts[1] != "DO" or not (
+            parts[2].isascii() and parts[2].isdigit() and parts[3].isascii() and parts[3].isdigit()
+        ):
+            return None
+        book, _, doc_key, dtl_key = parts
+        key = (OrderLine.__tablename__, "do_ref", ref)
+        if key not in self._memo:
+            row = (
+                self.db.query(OrderLine.sales_order_line_id)
+                .join(Order, Order.id == OrderLine.order_id)
+                .filter(
+                    Order.company_id == self.company_id,
+                    Order.source_book == book,
+                    Order.doc_key == int(doc_key),
+                    OrderLine.dtl_key == int(dtl_key),
+                )
+                .first()
+            )
+            self._memo[key] = str(row[0]) if row and row[0] else None
         return self._memo[key]
 
     def _demand_class(
