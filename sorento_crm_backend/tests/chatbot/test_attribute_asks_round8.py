@@ -274,7 +274,7 @@ def _blocks(text: str) -> dict[str, str]:
         if not _ROW.match(block):
             continue
         body = _ROW.sub("", block, count=1)
-        m = re.search(r"\*Product Code:\* ([A-Z0-9-]+)", body)
+        m = re.search(r"\*Product Code:\* ([A-Za-z0-9-]+)", body)
         if m:
             out[m.group(1)] = body
     return out
@@ -319,14 +319,18 @@ def test_item1_a_stock_set_reads_exactly_like_the_product_code_answer(chat, worl
     first = chat.say(M1A, _ask("stock", "basin", M1A))
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): too many is the count and a breakdown by the next
     # attribute (every brand, no default), never a paging question.
-    assert re.match(r"Here's what you want: wash basins with stock \(\d+\)\n• ", first), first
+    # SET-STOCK-RENDER (SSR-5): no breakdown lines; the first 3 are listed.
+    assert re.match(r"Here's what you want: wash basins with stock \(\d+, showing 1 to 3\)", first), first
+    assert not [ln for ln in first.split("\n") if ln.startswith("• ")], first
     assert "too many to list" not in first, first
     text = chat.say(M1B, _ask("stock", "basin", M1B, top_n=2, entities=[]))
-    total = int(re.search(r"\((\d+), showing 1 to 2\)", text).group(1))
-    assert _intro(text) == f"Here's what you want: wash basins with stock ({total}, showing 1 to 2)", text
+    # SET-STOCK-RENDER (SSR-5/6): the ask listed 1 to 3; the typed "10" is read from the text and
+    # capped at the list limit, so the next page is 4 to 6.
+    total = int(re.search(r"\((\d+), showing 4 to 6\)", text).group(1))
+    assert _intro(text) == f"Here's what you want: wash basins with stock ({total}, showing 4 to 6)", text
     assert re.search(r"\n\n_Data last updated: 21/09/2026 \d\d:32:45_$", text.rstrip()), text
     blocks = _blocks(text)
-    assert len(blocks) == 2, text
+    assert len(blocks) == 3, text
     for code, block in blocks.items():
         single = _blocks(_by_code(chat, code, "stock"))
         assert block == single[code], (block, single[code])
@@ -426,7 +430,10 @@ def test_a_one_word_stock_follow_up_answers_as_the_described_set(compact, world)
 def test_item3_f_trap_is_an_unknown_trap(compact, world):
     text = compact.say(M3, _v3())
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): the one reply structure, broken down by the key.
-    assert text.startswith("Here's what you want: f trap water closets\n• P trap water closets: "), text
+    # SET-STOCK-RENDER (SSR-7): the typed header, no breakdown line, no rows, then the miss line.
+    assert text.split("\n", 1)[0] == "Here's what you want: f trap water closets", text
+    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
+    assert "*Product Code:*" not in text, text
     assert "Couldn't find: f trap (trap). Would you like me to escalate to" in text, text
     assert "document type" not in text.lower(), text
 
@@ -434,7 +441,10 @@ def test_item3_f_trap_is_an_unknown_trap(compact, world):
 def test_item4_pink_colour_is_an_unknown_finish_or_colour_never_a_document_type(compact, world):
     text = compact.say(M4, _v4())
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): no list of known choices; what the set does come in.
-    assert text.startswith("Here's what you want: pink water closets\n• White water closets: "), text
+    # SET-STOCK-RENDER (SSR-7): the typed header, no breakdown line, no rows, then the miss line.
+    assert text.split("\n", 1)[0] == "Here's what you want: pink water closets", text
+    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
+    assert "*Product Code:*" not in text, text
     assert "Couldn't find: pink (finish or colour)." in text, text
     assert "document type" not in text.lower(), text
 

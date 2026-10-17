@@ -165,9 +165,11 @@ def test_every_leg_past_the_list_limit_states_the_count_and_asks(require, base):
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026: "no cap", "always break it
     # down"): the full count and the resolver's breakdown by the next attribute, one line
     # each, never a paging question.
-    breakdown = {"key": "brand", "label": "Brand", "rows": [{"value": "Sorento", "count": 1000}, {"value": "Mocha", "count": 256}]}
-    header = build_set_header(1256, 0, "taps", require, breakdown=breakdown)
-    assert header == f"{base} (1,256)\n• Sorento taps: 1,000\n• Mocha taps: 256", header
+    # SET-STOCK-RENDER (SSR-5/6): no breakdown; the first SET_LIST_MAX products are listed and
+    # the header says so, "(1,256, showing 1 to 50)".
+    header = build_set_header(1256, SET_LIST_MAX, "taps", require)
+    assert header == f"{base} (1,256, showing 1 to 50)", header
+    assert "•" not in header, header
     assert "How many" not in header and "too many" not in header, header
     assert "Showing" not in header
 
@@ -272,7 +274,8 @@ def test_answering_how_many_lists_that_many_and_then_more_pages_nothing(
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026: never a paging question): the
     # first answer listed what fits (5 of 7, nothing splits them), so the count typed next
     # continues from there: the last 2, and the count is bare again.
-    assert one_line_header(text) == "Here's what you want: taps with certificates (7)", text
+    # SET-STOCK-RENDER (SSR-14): a continuation page says its range, the last page too.
+    assert one_line_header(text) == "Here's what you want: taps with certificates (7, showing 6 to 7)", text
     assert len(_s4_codes_in(text)) == 2, text
     assert len(calls) == before + 1 and len(calls[-1]["args"]["product_ids"]) == 2, calls
     # W4 (owner hand test round 2): the set stays carried past what was listed, so the

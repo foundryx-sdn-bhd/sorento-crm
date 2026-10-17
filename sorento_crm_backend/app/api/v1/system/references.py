@@ -1418,10 +1418,8 @@ class ResolveReferenceRequest(BaseModel):
         ge=1,
         description=(
             "Fix round 9 on PR #833: the longest set the caller lists in one reply. A "
-            "`require` set longer than it carries `predicate.breakdown` (its members "
-            "counted by the next attribute), and a set that qualifies nothing carries "
-            "`predicate.members` (the described products without the legs). Absent: "
-            "neither is computed."
+            "`require` set that qualifies nothing carries `predicate.members` (the "
+            "described products without the legs). Absent: it is not computed."
         ),
     )
     hidden_spec_keys: list[str] | None = Field(
@@ -1795,16 +1793,12 @@ def _with_grounded_unknowns(found: list[dict], grounded: list[dict] | None) -> l
 
 
 def _unknown_value_members(db: Session, payload, query_text: str, unknown: list[dict], current_user) -> dict | None:
-    """The described set without its unknown value, broken down by that value's key:
-    "pink water closets" is answered with the finishes the water closets do come in
-    (fix round 9 on PR #833, owner: "always break it down"). None when the rest of the
-    ask describes no set."""
+    """The described set without its unknown value, for the miss reply's phrase (its
+    description and class). SET-STOCK-RENDER (owner, 16 Oct 2026): never broken down.
+    None when the rest of the ask describes no set."""
     from app.services.product_predicate_service import resolve_product_set
     from app.services.product_spec_understanding import derive_search_inputs
 
-    # Fix round 10 on PR #833: a word with no key at all ("pnk" in "pnk water closet",
-    # "kitchne" in "kitchne sink") breaks the rest down by the next attribute that splits
-    # it (`_set_breakdown`), so the reply still lists what does exist.
     key = next((u.get("key") for u in unknown if u.get("key")), None)
     said = [str(u.get("said") or "") for u in unknown]
     specs, _free, _excl, _understanding = derive_search_inputs(
@@ -1829,13 +1823,11 @@ def _unknown_value_members(db: Session, payload, query_text: str, unknown: list[
         limit=1,
         brand=str(brand_entry["value"]) if brand_entry else None,
         access_levels=payload.access_levels,
-        breakdown_key=key,
-        breakdown_over=None if key else 0,
     )
     if not outcome.get("qualifying_total"):
         return None
     members: dict[str, Any] = {"total": int(outcome["qualifying_total"])}
-    for field in ("breakdown", "description", "class_labels"):
+    for field in ("description", "class_labels"):
         if outcome.get(field):
             members[field] = outcome[field]
     return members
@@ -3336,8 +3328,8 @@ def resolve_reference_post(
                 "unrecognized_terms": [u["said"] for u in unknown],
                 "unknown_values": unknown,
             }
-            # Fix round 9 on PR #833: the subject without the unknown value, broken down
-            # by that value's key, so the reply lists what the set does come in.
+            # Fix round 9 on PR #833: the subject without the unknown value, which the
+            # reply names (SET-STOCK-RENDER: no breakdown lines).
             members = _unknown_value_members(db, payload, query_text, unknown, current_user)
             if members:
                 result["predicate"]["members"] = members
@@ -3451,7 +3443,7 @@ def resolve_reference_post(
             stock_policy=_stock_policy_for(db, payload) if require.get("stock") else None,
             # Fix round 9 on PR #833 (owner, 28 Sep 2026): no brand named means every
             # brand, never a silent default. R1's weighted default is off here; a set too
-            # long for one message is broken down by brand instead (`breakdown`).
+            # long for one message is listed in part (SET-STOCK-RENDER, 16 Oct 2026).
             prefer_weighted_brand=False,
             breakdown_over=payload.set_list_max,
         )
@@ -3515,9 +3507,8 @@ def resolve_reference_post(
         # R4 (round 4): what a zero set looked for and the count in its other values.
         if outcome.get("near_miss"):
             result["predicate"]["near_miss"] = outcome["near_miss"]
-        # Fix round 9: a long set's breakdown by the next attribute, and a zero set's
-        # described products without the legs.
-        for key in ("breakdown", "members", "set_brands"):
+        # Fix round 9: a zero set's described products without the legs.
+        for key in ("members", "set_brands"):
             if outcome.get(key):
                 result["predicate"][key] = outcome[key]
         # W4: what a page of this set replays - the bound specs, the brand and the ids
