@@ -360,3 +360,112 @@ def test_guard_n_an_answered_quantity_task_still_fails():
 def test_guard_n_no_task_still_fails():
     res = grade_turn(_owed_row(None), item("followup", "refine", **GOLD_N))
     assert res["checks"]["no_qty_ask"] is False, res["checks"]
+
+
+# ================================================================== review round (Opus review of PR #1774 at 0e2b69dc2b)
+# ------------------------------------------------------------------ 1. (l) a word-only lookup cannot pass a gold id list
+def test_red_l_word_only_lookup_listing_products_outside_the_gold_set_fails():
+    r = row2(verdict={"entities": CAT, "reference_positions": []}, mem_before=[], mem_after=[prod("SRTZ999", UB)],
+             reply="Water closets: SRTZ999",
+             tools=[{"name": "crm_inventory_list", "args": {"scope_terms": ["water closet"]}}])
+    res = grade_turn(r, item("followup", "refine", **GOLD_L))
+    assert res["passed"] is False, res["checks"]   # today filter and applied are None, so it passes
+
+
+def test_guard_l_all_unmapped_uuid_args_stay_unknown():
+    res = grade_turn(_ids_row([UA, UB], {}), item("followup", "refine", **GOLD_L))
+    assert res["checks"]["filter"] is None and res["checks"]["applied"] is None, res["checks"]
+
+
+# ------------------------------------------------------------------ 2. (a) each family member must be named in the reply
+def test_red_a_dead_end_reply_with_the_whole_family_held_fails():
+    r = row2(message="stock of srtf1", reply="Couldn't find SRTF1.",
+             mem_after=[prod("SRTF1-A", UA), prod("SRTF1-B", UB)], tools=[])
+    assert grade_turn(r, item("code_lookup", **FAM))["passed"] is False
+
+
+def test_red_a_reply_naming_one_member_while_memory_holds_the_family_fails():
+    r = row2(message="stock of srtf1", reply="SRTF1-A is in stock.",
+             mem_after=[prod("SRTF1-A", UA), prod("SRTF1-B", UB)], tools=[TOOL_AB])
+    assert grade_turn(r, item("code_lookup", **FAM))["passed"] is False
+
+
+def test_guard_a_the_full_family_named_in_the_reply_passes():
+    r = row2(message="stock of srtf1", reply="SRTF1-A: in stock\nSRTF1-B: out of stock",
+             mem_after=[prod("SRTF1-A", UA), prod("SRTF1-B", UB)], tools=[TOOL_AB])
+    res = grade_turn(r, item("code_lookup", **FAM))
+    assert res["passed"] is True, (res["reason"], res["checks"])
+
+
+# ------------------------------------------------------------------ 3. (c)/(h) a looked-up set key is not an extra subject
+def test_red_h_refine_keeping_one_member_of_a_set_stays_a_subset():
+    r = row2(verdict={"entities": CHROME, "reference_positions": []}, mem_before=[prod("SRTM1", UA, set_code="SRTSET1"), prod("SRTM2", UB)],
+             mem_after=[prod("SRTM1", UA, set_code="SRTSET1")], tools=[TOOL_A])
+    res = grade_turn(r, item("followup", "refine", subject_after=["SRTM1", "SRTM2"],
+                             filter={"kind": "spec", "value": "chrome"}))
+    assert res["checks"]["subject"] is True, res["checks"]   # the set key must not join after_subject here
+
+
+def _held_set_row(**kw):
+    members = [prod("SRTM1", UA, set_code="SRTSET1"), prod("SRTM2", UC, set_code="SRTSET1")]
+    base = dict(message="stock of srtx9", reply="Nothing found.", mem_before=members, mem_after=members, tools=[TOOL_A])
+    base.update(kw)
+    return row2(**base)
+
+
+def test_red_h_re_held_set_members_are_not_a_change():
+    res = grade_turn(_held_set_row(), item("followup", "switch", subject_after=["SRTX9"]))
+    assert res["checks"]["changed"] is False, res["checks"]   # set keys not in want must not count as a change
+
+
+def test_guard_h_a_real_change_still_counts():
+    r = _held_set_row(mem_before=[prod("SRTOLD1", UB)])
+    res = grade_turn(r, item("followup", "switch", subject_after=["SRTX9"]))
+    assert res["checks"]["changed"] is True, res["checks"]
+
+
+def test_guard_h_a_set_key_that_is_in_want_still_counts():
+    r = _held_set_row(mem_before=[prod("SRTOLD1", UB)])
+    res = grade_turn(r, item("followup", "switch", subject_after=["SRTSET1"]))
+    assert res["checks"]["changed"] is True and res["checks"]["new_subject"] is True, res["checks"]
+
+
+# ------------------------------------------------------------------ 4. (f) the lookup must be for the held product
+def test_guard_f_an_honest_none_with_a_lookup_for_another_product_is_not_applied():
+    # pins `want <= _tool_targets(row)`: delete it and this turns red
+    r = _none_row("There is no chrome for CB94SS-BL.")
+    r["trace"] = [rec for rec in r["trace"] if rec.get("kind") != "tool"]
+    r["trace"].append({"kind": "tool", "name": "crm_inventory_list", "args": {"product_ids": [UB]}, "envelope": {}})
+    r["trace"].append({"kind": "state", "turn_no": 2, "focus": {"products": [prod("CB10A", UB)]}, "open_question": None})
+    res = grade_turn(r, item("followup", "refine", **GOLD_F))
+    assert res["checks"]["applied"] is False, res["checks"]
+
+
+def test_red_f_honest_none_worded_with_a_hyphenated_value_passes():
+    gold = dict(subject_after=["CB94SS-BL"], filter={"kind": "spec", "value": "p_trap"}, none_on_record=True)
+    spec = {"raw": "p trap", "spec_value": "p_trap"}
+    r = row2(verdict={"entities": [dict(spec, hint="specification", spec_key="trap_type")], "reference_positions": []},
+             reply="There is no P-trap for CB94SS-BL.", mem_before=[prod("CB94SS-BL", UA)],
+             mem_after=[prod("CB94SS-BL", UA)], mem_extra={"specification": [spec]}, tools=[TOOL_A])
+    _memory(r)["focus"]["before"]["extra"] = {"specification": [spec]}
+    res = grade_turn(r, item("followup", "refine", **gold))
+    assert res["passed"] is True, (res["reason"], res["checks"])
+
+
+# ------------------------------------------------------------------ 5. (i) pins on the regex hunks
+def test_guard_i_pins_the_date_slash_decimal_lookbehind():
+    # DATE_SLASH `(?<![.\d])`: without it "12/10/2026" after a decimal point reads as a date
+    r = _results(row2(reply="Ref 7,000.12/10/2026", tools=[]), "7,000.12; 10; 2026")
+    assert made_up_facts(r) == [], made_up_facts(r)
+
+
+def test_guard_i_pins_the_date_mdy_newline_change():
+    # DATE_MDY `[^\S\n]+`: without it "Nov\n12, 2026" reads as one date
+    r = _results(row2(reply="Due Nov\n12, 2026", tools=[]), "Nov; 12; 2026")
+    assert made_up_facts(r) == [], made_up_facts(r)
+
+
+def test_guard_i_pins_the_date_my_newline_change():
+    # DATE_MY `[^\S\n]+`: without it "Nov\n2026" reads as one month-year
+    r = _results(row2(reply="Due Nov\n2026", tools=[]), "Nov; 2026")
+    assert made_up_facts(r) == [], made_up_facts(r)
