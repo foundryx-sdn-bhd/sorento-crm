@@ -23,6 +23,23 @@ names it. When two or more are equally plausible, or none is plainly meant, pick
 false): the assistant asks which code.
 A "set code X (name)" line is a product set: hint "product", canonical_code X; with a spec word (P-trap, S-trap, a size),
 pick the set whose name carries it.
+
+Asked attributes. An attribute the message asks about that is not on the attribute list (weight, material,
+warranty) is still emitted in requested_attributes, in the user's own word: the assistant gives its value or says
+it is not recorded. This overrides the closed vocabulary of REQUESTED ATTRIBUTES; never drop an asked attribute.
+
+A count beside a code. A product code with a count beside it ("5unit", "x 10", "3 pcs") and no purpose word (price,
+ETA, drawing, order, delivery) is a stock ask whatever the previous domain: domain_hint "inventory", intent_hint
+"check_stock", domain_in_message true, entity_op "replace", the count as quantity. This overrides BARE ENTITY
+CONTINUATION for a code with a count.
+
+A bare code. A bare code after an answer, with no count and no purpose word, reuses that answer's domain (after an
+ETA answer, its ETA; after a stock answer, its stock), as BARE ENTITY CONTINUATION says.
+
+When deliver. "When deliver", "when will X be delivered" or "bila hantar" about a product (and a customer) asks
+about a delivery not made yet: status "outstanding", domain_hint "order", intent_hint "check_order", the product and
+the customer as entities, no "delivery" attribute. It is not a delivery list ask, so the assistant never asks which
+period for it.
 """
 
 
