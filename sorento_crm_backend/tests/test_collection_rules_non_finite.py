@@ -59,3 +59,44 @@ def test_update_collection_refuses_non_finite_rule_value_and_keeps_the_old_rule(
     db.expire_all()
     row = db.query(Collection).one()
     assert row.conditions_json == good
+
+
+def _kindless_root(value="NaN"):
+    return {
+        "combinator": "and",
+        "rules": [
+            {"kind": "condition", "fact": "product.listPrice", "operator": "neq", "value": value}
+        ],
+    }
+
+
+def test_create_collection_refuses_non_finite_value_under_a_kindless_root(api):  # noqa: F811
+    db, _as = api
+    _as(_ADMIN_ID)
+    from app.models.dealer_kit import Collection
+
+    with TestClient(app, raise_server_exceptions=False) as c:
+        res = c.post(
+            URL,
+            json={"scope": "library", "name": "ZZT kindless", "conditions": _kindless_root()},
+        )
+    assert res.status_code in (400, 422), res.text
+    assert db.query(Collection).count() == 0
+
+
+def test_update_collection_refuses_non_finite_value_under_a_kindless_root(api):  # noqa: F811
+    db, _as = api
+    _as(_ADMIN_ID)
+    from app.models.dealer_kit import Collection
+
+    good = _tree("gt", "10")
+    with TestClient(app, raise_server_exceptions=False) as c:
+        made = c.post(URL, json={"scope": "library", "name": "ZZT kindless", "conditions": good})
+        assert made.status_code == 201, made.text
+        res = c.put(
+            f"{URL}/{made.json()['id']}",
+            json={"scope": "library", "name": "ZZT kindless", "conditions": _kindless_root()},
+        )
+    assert res.status_code in (400, 422), res.text
+    db.expire_all()
+    assert db.query(Collection).one().conditions_json == good

@@ -110,3 +110,28 @@ describe('ProductPickerDialog bad rule number while on the By hand tab (N3)', ()
     expect(msgs.length).toBeGreaterThan(0);
   });
 });
+
+describe('ProductPickerDialog reopen resets tab and refusal (N6)', () => {
+  it('after By hand plus a refusal, close and reopen lands on By rule with no refusal message', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const ui = (open: boolean) => (
+      <QueryClientProvider client={client}>
+        <ProductPickerDialog open={open} onOpenChange={vi.fn()} value={EMPTY_SELECTION} onSave={vi.fn()} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(ui(true));
+    fireEvent.click(screen.getByRole('button', { name: /add condition/i }));
+    fireEvent.change(screen.getByTestId('select-Field'), { target: { value: 'product.listPrice' } });
+    fireEvent.change(screen.getByTestId('select-Operator'), { target: { value: 'eq' } });
+    typeBadInput(document.querySelector('input[type="number"]') as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: /use these products/i }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /by hand/i }));
+    expect(screen.getByRole('tab', { name: /by hand/i })).toHaveAttribute('data-state', 'active');
+    rerender(ui(false));
+    rerender(ui(true));
+    expect(screen.getByRole('tab', { name: /by rule/i })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByRole('tab', { name: /by hand/i })).toHaveAttribute('data-state', 'inactive');
+    expect(screen.queryAllByText(/enter a number/i)).toHaveLength(0);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
