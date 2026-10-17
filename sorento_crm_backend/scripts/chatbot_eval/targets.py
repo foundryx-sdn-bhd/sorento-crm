@@ -496,7 +496,7 @@ def made_up_facts(row: dict[str, Any]) -> list[str]:
 
 
 KNOWN_FACT_LABELS = {"stock", "eta", "files", "price", "order_status", "product_info", "promotions", "incoming"}
-COULD_NOT_FIND_RE = re.compile(r"couldn.?t find|could not find|no (?:products?|results?|items?) (?:found|matched)|not found", re.I)
+COULD_NOT_FIND_RE = re.compile(r"couldn.?t find|could not find|\bno (?:\w+[ _]){0,2}(?:products?|results?|items?) (?:found|matched)|not found", re.I)
 
 
 def _menu_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tuple[str, bool, str] | None:
