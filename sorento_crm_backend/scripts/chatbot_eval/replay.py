@@ -742,7 +742,8 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
     understood = next(((r.get("facts") or {}) for r in trace if isinstance(r, dict) and r.get("stage") == "understood"), {})
     out.update(
         provenance={**{k: understood.get(k) for k in PROVENANCE_KEYS},
-                    **({"prompt_version_id": prompt_version_id} if prompt_version_id else {})},
+                    **({"prompt_version_id": prompt_version_id}
+                       if prompt_version_id and understood.get("prompt_version") is not None else {})},
         usage=usage, tool_results=tool_results, uuid_codes=uuid_codes,
         turn={"envelope": copy.deepcopy(turn.envelope) if turn is not None else None, "trace": trace,
               "response": copy.deepcopy(turn.response) if turn is not None else None,
@@ -754,15 +755,31 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
     return out
 
 
+def _pin_resolves(session_factory: Callable[[], Any], version_id: str) -> bool:
+    from app.models.ai_prompt import AIPromptVersion
+
+    db = session_factory()
+    try:
+        return db.query(AIPromptVersion.id).filter(AIPromptVersion.id == version_id,
+                                                   AIPromptVersion.name == PARSER_PROMPT_KEY).first() is not None
+    except Exception:  # noqa: BLE001 - a malformed id or an unreadable table is an unresolved pin
+        return False
+    finally:
+        db.close()
+
+
 def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], *,
               session_factory: Callable[[], Any], max_calls: int, max_usd: float,
               require_key_last4: str, on_row: Callable[[dict[str, Any]], None] | None = None,
               prompt_version_id: str | None = None) -> list[dict[str, Any]]:
     """Run each item's message through the engine on its recorded state; stop cleanly at a call or spend cap,
     or at "wrong_key" when a provider or embedding key does not end with `require_key_last4` (exactly 4 non-blank
-    characters, else ValueError before any item)."""
+    characters, else ValueError before any item). A `prompt_version_id` that is not a stored version of the parser
+    prompt is a ValueError before any item (the registry would otherwise fall back silently)."""
     if not _valid_last4(require_key_last4):
         raise ValueError("require_key_last4 must be exactly 4 non-blank characters")
+    if prompt_version_id and not _pin_resolves(session_factory, prompt_version_id):
+        raise ValueError("prompt_version_id is not a stored version of the parser prompt")
     by_id = {str(r["id"]): r for r in recorded_rows}
     total = _new_usage()
     total.update(max_calls=max_calls, max_usd=max_usd, stop=None, require_key_last4=require_key_last4)
