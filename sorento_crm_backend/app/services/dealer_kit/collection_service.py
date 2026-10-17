@@ -59,7 +59,8 @@ def _validate_conditions(conditions: Optional[dict]) -> None:
     def walk(node: object) -> None:
         if not isinstance(node, dict):
             return
-        if node.get("kind") == "group" or "rules" in node:
+        # Only a group has children; a condition that carries "rules" is still a condition.
+        if node.get("kind") == "group" or ("kind" not in node and "fact" not in node):
             for rule in node.get("rules") or []:
                 walk(rule)
             return

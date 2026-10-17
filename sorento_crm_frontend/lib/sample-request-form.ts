@@ -149,7 +149,7 @@ export function payloadFromState(s: FormState): SampleRequestWrite {
     site_contact_name: clean(s.site_contact_name),
     site_contact_phone: clean(s.site_contact_phone),
     site_contact_note: clean(s.site_contact_note),
-    // Only built from a form validate() passed: the typed whole number goes through as typed.
+    // Only built from a form whose numberErrors() is empty: the typed whole number goes through as typed.
     loan_value: Number(s.loan_value),
     loan_unit: s.loan_unit,
     goods_from: goodsFromTicks(s.goods_demo, s.goods_new),
@@ -183,6 +183,12 @@ export function validate(
   if (!s.ship_to_name.trim()) errors.ship_to_name = 'Enter who the samples go to';
   if (pickedLines(s).length === 0 && !s.board_mounting) errors.lines = 'Add at least one item';
   if (s.board_mounting && !s.board_label.trim()) errors.board_label = 'Enter the board label';
+  return { ...errors, ...numberErrors(s) };
+}
+
+/** The qty and loan-period checks: shared by Submit and Save as draft, which never sends a bad figure. */
+export function numberErrors(s: FormState): Record<string, string> {
+  const errors: Record<string, string> = {};
   const loanError = numberFieldError(s.loan_value, WHOLE_AT_LEAST_ONE);
   if (loanError) errors.loan_value = loanError;
   for (const line of pickedLines(s)) {
