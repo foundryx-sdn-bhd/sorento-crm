@@ -293,6 +293,203 @@ def _render_find_filters(db: Session) -> str:
     return parser_vocabulary(db)
 
 
+#: CHAT-CLOSED-LISTS: the longest item the lists print and the gated schema enumerates, and
+#: how many items the enum carries at most (a provider strict-schema enum is bounded).
+MAX_LISTED_ITEM_CHARS = 60
+MAX_LISTED_ITEMS = 100
+
+
+def _item(row: dict) -> str:
+    """An attachment type as the lists print it: its code, else its name, on one line."""
+    return _one_line(row.get("code") or row.get("type_name") or "").strip()
+
+
+def _file_type_rows(db: Session) -> list[dict]:
+    """The attachment types a parser pick can name (CHAT-CLOSED-LISTS card R1), certificate
+    kinds aside (they are `{{certification_types}}`): every type a PRODUCT carries a live file
+    of, and every type no live file carries yet (a product file type still to be filled:
+    Installation Guide on dev, S6 17 Oct 2026, whose ask the enum otherwise forced onto a
+    neighbour). A type whose live files all sit on other records ("Shipment Line Photo", an
+    SCM type) is no product file type, for the reason
+    `entity_resolver._product_attachment_type_ids` gives."""
+    return [
+        dict(r)
+        for r in db.execute(
+            sql(
+                "SELECT t.code, t.type_name, t.description FROM attachment_types t "
+                "WHERE NOT t.is_certificate AND ("
+                " EXISTS (SELECT 1 FROM attachments a JOIN product_attachments pa ON pa.attachment_id = a.id"
+                "  WHERE a.attachment_type_id = t.id AND NOT coalesce(a.is_deleted, false))"
+                " OR NOT EXISTS (SELECT 1 FROM attachments a"
+                "  WHERE a.attachment_type_id = t.id AND NOT coalesce(a.is_deleted, false))"
+                ") ORDER BY t.type_name"
+            )
+        ).mappings()
+    ]
+
+
+_WORD_SEPARATORS = _re_mod.compile(r"\s*[,;/]\s*")
+
+
+def _alias_words(db: Session) -> dict[str, list[str]]:
+    """The owner's `attachment_type_alias` lookup set (System > Lookup Sets): per option
+    value (an attachment type's name or code, case aside) its keywords."""
+    out: dict[str, list[str]] = {}
+    rows = db.execute(
+        sql(
+            "SELECT o.value, k.keyword FROM lookup_sets s "
+            "JOIN lookup_options o ON o.set_id = s.id AND o.is_active "
+            "JOIN lookup_option_keywords k ON k.option_id = o.id "
+            "WHERE s.set_key = 'attachment_type_alias' AND s.is_active "
+        )
+    )
+    for value, keyword in rows:
+        if value and keyword and keyword.strip():
+            out.setdefault(value.strip().casefold(), []).append(keyword.strip())
+    # Sorted here, case aside, not by SQL: a collation must not reorder the prompt's text.
+    return {value: sorted(words, key=lambda w: (w.casefold(), w)) for value, words in out.items()}
+
+
+def _type_words(row: dict, aliases: dict[str, list[str]]) -> list[str]:
+    """A type's own words: its description's comma / slash / semicolon parts, then the alias
+    set's keywords for it, deduped with case aside."""
+    words: list[str] = []
+    seen: set[str] = set()
+    parts = _WORD_SEPARATORS.split(str(row.get("description") or ""))
+    keys = {str(row.get(k) or "").strip().casefold() for k in ("code", "type_name")} - {""}
+    for word in [*parts, *(w for key in keys for w in aliases.get(key, []))]:
+        word = word.strip()
+        if word and word.casefold() not in seen:
+            seen.add(word.casefold())
+            words.append(word)
+    return words
+
+
+def _listed_line(head: str, words: list[str] | str | None) -> str:
+    text = _one_line(", ".join(words) if isinstance(words, list) else (words or ""))
+    return f"{head}. Words: {text}." if text else f"{head}."
+
+
+def render_attachment_types(db: Session) -> str:
+    aliases = _alias_words(db)
+    return "\n".join(
+        _one_line(_listed_line(f'File type {_item(r)}: {r["type_name"]}', _type_words(r, aliases)))
+        for r in _file_type_rows(db)
+    )
+
+
+def _cert_kind_rows(db: Session) -> list[dict]:
+    return [
+        dict(r)
+        for r in db.execute(
+            sql(
+                "SELECT code, type_name, description FROM attachment_types WHERE is_certificate "
+                "ORDER BY type_name"
+            )
+        ).mappings()
+    ]
+
+
+def _cert_schemes(db: Session) -> list[tuple[str, list[str]]]:
+    """Every scheme on an active certificate plus the active `certificate_scheme` lookup
+    options, one entry per scheme (case aside, the register's spelling first), each with the
+    lookup set's words for it. Raw SQL: the prompt is one text for every company."""
+    schemes: dict[str, tuple[str, list[str]]] = {}
+    for (scheme,) in db.execute(
+        sql("SELECT DISTINCT scheme FROM certificates WHERE status = 'active' ORDER BY scheme")
+    ):
+        name = _one_line(scheme or "").strip()
+        # A register scheme is filed from an uploaded certificate (external ingest), so a
+        # long one is a read error, not a scheme: it never reaches the prompt or the enum
+        # (security review, 17 Oct 2026; the staff form caps it at 60).
+        if name and len(name) <= MAX_LISTED_ITEM_CHARS:
+            schemes.setdefault(name.casefold(), (name, []))
+    rows = db.execute(
+        sql(
+            "SELECT o.value, k.keyword FROM lookup_sets s "
+            "JOIN lookup_options o ON o.set_id = s.id AND o.is_active "
+            "LEFT JOIN lookup_option_keywords k ON k.option_id = o.id "
+            "WHERE s.set_key = 'certificate_scheme' AND s.is_active "
+            "ORDER BY o.sort_order, o.value, k.keyword"
+        )
+    )
+    for value, keyword in rows:
+        name = _one_line(value or "").strip()
+        if not name or len(name) > MAX_LISTED_ITEM_CHARS:
+            continue
+        _, words = schemes.setdefault(name.casefold(), (name, []))
+        if keyword and keyword.strip() and keyword.strip() not in words:
+            words.append(keyword.strip())
+    return sorted(schemes.values(), key=lambda entry: entry[0].casefold())
+
+
+def render_certification_types(db: Session) -> str:
+    aliases = _alias_words(db)
+    lines = [
+        _listed_line(f'Certificate kind {_item(r)}: {r["type_name"]}', _type_words(r, aliases))
+        for r in _cert_kind_rows(db)
+    ]
+    lines += [_listed_line(f"Certificate scheme {name}", ", ".join(words)) for name, words in _cert_schemes(db)]
+    return "\n".join(_one_line(line) for line in lines)
+
+
+def closed_list_items(db: Session) -> dict[str, dict[str, str]]:
+    """The items `{{attachment_types}}` and `{{certification_types}}` render, by list:
+    `{"file_type" | "cert_kind" | "cert_scheme": {casefolded key: item as listed}}`. Read
+    by grounding to validate a parser pick against what the prompt showed (CHAT-CLOSED-LISTS
+    card R5): the same readers, so the check and the prompt cannot list different items.
+
+    A key is an item's code or name, or a keyword the owner linked to it explicitly in the
+    `attachment_type_alias` lookup set. Description text is shown to the parser only and is
+    never a key (crew's dev data check, 17 Oct 2026). An alias two items share names
+    neither, and an item's own code or name, in any list, is never another item's alias."""
+    aliases = _alias_words(db)
+
+    def by_name(rows: list[dict]) -> tuple[dict[str, str], dict[str, set[str]]]:
+        named: dict[str, str] = {}
+        linked: dict[str, set[str]] = {}
+        for r in rows:
+            item = _item(r)
+            for key in (item, _one_line(r["type_name"] or "").strip()):
+                named[key.casefold()] = item
+            keys = {str(r.get(k) or "").strip().casefold() for k in ("code", "type_name")} - {""}
+            for word in (w for key in keys for w in aliases.get(key, [])):
+                linked.setdefault(word.casefold(), set()).add(item)
+        return named, linked
+
+    file_named, file_linked = by_name(_file_type_rows(db))
+    kind_named, kind_linked = by_name(_cert_kind_rows(db))
+    schemes = {name.casefold(): name for name, _words in _cert_schemes(db)}
+    scheme_linked: dict[str, set[str]] = {}
+    for name, words in _cert_schemes(db):
+        for word in words:
+            scheme_linked.setdefault(word.casefold(), set()).add(name)
+    shared: dict[str, int] = {}
+    for linked in (file_linked, kind_linked, scheme_linked):
+        for word, items in linked.items():
+            shared[word] = shared.get(word, 0) + len(items)
+    every_name = set(file_named) | set(kind_named) | set(schemes)
+
+    def keyed(named: dict[str, str], linked: dict[str, set[str]]) -> dict[str, str]:
+        out = {w: next(iter(items)) for w, items in linked.items() if shared[w] == 1 and w not in every_name}
+        return {**out, **named}
+
+    return {
+        "file_type": keyed(file_named, file_linked),
+        "cert_kind": keyed(kind_named, kind_linked),
+        "cert_scheme": keyed(schemes, scheme_linked),
+    }
+
+
+def closed_list_enum(db: Session) -> list[str]:
+    """Every item the two lists render, once, in list order (file types, certificate kinds,
+    schemes): the values the gated parser schema holds `listed_item` to."""
+    items = [_item(r) for r in _file_type_rows(db)]
+    items += [_item(r) for r in _cert_kind_rows(db)]
+    items += [name for name, _words in _cert_schemes(db)]
+    return [i for i in dict.fromkeys(items) if i and len(i) <= MAX_LISTED_ITEM_CHARS][:MAX_LISTED_ITEMS]
+
+
 def _find_filter_count() -> int:
     from app.services.product_find import FILTERS
 
@@ -369,6 +566,19 @@ VARIABLES: dict[str, RegistryVariable] = {
             "specs", "Specifications", "Product Specifications", "/master-data-management/product-specifications",
             ("product_spec_registry",), _render_specs,
             _count("SELECT count(*) FROM product_spec_registry WHERE is_active"),
+        ),
+        RegistryVariable(
+            # CHAT-CLOSED-LISTS: the file types the parser picks an `attachment_type` from.
+            "attachment_types", "File types", "Attachment Types", "/resource-management/attachment-types",
+            ("attachment_types", "lookup_options", "lookup_option_keywords"), render_attachment_types,
+            lambda db: len(_file_type_rows(db)),
+        ),
+        RegistryVariable(
+            # CHAT-CLOSED-LISTS: cert kinds + schemes on file + the `certificate_scheme` set.
+            "certification_types", "Certification types", "Certificates", "/master-data-management/certificates",
+            ("attachment_types", "certificates", "lookup_options", "lookup_option_keywords"),
+            render_certification_types,
+            lambda db: len(_cert_kind_rows(db)) + len(_cert_schemes(db)),
         ),
         RegistryVariable(
             # CHAT-FIND: the generic find rule plus one line per registered filter. The

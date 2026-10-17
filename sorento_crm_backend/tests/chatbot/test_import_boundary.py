@@ -48,6 +48,11 @@ ALLOWED = {
     # (engine H57), so there is no route through `/chat/turn` that exercises the queue.
     # Not core, not on any request path.
     "scripts/chatbot_queue_replay.py",
+    # CHAT-CLOSED-LISTS S3: publishes a parser version carrying the CLOSED LISTS section,
+    # which lives in the package (`head/closed_lists_prompt.py`) because the engine's gate
+    # reads the same marker. A developer tool, not core, not on any request path; it never
+    # moves a label.
+    "scripts/publish_closed_lists_prompt.py",
     # EVAL-BENCH (#1743) L1 replay: re-runs recorded parses through the engine with every LLM
     # call blocked, so it patches `llm_call`, `head.parser` and `grounding` directly; `/chat/turn`
     # has no seam for a recorded parse. A developer tool and its own test, not core, not on any

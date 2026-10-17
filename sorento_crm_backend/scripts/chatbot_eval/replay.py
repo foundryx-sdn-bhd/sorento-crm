@@ -248,7 +248,12 @@ def _ground_one(row: dict[str, Any], parse: dict[str, Any], db: Any, vocab: Any)
     from app.services.chatbot.lanes.business import report_ask
 
     verdict, held = report_ask.hold_words(copy.deepcopy(parse))
-    grounded, _notes = grounding.ground(db, verdict, vocab=vocab, message=_message_first_line(row.get("envelope") or {}))
+    # CHAT-CLOSED-LISTS: a parse made under the gated schema carries `listed_item` on its
+    # entities, so it is grounded with the gate on, as the engine grounded it.
+    gated = any(isinstance(e, dict) and "listed_item" in e for e in parse.get("entities") or [])
+    grounded, _notes = grounding.ground(
+        db, verdict, vocab=vocab, message=_message_first_line(row.get("envelope") or {}), closed_lists=gated
+    )
     ents = grounded.get("entities") or []
     if held:
         ents = [*ents, *held]

@@ -1942,8 +1942,11 @@ def _has_turn_free_terms(
 #: filename, a transporter's or a form's name. A token whose kind the caller has locked
 #: (`hint_locked_tokens`) is never given one of these; the resolver's product rows (code
 #: tiers and the spec tier) and every other kind are untouched.
+#: CHAT-CLOSED-LISTS S4a (owner CP0 card c06, "Why we cant identify WC ya"): the attachment
+#: TYPE is one too - its probe reads the type's description words, so a locked "WC" was
+#: handed the Certification type through "wcm" and the bot asked "WC (attachment type)?".
 _NAME_MATCHED_KINDS: frozenset[str] = frozenset(
-    {"promotion", "customer", "attachment", "transporter", "form"}
+    {"promotion", "customer", "attachment", "attachment_type", "transporter", "form"}
 )
 
 
@@ -1966,6 +1969,9 @@ def _name_kinds_dropped_for(domain_hint: str | None) -> frozenset[str]:
     own: set[str] = {canonical} if canonical else set()
     if domain in {"resource_attachment", "attachment"}:
         own.add("attachment")
+    if domain in {"product_attachment", "resource_attachment", "attachment"}:
+        # A file ask: the type a word names is that ask's own answer.
+        own.add("attachment_type")
     if canonical == "customer_order":
         # Order / sales (crew ruling Q4 on the lane card, 6 Oct 2026: out of scope): the
         # resolver's own domain expansion reads a brand or category word there as the

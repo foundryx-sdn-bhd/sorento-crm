@@ -264,6 +264,7 @@ def decide(
     family_grouping: str | None = None,
     unplaced: frozenset[str] | set[str] | None = None,
     roster_cap: int | None = None,
+    held_uuids: frozenset[str] = frozenset(),
 ) -> NarrowOutcome:
     """`attributes` is the verdict's `requested_attributes` - what the question asked ABOUT.
 
@@ -299,6 +300,19 @@ def decide(
     # rows for a narrowing decision, because a roster the customer is asked to choose
     # from has to list things that exist: "wc286" is one focus entity and ten real
     # products, and offering the customer their own typo back is not a choice.
+    if resolved_candidates and held_uuids:
+        # CHAT-CLOSED-LISTS HELD-FAMILY (CHAT-STATE handoff, 17 Oct 2026): a typed family
+        # code whose matched rows hold exactly ONE product the conversation already held is
+        # that product ("srtwc8516" right after "SRTWC8516-SH-UF x 8"). Data only: two held
+        # rows, or none, leave every rule below as it was.
+        held = [row for row in resolved_candidates if str(row.get("uuid")) in held_uuids]
+        typed = {
+            _token_of(c).casefold() for c in candidates if c.get("current_message") is True and not c.get("uuid")
+        } - {""}
+        typed_a_match = any(fold_token(_code_of(row).casefold()) in typed for row in resolved_candidates)
+        if len(held) == 1 and not typed_a_match:
+            return NarrowOutcome(None, [], held, None, note="held_member_settles")
+
     if resolved_candidates:
         # Owner hand pass 2, item 6, the other half (turn c45e2929, "Outstsnding DO for
         # 7445"): a token THIS message named that the resolver read as SEVERAL things is a
