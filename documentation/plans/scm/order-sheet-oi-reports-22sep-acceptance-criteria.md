@@ -67,6 +67,8 @@ Plan: `PLAN-order-sheet-oi-reports-22sep.md`. Status: DRAFT, rulings R1-R4 appli
   / S/O NO / ITEM CODE / QTY / TOTAL QTY / DELIVERY DATE / PROJECT/CUSTOMER / SUPPLIER / PO
   NO / LOCATION (no ACKNOWLEDGED), one sheet per delivery month, NO DATE sheet for undated
   rows, rows ordered SUPPLIER then ITEM CODE, TOTAL QTY on the last row of an item.
+  Superseded in part (owner, 16 Oct 2026, PLAN-oi-excel-one-sheet-16oct.md): the OI Excel is
+  ONE sheet, never split by month; no NO DATE sheet.
 - AC-C4 Row set = every live OI Buy row inside the run's Start Plan scope: the run's SO
   numbers when set, its product ids when set, and delivery date inside the run's window
   (undated included). A row outside the window, for an SO not in the list, or for a

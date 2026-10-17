@@ -35,13 +35,20 @@ from app.services.user_service import UserPermissionService
 logger = logging.getLogger(__name__)
 
 FORM_COMMENT_SCOPE = "form_comment"
-FORM_COMMENT_KINDS = ("complaint", "stock_inquiry", "purchase_request", "sponsorship_form")
+FORM_COMMENT_KINDS = (
+    "complaint",
+    "stock_inquiry",
+    "purchase_request",
+    "sponsorship_form",
+    "sample_request",
+)
 MAX_BODY_CHARS = 4000
 VIEW_PERMISSION = {
     "complaint": "complaint_management.complaints.view",
     "stock_inquiry": "procurement.stock_inquiries.view",
     "purchase_request": "procurement.purchase_requests.view",
     "sponsorship_form": "procurement.sponsorship_forms.view",
+    "sample_request": "projects.sample_requests.view",
 }
 MAX_FILES = 5
 
@@ -53,12 +60,14 @@ _LABELS = {
     "stock_inquiry": "stock inquiry",
     "purchase_request": "purchase request",
     "sponsorship_form": "sponsorship form",
+    "sample_request": "sample request",
 }
 _NUMBER_ATTR = {
     "complaint": "complaint_number",
     "stock_inquiry": "inquiry_number",
     "purchase_request": "request_number",
     "sponsorship_form": "request_number",
+    "sample_request": "request_no",
 }
 
 
@@ -119,6 +128,11 @@ class FormCommentService:
         elif kind == "stock_inquiry":
             model = StockInquiry
             q = self.db.query(StockInquiry)
+        elif kind == "sample_request":
+            from app.models.sample_request import SampleRequest
+
+            model = SampleRequest
+            q = self.db.query(SampleRequest)
         else:
             model = PurchaseRequestHeader
             q = self.db.query(PurchaseRequestHeader).filter(PurchaseRequestHeader.request_type == kind)

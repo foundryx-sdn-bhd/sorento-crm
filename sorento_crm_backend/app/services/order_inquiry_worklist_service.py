@@ -11,8 +11,9 @@ order raised rows that were reachable only from the one sales order that raised 
 `JAN - DEC 2026 ORDER.xlsx`, sheet title `ORDER INQUIRY`, columns SO DATE / S/O NO / ITEM
 CODE / QTY / TOTAL QTY / DELIVERY DATE / PROJECT/CUSTOMER / SUPPLIER / PO NO, one sheet
 per delivery MONTH plus a tab per day showing what was raised that day. The columns are
-read off that file rather than retyped, the month is the primary axis rather than one
-filter among many, and the export writes the same workbook back out.
+read off that file rather than retyped, and on screen the month is the primary axis rather
+than one filter among many. The export prints those columns on ONE sheet, never split by
+month (owner, 16 Oct 2026).
 
 **SUPPLIER and PO NO are never guessed.** On their sheet a blank in those two columns
 means "not placed yet", and that is exactly what the system knows: the only link the
@@ -186,10 +187,6 @@ MONTH_WORD = (
 )
 
 EXPORT_TITLE = "ORDER INQUIRY"
-#: Where the rows that have no delivery date go. They are not dropped: an instruction
-#: with no date is still an instruction, and one that vanishes from the file is one
-#: nobody places.
-EXPORT_UNDATED_SHEET = "NO DATE"
 #: Read off `JAN - DEC 2026 ORDER.xlsx` row 2, trailing space and all. Retyping it
 #: tidier is how a column their filters no longer find gets introduced.
 EXPORT_HEADINGS = (
@@ -3328,10 +3325,18 @@ class OrderInquiryWorklistService:
     def export_xlsx(
         self, *, columns: Sequence[str] = EXPORT_HEADINGS, **filters
     ) -> Tuple[str, bytes]:
-        """The filtered set as their own workbook: one sheet per delivery month.
+        """The filtered set as their own workbook, on ONE sheet.
 
-        Within a sheet the rows go SUPPLIER then ITEM CODE, which is the order their own
-        sheets are in and the order a buyer places in - one purchase order per factory.
+        Owner, 16 Oct 2026: "our OI excel cannot split by month, this applies to all
+        places where OI excel is printed" - the list export, the export tasks and the
+        handover attachment (Confirm and resend, `store_handover_excel`) all print
+        through here, so every delivery month and the undated rows share one
+        sheet.
+        A row with no date is still an instruction and is never dropped from the file.
+
+        Within the sheet the rows go SUPPLIER then ITEM CODE then delivery date, which is
+        the order their own sheets are in and the order a buyer places in - one purchase
+        order per factory.
         TOTAL QTY prints on the last row of each supplier-and-item-code run and totals
         that run, which is the one thing on their sheet that is arithmetic rather than
         typing. The run is the pair, not the item code alone: the same item bought from
@@ -3350,34 +3355,15 @@ class OrderInquiryWorklistService:
         import openpyxl
 
         rows = self._all_rows(**filters)
-        grouped: Dict[str, List[Dict[str, Any]]] = {}
-        for row in rows:
-            key = (
-                row["delivery_date"].strftime("%Y-%m")
-                if row["delivery_date"]
-                else ""
-            )
-            grouped.setdefault(key, []).append(row)
 
         workbook = openpyxl.Workbook()
-        # A new workbook opens with one blank sheet; every sheet here is named for a
-        # month, so the blank one goes rather than sitting in front of them called
-        # "Sheet".
+        # A new workbook opens with one blank sheet called "Sheet"; the one sheet here is
+        # written by `_write_sheet` under the file's own title instead. An empty result
+        # is still that sheet with its headings, rather than a file a spreadsheet refuses.
         default_sheet = workbook.active
         if default_sheet is not None:
             workbook.remove(default_sheet)
-        # Dated months in order, undated last: a row with no date is still an instruction
-        # and is never dropped from the file.
-        for key in sorted(month for month in grouped if month):
-            self._write_sheet(workbook, month_label(key), grouped[key], columns=columns)
-        if "" in grouped:
-            self._write_sheet(
-                workbook, EXPORT_UNDATED_SHEET, grouped[""], columns=columns
-            )
-        if not workbook.sheetnames:
-            # An empty result is still a workbook a person can open and see the headings
-            # of, rather than a file their spreadsheet refuses.
-            self._write_sheet(workbook, EXPORT_TITLE, [], columns=columns)
+        self._write_sheet(workbook, EXPORT_TITLE, rows, columns=columns)
 
         buffer = io.BytesIO()
         workbook.save(buffer)

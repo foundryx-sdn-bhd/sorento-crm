@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarRange,
+  ClipboardList,
   Clock,
   FileText,
   Flame,
@@ -57,6 +58,7 @@ import { DeliverySchedulesPanel } from './DeliverySchedulesPanel';
 import { PurchaseOrdersPanel } from './PurchaseOrdersPanel';
 import { SalesOrdersPanel } from './SalesOrdersPanel';
 import { QuotationsPanel } from './QuotationsPanel';
+import { SampleRequestsPanel } from './SampleRequestsPanel';
 import { SamplesPanel } from './SamplesPanel';
 import { SponsorshipsPanel } from './SponsorshipsPanel';
 import { StakeholdersPanel } from './StakeholdersPanel';
@@ -72,11 +74,12 @@ import { TasksPanel } from './TasksPanel';
  * Tabs whose slice has not shipped say so plainly instead of pretending: an honest
  * "arrives with quotations" beats a stub that looks broken.
  */
-const TABS = [
+export const TABS = [
   { id: 'overview', label: 'Overview', icon: Info },
   { id: 'stakeholders', label: 'Stakeholders', icon: Users },
   { id: 'tasks', label: 'Tasks', icon: ListChecks },
   { id: 'quotations', label: 'Quotations', icon: FileText },
+  { id: 'sample-requests', label: 'Sample requests', icon: ClipboardList },
   { id: 'samples', label: 'Samples', icon: Package },
   { id: 'sponsorships', label: 'Sponsorships', icon: HandCoins },
   { id: 'pos', label: 'POs', icon: ShoppingCart },
@@ -382,6 +385,9 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
         </TabsContent>
         <TabsContent value="quotations">
           <QuotationsPanel project={project} />
+        </TabsContent>
+        <TabsContent value="sample-requests">
+          <SampleRequestsPanel project={project} />
         </TabsContent>
         <TabsContent value="samples">
           <SamplesPanel project={project} />

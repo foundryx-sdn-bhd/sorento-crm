@@ -95,9 +95,11 @@ plan chose not to put on the order sheet still shows here if its order inquiry r
 
 It prints in the same ORDER INQUIRY layout the Order Inquiries worklist export already uses
 (see [Upload the data a reorder plan is built
-from](upload-plan-data.md#the-order-inquiries-page)): one sheet per delivery month, a **NO
-DATE** sheet for rows with no date, rows ordered by **SUPPLIER** then **ITEM CODE**, and
-**TOTAL QTY** printed once, on an item's last row. Columns, in order: **SO DATE**, **S/O NO**,
+from](upload-plan-data.md#the-order-inquiries-page)): one **ORDER INQUIRY** sheet holding every
+delivery month (rows with no date included), rows ordered by **SUPPLIER**, **ITEM CODE**, then
+delivery date, and
+**TOTAL QTY** printed once, on the last row of each supplier + item code run, totalling every
+date. Columns, in order: **SO DATE**, **S/O NO**,
 **ITEM CODE**, **QTY**, **TOTAL QTY**, **DELIVERY DATE**, **PROJECT/CUSTOMER**, **SUPPLIER**,
 **PO NO**, **LOCATION**. **QTY** is the quantity still owed - a linked quantity is already
 netted out.

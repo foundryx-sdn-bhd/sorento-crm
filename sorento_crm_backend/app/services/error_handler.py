@@ -11,16 +11,18 @@ class AppException(HTTPException):
         status_code: int,
         message: str,
         detail: Optional[str] = None,
-        code: Optional[str] = None
+        code: Optional[str] = None,
+        details: Optional[dict] = None,
     ):
-        super().__init__(
-            status_code=status_code,
-            detail={
-                "message": message,
-                "detail": detail,
-                "code": code
-            }
-        )
+        body = {
+            "message": message,
+            "detail": detail,
+            "code": code
+        }
+        # Serialised only when given, so every existing error body is unchanged.
+        if details is not None:
+            body["details"] = details
+        super().__init__(status_code=status_code, detail=body)
         # Also as plain attributes: the wire shape above is what the handler
         # serialises, and a caller that catches this (a service guard's own
         # test, a retry that only acts on one code) should not have to dig

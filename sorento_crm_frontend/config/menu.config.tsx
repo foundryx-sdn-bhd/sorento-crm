@@ -168,6 +168,11 @@ export const MENU_SIDEBAR: MenuConfig = [
         permission: 'projects.projects.view',
       },
       {
+        title: 'Sample Requests',
+        path: '/project-sales/sample-requests',
+        permission: 'projects.sample_requests.view',
+      },
+      {
         title: 'AutoCount Differences',
         path: '/project-sales/divergences',
         permission: 'projects.projects.view',
@@ -2066,6 +2071,11 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
         title: 'Stock Claims',
         path: '/project-sales/stock-claims',
         permission: 'projects.projects.view',
+      },
+      {
+        title: 'Sample Requests',
+        path: '/project-sales/sample-requests',
+        permission: 'projects.sample_requests.view',
       },
       {
         // Cross-project for the same reason claims are: a reconciliation belongs to one
