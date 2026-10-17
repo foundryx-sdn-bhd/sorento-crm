@@ -119,6 +119,8 @@ import { BoardTransfersPanel } from './BoardTransfersPanel';
 import { PlanningHistorySheet } from './PlanningHistorySheet';
 import { PlanningRefusalTable, hasReasonCode } from './PlanningRefusalTable';
 import { FulfilmentBoardListView } from './FulfilmentBoardListView';
+import { LineSplitDialog } from './LineSplitDialog';
+import { LineSplitOpenerContext, type LineSplitOpener } from './lineSplitOpener';
 import { FulfilmentBoardMatrix } from './FulfilmentBoardMatrix';
 import { DecisionStrip } from './DecisionStrip';
 import {
@@ -544,6 +546,34 @@ export function FulfilmentBoardPanel({
         : rawBoard.data,
     }),
     [rawBoard, openChangeBatchData],
+  );
+
+  /** OI-LINE-SPLIT: the one whole-SO split view, opened from a line (`lineSplitOpener`). */
+  const [lineSplit, setLineSplit] = React.useState<{
+    open: boolean;
+    psoId: string;
+    focusLineId?: string;
+  } | null>(null);
+  const psoIdBySalesOrder = React.useMemo(
+    () =>
+      new Map(
+        (board.data?.orders ?? [])
+          .filter((order) => order.project_sales_order_id)
+          .map((order) => [order.sales_order_id, order.project_sales_order_id as string]),
+      ),
+    [board.data],
+  );
+  const lineSplitOpener = React.useMemo<LineSplitOpener>(
+    () => ({
+      canOpen: (contribution) =>
+        Boolean(contribution.project_line_id && psoIdBySalesOrder.get(contribution.sales_order_id)),
+      open: (contribution) => {
+        const psoId = psoIdBySalesOrder.get(contribution.sales_order_id);
+        if (!psoId) return;
+        setLineSplit({ open: true, psoId, focusLineId: contribution.project_line_id ?? undefined });
+      },
+    }),
+    [psoIdBySalesOrder],
   );
 
   /**
@@ -2167,6 +2197,7 @@ export function FulfilmentBoardPanel({
   }, [openCell, board.data, axis]);
 
   return (
+    <LineSplitOpenerContext.Provider value={lineSplitOpener}>
     <div className="space-y-4">
       {/* Title left, actions right, and the row WRAPS. A plain `items-center justify-between`
           does not, so at narrow widths the controls landed on top of the title and pushed the
@@ -3174,7 +3205,18 @@ export function FulfilmentBoardPanel({
           initialSoId={historySoId}
         />
       )}
+      {lineSplit ? (
+        <LineSplitDialog
+          open={lineSplit.open}
+          psoId={lineSplit.psoId}
+          focusLineId={lineSplit.focusLineId}
+          onOpenChange={(next) =>
+            setLineSplit((current) => (current ? { ...current, open: next } : current))
+          }
+        />
+      ) : null}
     </div>
+    </LineSplitOpenerContext.Provider>
   );
 }
 

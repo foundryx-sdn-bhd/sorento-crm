@@ -3889,6 +3889,10 @@ def _oi_demand_rows(
         elif r.kind == "qty_down":
             from_qty = _dec((r.from_json or {}).get("qty"))
             to_qty = _dec((r.to_json or {}).get("qty"))
+            # OI-LINE-SPLIT: a line whose split moved qty to another line never reaches
+            # here - its one live row settles in place (`_split_row` re-reads a placed
+            # row with no link as raised, and a received-link redirect joins the settled
+            # lines too), so nothing it moved is netted as a cancel.
             drop = min(from_qty - to_qty, cancellable_by_line[str(r.project_line_id)])
             if drop <= _ZERO:
                 continue
@@ -4829,6 +4833,11 @@ def _apply_one_order(
     # session must never swallow this apply's own notices.
     if confirm_lines:
         ProjectOrderInquiryService(db).forget_rows_told_for_saved_lines(str(order.id))
+    # OI-LINE-SPLIT: this order's moved-split record has been read (the netting above, the
+    # email inside the confirm); a long-lived session must never carry it into a later apply.
+    from app.services.project_order_inquiry_service import SPLIT_MOVED_KEY
+
+    db.info.pop(SPLIT_MOVED_KEY, None)
 
     for r in live:
         r.applied_state = PLANNING_CHANGE_STATE_APPLIED

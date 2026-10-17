@@ -7,6 +7,7 @@ from app.api.v1.projects import (
     forecast,
     fulfilment_planning,
     leads,
+    line_splits,
     order_inquiries,
     parties,
     planning_changes,
@@ -70,6 +71,9 @@ router.include_router(divergences.router, tags=["project-so-divergence"])
 # Fulfilment planning (Stage 1B) hangs off `/sales-orders/{pso_id}` too, so it joins the
 # routers declared ahead of the plain sales-order one for the same reason.
 router.include_router(fulfilment_planning.router, tags=["project-fulfilment-planning"])
+# OI-LINE-SPLIT: `/sales-orders/{pso_id}/line-splits`, ahead of the plain sales-order
+# router for the same reason fulfilment planning is.
+router.include_router(line_splits.router, tags=["project-fulfilment-planning"])
 router.include_router(sales_orders.router, tags=["project-sales-orders"])
 # Allocation (P9) hangs off sales order LINES and off claims between projects, so it is
 # root-mounted alongside sales orders. Its paths add a segment to the sales-order ones

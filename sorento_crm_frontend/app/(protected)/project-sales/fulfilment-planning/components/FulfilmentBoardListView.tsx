@@ -422,6 +422,7 @@ export function FulfilmentBoardListView({
           annotations={filtered}
           column={column}
           compact
+          contribution={contribution}
         />
       );
     },

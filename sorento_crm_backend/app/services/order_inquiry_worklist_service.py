@@ -216,6 +216,9 @@ EXPORT_HEADINGS = (
     # only. APPENDED for the same reason ACKNOWLEDGED/TAKEN/REMAINING were: their own
     # filters are keyed on the columns before it being where they have always been.
     "SUGGESTED",
+    # OI-LINE-SPLIT (UAC D2): the split a row prints for, or the line's split plan when it
+    # cannot be printed split by split. APPENDED for the same reason as the four above.
+    "REMARK",
 )
 
 # The two routes a row can be attributed by, joined ONCE through a coalesce rather than
@@ -1627,6 +1630,10 @@ class OrderInquiryWorklistService:
         anchor_headline_by_id = self._anchor_headline_by_id(rows, links)
         host_changes_by_row_id = self._host_changes_for_rows(rows, bundle_map)
         raise_events_by_row = self._raise_events_by_row(rows)
+        # OI-LINE-SPLIT (UAC D3): every page row's line splits, in one read.
+        splits_by_line = ProjectOrderInquiryService(self.db).splits_for_lines(
+            [row.so_line_id for row in rows]
+        )
         # AC-RR-6: one query for every PO line on the page that has an open SPO chained from it.
         blocked = ProjectOrderInquiryService(self.db).po_lines_with_open_chained_spo(
             [
@@ -1650,6 +1657,7 @@ class OrderInquiryWorklistService:
                     suggested_links,
                     raise_events_by_row,
                     blocked,
+                    splits_by_line,
                 )
                 for row in rows
             ],
@@ -2272,6 +2280,7 @@ class OrderInquiryWorklistService:
         suggested_links: Optional[Dict[str, List[Dict[str, Any]]]] = None,
         raise_events_by_row: Optional[Dict[str, Dict[str, Any]]] = None,
         blocked: Optional[set] = None,
+        splits_by_line: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     ) -> Dict[str, Any]:
         line_flow = (flow or {}).get(row.so_line_id, {})
         row_links = (links or {}).get(row.id, [])
@@ -2435,6 +2444,11 @@ class OrderInquiryWorklistService:
             # which drops this column outright, so the export's own `row` namedtuple
             # never carries the attribute at all.
             "raise_history": getattr(row, "raise_history", None) or [],
+            # OI-LINE-SPLIT (UAC D3): the splits of this row's SO line for the Lines tab's
+            # read-only expand, the same keys `serialize_rows` carries. `[]` when unsplit.
+            "splits": (
+                (splits_by_line or {}).get(str(row.so_line_id), []) if row.so_line_id else []
+            ),
             "verb": row.verb,
             "note": row.note,
             "project_id": row.project_id,
@@ -3397,12 +3411,52 @@ class OrderInquiryWorklistService:
         suggested_links = ProjectOrderInquiryService(self.db).suggested_links_for_rows(
             [row.id for row in rows]
         )
-        return [
-            self._serialize(
-                row, bundle_map=bundle_map, links=links, suggested_links=suggested_links
-            )
-            for row in rows
-        ]
+        return self._with_splits(
+            [
+                self._serialize(
+                    row, bundle_map=bundle_map, links=links, suggested_links=suggested_links
+                )
+                for row in rows
+            ]
+        )
+
+    def _with_splits(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """OI-LINE-SPLIT (UAC D2): a row whose line has splits sitting on it becomes one row
+        per such split (QTY and DELIVERY DATE the split's, REMARK its change word, "from
+        line N" when it is another line's, and its remark) when they add up to the row's
+        QTY; otherwise the row prints as it is with the line's split plan in REMARK. A
+        line with no splits prints as today, REMARK empty."""
+        from app.services.project_line_split_service import SplitOutputs
+
+        splits = SplitOutputs(self.db, [row.get("so_line_id") for row in rows])
+        if not splits.by_origin and not splits.by_sits_on:
+            return rows
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            line_id = row.get("so_line_id")
+            sitting = splits.by_sits_on.get(line_id or "", [])
+            if sitting and sum((_dec(v.split.qty) for v in sitting), _ZERO) == _dec(row.get("qty")):
+                # The row's own TAKEN / REMAINING / SUGGESTED belong to the row, not to any
+                # one split: printed once, on its earliest split, blank on the others.
+                carrier = min(
+                    sitting, key=lambda v: (v.split.delivery_date is None, v.split.delivery_date or date.max)
+                )
+                # Worked off the row as it stands, before a split's qty replaces it.
+                figures = (_export_taken(row), _export_remaining(row), _export_suggested(row))
+                for view in sitting:
+                    first = view is carrier
+                    out.append(
+                        {
+                            **row,
+                            "qty": _qty_str(_dec(view.split.qty)),
+                            "delivery_date": view.split.delivery_date,
+                            "split_remark": splits.sitting_remark(view, line_id),
+                            "split_figures": figures if first else ("", "", ""),
+                        }
+                    )
+                continue
+            out.append({**row, "split_remark": splits.plan_text(line_id) if line_id else ""})
+        return out
 
     def _write_sheet(
         self,
@@ -3450,9 +3504,12 @@ class OrderInquiryWorklistService:
                     row.get("po_number") or "",
                     row.get("location") or "",
                     ack_label(row),
-                    _export_taken(row),
-                    _export_remaining(row),
-                    _export_suggested(row),
+                    *(
+                        row["split_figures"]
+                        if "split_figures" in row
+                        else (_export_taken(row), _export_remaining(row), _export_suggested(row))
+                    ),
+                    row.get("split_remark") or "",
                 ]
                 # `columns` may be a PREFIX of `EXPORT_HEADINGS` (Lane C's worksheet, no
                 # ACKNOWLEDGED / TAKEN / REMAINING) - cut the row to match so the sheet

@@ -95,6 +95,7 @@ class OrderInquiryHandoverResend:
         `send` stores it for an OI that has someone to send to."""
         from app.services.project_order_inquiry_service import (
             ProjectOrderInquiryService,
+            _qty_str,
             build_handover_email,
         )
 
@@ -117,6 +118,32 @@ class OrderInquiryHandoverResend:
             )
             for row in rows
         ]
+        # OI-LINE-SPLIT (UAC D1): a split line reads one line per split, as on Confirm -
+        # while its splits act or after the Confirm that applied them. A stale plan
+        # (AutoCount moved on) is not purchasing's instruction: that line prints its row.
+        from app.services.project_line_split_service import LineSplitService
+
+        splits = LineSplitService(self.db)
+        printable = splits.printable_origin_ids(item.get("so_line_id") for item in items)
+        # Qty other lines' splits moved onto a line is told by those origins' split rows. The
+        # line's own row then says only the rest: nothing when the row IS what moved in, an
+        # "ORDER <rest>" when the line also grew. A row cut below what moved in is a change
+        # of its own and prints as it is.
+        planned_in = splits.planned_in_by_printable(item.get("so_line_id") for item in items)
+        netted: List[Dict[str, Any]] = []
+        for item in items:
+            line_id = str(item.get("so_line_id") or "")
+            moved_in = planned_in.get(line_id, Decimal("0")) if line_id not in printable else 0
+            entry = item.get("line") or {}
+            row_qty = Decimal(str(entry.get("qty") or "0"))
+            if moved_in > 0 and row_qty == moved_in:
+                continue
+            if moved_in > 0 and row_qty > moved_in:
+                rest = _qty_str(row_qty - moved_in)
+                entry["qty"] = rest
+                entry["remark"] = f"ORDER {rest}"
+            netted.append(item)
+        items = service.split_handover_items(netted, line_ids=printable)
         context, _source_id = build_handover_email(self.db, items, store_excel=False)
         handover = context["handover"]
         handover["subject_scope"] = f"{handover['subject_scope']} (Resent)"

@@ -74,6 +74,7 @@ from app.models.project_so import (
     SOAmendment,
     SODraftFinding,
     SOLineAllocation,
+    SOLineSplit,
     SOSupplyDecision,
     SOSupplyDecisionDraft,
 )
@@ -168,6 +169,9 @@ PURGE_ORDER: List[Type] = [
     # order_inquiry_rows.supply_decision_id and so_line_allocations.decision_id both point
     # here, so the decision outlives the components it grouped by one step.
     SOSupplyDecision,
+    # so_line_splits.so_line_id CASCADEs off the line (OI-LINE-SPLIT); its own statement
+    # so the operator sees the splits counted.
+    SOLineSplit,
     ProjectSalesOrderLine,
     # RESTRICT on project_sales_orders.project_id: this MUST precede Project.
     ProjectSalesOrder,

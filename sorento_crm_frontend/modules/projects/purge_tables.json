@@ -19,6 +19,7 @@
     "projects.allocation_claims",
     "projects.so_supply_decision_drafts",
     "projects.so_supply_decisions",
+    "projects.so_line_splits",
     "projects.sales_order_lines",
     "projects.sales_orders",
     "projects.delivery_schedule_cells",

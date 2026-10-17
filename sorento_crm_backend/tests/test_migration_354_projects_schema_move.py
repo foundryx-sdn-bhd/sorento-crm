@@ -42,6 +42,9 @@ SORENTO = "00000000-0000-0000-0000-000000000001"
 # both of 354's directions leave them exactly where their own migration put them.
 BORN_AFTER_THE_MOVE = frozenset({
     "so_supply_decisions",
+    # OI-LINE-SPLIT (migration ols_0001_so_line_splits): the delivery splits staff plan for one
+    # SO line, born straight into `projects` beside `sales_order_lines`.
+    "so_line_splits",
     # PLAN-so-book-diff-replanning.md: born straight into `projects` by their own migration
     # (29d85dc3ccc3), same as `so_supply_decisions` above.
     "planning_change_batches",
@@ -82,6 +85,9 @@ BORN_AFTER_THE_MOVE = frozenset({
     # frozen Stock Debt view and its rows, born straight into `projects` (ADR-0011).
     "stock_debt_snapshots",
     "stock_debt_snapshot_rows",
+    # SR-CORE (#1718, migration sr_0001_sample_requests): born straight into `projects`.
+    "sample_requests",
+    "sample_request_lines",
 })
 
 MIGRATION = (

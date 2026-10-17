@@ -42,6 +42,7 @@ import {
   type DecideWay,
 } from '../../_shared/lib/boardAmend';
 import { matchesSuggestion } from '../../_shared/lib/fulfilmentBoard';
+import { useLineSplitOpener } from './lineSplitOpener';
 import { toMinor } from '../../_shared/lib/supplyComposition';
 import { LABELS } from '../../_shared/lib/supplyVocabulary';
 import type {
@@ -238,6 +239,16 @@ export function BoardDecideControl({
     () => contributions.filter((row) => selectedKeys.includes(row.key)),
     [contributions, selectedKeys],
   );
+  // OI-LINE-SPLIT (UAC A1): every ticked line on ONE sales order opens that order's split
+  // view, zoomed to the first ticked line.
+  const splitOpener = useLineSplitOpener();
+  const splitRow =
+    splitOpener &&
+    tickedRows.length > 0 &&
+    tickedRows.every((row) => row.sales_order_id === tickedRows[0].sales_order_id) &&
+    splitOpener.canOpen(tickedRows[0])
+      ? tickedRows[0]
+      : null;
 
   // "Borrow from another order" is offered exactly when the setting is on (BORROW-LOCATION-
   // ONLY BR1); off, every borrow is a location's.
@@ -558,6 +569,17 @@ export function BoardDecideControl({
               {entry.separatorAfter && <DropdownMenuSeparator />}
             </React.Fragment>
           ))}
+          {splitOpener ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={!splitRow}
+                onSelect={() => splitRow && splitOpener.open(splitRow)}
+              >
+                Split delivery…
+              </DropdownMenuItem>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       {!embedded && selectedKeys.length > 0 ? (

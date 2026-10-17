@@ -302,6 +302,11 @@ export function FulfilmentBoardMatrix({
                                 key={group[0].rowId}
                                 annotations={group}
                                 compact
+                                contribution={cell.contributions.find(
+                                  (row) =>
+                                    row.so_number === group[0].soNumber &&
+                                    (row.so_line_no ?? row.line_no) === group[0].lineNo,
+                                )}
                               />
                             ))}
                           </div>

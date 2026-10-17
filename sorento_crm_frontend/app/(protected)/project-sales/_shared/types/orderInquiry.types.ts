@@ -414,6 +414,20 @@ export interface OrderInquiryListEnvelope {
  * screen and the file can be read side by side.
  */
 
+/** OI-LINE-SPLIT (UAC D3): one split of a row's SO line, as the Lines tab lists it. */
+export interface OrderInquiryLineSplit {
+  id: string;
+  qty: string;
+  delivery_date: string | null;
+  is_cancel: boolean;
+  /** REMAIN / DELAY / ADVANCE / CANCEL BALANCE against the line's base date. */
+  change: string;
+  sits_on_line_id: string | null;
+  /** What the screen prints for the line it sits on; the id is addressing only. */
+  sits_on_line_no: number | null;
+  remark: string;
+}
+
 export interface OrderInquiryWorklistRow extends OrderInquiryAckFields {
   id: string;
   /** OI-BULK-RESERVE v4: the header this row belongs to; the Lines page commits per order inquiry. */
@@ -517,6 +531,11 @@ export interface OrderInquiryWorklistRow extends OrderInquiryAckFields {
    * on every row before this plan.
    */
   line_cancelled?: boolean;
+  /**
+   * OI-LINE-SPLIT (UAC D3): the splits of this row's SO line, for the Lines tab's
+   * read-only expand; empty when the line is not split.
+   */
+  splits?: OrderInquiryLineSplit[];
   /** `PLAN-oi-request-cs-reserve.md` 3.5 (AC-RS-20): `requested` while an open reserve
    * request row exists, `reserved` once CS has actually reserved something (and no open
    * request), `declined` when CS's latest answer was 0 (6e.4), else null. */

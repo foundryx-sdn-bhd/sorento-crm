@@ -191,6 +191,7 @@ from app.models.project_so import (  # noqa: F401
     SOAmendment,
     OrderInquiry,
     OrderInquiryRow,
+    SOLineSplit,
 )
 from app.models.stock_transfer import StockTransfer  # noqa: F401
 from app.models.sample_request import SampleRequest, SampleRequestLine  # noqa: F401
