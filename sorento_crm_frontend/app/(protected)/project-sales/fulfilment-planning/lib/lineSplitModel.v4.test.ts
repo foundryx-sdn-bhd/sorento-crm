@@ -262,3 +262,61 @@ describe('readsRemain (AC-A4)', () => {
     ).toBe(false);
   });
 });
+
+describe('review round 1: picking a line in the select merges like a drop (S2)', () => {
+  const lines = (): Line[] => [
+    mk('l480', 480, 417, '2026-10-20', {
+      splits: [
+        sp('a', 14, '2026-09-20', 'l480'),
+        sp('b', 236, '2026-11-20', 'l608', { remark: 'first' }),
+        sp('c', 167, '2029-11-20', null, { remark: 'second' }),
+      ],
+    }),
+    mk('l608', 608, 192, '2026-11-20'),
+  ];
+
+  it('setSitsOn onto a line that already holds a split of this line on that date gives ONE merged split', () => {
+    const next = m.setSitsOn(lines(), 'l480', 'c', 'l608');
+    const splits = by(next, 'l480').splits;
+    expect(splits).toHaveLength(2);
+    expect(splits.find((s) => s.sitsOnLineId === 'l608')).toMatchObject({
+      qty: 403,
+      deliveryDate: '2026-11-20',
+      remark: 'first; second',
+    });
+    expect(m.gapOf(by(next, 'l480'))).toBe(0);
+  });
+
+  it('does not merge when the date differs or the other split is on another line', () => {
+    const l = lines();
+    by(l, 'l480').splits[1].deliveryDate = '2026-12-01';
+    expect(by(m.setSitsOn(l, 'l480', 'c', 'l608'), 'l480').splits).toHaveLength(3);
+  });
+});
+
+describe('review round 1: New date never merges (S1)', () => {
+  it('moveSplit onto New date next to an existing empty-date split on New line keeps two splits', () => {
+    const l = mk('l480', 480, 417, '2026-10-20', {
+      splits: [
+        sp('a', 14, '2026-10-20', 'l480'),
+        sp('b', 100, null, null),
+        sp('c', 303, '2026-10-20', 'l480'),
+      ],
+    });
+    const next = m.moveSplit([l], 'l480', 'c', 303, { date: '', sitsOnLineId: null });
+    const splits = by(next, 'l480').splits;
+    expect(splits).toHaveLength(3);
+    expect(splits.map((s) => s.qty).sort((x, y) => x - y)).toEqual([14, 100, 303]);
+  });
+
+  it('placeRest onto New date next to an existing empty-date split on New line adds a separate split', () => {
+    const l = mk('l480', 480, 417, '2026-10-20', {
+      splits: [sp('a', 14, '2026-10-20', 'l480'), sp('b', 100, null, null)],
+    });
+    const next = m.placeRest([l], 'l480', { date: '', sitsOnLineId: null });
+    const splits = by(next, 'l480').splits;
+    expect(splits).toHaveLength(3);
+    expect(splits.find((s) => s.id === 'b')!.qty).toBe(100);
+    expect(splits.map((s) => s.qty).sort((x, y) => x - y)).toEqual([14, 100, 303]);
+  });
+});
