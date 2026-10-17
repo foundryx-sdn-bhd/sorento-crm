@@ -11,7 +11,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -112,12 +113,13 @@ export function PriceFloorDialog({
   const [isActive, setIsActive] = React.useState(rule?.is_active ?? true);
 
   const isEdit = Boolean(rule);
-  const numeric = Number(value);
-  const percentTooHigh = mode === 'percent' && numeric > 100;
+  const [showErrors, setShowErrors] = React.useState(false);
+  // Only the typed value is checked, on Save: a bad or empty floor shows its sentence.
+  const valueError = numberFieldError(value, { min: 0, max: mode === 'percent' ? 100 : undefined });
+  // A percent above 100 is told at once, beside the field (the Add button waits on it); an
+  // empty or negative floor is told when Add is pressed.
+  const percentTooHigh = mode === 'percent' && Number(value) > 100;
   const blocked =
-    !value.trim() ||
-    Number.isNaN(numeric) ||
-    numeric < 0 ||
     percentTooHigh ||
     (level === 'product' && !productId) ||
     (level === 'category' && !categoryId);
@@ -163,6 +165,10 @@ export function PriceFloorDialog({
         <form
           onSubmit={async (event) => {
             event.preventDefault();
+            if (valueError) {
+              setShowErrors(true);
+              return;
+            }
             await upsert.mutateAsync({
               mode,
               value: value.trim(),
@@ -294,16 +300,15 @@ export function PriceFloorDialog({
                   {mode === 'percent' ? 'Minimum percent of list' : 'Minimum price (RM)'}{' '}
                   <span className="text-destructive">*</span>
                 </Label>
-                <Input
+                <NumberInput
                   id="floor-value"
-                  type="number"
                   step="0.01"
                   min="0"
                   max={mode === 'percent' ? '100' : undefined}
                   value={value}
+                  error={showErrors && !percentTooHigh ? valueError : undefined}
                   onChange={(event) => setValue(event.target.value)}
                   placeholder={mode === 'percent' ? '70' : '150.00'}
-                  required
                 />
                 {percentTooHigh && (
                   <p className="text-xs text-destructive">

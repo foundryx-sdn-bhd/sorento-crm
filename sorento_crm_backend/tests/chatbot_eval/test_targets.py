@@ -83,8 +83,10 @@ def test_code_lookup_wrong_code_fails():
 
 
 def test_code_lookup_clarify_on_unambiguous_code_fails():
-    r = row(entities=[ent("SRTA100")], tools=[tool_for("SRTA100")], asking="which_product")
-    check(grade_turn(r, item("code_lookup", code="SRTA100", fact="inventory")), False, "clarif")
+    # asked INSTEAD of answering: asking set and no named tool call targeted the code
+    r = row(entities=[ent("SRTA100")], reply="Which SRTA100 do you mean?", asking="product_pick")
+    res = grade_turn(r, item("code_lookup", code="SRTA100", fact="inventory"))
+    assert res["passed"] is False and res["checks"]["no_clarify"] is False
 
 
 def test_code_lookup_clarify_passes_when_gold_is_ambiguous():

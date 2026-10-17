@@ -25,6 +25,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
@@ -907,17 +908,11 @@ export default function Page() {
                 <FormItem>
                   <FormLabel>Delete countdown (seconds)</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={600}
                       value={field.value}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '') return;
-                        const n = parseInt(v, 10);
-                        if (!Number.isNaN(n)) field.onChange(n);
-                      }}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormDescription>
@@ -936,17 +931,11 @@ export default function Page() {
                 <FormItem>
                   <FormLabel>Change countdown (seconds)</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={600}
                       value={field.value}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '') return;
-                        const n = parseInt(v, 10);
-                        if (!Number.isNaN(n)) field.onChange(n);
-                      }}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormDescription>
@@ -967,17 +956,11 @@ export default function Page() {
                     Auto-mark price tags collected after (days)
                   </FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={AUTO_COLLECT_DAYS_MIN}
                       max={AUTO_COLLECT_DAYS_MAX}
                       value={field.value}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '') return;
-                        const n = parseInt(v, 10);
-                        if (!Number.isNaN(n)) field.onChange(n);
-                      }}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormDescription>
@@ -996,21 +979,12 @@ export default function Page() {
                 <FormItem>
                   <FormLabel>Chatbot file link expiry (days)</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={3650}
                       placeholder="Never expires"
                       value={field.value ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '') {
-                          field.onChange(null);
-                          return;
-                        }
-                        const n = parseInt(v, 10);
-                        if (!Number.isNaN(n)) field.onChange(n);
-                      }}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormMessage />
@@ -1085,17 +1059,11 @@ export default function Page() {
                   <FormItem>
                     <FormLabel>Standard lead time (days)</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
                         min={0}
                         max={10950}
                         value={field.value}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === '') return;
-                          const n = parseInt(v, 10);
-                          if (!Number.isNaN(n)) field.onChange(n);
-                        }}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormMessage />
@@ -1110,17 +1078,11 @@ export default function Page() {
                   <FormItem>
                     <FormLabel>Takeover cooldown (seconds)</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
                         min={0}
                         max={3600}
                         value={field.value}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === '') return;
-                          const n = parseInt(v, 10);
-                          if (!Number.isNaN(n)) field.onChange(n);
-                        }}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormDescription>
@@ -1140,17 +1102,11 @@ export default function Page() {
                   <FormItem>
                     <FormLabel>Undo grace window (seconds)</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
                         min={0}
                         max={600}
                         value={field.value}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === '') return;
-                          const n = parseInt(v, 10);
-                          if (!Number.isNaN(n)) field.onChange(n);
-                        }}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormDescription>

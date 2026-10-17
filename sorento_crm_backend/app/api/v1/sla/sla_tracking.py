@@ -71,6 +71,7 @@ SOURCE_TYPE_READERS = {
     "ticket": ["tickets.tickets.view"],
     "workflow_submission": ["workflow_forms.submissions.view"],
     "price_tag_request": ["dealer_kit.price_tag_requests.view"],
+    "sample_request": ["projects.sample_requests.view"],
 }
 
 

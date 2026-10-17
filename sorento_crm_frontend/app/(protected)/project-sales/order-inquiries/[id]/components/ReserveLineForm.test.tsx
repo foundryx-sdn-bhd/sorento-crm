@@ -100,7 +100,8 @@ describe('AC-RS-85: reserve mode - title, Location prefilled, Reserved default, 
     expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('300');
     expect(screen.queryByLabelText(/reason/i)).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '400' } });
-    expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('300');
+    // NUMBER-FIELDS: what was typed stays as typed; the limit is checked on Save.
+    expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('400');
   });
 
   it('no button says Stage', () => {
@@ -158,7 +159,13 @@ describe('AC-RS-86: amend mode - Location is locked read-only text, Reserved pre
     expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('55');
     expect(screen.queryByLabelText(/reason/i)).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '90' } });
-    expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('60');
+    // NUMBER-FIELDS: kept as typed; Save is blocked with the sentence, nothing staged.
+    expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('90');
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(onStage).not.toHaveBeenCalled();
+    expect(screen.getByText('Enter a number between 0 and 60.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '60' } });
+    expect(screen.queryByText('Enter a number between 0 and 60.')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
     expect(onStage).toHaveBeenCalledWith({ qty_reserved: 60, reason: null });
   });

@@ -7,7 +7,8 @@ import { apiFetch } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SectionSkeleton } from '@/components/common/SectionSkeleton';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, type NumberFieldRules } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
@@ -18,6 +19,14 @@ interface TraceSettings {
   ai_trace_error_ttl_days: number;
   ai_trace_max_payload_bytes: number;
 }
+
+/** The form holds what was typed, so a number box may be empty until Save checks it. */
+type TraceForm = {
+  [K in keyof TraceSettings]: TraceSettings[K] extends number ? number | null : TraceSettings[K];
+};
+
+const TTL_RULES: NumberFieldRules = { min: 1, integer: true };
+const CAP_RULES: NumberFieldRules = { min: 512, integer: true };
 
 const DEFAULTS: TraceSettings = {
   ai_assistant_role_split_enabled: false,
@@ -32,7 +41,20 @@ const DEFAULTS: TraceSettings = {
  * (apiFetch maps `/api/user-management/...` straight to the FastAPI backend).
  */
 export default function TraceSettingsCard() {
-  const [form, setForm] = useState<TraceSettings>(DEFAULTS);
+  const [form, setForm] = useState<TraceForm>(DEFAULTS);
+  const [checked, setChecked] = useState(false);
+  const errors = {
+    ttl: numberFieldError(form.ai_trace_ttl_days, TTL_RULES),
+    errTtl: numberFieldError(form.ai_trace_error_ttl_days, TTL_RULES),
+    cap: numberFieldError(form.ai_trace_max_payload_bytes, CAP_RULES),
+  };
+  const save = () => {
+    if (errors.ttl || errors.errTtl || errors.cap) {
+      setChecked(true);
+      return;
+    }
+    mutation.mutate(form as TraceSettings);
+  };
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -84,11 +106,6 @@ export default function TraceSettingsCard() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const num = (v: string, fallback: number) => {
-    const n = parseInt(v, 10);
-    return Number.isFinite(n) ? n : fallback;
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -130,41 +147,32 @@ export default function TraceSettingsCard() {
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-1">
                 <Label htmlFor="ttl">Trace retention (days)</Label>
-                <Input
+                <NumberInput
                   id="ttl"
-                  type="number"
                   min={1}
                   value={form.ai_trace_ttl_days}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, ai_trace_ttl_days: num(e.target.value, 30) }))
-                  }
+                  onValueChange={(v) => setForm((f) => ({ ...f, ai_trace_ttl_days: v }))}
+                  error={checked ? errors.ttl : undefined}
                 />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="err-ttl">Error/flagged retention (days)</Label>
-                <Input
+                <NumberInput
                   id="err-ttl"
-                  type="number"
                   min={1}
                   value={form.ai_trace_error_ttl_days}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, ai_trace_error_ttl_days: num(e.target.value, 90) }))
-                  }
+                  onValueChange={(v) => setForm((f) => ({ ...f, ai_trace_error_ttl_days: v }))}
+                  error={checked ? errors.errTtl : undefined}
                 />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="cap">Payload cap (bytes)</Label>
-                <Input
+                <NumberInput
                   id="cap"
-                  type="number"
                   min={512}
                   value={form.ai_trace_max_payload_bytes}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      ai_trace_max_payload_bytes: num(e.target.value, 16384),
-                    }))
-                  }
+                  onValueChange={(v) => setForm((f) => ({ ...f, ai_trace_max_payload_bytes: v }))}
+                  error={checked ? errors.cap : undefined}
                 />
               </div>
             </div>
@@ -172,7 +180,7 @@ export default function TraceSettingsCard() {
             <div className="flex justify-end">
               <Button
                 type="button"
-                onClick={() => mutation.mutate(form)}
+                onClick={save}
                 disabled={mutation.status === 'pending'}
               >
                 {mutation.status === 'pending' ? (

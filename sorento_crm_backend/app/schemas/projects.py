@@ -10,7 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from app.services.uuid_path_param import UUID_PATTERN
 
@@ -1291,6 +1291,14 @@ class ProjectQuotationLineUpdate(BaseModel):
     band_label: Optional[str] = Field(None, max_length=150)
     is_rate_only: Optional[bool] = None
 
+    @field_validator("quantity")
+    @classmethod
+    def _quantity_not_null(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        # Runs only when the key is sent: an explicit null would be read as 1 downstream.
+        if v is None:
+            raise ValueError("Quantity cannot be blank.")
+        return v
+
 
 class ProjectQuotationLineBulkItem(ProjectQuotationLineBase):
     """One line in a whole-set save (S10).
@@ -1613,6 +1621,14 @@ class ProjectPurchaseOrderLineUpdate(BaseModel):
     uom: Optional[str] = None
     sort_order: Optional[int] = None
     notes: Optional[str] = None
+
+    @field_validator("quantity")
+    @classmethod
+    def _quantity_not_null(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        # Runs only when the key is sent: an explicit null would be read as 1 downstream.
+        if v is None:
+            raise ValueError("Quantity cannot be blank.")
+        return v
 
 
 class ProjectPurchaseOrderLineWrite(ProjectPurchaseOrderLineBase):

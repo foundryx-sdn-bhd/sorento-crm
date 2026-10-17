@@ -57,7 +57,21 @@ describe('DeadStockSettings', () => {
     await openPopover();
     fireEvent.change(screen.getByLabelText('Dead-stock threshold in days'), { target: { value: '0' } });
     expect(screen.getByText(/between 1 and 3650/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Save dead stock window$/i })).toBeDisabled();
+    // NUMBER-FIELDS: Save stays enabled; pressing it sends nothing and the sentence stays.
+    const saveButton = screen.getByRole('button', { name: /^Save dead stock window$/i });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(screen.getByText(/between 1 and 3650/i)).toBeInTheDocument();
+  });
+
+  it('a blank threshold keeps Save enabled and says why on press', async () => {
+    render(<DeadStockSettings />);
+    await openPopover();
+    fireEvent.change(screen.getByLabelText('Dead-stock threshold in days'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Save dead stock window$/i }));
+    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(screen.getByText(/^Enter a whole number between 1 and 3650/)).toBeInTheDocument();
   });
 
   it('saves a valid new value', async () => {

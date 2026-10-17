@@ -23,6 +23,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { format } from 'date-fns';
 import {
@@ -348,23 +349,15 @@ export default function StockInquiryForm({
               render={({ field }) => (
                 <FormItem className="space-y-1">
                   <FormControl>
-                    <Input
+                    <NumberInput
                       className="h-9"
-                      type="number"
                       min={0}
                       step="any"
                       inputMode="decimal"
                       placeholder="Quantity"
                       {...field}
                       value={field.value ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '' || Number(v) < 0) {
-                          field.onChange(v === '' ? '' : '0');
-                          return;
-                        }
-                        field.onChange(v);
-                      }}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormMessage />

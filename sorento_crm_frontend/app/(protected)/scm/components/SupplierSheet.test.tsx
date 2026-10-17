@@ -152,4 +152,20 @@ describe('SupplierSheet', () => {
     expect(qtyInput.value).toBe('99');
     expect(remarkInput.value).toBe('from the plan table');
   });
+
+  it('NUMBER-FIELDS: a cleared quantity stays blank with a sentence and is not passed on as 0', () => {
+    const onQtyChange = vi.fn();
+    render(<SupplierSheet sheet={sheetWith()} editable onQtyChange={onQtyChange} onRemarkChange={vi.fn()} />);
+
+    const [qtyInput] = screen.getAllByLabelText('Qty to load') as HTMLInputElement[];
+    fireEvent.change(qtyInput, { target: { value: '' } });
+
+    expect(qtyInput.value).toBe('');
+    expect(screen.queryByText(/^Enter a number/)).not.toBeInTheDocument();
+    fireEvent.blur(qtyInput);
+    expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
+    expect(onQtyChange).not.toHaveBeenCalled();
+    fireEvent.change(qtyInput, { target: { value: '12' } });
+    expect(onQtyChange).toHaveBeenCalledWith('row-a', 12);
+  });
 });

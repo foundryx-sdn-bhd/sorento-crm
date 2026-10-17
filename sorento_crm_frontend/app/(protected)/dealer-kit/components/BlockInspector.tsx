@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -302,24 +303,22 @@ export function BlockInspector({
                   <Label className="text-xs capitalize" htmlFor={`dk-cols-${breakpoint}`}>
                     {breakpoint}
                   </Label>
-                  <Input
-                    id={`dk-cols-${breakpoint}`}
-                    className="w-20"
-                    type="number"
-                    min={1}
-                    max={8}
-                    value={props.columns[breakpoint]}
-                    aria-label={`Tiles across on ${breakpoint}`}
-                    onChange={(event) =>
-                      onChangeProps({
-                        ...props,
-                        columns: {
-                          ...props.columns,
-                          [breakpoint]: Math.max(1, Number(event.target.value) || 1),
-                        },
-                      })
-                    }
-                  />
+                  <div className="w-20">
+                    <LiveNumberInput
+                      id={`dk-cols-${breakpoint}`}
+                      min={1}
+                      max={8}
+                      rules={{ min: 1, max: 8, integer: true }}
+                      value={props.columns[breakpoint]}
+                      aria-label={`Tiles across on ${breakpoint}`}
+                      onCommit={(columns) =>
+                        onChangeProps({
+                          ...props,
+                          columns: { ...props.columns, [breakpoint]: columns },
+                        })
+                      }
+                    />
+                  </div>
                 </div>
               ))}
             </div>

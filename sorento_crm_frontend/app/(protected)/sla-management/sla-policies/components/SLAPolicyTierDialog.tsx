@@ -22,6 +22,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { useCreateSLAPolicyTier, useUpdateSLAPolicyTier } from '../hooks/useSLAPolicies';
 import { SLAPolicyTierSchema, type SLAPolicyTierFormInputType } from '../forms/sla-policy-schema';
 import type { SLAPolicyTier } from '../types/slaPolicy.types';
@@ -31,15 +33,6 @@ interface SLAPolicyTierDialogProps {
   onOpenChange: (open: boolean) => void;
   policyId: string;
   tier?: SLAPolicyTier | null;
-}
-
-/** Keep only digits and a single decimal point as the user types. */
-function sanitizeDecimal(raw: string): string {
-  const cleaned = raw.replace(/[^0-9.]/g, '');
-  const firstDot = cleaned.indexOf('.');
-  if (firstDot === -1) return cleaned;
-  // collapse any dots after the first
-  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
 }
 
 export default function SLAPolicyTierDialog({
@@ -55,6 +48,11 @@ export default function SLAPolicyTierDialog({
   const [tierLevelStr, setTierLevelStr] = useState('');
   const [responseHoursStr, setResponseHoursStr] = useState('');
   const [resolutionHoursStr, setResolutionHoursStr] = useState('');
+  // Set by a Save that found a wrong number; the sentences then follow the typing.
+  const [numbersChecked, setNumbersChecked] = useState(false);
+  const tierLevelError = numberFieldError(tierLevelStr, { min: 1, integer: true });
+  const responseHoursError = numberFieldError(responseHoursStr, { min: 0.01 });
+  const resolutionHoursError = numberFieldError(resolutionHoursStr, { min: 0.01 });
 
   // What the dialog opens on, fed through `values` rather than a reset scheduled
   // in an effect (S7-03). Both branches are the ones the effect had: the tier
@@ -90,6 +88,7 @@ export default function SLAPolicyTierDialog({
   // not coerced, so they still have to be seeded when the dialog opens - and
   // cleared when it closes, or reopening on a different tier shows the last one.
   useEffect(() => {
+    setNumbersChecked(false);
     if (!open) {
       setTierLevelStr('');
       setResponseHoursStr('');
@@ -104,11 +103,14 @@ export default function SLAPolicyTierDialog({
   }, [open, tier, isEditMode]);
 
   const onSubmit = async (data: SLAPolicyTierFormInputType) => {
-    // Use local number strings so values are correct; allow empty -> 1
-    const tierLevel = Math.max(1, parseInt(tierLevelStr, 10) || 1);
-    // Decimals allowed (0.5 = 30 min); floor at a small positive value.
-    const responseHours = Math.max(0.01, parseFloat(responseHoursStr) || 0.01);
-    const resolutionHours = Math.max(0.01, parseFloat(resolutionHoursStr) || 0.01);
+    if (tierLevelError || responseHoursError || resolutionHoursError) {
+      setNumbersChecked(true);
+      return;
+    }
+    // The typed strings are the values; decimals allowed (0.5 = 30 min).
+    const tierLevel = Number(tierLevelStr);
+    const responseHours = Number(responseHoursStr);
+    const resolutionHours = Number(resolutionHoursStr);
     try {
       if (isEditMode && tier) {
         await updateMutation.mutateAsync({
@@ -163,13 +165,15 @@ export default function SLAPolicyTierDialog({
                 <FormItem>
                   <FormLabel>Tier Level *</FormLabel>
                   <FormControl>
-                    <Input
-                      type="text"
+                    <NumberInput
                       inputMode="numeric"
+                      min={1}
+                      step={1}
                       placeholder="1"
                       {...field}
                       value={tierLevelStr}
-                      onChange={(e) => setTierLevelStr(e.target.value.replace(/\D/g, ''))}
+                      onChange={(e) => setTierLevelStr(e.target.value)}
+                      error={numbersChecked ? tierLevelError : undefined}
                     />
                   </FormControl>
                   <p className="text-xs text-muted-foreground">Escalation order (1 = first tier).</p>
@@ -202,13 +206,15 @@ export default function SLAPolicyTierDialog({
                 <FormItem>
                   <FormLabel>Response Hours *</FormLabel>
                   <FormControl>
-                    <Input
-                      type="text"
+                    <NumberInput
                       inputMode="decimal"
+                      min={0.01}
+                      step="any"
                       placeholder="e.g. 0.5, 24 or 72"
                       {...field}
                       value={responseHoursStr}
-                      onChange={(e) => setResponseHoursStr(sanitizeDecimal(e.target.value))}
+                      onChange={(e) => setResponseHoursStr(e.target.value)}
+                      error={numbersChecked ? responseHoursError : undefined}
                     />
                   </FormControl>
                   <p className="text-xs text-muted-foreground">Hours to respond. Decimals allowed (0.5 = 30 minutes).</p>
@@ -224,13 +230,15 @@ export default function SLAPolicyTierDialog({
                 <FormItem>
                   <FormLabel>Resolution Hours *</FormLabel>
                   <FormControl>
-                    <Input
-                      type="text"
+                    <NumberInput
                       inputMode="decimal"
+                      min={0.01}
+                      step="any"
                       placeholder="e.g. 0.5, 24 or 72"
                       {...field}
                       value={resolutionHoursStr}
-                      onChange={(e) => setResolutionHoursStr(sanitizeDecimal(e.target.value))}
+                      onChange={(e) => setResolutionHoursStr(e.target.value)}
+                      error={numbersChecked ? resolutionHoursError : undefined}
                     />
                   </FormControl>
                   <p className="text-xs text-muted-foreground">Hours to resolve (KPI for resolution time). Decimals allowed (0.5 = 30 minutes).</p>

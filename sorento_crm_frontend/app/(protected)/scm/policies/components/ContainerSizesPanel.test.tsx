@@ -8,14 +8,15 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const getContainerSizes = vi.fn();
+const createContainerSize = vi.fn();
 
 vi.mock('../../services/fulfilmentService', () => ({
   getContainerSizes: (...a: unknown[]) => getContainerSizes(...a),
-  createContainerSize: vi.fn(),
+  createContainerSize: (...a: unknown[]) => createContainerSize(...a),
   updateContainerSize: vi.fn(),
   deleteContainerSize: vi.fn(),
 }));
@@ -66,5 +67,19 @@ describe('ContainerSizesPanel', () => {
     renderPanel();
 
     expect(await screen.findByText('No container size configured.')).toBeInTheDocument();
+  });
+
+  it('a blank volume keeps Save enabled, names the gap on press and sends nothing', async () => {
+    getContainerSizes.mockResolvedValue([]);
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: /add size/i }));
+    fireEvent.change(await screen.findByLabelText('Code'), { target: { value: '40HQ' } });
+
+    const save = screen.getByRole('button', { name: /^save container size$/i });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    expect(await screen.findByText(/^Enter a number/)).toBeInTheDocument();
+    expect(createContainerSize).not.toHaveBeenCalled();
   });
 });

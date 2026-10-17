@@ -249,20 +249,20 @@ export interface PackingListFormData {
     carton_number?: string;
     cartons_count?: number;
     weight_per_carton?: number;
-    unit_cost?: number;
+    unit_cost?: number | null;
     /** Round-tripped on save, or the PUT hands the backend a price with no unit. */
     currency?: string;
     /** Read off the supplier's file, corrected here. Centimetres; weights per carton. */
     material?: string;
-    pcs_per_carton?: number;
-    carton_length_cm?: number;
-    carton_width_cm?: number;
-    carton_height_cm?: number;
-    net_weight_per_carton?: number;
-    gross_weight_per_carton?: number;
+    pcs_per_carton?: number | null;
+    carton_length_cm?: number | null;
+    carton_width_cm?: number | null;
+    carton_height_cm?: number | null;
+    net_weight_per_carton?: number | null;
+    gross_weight_per_carton?: number | null;
     /** Volume, editable in place on the Lines tab since F9 - the column has existed on the
      *  line since S3b and only the importer could ever fill it. */
-    cbm?: number;
+    cbm?: number | null;
     /** Absent = unchanged, `null` = clear it - the same absent-vs-null rule the header
      *  fields above use, so a blanked Remarks/Description on save actually clears. */
     remarks?: string | null;

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Number fields (mockup v1)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme) */
+:root{--background:#fff;--foreground:#09090b;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--primary:#3b82f6;--destructive:#dc2626;--radius:8px;--page:#f7f7f8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+.doc{max-width:1400px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:0 0 4px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 16px;max-width:900px}
+section{margin:0 0 34px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:860px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:var(--foreground);color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
+.dlg{width:720px;max-width:100%;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+.phone .dlg{width:343px}
+.phone{width:375px;flex:none;background:var(--page);border:1px solid var(--border);border-radius:16px;padding:16px 16px 20px}
+.dh{display:flex;justify-content:space-between;align-items:center;padding:16px 20px 10px;font-size:17px;font-weight:600}
+.dh .x{color:var(--muted-fg);font-weight:400}
+.db{padding:0 20px 16px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:600px}
+th,td{border-bottom:1px solid var(--border);padding:8px;text-align:left;white-space:nowrap;vertical-align:top}
+th{font-size:12px;color:var(--muted-fg);font-weight:500}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.inp{display:block;width:96px;height:32px;border:1px solid var(--input);border-radius:6px;padding:0 8px;font-size:13px;line-height:30px;background:#fff;font-variant-numeric:tabular-nums}
+.inp.focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+.inp.bad{border-color:rgba(220,38,38,.6);box-shadow:0 0 0 3px rgba(220,38,38,.1)}
+.caret{display:inline-block;width:1px;height:14px;background:var(--foreground);vertical-align:-2px}
+.msg{margin-top:4px;font-size:12px;color:var(--destructive);white-space:normal;max-width:140px}
+.sel{display:inline-flex;align-items:center;justify-content:space-between;width:150px;height:32px;border:1px solid var(--input);border-radius:6px;padding:0 8px;font-size:13px}
+.lbl{font-size:13px;font-weight:500;margin:12px 0 6px}
+.ta{border:1px solid var(--input);border-radius:6px;min-height:52px}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:14px;flex-wrap:wrap;gap:8px}
+.chk{font-size:13px;display:flex;align-items:center;gap:6px}
+.cb{display:inline-block;width:14px;height:14px;border-radius:3px;background:var(--primary)}
+.btn{display:inline-flex;align-items:center;height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:13px;font-weight:500}
+.btn.pri{background:var(--primary);color:#fff;border-color:var(--primary)}
+.state{font-size:12px;color:var(--muted-fg);margin:6px 0 0}
+.map{font-size:13px;max-width:900px}
+.map td{white-space:normal}
+code{font-size:12px;background:var(--muted);padding:1px 4px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Number fields: clear while typing, check only the final value</h1>
+<p class="intro">Real case from the dev copy: Order inquiry OI-2610-0057, line CB6638, delivery 15/12/2026, Remaining 212 (screenshot from the owner, 17 Oct). Today the Requested field snaps back to 1 when cleared. The same behaviour applies to every number field in the app; this dialog is the example.</p>
+
+<section>
+<h2><span class="nb">1</span>While typing: the field can be empty</h2>
+<p class="why">The salesperson deletes the 1. The field stays empty: no 0, no 1, no red outline yet. They type 2 and see 2.</p>
+<div class="row">
+ <div class="dlg">
+  <div class="dh">Request CS to reserve <span class="x">&#x2715;</span></div>
+  <div class="db"><div class="scroll"><table>
+   <tr><th>Product</th><th>Delivery date</th><th class="num">Remaining</th><th>Requested</th><th>Location</th></tr>
+   <tr><td>CB6638</td><td>15/12/2026</td><td class="num">212</td><td><span class="inp focus"><span class="caret"></span></span></td><td><span class="sel">BRW available 3594 <span>&#x2304;</span></span></td></tr>
+  </table></div>
+  <div class="lbl">Note (optional)</div><div class="ta"></div>
+  <div class="foot"><span class="chk"><span class="cb"></span>Park this first</span><span><span class="btn">Cancel</span> <span class="btn pri">Park request</span></span></div>
+  </div>
+ </div>
+</div>
+</section>
+
+<section>
+<h2><span class="nb">2</span>Confirm with the field empty: blocked, message under the field</h2>
+<p class="why">Park request is clicked with Requested empty. Nothing is sent; the dialog stays open with everything typed so far. The field gets the red outline and its message. The message goes away as soon as a valid number is typed.</p>
+<div class="row">
+ <div class="dlg">
+  <div class="dh">Request CS to reserve <span class="x">&#x2715;</span></div>
+  <div class="db"><div class="scroll"><table>
+   <tr><th>Product</th><th>Delivery date</th><th class="num">Remaining</th><th>Requested</th><th>Location</th></tr>
+   <tr><td>CB6638</td><td>15/12/2026</td><td class="num">212</td><td><span class="inp bad"></span><div class="msg">Enter a whole number between 1 and 212.</div></td><td><span class="sel">BRW available 3594 <span>&#x2304;</span></span></td></tr>
+  </table></div>
+  <div class="lbl">Note (optional)</div><div class="ta"></div>
+  <div class="foot"><span class="chk"><span class="cb"></span>Park this first</span><span><span class="btn">Cancel</span> <span class="btn pri">Park request</span></span></div>
+  </div>
+ </div>
+ <div class="phone">
+  <div class="dlg">
+   <div class="dh">Request CS to reserve <span class="x">&#x2715;</span></div>
+   <div class="db"><div class="scroll"><table>
+    <tr><th>Product</th><th>Delivery date</th><th class="num">Remaining</th><th>Requested</th><th>Location</th></tr>
+    <tr><td>CB6638</td><td>15/12/2026</td><td class="num">212</td><td><span class="inp bad"></span><div class="msg">Enter a whole number between 1 and 212.</div></td><td><span class="sel">BRW available 3594</span></td></tr>
+   </table></div>
+   <p class="state">375px: the grid scrolls sideways inside the dialog, as today.</p>
+   <div class="foot"><span class="chk"><span class="cb"></span>Park this first</span><span><span class="btn">Cancel</span> <span class="btn pri">Park request</span></span></div>
+   </div>
+  </div>
+ </div>
+</div>
+</section>
+
+<section>
+<h2><span class="nb">3</span>Over the limit: the typed number stays, the message names the limit</h2>
+<p class="why">300 is typed while 212 remain. The field keeps 300 (today it is cut to 212 on the keystroke). On confirm: nothing sent, the same one-sentence message names the whole rule. Empty, 0, 300 and 2.5 all get that one sentence, so the reader always sees what is allowed.</p>
+<div class="row">
+ <div class="dlg">
+  <div class="dh">Request CS to reserve <span class="x">&#x2715;</span></div>
+  <div class="db"><div class="scroll"><table>
+   <tr><th>Product</th><th>Delivery date</th><th class="num">Remaining</th><th>Requested</th><th>Location</th></tr>
+   <tr><td>CB6638</td><td>15/12/2026</td><td class="num">212</td><td><span class="inp bad">300</span><div class="msg">Enter a whole number between 1 and 212.</div></td><td><span class="sel">BRW available 3594 <span>&#x2304;</span></span></td></tr>
+  </table></div>
+  <div class="lbl">Note (optional)</div><div class="ta"></div>
+  <div class="foot"><span class="chk"><span class="cb"></span>Park this first</span><span><span class="btn">Cancel</span> <span class="btn pri">Park request</span></span></div>
+  </div>
+ </div>
+</div>
+</section>
+
+<section>
+<h2>What each element reuses</h2>
+<table class="map">
+ <tr><th>Element</th><th>Reuses</th></tr>
+ <tr><td>Dialog, grid, Location select, Note, Park checkbox, buttons</td><td>Unchanged: <code>app/(protected)/project-sales/_shared/components/RequestReserveDialog.tsx</code> (Dialog, DataGrid, SearchableSelect, Textarea, Checkbox, Button)</td></tr>
+ <tr><td>Number field</td><td><code>components/ui/input.tsx</code> <code>Input type="number"</code> wrapped by one new shared number field (keeps the typed text, hands the screen a number or "no value")</td></tr>
+ <tr><td>Red outline</td><td>Existing <code>aria-invalid</code> styles already in <code>components/ui/input.tsx</code> (inputVariants)</td></tr>
+ <tr><td>Message under the field</td><td>Same text style as <code>FormMessage</code> in <code>components/ui/form.tsx:130</code> (<code>text-xs text-destructive</code>)</td></tr>
+ <tr><td>Message wording</td><td>One sentence per field, the family <code>lib/whole-number-range.ts</code> already uses on the chatbot media settings: "Enter a whole number between 1 and 212." / "Enter a number between 0 and 100." / "Enter a number of at least 0." / "Enter a number." Optional fields add ", or leave it blank."</td></tr>
+</table>
+</section>
+</div>
+</body>
+</html>

@@ -70,12 +70,14 @@ vi.mock('@/components/common/DetailActionsMenu', () => ({
 
 import {
   createSampleRequest,
+  updateSampleRequest,
   getSampleRequest,
   lookupSampleRequestCustomers,
   searchSampleRequestProducts,
   submitSampleRequest,
 } from '../lib/sample-request-service';
 import { lookupDebtors } from '../lib/portal-client';
+import { typeBadInput } from '@/test-utils/badInput';
 import SampleRequestForm from './SampleRequestForm';
 
 const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>;
@@ -397,5 +399,109 @@ describe('read-only view of an existing request', () => {
     });
     renderForm({ requestId: 'sr-2' });
     expect(await screen.findByText('Created 16/10/2026')).toBeTruthy();
+  });
+});
+
+describe('number fields: a blank line Quantity is refused, never defaulted to 1', () => {
+  it('shows the sentence under Quantity, sends nothing, and clears it once 3 is typed', async () => {
+    renderForm();
+    await screen.findByText(TITLE);
+    const customer = screen.getByLabelText(/^Customer Name/);
+    fireEvent.focus(customer);
+    fireEvent.change(customer, { target: { value: 'Walk-in Trading' } });
+    fireEvent.blur(customer);
+    await new Promise((r) => setTimeout(r, 250));
+    fireEvent.change(screen.getByLabelText(/^Project Title/), { target: { value: 'Tower A' } });
+    fireEvent.change(screen.getByLabelText(/^Request Delivery Date/), { target: { value: '2026-12-01' } });
+    fireEvent.change(screen.getByLabelText(/^Ship To/), { target: { value: 'Site store' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Deliver-Van' }));
+    const row = ensureRow();
+    searchProduct(row, 'tpe9101');
+    fireEvent.click(await screen.findByRole('option', { name: /TPE-9101/ }));
+
+    const qty = within(row).getByLabelText('Quantity') as HTMLInputElement;
+    fireEvent.change(qty, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /^submit sample request$/i }));
+
+    expect(await screen.findByText('Enter a whole number of at least 1.')).toBeTruthy();
+    expect(createSampleRequest).not.toHaveBeenCalled();
+    expect(submitSampleRequest).not.toHaveBeenCalled();
+
+    fireEvent.change(qty, { target: { value: '3' } });
+    await waitFor(() => expect(screen.queryByText('Enter a whole number of at least 1.')).toBeNull());
+  });
+});
+
+describe('number fields round 9: Save as draft refuses a bad quantity or loan period like Submit', () => {
+  const SENTENCE = 'Enter a whole number of at least 1.';
+  async function pickProduct() {
+    const row = ensureRow();
+    searchProduct(row, 'tpe9101');
+    fireEvent.click(await screen.findByRole('option', { name: /TPE-9101/ }));
+    return row;
+  }
+  const draft = () => fireEvent.click(screen.getByRole('button', { name: /^save as draft$/i }));
+  const nothingSent = () => {
+    expect(createSampleRequest).not.toHaveBeenCalled();
+    expect(updateSampleRequest).not.toHaveBeenCalled();
+  };
+
+  it('a blank Quantity sends nothing and shows the sentence', async () => {
+    renderForm();
+    await screen.findByText(TITLE);
+    const row = await pickProduct();
+    fireEvent.change(within(row).getByLabelText('Quantity'), { target: { value: '' } });
+    draft();
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
+  });
+
+  it('a Quantity of 0 sends nothing and shows the sentence', async () => {
+    renderForm();
+    await screen.findByText(TITLE);
+    const row = await pickProduct();
+    fireEvent.change(within(row).getByLabelText('Quantity'), { target: { value: '0' } });
+    draft();
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
+  });
+
+  it('a bad-input Quantity sends nothing and shows the sentence', async () => {
+    renderForm();
+    await screen.findByText(TITLE);
+    const row = await pickProduct();
+    typeBadInput(within(row).getByLabelText('Quantity'));
+    draft();
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
+  });
+
+  it('a blank Loan Period sends nothing and shows the sentence', async () => {
+    renderForm();
+    await screen.findByText(TITLE);
+    await pickProduct();
+    fireEvent.change(screen.getByLabelText('Loan Period'), { target: { value: '' } });
+    draft();
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
+  });
+
+  it('a bad-input Loan Period sends nothing and shows the sentence', async () => {
+    renderForm();
+    await screen.findByText(TITLE);
+    await pickProduct();
+    typeBadInput(screen.getByLabelText('Loan Period'));
+    draft();
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
+  });
+
+  it('S1 guard: a refused Submit with a blank Loan Period shows the sentence under the box', async () => {
+    renderForm();
+    await screen.findByText(TITLE);
+    fireEvent.change(screen.getByLabelText('Loan Period'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /^submit sample request$/i }));
+    expect(await screen.findByText(SENTENCE)).toBeTruthy();
+    nothingSent();
   });
 });

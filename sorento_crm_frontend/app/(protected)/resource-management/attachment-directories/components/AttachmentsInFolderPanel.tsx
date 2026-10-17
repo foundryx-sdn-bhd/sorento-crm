@@ -31,7 +31,7 @@ import {
   Building2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
+import { Card, CardContent, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridListToolbar, type ToolbarAction } from '@/components/ui/data-grid-list-toolbar';
@@ -40,11 +40,12 @@ import { DataGridTableRowSelect, DataGridTableRowSelectAll } from '@/components/
 import DriveListView from './DriveListView';
 import DriveGridView from './DriveGridView';
 import DriveBreadcrumb from './DriveBreadcrumb';
+import { useOnFolderChange } from './useFolderUrl';
 import DriveRowActions from './DriveRowActions';
 import AccessLevelsCell from './AccessLevelsCell';
 import MoveToDialog, { type MoveSelection } from './MoveToDialog';
 import { buildDriveBulkActions } from './driveBulkActions';
-import { buildBreadcrumb } from './drivePath';
+import { buildBreadcrumb, isFolderUnavailable } from './drivePath';
 import { useDriveViewMode } from './useDriveViewMode';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -185,7 +186,7 @@ export default function AttachmentsInFolderPanel({
   });
   const attachmentTypes = attachmentTypesData?.data ?? [];
   const { data: accessTypes = [] } = useContactAccessTypes();
-  const { data: tree = [] } = useDirectoryTree();
+  const { data: tree = [], isSuccess: treeLoaded, isFetching: treeFetching } = useDirectoryTree();
 
   const { grants: companyGrants } = useCompany();
   const extraFilterCount =
@@ -424,16 +425,26 @@ export default function AttachmentsInFolderPanel({
   const clearSelection = useCallback(() => setRowSelection({}), []);
 
   // ---- Drill / open --------------------------------------------------------
+  // Changing folder clears the active search (B7), resets paging and the selection.
+  const resetFolderView = useCallback(() => {
+    resetSearchQuery('');
+    setThisFolderOnly(false);
+    setPagination((p) => ({ ...p, pageIndex: 0 }));
+    clearSelection();
+  }, [resetSearchQuery, clearSelection]);
+  // Runs for every folder change, whatever caused it: a click here, the tree, browser
+  // Back / Forward, a pasted link (FILES-URL-NAV AC-9).
+  useOnFolderChange(directoryId, resetFolderView);
+
   const navigateToFolder = useCallback(
     (folderId: string | null) => {
-      // Drilling into a folder clears the active search (B7) and resets paging.
-      resetSearchQuery('');
-      setThisFolderOnly(false);
-      setPagination((p) => ({ ...p, pageIndex: 0 }));
-      clearSelection();
+      // A real change resets through useOnFolderChange once the URL lands. Reset here only
+      // when nothing will change (the open folder's own crumb, or the Trash page, which has
+      // no folder URL), so the OLD folder is never refetched unfiltered in between.
+      if (!onSelectFolder || (folderId ?? null) === (directoryId ?? null)) resetFolderView();
       onSelectFolder?.(folderId);
     },
-    [onSelectFolder, clearSelection]
+    [onSelectFolder, directoryId, resetFolderView]
   );
 
   const openItem = useCallback(
@@ -790,6 +801,16 @@ export default function AttachmentsInFolderPanel({
     );
   };
 
+  // "Folder not available" verdict, taken only from a SETTLED tree: a refetch after a create
+  // or move may not hold a just-opened folder yet. Held through later refetches (window
+  // focus, invalidations) so a real unavailable folder does not blink back to an empty grid.
+  const [unavailableId, setUnavailableId] = useState<string | null>(null);
+  if (treeLoaded && !treeFetching) {
+    const verdict = isFolderUnavailable(tree, true, effectiveDirectoryId) ? effectiveDirectoryId : null;
+    if (verdict !== unavailableId) setUnavailableId(verdict);
+  }
+  const folderUnavailable = effectiveDirectoryId != null && unavailableId === effectiveDirectoryId;
+
   const crumbs = useMemo(
     () => buildBreadcrumb(tree, isTrashView ? null : effectiveDirectoryId),
     [tree, effectiveDirectoryId, isTrashView]
@@ -983,6 +1004,39 @@ export default function AttachmentsInFolderPanel({
       openFolderDelete,
     ]
   );
+
+  // A folder URL the loaded tree does not hold (deleted, in Trash, outside the viewer's
+  // companies, mistyped). The drive listing would answer with an empty 200, so say so
+  // instead of showing a silent empty folder; the breadcrumb's Home goes back (AC-6).
+  if (folderUnavailable) {
+    return (
+      <Card data-testid="folder-unavailable">
+        <CardHeader className="block">
+          <div className="flex flex-wrap items-center gap-2">
+            {isMobile && onToggleTreeDrawer && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onToggleTreeDrawer}
+                aria-label="Show folders"
+              >
+                <FolderOpen className="size-4" />
+              </Button>
+            )}
+            <div className="min-w-0 flex-1">
+              <DriveBreadcrumb crumbs={crumbs} onNavigate={navigateToFolder} droppable={false} />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="py-10">
+          <h3 className="text-base font-medium">Folder not available</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            It may have been deleted, moved to Trash, or you do not have access.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <>
