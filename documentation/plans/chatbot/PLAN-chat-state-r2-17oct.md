@@ -114,3 +114,38 @@ Main baseline for reuse: scratchpad evalrun3/s_main1.jsonl (crew-note on #1772).
   the 3 fix files reverted 16 failed / 6 passed, restored 22 passed. L1 replay vs ba6c344e9e: 0/1506 + 0/585.
   PR gate red on ba6c344e (run 39052575920) was exactly these 16 red tests; ci re-run 39053431961 on dbc0557644.
 - R3-B: red 85b1cba598 (37 failed / 10 guards pass).
+- R3-A review (reviewer NOT READY on dbc0557644: B1 the `[]` branch carried `shared` onto family codes; S1 a vacuous
+  test; S2 card R8; N1, N3): red bcc4319fc3 (B1 3 failed), fix c271f536af, card d20a506e39; kill-proof B1 reverted
+  3 failed, restored 74 passed (r3a + r3b). Reviewer re-check: READY.
+- R3-B fix 8c38347f1d; kill-proof reverted 37 failed. Reviewer: NOT READY: `escalate_offered` does not mean "the last
+  reply offered a hand-over": did-you-mean rosters carry it from the ask (answer_bridge.py:1303,1345; compose.py:499),
+  and it survives a later pick that finds stock (pending.py:147-160, apply.py:940), so the view showed an offer the
+  reply never made (card R13) and hid a fresh roster's owed pick. **Crew ruling 18 Oct (a):** stamp the turn the
+  hand-over offer was made (answer_bridge.py:2133-2139, compose.py:906-916); the State shows the offer only when it was
+  made on the last reply and the roster was answered; no change to what "yes" does (crew logs for the owner that a
+  "yes" after a later stock hit still hands over on main, turn_runtime.py:1226-1238).
+- PR gate red on 8b1d6047 (run 39054912036) = exactly the 37 R3-B red tests; pushed d20a506e39, ci run 39056082640.
+- L1 replay gate (d20a506e39 vs 8b1d604705): grounding 0/1506; turn tier first run 2 "grounded" rows in cand-0161,
+  not reproducible (10 replays per row match on every field; those 14 Oct parses carry no state_changes, so no r3 code
+  runs on them; replay.py:818-828 names a row "grounded" when one arm errored); turn tier re-run 0/585. CI green on
+  d20a506e39. R3-B review red 00209278af (7 failed: 4 fresh rosters, 3 stale-flag seam cases; 48 pass).
+- R3-B fix 1d30ec6732 (offered_at_turn stamp, answer_bridge.py ~2139 / compose.py ~917; view gate chat_state.py
+  ~194-210): 7 red green, kill reverted 7 failed; gate vs d20a506e39 0/1506 + 0/585. Reviewer: code right, NOT READY
+  on tests (no positive next-turn test; S1 trace after-view at the offer turn's number; S2 dead fallback).
+- Red f907faaae4 (S1 2 failed; positive seam tests both stamp paths; fixtures carry offered_at_turn); fix b59bb0ce02
+  (after-view at turn_no + 1; fallback dropped): 386 passed; S1 kill reverted 2 failed. Reviewer re-check: READY
+  (drop compose stamp 2 red, drop answer_bridge stamp 4 red, == to <= 3 red, revert S1 2 red); guard a7d38a0aa7 for
+  a stamped roster never picked from (the one surviving mutation). Nit kept: the stamp is also stored on main-arm
+  rosters (read by nothing; gating it would add code for no behaviour).
+- Gate vs d20a506e39: grounding 0/1506; turn tier 1 "grounded" row cand-0102 (a first ask, no state_changes, no r3
+  code reachable; 10 replays per arm match); a re-run with the temp output kept: 0/585. The L1 gate's turn tier shows
+  intermittent "grounded" rows (3 rows over 2 runs, none reproducible); the patched gate copy now prints each arm's
+  row shape on the next one.
+
+### R4 (crew via CHAT-CODE-LOOKUP, 18 Oct): no slice
+On main + v63 the parser never sees `Current subject:` (vocabulary line over the 350 L2 cap, context.py:29; only the
+subject shrinks, context.py:437-443; train2 s_main1 108/108, cp0 r2main 86/86). With the state section on, `_render_l2`
+returns the vocabulary line + the State block uncut (context.py:394-396; engine.py:4568-4570): all 617 held-focus lane
+rows carry the State subject line, which holds every L2 subject field and more. Crew 18 Oct (a): no R4 slice here; the
+subject reaches main when the state section's prompt version is labelled after the owner's hand test; crew raises the
+main-side L2 budget fix with the owner as its own lane.
