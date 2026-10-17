@@ -115,3 +115,23 @@ describe('DirectoryTreeSidebar delete navigation (AC-8)', () => {
     expect(replaceCalls(onSelect)).toEqual([]);
   });
 });
+
+describe('DirectoryTreeSidebar scrolls the open folder into view (crew audit 1)', () => {
+  it('a reload into a deep folder scrolls its tree row into view', () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    renderSidebar('q1');
+    const row = screen.getAllByText('Q1')[0];
+    expect(scroll).toHaveBeenCalled();
+    const scrolled = scroll.mock.contexts as Element[];
+    expect(scrolled.some((el) => el.contains(row))).toBe(true);
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
+  });
+
+  it('does not scroll when no folder is open', () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    renderSidebar(null);
+    expect(scroll).not.toHaveBeenCalled();
+  });
+});
