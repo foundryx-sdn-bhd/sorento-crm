@@ -1,6 +1,6 @@
 # PLAN: CHAT-COMPOSER - one composer per answer type
 
-**Status:** Build S2 (17 Oct). S0+S1 green (code 1cdd9a8cf + 010c9723d, red 59e3683b3, kill-proof posted on #1760); S2 red tests in progress. Turn-tier L1 replay waits for crew to bring `sorento_eval_base` to main's schema (it was vacuous since #1718). Track: L, LEAD pattern (local lane).
+**Status:** Build S4-S6 design (17 Oct). S0-S3a done with red-first + kill-proof on #1760 (head d3b8adab8). Replay DB fixed and cleaned by crew; full turn tier + gate-on text review running. Track: L, LEAD pattern (local lane).
 **UAC:** `chat-composer-acceptance-criteria.md`. **Card:** `chat-composer-behaviour-card.md` (discovery, contract, rules R1-R13, per-type changes, slices, Q1-Q4).
 **Lane:** CHAT-COMPOSER, branch `crew/chat-composer`, base origin/main 20c191d86. Step 3 of the 16 Oct chatbot scale
 design (`crew/state/reports/CHATBOT-SCALE-DESIGN-16oct.html`, section 4 row F, section 8 step 3) and reports
@@ -51,13 +51,13 @@ goes to crew in a crew-note so crew can order merges.
 |---|---|---|
 | S0 | gate `chat_composer_enabled`, composer package, shared format helpers (fold), contract tests | done (with S1) |
 | S1 | stock: miss wording, ETA-miss stock block, full dealer block (OI-1) | done; turn-tier replay owed |
-| S2 | ETA / incoming: dates all tools, Container/ETA labels, miss once, numbered incoming rows | red tests in progress |
+| S2 | ETA / incoming: dates all tools, Container/ETA labels, miss once, numbered incoming rows | done (5457f57ac) |
 | S3 | not found / clarify / hand-over | queued |
-| S4 | files + promotions | queued |
-| S5 | order / document status | queued |
-| S6 | product info + price | queued |
+| S4 | files + promotions | seam design |
+| S5 | order / document status | seam design |
+| S6 | product info + price | seam design |
 | Sets | set / list wrapper + one "more" line on every capped list, paging via the parser continuation flag (owner 17 Oct ~15:15) | waits #1744; continuation waits #1747/#1755 |
-| S3a | one miss wording, no internal names, carried-stock-leg bare question dropped | red 870131699; code next |
+| S3a | one miss wording, no internal names, carried-stock-leg bare question dropped (parser guard) | done (11f1f5b7b, d3b8adab8) |
 | S3b/S3c | M7 (waits #1744), run_gate:1598 (waits #1755) | waits |
 | R10 | tier question order: own small lane after #1744/#1747/#1755 merge | out of lane |
 | Flip | follow-up PR: gate removed, divergent formatters deleted (Q2) | after bench + owner hand test |
