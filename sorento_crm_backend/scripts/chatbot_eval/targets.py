@@ -502,6 +502,21 @@ def _files_sent(row: dict[str, Any]) -> int:
     return sum(len(t["envelope"].get("attachments") or []) for t in _tools(row) if isinstance(t.get("envelope"), dict))
 
 
+def _reply_answers(row: dict[str, Any], slice_name: str = "") -> bool:
+    """The reply carries an answer outside its how-many sentences and numbered option lines."""
+    reply = reply_text(row)
+    lines = [x.strip() for line in reply.split("\n")   # a numbered line is kept whole: its "1. " is not a sentence end
+             for x in ([line] if NUMBERED_LINE_RE.match(line) else SENTENCE_RE.split(line))
+             if x and x.strip() and not QUANTITY_ASK_RE.search(x)]
+    # the bot's quantity slots ("1. CODE - 10") and menu options ("1. Office") are part of the question: a numbered
+    # line is an answer only with an answer block or a code-led value
+    numbered = [x for x in lines if NUMBERED_LINE_RE.match(x)]
+    plain = "\n".join(x for x in lines if not NUMBERED_LINE_RE.match(x))
+    return (any(ANSWER_BLOCK_RE.search(x) or CODE_LED_VALUE_RE.match(x) for x in numbered)
+            or bool(re.search(r"\d", CODE_RE.sub(" ", plain))) or bool(SET_CODE_ROW_RE.search(plain))
+            or (slice_name == "spec" and bool(SPEC_LISTED_RE.search("\n".join(lines)))) or _files_sent(row) > 0)
+
+
 def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None,
                     slice_name: str = "") -> tuple[str, bool, str] | None:
     """Owner ruling (round 29): a how-many question ("how many", "berapa", or a quantity owed after the turn) fails only
@@ -523,16 +538,7 @@ def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None,
                   or bool(label and label not in KNOWN_FACT_LABELS) or slice_name == "attachment"
                   or (slice_name == "spec" and not STOCK_WORDS_RE.search(user_message(row))))
     if answer_ask:
-        lines = [x.strip() for line in reply.split("\n")   # a numbered line is kept whole: its "1. " is not a sentence end
-                 for x in ([line] if NUMBERED_LINE_RE.match(line) else SENTENCE_RE.split(line))
-                 if x and x.strip() and not QUANTITY_ASK_RE.search(x)]
-        # the bot's quantity slots ("1. CODE - 10") and menu options ("1. Office") are part of the question: a numbered
-        # line is an answer only with an answer block or a code-led value
-        numbered = [x for x in lines if NUMBERED_LINE_RE.match(x)]
-        plain = "\n".join(x for x in lines if not NUMBERED_LINE_RE.match(x))
-        answered = (any(ANSWER_BLOCK_RE.search(x) or CODE_LED_VALUE_RE.match(x) for x in numbered)
-                    or bool(re.search(r"\d", CODE_RE.sub(" ", plain))) or bool(SET_CODE_ROW_RE.search(plain))
-                    or (slice_name == "spec" and bool(SPEC_LISTED_RE.search("\n".join(lines)))) or _files_sent(row) > 0)
+        answered = _reply_answers(row, slice_name)
         if not answered:
             return ("no_qty_ask", False, "The bot asked how many instead of giving the answer.")
     return ("qty_ask_ok", True, "The bot asked how many instead of giving the answer.")
@@ -592,7 +598,7 @@ def _attribute_answered(row: dict[str, Any], attr: str, code: Any) -> bool:
     """An attribute ask is answered by a number after the attribute word (digits inside a product code do not count), or
     by an honest none: the reply says the record has none and a tool result lists the gold code's item with no field
     for that attribute."""
-    reply = reply_text(row)
+    reply = re.sub(r"[*_~]", "", reply_text(row))   # WhatsApp emphasis markers sit between the word and its colon
     word = re.escape(attr)
     between = re.search(rf"\b{word}\b((?:\s+[\w.-]+){{0,4}})\s*:?\s*\b{NONE_WORDS}", CODE_RE.sub(" ", reply), re.I)
     if between and re.search(r"\d", between.group(1)):   # a number in the words after the attribute is a value
@@ -1055,6 +1061,9 @@ def _attachment(row, item):
         ("type", bool(files) and all(_type_ok(_type_word(f.get("attachmentType")), accepted) for f in files),
          "The files sent are not of the type asked."),
     ]
+    if isinstance(gold.get("scheme_files"), list) and files:   # owner rule (CP0 c04/c19): a certification scheme is an index
+        checks.append(("scheme", all(f.get("fileHash") in set(gold["scheme_files"]) for f in files),
+                       "The certificates sent are not of the scheme asked."))
     return checks
 
 
@@ -1109,6 +1118,28 @@ def _tier_spec_check(row: dict[str, Any], item: dict[str, Any]) -> tuple[str, bo
     return ("tier_spec", found <= spec_products, "The products found do not match the spec asked.")
 
 
+def _sibling_picker_ok(row: dict[str, Any], item: dict[str, Any], checks: list[tuple[str, bool | None, str]]) -> bool:
+    """Owner ruling 17 Oct: after a FULL answer to an EXACT code, an open picker of that code's sibling variants is right
+    (answer.py), so it is not a needless picker. Full = every other check is not False; sibling = the option's code head
+    (before its first "-") equals the gold code's head, which must hold a digit (the engine's family_code_for). A
+    did-you-mean is no answer."""
+    gold = item.get("gold") or {}
+    raw = gold.get("code") or next(iter(gold.get("subject_after") or []), None)   # a follow-up (and-x, switch) with no gold code names it as the subject
+    code = _key(raw)
+    if (not code or gold.get("code_unresolved") or not _reply_answers(row, item.get("slice") or "")
+            or re.search(r"\b(?:couldn.?t|could not) find\b|\bdid you mean\b", reply_text(row), re.I)
+            or any(ok is False for name, ok, _ in checks if name != "no_picker")):
+        return False
+    after = _oq(row)[1]
+    if not (isinstance(after, dict) and after.get("kind") == "product_pick"):
+        return False
+    stem = _key(str(raw).split("-")[0])
+    if not re.search(r"\d", stem):
+        return False
+    opts = [_key(str(o.get("code") or o.get("label")).split("-")[0]) for o in (after.get("options") or []) if isinstance(o, dict)]
+    return bool(opts) and all(o == stem for o in opts)
+
+
 def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     checks = _SLICES[item["slice"]](row, item)
     set_list = _set_list_check(row)
@@ -1122,6 +1153,8 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     informational = {"class"} | ({"old_dropped"} if real else set())
     info = {name: ok for name, ok, _ in checks if name in informational}   # reported, never deciding
     checks = [c for c in checks if c[0] not in informational]
+    if any(n == "no_picker" and ok is False for n, ok, _ in checks) and _sibling_picker_ok(row, item, checks):
+        checks = [(n, True if n == "no_picker" else ok, m) for n, ok, m in checks]
     failed = next((msg for name, ok, msg in checks if ok is False), None)
     # A leak fails the item on any slice; made-up facts stay their own bar, counted by `summarise`.
     leak_msg = ("The reply shows an internal id." if any(x.startswith("internal id") for x in leaks)
