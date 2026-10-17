@@ -293,6 +293,87 @@ def _render_find_filters(db: Session) -> str:
     return parser_vocabulary(db)
 
 
+def _file_type_rows(db: Session) -> list[dict]:
+    """The attachment types a PRODUCT carries a live file of (CHAT-CLOSED-LISTS card R1),
+    certificate kinds aside (they are `{{certification_types}}`). Joined through
+    `product_attachments` for the reason `entity_resolver._product_attachment_type_ids`
+    gives: an internal type sharing a word ("Shipment Line Photo") is never a file type."""
+    return [
+        dict(r)
+        for r in db.execute(
+            sql(
+                "SELECT DISTINCT t.code, t.type_name, t.description FROM attachment_types t "
+                "JOIN attachments a ON a.attachment_type_id = t.id AND NOT coalesce(a.is_deleted, false) "
+                "JOIN product_attachments pa ON pa.attachment_id = a.id "
+                "WHERE NOT t.is_certificate ORDER BY t.type_name"
+            )
+        ).mappings()
+    ]
+
+
+def _listed_line(head: str, words: str | None) -> str:
+    words = _one_line(words or "")
+    return f"{head}. Words: {words}." if words else f"{head}."
+
+
+def render_attachment_types(db: Session) -> str:
+    return "\n".join(
+        _one_line(_listed_line(f'File type {r["code"] or r["type_name"]}: {r["type_name"]}', r["description"]))
+        for r in _file_type_rows(db)
+    )
+
+
+def _cert_kind_rows(db: Session) -> list[dict]:
+    return [
+        dict(r)
+        for r in db.execute(
+            sql(
+                "SELECT code, type_name, description FROM attachment_types WHERE is_certificate "
+                "ORDER BY type_name"
+            )
+        ).mappings()
+    ]
+
+
+def _cert_schemes(db: Session) -> list[tuple[str, list[str]]]:
+    """Every scheme on an active certificate plus the active `certificate_scheme` lookup
+    options, one entry per scheme (case aside, the register's spelling first), each with the
+    lookup set's words for it. Raw SQL: the prompt is one text for every company."""
+    schemes: dict[str, tuple[str, list[str]]] = {}
+    for (scheme,) in db.execute(
+        sql("SELECT DISTINCT scheme FROM certificates WHERE status = 'active' ORDER BY scheme")
+    ):
+        name = (scheme or "").strip()
+        if name:
+            schemes.setdefault(name.casefold(), (name, []))
+    rows = db.execute(
+        sql(
+            "SELECT o.value, k.keyword FROM lookup_sets s "
+            "JOIN lookup_options o ON o.set_id = s.id AND o.is_active "
+            "LEFT JOIN lookup_option_keywords k ON k.option_id = o.id "
+            "WHERE s.set_key = 'certificate_scheme' AND s.is_active "
+            "ORDER BY o.sort_order, o.value, k.keyword"
+        )
+    )
+    for value, keyword in rows:
+        name = (value or "").strip()
+        if not name:
+            continue
+        _, words = schemes.setdefault(name.casefold(), (name, []))
+        if keyword and keyword.strip() and keyword.strip() not in words:
+            words.append(keyword.strip())
+    return sorted(schemes.values(), key=lambda entry: entry[0].casefold())
+
+
+def render_certification_types(db: Session) -> str:
+    lines = [
+        _listed_line(f'Certificate kind {r["code"] or r["type_name"]}: {r["type_name"]}', r["description"])
+        for r in _cert_kind_rows(db)
+    ]
+    lines += [_listed_line(f"Certificate scheme {name}", ", ".join(words)) for name, words in _cert_schemes(db)]
+    return "\n".join(_one_line(line) for line in lines)
+
+
 def _find_filter_count() -> int:
     from app.services.product_find import FILTERS
 
@@ -369,6 +450,18 @@ VARIABLES: dict[str, RegistryVariable] = {
             "specs", "Specifications", "Product Specifications", "/master-data-management/product-specifications",
             ("product_spec_registry",), _render_specs,
             _count("SELECT count(*) FROM product_spec_registry WHERE is_active"),
+        ),
+        RegistryVariable(
+            # CHAT-CLOSED-LISTS: the file types the parser picks an `attachment_type` from.
+            "attachment_types", "File types", "Attachment Types", "/resource-management/attachment-types",
+            ("attachment_types",), render_attachment_types, lambda db: len(_file_type_rows(db)),
+        ),
+        RegistryVariable(
+            # CHAT-CLOSED-LISTS: cert kinds + schemes on file + the `certificate_scheme` set.
+            "certification_types", "Certification types", "Certificates", "/master-data-management/certificates",
+            ("attachment_types", "certificates", "lookup_options", "lookup_option_keywords"),
+            render_certification_types,
+            lambda db: len(_cert_kind_rows(db)) + len(_cert_schemes(db)),
         ),
         RegistryVariable(
             # CHAT-FIND: the generic find rule plus one line per registered filter. The

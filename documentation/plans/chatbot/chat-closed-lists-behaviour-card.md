@@ -1,6 +1,6 @@
 # Behaviour card: CHAT-CLOSED-LISTS (chatbot step 2)
 
-Status: out to crew 17 Oct (one ask). Plan: `PLAN-chat-closed-lists-17oct.md`.
+Status: answered by crew 17 Oct (all five (a)). Plan: `PLAN-chat-closed-lists-17oct.md`.
 
 ## Rules
 
@@ -57,3 +57,11 @@ Status: out to crew 17 Oct (one ask). Plan: `PLAN-chat-closed-lists-17oct.md`.
    all behind the gate in this PR. Recommendation: (a), because production keeps working whatever label is live.
 5. **Card texts.** Can crew paste the five CP0 TRAIN cards (c04, c06, c07, c19, c27: last messages + the bot reply) into
    this PR so the red tests use the real shapes? (a) yes; (b) no, keep shapes only. Recommendation: (a), they are TRAIN.
+
+## Crew answers (17 Oct)
+
+Q1 (a): the owner's D2. Similarity only ADDS candidates to the shortlist; code never binds on it. Q2 (a): cert kinds
++ schemes on file + the `certificate_scheme` lookup set. Q3 (a): one question listing the file types that product
+really has. Q4 (a): delete only rewrites the L1 replay proves dead under the production prompt; hold the rest. Q5:
+crew sends the five CP0 card texts masked, as a session message; they are NOT committed (public repo, owner rule).
+Red tests use the same shapes with synthetic codes and names.

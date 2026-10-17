@@ -1,6 +1,6 @@
 # PLAN: CHAT-CLOSED-LISTS - chatbot step 2, closed candidate lists
 
-Status: Plan (discovery done 17 Oct; behaviour card out to crew). Track: full (size L, LEAD pattern).
+Status: Build (card answered 17 Oct, all (a); S1 green). Track: full (size L, LEAD pattern).
 Branch `claude/chat-closed-lists-x6ymb5` (the sandbox cannot push `crew/chat-closed-lists`), PR #1755.
 
 Design source: CHATBOT-SCALE-DESIGN-16oct section 8 step 2 + D2 (crew-only): code only SHORTLISTS
@@ -66,7 +66,7 @@ carrying its section, so production never opts in; this lane uses the same gate 
 are committed, so the lane's L1 evidence is the CI-safe synthetic replay tests plus crew's `replay-gate.sh` run on the
 lane head (crew runs it; the lane posts the intended-diff file).
 
-## Shape (pending the card answers)
+## Shape (card answered 17 Oct)
 
 1. **Lists the parser picks from**, rendered by code from the tables, never written by hand:
    - `{{attachment_types}}`: one line per product-facing `attachment_types` row: code, name, description words.
@@ -74,7 +74,7 @@ lane head (crew runs it; the lane posts the intended-diff file).
    - Specs: `{{specs}}` stays the full closed list (system prompt, cached). New: a per-turn **candidate block** in the
      user block, bounded (at most 5 candidates per token, 25 lines per turn), built before the parse from the message's
      tokens: exact / prefix code hits, product-name hits, spec-value and synonym hits, and near spellings
-     (question Q1). Each line says what the candidate is (code, class, spec value, file type), so the parser picks
+     (crew Q1 (a): similarity only adds a candidate). Each line says what the candidate is (code, class, spec value, file type), so the parser picks
      the kind too.
 2. **Parser picks or says none.** Entity `canonical_code` is a listed value; `attachment_type` and a new
    `certification` hint carry the listed code; nothing listed = `canonical_code` null, and the bot asks (card R3).
