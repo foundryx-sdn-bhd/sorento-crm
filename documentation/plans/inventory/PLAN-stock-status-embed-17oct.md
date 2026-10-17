@@ -1,6 +1,6 @@
 # PLAN: Available stock status, embedded in every process (STOCK-STATUS)
 
-Status: Phase 3 passed (lane STOCK-STATUS, size L, standard track; owner OK of mock round 4 at 17 Oct 07:55; reviewer CLEAN after one fix round; security review S1 fixed). In hand test on the crew copy, then the owner's merge
+Status: Mock round 5 (owner hand test 17 Oct ~22:30: not accepted as built; extend the EXISTING Fulfilment Planning and OI stock tables in table form, no chips, popovers or cards). Mock v5 drawn (v5a and v5b), waiting on crew's real rows and the owner's pick; build only after the owner OKs (lane STOCK-STATUS, size L, standard track)
 
 ## Owner request (17 Oct)
 
@@ -341,3 +341,23 @@ on the form's Item Code column only if the owner asks. Its own small-fix lane.
   ETA and the SPO arrival. The board (`project_supply_service.py:9944`) follows in its own lane.
 - Follow-ups: Sample Request swap (above); the ETA clearance gate (ruling 2) on the other readers that fold `eta_delay_date` in ungated, found by the security review: `project_supply_service.py:9944` (board SPO rows), `procurement_service.py:3151` (SPO document lines), `consolidated_packing_list.py:238` (served by `scm/fulfilment.py:1139`); the fulfilment board and loading plan count SO the
   `demand.py` way, which differs from this panel by design (R4).
+
+## 6. Round 5: extend the existing stock tables (owner hand test, 17 Oct ~22:30)
+
+Owner, verbatim: "1752 i think we need to follow how autocount do, our fulfillment planning and OI view of the stock already
+quite good, now when i look at the UI it changes so drastically, no longer in table form, we need to extend on our existing view
+of stock in fulfilment planning and OI".
+
+- The existing view is ONE table in both places: `CellStockTable` (hand-rolled, `fulfilment-planning/components/CellStockTable.tsx`),
+  opening `StockDocumentsPanel` per location. Fulfilment Planning shows it in the cell dialog's Stock tab
+  (`BoardCellBreakdownDialog.tsx:1284`, also reached from the List view's Stock button); OI showed it in the line expand through
+  `OrderInquiryStockGrid` until this lane swapped it out (restored in the build).
+- Crew answers (Q1 to Q7): draw v5a (AutoCount SO, PO, Forecast beside today's columns) and v5b (a Planning | AutoCount switch in
+  the table's own toolbar), owner picks; every location holding the item, Where still marking the line's own location; a
+  read-only item strip (Item Group, Item Type, UOM, Is Active; no Lead Time); no A/O Qty; no row grouping (set subtotals stay);
+  Incoming PL row under Total expanding to its packing lists, then Forecast incl. incoming PL; PO rows added to the documents
+  drill-down; remove both chips and the loading plan tab (its "Where the stock is" table returns); the stand-alone page is
+  rebuilt on the same table, keep or drop asked.
+- Data source unchanged: `stock_status_service` with the container-number and ETA-permission rulings.
+- Mock: `mockups/stock-status-v5.html`.
+
