@@ -337,7 +337,8 @@ def test_staff_rejection_reaches_the_linked_user(portal):
     d = _create(portal)
     assert _as(portal, portal.granted).post(f"{BASE}/{d['id']}/submit").status_code == 200
     app_row = portal.db.get(NewProductApplication, d["id"])
-    svc.reject(portal.db, app_row, actor=svc.Actor(user_id="staff", can_approve=True), reason="no")
+    approver = make_user(portal.db, f"{MARKER} approver")
+    svc.reject(portal.db, app_row, actor=svc.Actor(user_id=approver, can_approve=True), reason="no")
     portal.db.commit()
     svc.notify(portal.db, app_row, "rejected")
     assert (portal.linked_user, "new_product_application_rejected") in portal.sent

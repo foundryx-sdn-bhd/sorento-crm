@@ -42,10 +42,19 @@ router = APIRouter()
 # comment in portal_service.py warns about. Add it back here the day it gets one.
 # sample_request (SR-CORE #1718) is out for the same reason: the portal revise route
 # refuses it (no RevisionAdapter in portal_revision_service.ADAPTERS).
+# new_product_application (NEW-PRODUCT-APP) likewise: its Revise is its own move (#1698 style),
+# not the portal revision engine.
 REVISABLE_PORTAL_FORM_TYPES = tuple(
     kind
     for kind in GRANTABLE_PORTAL_FORM_TYPES
-    if kind not in ("sales_opportunity", "sample_request", "customer_asks", "conversation")
+    if kind
+    not in (
+        "sales_opportunity",
+        "sample_request",
+        "new_product_application",
+        "customer_asks",
+        "conversation",
+    )
 )
 
 

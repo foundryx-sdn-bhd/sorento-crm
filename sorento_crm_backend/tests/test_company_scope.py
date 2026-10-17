@@ -617,7 +617,9 @@ def test_every_company_id_table_is_registered():
     #   company's frozen Stock Debt view and its rows (customer demand, OI numbers and
     #   decisions); every read is by snapshot within the company = 164.
     # + 1 (SR-CORE #1718): `sample_requests`, one company's sample requests = 165.
-    expected_owned = 165
+    # + 1 (NEW-PRODUCT-APP): `new_product_applications`, one company's applications; the lines
+    #   are scoped through the parent = 166.
+    expected_owned = 166
     assert len(owned) == expected_owned, (
         f"expected {expected_owned} owned tables, found {len(owned)}: {sorted(owned)}"
     )

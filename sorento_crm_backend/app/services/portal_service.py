@@ -96,6 +96,7 @@ GRANTABLE_PORTAL_FORM_TYPES = SUPPORTED_TYPES + (
     "price_tag_request",
     "sales_opportunity",
     "sample_request",
+    "new_product_application",
     CUSTOMER_ASKS_FORM_TYPE,
     CONVERSATION_FORM_TYPE,
 )
