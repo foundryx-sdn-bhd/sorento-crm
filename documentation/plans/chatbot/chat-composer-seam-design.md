@@ -28,8 +28,11 @@ byte-identical duplicates fold now, with no gate. Q3 an un-asked empty field is 
 - **S0+S1 surface**: `composers/__init__.py` (`enabled()`), `composers/format.py` (`EM_DASH`, `ISO_RE`, `timestamp`,
   `value`, `label_line`), `composers/stock.py` (`miss_line`, `none_for`, `block`). Seams G1, G2, G5, G6; folds F-a,
   F-b, F-c.
-- OI-1 (discontinued marker and `Alternative:` lines dropped by `_stock_ask_reply` with a miss) is asked of crew; not
-  in S1 until crew rules.
+- OI-1 ruled (a) by crew 17 Oct: G1 gate-on also prints each answered item as its full block via
+  `composers.stock.dealer_block(item)` = the item title, then `\n⚠️  *(PRODUCT DISCONTINUED)*` when
+  `flags.discontinued`, then `\nAlternative: {line}` per `flags.alternative_lines` entry: exactly what `_item_line`
+  (fetch.py:3382-3425) prints for that item with numbering off and English text. Applies whenever `_stock_ask_reply`
+  rebuilds the text (a miss or a question). Surface adds `dealer_block`.
 
 ## 0. Key findings that shape the design
 

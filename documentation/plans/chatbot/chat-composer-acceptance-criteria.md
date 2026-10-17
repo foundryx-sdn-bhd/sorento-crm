@@ -43,6 +43,10 @@ Helpers land in the slice that first prints them (lead decision 17 Oct, seam des
   stock answer, not the "- *Product Code:*" variant (card s.4 stock (c); TRAIN cp0-5430419641, cp0-338d26fba4).
 - AC-1.6 Refer marking, escalation-offer suppression and the open quantity question behave as on the gate-off path
   for the same facts (they read the structured flags).
+- AC-1.8 (crew OI-1 (a), 17 Oct) When the dealer stock mix is rebuilt (a miss or a question in the reply), each
+  answered product prints its full block, exactly as the no-miss reply does: its line, then `⚠️  *(PRODUCT
+  DISCONTINUED)*` when discontinued, then one `Alternative: <alternative line>` per alternative (today
+  `engine._stock_answer_lines` keeps titles only and drops both; TRAIN cp0-0498229323 PREV vs BOT).
 - AC-1.7 ms and zh: every S1 sentence translates as it does gate off; new sentences have catalogue entries (AC-G5).
 
 ## Later slices (outline; detailed when each starts)
