@@ -49,3 +49,49 @@ def test_r2_2_held_member_without_a_drawing_says_no_drawing_not_not_found(sessio
     assert "no drawing" in lowered or "no technical" in lowered or "doesn't have a drawing" in lowered or "no attachment" in lowered, text
     assert "couldn't find" not in lowered and "not found" not in lowered, text
     assert "did you mean" not in lowered, text
+
+
+# ---- review round 2: the held-member file miss is localised and keeps the normal miss tail
+# (answer_bridge.py `_held_member_no_file` returns at ~1821-1823, before the normal miss text built by
+# the miss lane at ~1969 onward; label_catalog.py:443 carries the localised "{code} has no {types}.")
+
+import pytest  # noqa: E402
+
+
+def _held_turn(session_factory, stub_access, monkeypatch, text: str, *entities: dict):
+    _seed(session_factory)
+    first = _ask("check_stock", "inventory", _product(HELD))
+    second = _ask("check_product_attachment", "product_attachment", _product("zzjc802a"), DRAWING, *entities)
+    (_r1, _c1), (r2, _c2) = _turns(session_factory, stub_access, monkeypatch, [(HELD, first), (text, second)])
+    return r2
+
+
+@pytest.mark.parametrize(
+    "text, sep",
+    [("zzjc802a lukisan teknikal ada tak?", " tiada "), ("zzjc802a 有图纸吗", " 没有")],
+)
+def test_r2_2_held_member_file_miss_reads_in_the_contacts_language(
+    text, sep, session_factory, seeded, stub_access, monkeypatch
+):
+    reply = (_held_turn(session_factory, stub_access, monkeypatch, text).reply or {}).get("text") or ""
+
+    assert reply.startswith(HELD + sep), reply
+    assert "on record" not in reply and "has no" not in reply, reply
+
+
+def test_r2_2_held_member_file_miss_names_an_unplaced_word_like_the_normal_miss(session_factory, seeded, stub_access, monkeypatch):
+    """The normal file miss prints `Couldn't find: "<word>" (product).` for a word it could not
+    place; the early return skipped it."""
+    unplaced = {"raw": "zzqq999", "hint": "product", "canonical_code": None, "current_message": True, "confident": True}
+
+    reply = (_held_turn(session_factory, stub_access, monkeypatch, "zzjc802a zzqq999 drawing", unplaced).reply or {}).get("text") or ""
+
+    assert 'Couldn\'t find: "zzqq999"' in reply, reply
+
+
+def test_r2_2_held_member_file_miss_keeps_the_escalate_offer(session_factory, seeded, stub_access, monkeypatch):
+    """The normal file miss ends "Would you like me to escalate to <team>?" and arms the
+    pending team pick; the early return dropped both."""
+    result = _held_turn(session_factory, stub_access, monkeypatch, "zzjc802a drawing")
+
+    assert "escalate" in ((result.reply or {}).get("text") or "").lower(), result.reply
