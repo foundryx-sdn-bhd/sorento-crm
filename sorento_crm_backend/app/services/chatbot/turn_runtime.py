@@ -40,6 +40,7 @@ from app.services.chatbot.contracts import (
     named_count,
 )
 from app.services.chatbot.turn.apply import names_its_own_ask
+from app.services.chatbot.turn.chat_state import CARRIED_QUANTITY_KEY
 from app.services.chatbot.turn.decide import RESTATED_KINDS_KEY, picked_positions
 from app.services.chatbot.turn.pending import (
     OFFER_KINDS,
@@ -3939,8 +3940,6 @@ def make_tool_runner(
         # product, resolved to uuids here - `lanes/business/fetch.py` reads it
         # straight off the lane input.
         lane_out = _spec_quantities(lane_out, spec, entities)
-        from app.services.chatbot.turn.chat_state import CARRIED_QUANTITY_KEY
-
         lane_out = _carried_quantities(lane_out, verdict.get(CARRIED_QUANTITY_KEY), entities)
         lane_ctx = {**lane_ctx, "parse": {**(lane_ctx.get("parse") or {}), "output": lane_out}}
         # R2: start from the resolver's own gate (gate_reason, require_specific,

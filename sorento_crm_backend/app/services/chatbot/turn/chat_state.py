@@ -593,9 +593,10 @@ def apply_changes(
         # Nothing declared (a retyped code, a bare re-ask): the state is not led, but the held
         # quantity still joins by the product's own code at the fetch; nothing else moves.
         rejected = _reject(state, verdict, log, [{"op": None, "reason": "no changes declared"}])
-        by_code, shared = _held_quantity(state.focus)
+        by_code, _shared = _held_quantity(state.focus)
         if by_code and verdict.get("demand_qty") is None:
-            rejected.verdict[CARRIED_QUANTITY_KEY] = {"by_code": dict(by_code), "shared": shared}
+            # Own-code join only: a turn the parser could not call a refine spreads nothing.
+            rejected.verdict[CARRIED_QUANTITY_KEY] = {"by_code": dict(by_code), "shared": None}
         return rejected
     if not isinstance(changes, list):
         return _reject(state, verdict, log, [{"op": None, "reason": "no changes declared"}])
