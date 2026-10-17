@@ -121,3 +121,51 @@ BE (`tests/test_spec_registry_ui_17oct.py`, Postgres):
 FE (vitest): HeaderTab meaning box view/edit + counter, Unit read-only, payload has no `unit`; WordsDataGrid shows
 the 409 message under the input and "Also on"; TryInChatbotDialog renders picks and the error line; record tabs include
 History; gear has the two links.
+
+## Backend contract (Phase 2, binding for tester + coder)
+Migration `spec_hint_0001` (`sorento_crm_backend/alembic/versions/spec_hint_0001_registry_parser_hint.py`),
+down_revision `sr_0001_sample_requests`, additive and idempotent:
+`ALTER TABLE product_spec_registry ADD COLUMN IF NOT EXISTS parser_hint text NULL`,
+`... ADD COLUMN IF NOT EXISTS label_owned boolean NOT NULL DEFAULT false`. Downgrade drops both (IF EXISTS).
+Model `ProductSpecRegistry` (`app/models/product_spec.py`): `parser_hint = Column(Text, nullable=True)`,
+`label_owned = Column(Boolean, nullable=False, server_default=text("false"), default=False)`.
+
+C1 PATCH `/api/v1/master-data/spec-registry/{spec_key}` (`app/api/v1/master_data/spec_registry.py`):
+- `SpecKeyUpdate.parser_hint: Optional[str]`. Cleaned = `re.sub(r"\s+", " ", value).strip()`; empty -> stored NULL;
+  more than 200 chars after cleaning -> 422 AppException code `spec_registry_hint_too_long`. Not a vocabulary-only
+  field, so a caller with only `master_data.products.edit` gets 403 (existing gate).
+- A `label` that differs from the stored one sets `label_owned = True`.
+- `_serialise` adds `parser_hint`, `label_owned`, and `also_on: {word: [other field label, ...]}` for every word of
+  this row (merged synonyms, all value keys incl. `_self`) that normalises equal (`normalise_vocabulary`) to a word,
+  label or spec_key of another row; words with no overlap are absent from the map.
+- `unit` stays absent from `SpecKeyUpdate` (unchanged; FE stops sending it).
+C2 `seed_spec_registry` (`app/services/product_spec_registry.py:1278`): a seed row with `label_owned` keeps its label
+  (other seed-owned fields still repaired); never reads or writes `parser_hint`.
+C3 `specification_lines` (`app/services/chatbot_parser_prompt.py:1268`): when `parser_hint` is set, the line carries
+  ` Means: <hint without trailing period>.` right after the type phrase:
+  numeric `Specification k ("L"): a number in mm. Means: H. Words: w.`; boolean `...: yes or no. Means: H. Words: w.`;
+  enum `...: choices a = a; b = b. Means: H.`. Blank/NULL hint prints nothing extra. Quotes in the hint render as
+  apostrophes (same as the label).
+C4 Cross-field word guard: on PATCH (`user_synonyms`, `user_values`) and POST `/{spec_key}/values`, every word or value
+  that is NEW to this row (not already in its merged synonyms / allowed values before the save) and normalises equal to
+  another row's merged word, label or spec_key -> 409 AppException code `spec_registry_word_on_other_key`, message
+  `"<word>" is already a word for <other label>.`, nothing stored (check before any mutation is committed). Suppressed
+  words of the other row do not count (merged_synonyms already removes them). Inactive rows still count.
+C5 `POST /api/v1/system/chatbot/parser-try` (`app/api/v1/system/chatbot.py`, an allowed chatbot doorway), dependency
+  `require_permission("master_data.spec_registry.view")`. Body `{text: str}` 1..500 chars after strip (else 422).
+  Calls `app.services.chatbot.head.parser.resolve_config(db, current_date=<today ISO>)`, then
+  `build_user_block(previous_response=None, latest_user_message=text, pending_kind=None)`, then `parse(config, block)`,
+  all referenced through the module (`parser.resolve_config` etc.) so tests monkeypatch
+  `app.services.chatbot.head.parser.<fn>`. Response `{prompt_version: int|null, picks: [{raw, kind, field_label,
+  value}]}`: one pick per emission entity; an entity with `spec_key` gets `kind="specification"`, `field_label` = that
+  registry row's label (spec_key itself if no row), `value` = display text (numeric: `"<n> <unit>"`, e.g. `"300 mm"`;
+  enum: `value_labels` label else `display_spec_value`); other entities: `kind` = entity `hint`, `field_label` null,
+  `value` = `canonical_code` or `listed_item` or `raw`. `ParserError` (or any exception from parse/resolve_config) ->
+  422 AppException code `parser_try_unavailable` with a readable message. Writes no row (no chatbot.turns, no audit).
+C6 `scripts/publish_specs_token_prompt.py`: `publish(session, from_version=None) -> int | None`. Base = version under
+  label `production` for `chatbot_semantic_parser`, or `--from-version N`. Finds runs of consecutive lines matching
+  `^Specification [a-z0-9_]+ \(` optionally followed by one `^Product types \(` line; exactly one run -> replace it
+  with the line `{{specs}}`; zero runs -> SystemExit "refused: no baked specification block"; two or more ->
+  SystemExit "refused: N baked specification blocks"; base already containing `{{specs}}` -> SystemExit refused.
+  Publishes next version (max+1), same type/config, `variables` = base variables + `"specs"` (deduped), UNLABELLED;
+  idempotent (an existing version with the identical template -> returns None). Never touches `ai_prompt_labels`.
