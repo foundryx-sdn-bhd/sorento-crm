@@ -311,6 +311,24 @@ def test_human_intervened_false_enqueues(client, db, enqueued):
     assert len(_chat_jobs(enqueued)) == 1
 
 
+@pytest.mark.parametrize(
+    "inner",
+    [
+        {"type": "attachment", "attachment": {"type": "image", "url": "https://x.zzt/a.jpg"}},
+        {"type": "attachment", "attachment": {"type": "audio", "url": "https://x.zzt/a.ogg"}},
+        {"type": "location", "latitude": 3.1, "longitude": 101.6},
+    ],
+)
+def test_skip_non_text_message(client, db, enqueued, inner):
+    """Media stays on the n8n path: its extraction job drains on the same single fast
+    worker the turn job would hold, so the turn would wait on a job that cannot start."""
+    _mode(db, "all")
+    body = _event()
+    body["message"]["message"] = inner
+    assert _post(client, body).status_code == 200
+    assert _chat_jobs(enqueued) == []
+
+
 def test_skip_message_from_a_staff_member(client, db, enqueued):
     """An incoming-traffic row the sender block marks as a user or the API is not the
     customer talking (a defensive guard; respond.io marks customer messages `contact`)."""

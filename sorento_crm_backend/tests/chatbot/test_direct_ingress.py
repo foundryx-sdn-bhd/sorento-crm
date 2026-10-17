@@ -358,7 +358,7 @@ def test_direct_turn_is_ordered_with_s7_off(contacts, stub_engine_seams, sender,
 
 
 def test_n8n_copy_with_s7_off_still_takes_no_ticket(contacts, stub_engine_seams, monkeypatch):
-    """Off means off for every other caller: only a `respond_webhook` turn is ordered."""
+    """With direct ingress off for the contact, an n8n turn is unordered exactly as today."""
     from app.services.chatbot import dispatch
 
     monkeypatch.setattr(engine_mod, "_s7_mode", lambda *args, **kwargs: False)
@@ -370,3 +370,74 @@ def test_n8n_copy_with_s7_off_still_takes_no_ticket(contacts, stub_engine_seams,
         _n8n_copy(_payload(contact, _message_id())), session_factory=SessionLocal
     )
     assert result.duplicate is False
+
+
+def test_n8n_copy_of_a_covered_contact_waits_for_the_direct_turn(
+    contacts, stub_engine_seams, sender, monkeypatch
+):
+    """Message A runs through the direct path; message B's n8n copy arrives while A is still
+    running (B's own direct job is stuck behind A on the single fast worker). With S7 off the
+    n8n copy used to take no ticket, so B could be answered beside A, out of order. While
+    direct ingress covers the contact, every live turn of it takes the ticket."""
+    monkeypatch.setattr(engine_mod, "_s7_mode", lambda *args, **kwargs: False)
+    contact = contacts("mixed")
+    monkeypatch.setattr(
+        engine_mod,
+        "_read_switches",
+        _switches_with(engine_mod._read_switches, mode="contacts", contacts=contact),
+    )
+
+    lock = threading.Lock()
+    timeline: list[tuple[str, float]] = []
+
+    def slow_parse(config, user_block):
+        with lock:
+            timeline.append(("start", time.monotonic()))
+        time.sleep(0.4)
+        with lock:
+            timeline.append(("end", time.monotonic()))
+        return _parser_output()
+
+    monkeypatch.setattr(parser_mod, "parse", slow_parse)
+    errors: list[BaseException] = []
+
+    def _direct() -> None:
+        try:
+            chat_turns.run_direct_turn_job(_payload(contact, _message_id(2.0)))
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def _n8n() -> None:
+        try:
+            engine_mod.run_turn(
+                _n8n_copy(_payload(contact, _message_id(1.0))), session_factory=SessionLocal
+            )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    t1 = threading.Thread(target=_direct)
+    t2 = threading.Thread(target=_n8n)
+    t1.start()
+    time.sleep(0.05)
+    t2.start()
+    t1.join(timeout=20)
+    t2.join(timeout=20)
+
+    assert errors == []
+    starts = [ts for kind, ts in timeline if kind == "start"]
+    ends = [ts for kind, ts in timeline if kind == "end"]
+    assert len(starts) == 2 and len(ends) == 2, timeline
+    assert starts[1] >= ends[0], f"the n8n copy ran beside the direct turn: {timeline}"
+
+
+def _switches_with(real, *, mode: str, contacts: str):
+    """`_read_switches` with the direct-ingress fields overridden: the committed test DB's
+    settings row is shared, so the switch is set on the snapshot, never on the row."""
+    import dataclasses
+
+    def _read(db):
+        return dataclasses.replace(
+            real(db), chatbot_direct_ingress_mode=mode, chatbot_direct_ingress_contacts=contacts
+        )
+
+    return _read

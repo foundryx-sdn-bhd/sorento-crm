@@ -751,6 +751,14 @@ class SystemSetting(Base):
     chatbot_ordering_enabled = Column(
         Boolean, nullable=False, server_default="false", default=False
     )
+    # CHAT-SPEED: does the respond.io webhook start the turn itself? `off` (today),
+    # `contacts` (only the respond.io contact ids in `chatbot_direct_ingress_contacts`, one
+    # per line or comma separated) or `all`. The n8n producer keeps running either way, so
+    # its later copy of a message comes back as a D15 duplicate and sends nothing.
+    chatbot_direct_ingress_mode = Column(
+        String(16), nullable=False, server_default="off", default="off"
+    )
+    chatbot_direct_ingress_contacts = Column(Text, nullable=True)
 
 
 class UserQuickAccess(Base):

@@ -34,7 +34,9 @@ def _mask_optional_key(_cipher: Optional[str]) -> Optional[str]:
     return _mask_key(_cipher)
 
 
-def _checked_retry_url(raw: Optional[str]) -> Optional[str]:
+def _checked_retry_url(
+    raw: Optional[str], label: str = "The chatbot retry webhook URL"
+) -> Optional[str]:
     """The chatbot retry webhook, refused with a 422 that names the rule (AC-804).
 
     Blank clears it, which is how an operator turns Retry off. Anything else is checked
@@ -47,7 +49,7 @@ def _checked_retry_url(raw: Optional[str]) -> Optional[str]:
     if not candidate:
         return None
     try:
-        return assert_safe_outbound_url(candidate, label="The chatbot retry webhook URL")
+        return assert_safe_outbound_url(candidate, label=label)
     except OutboundUrlRejected as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.message
@@ -74,6 +76,15 @@ def _apply_chatbot_retry(
     if "chatbot_retry_ingress_key" in mentioned:
         key = (data.chatbot_retry_ingress_key or "").strip()
         row.chatbot_retry_ingress_key_ciphertext = encrypt_secret(key) if key else None
+    # CHAT-SPEED: the sender pair rides the narrow route only (the row PUT does not carry
+    # it), with the same presence rule and the same save-time guard.
+    if "chatbot_sender_url" in mentioned:
+        row.chatbot_sender_url = _checked_retry_url(
+            getattr(data, "chatbot_sender_url", None), label="The chatbot sender webhook URL"
+        )
+    if "chatbot_sender_key" in mentioned:
+        key = (getattr(data, "chatbot_sender_key", None) or "").strip()
+        row.chatbot_sender_key_ciphertext = encrypt_secret(key) if key else None
 
 
 class RespondWorkspaceService:
@@ -259,6 +270,8 @@ class RespondWorkspaceService:
             # A BOOL, never a masked hint. See the response schema: this key authorises
             # injecting a message into a real customer's conversation.
             "has_chatbot_retry_key": bool(row.chatbot_retry_ingress_key_ciphertext),
+            "chatbot_sender_url": row.chatbot_sender_url,
+            "has_chatbot_sender_key": bool(row.chatbot_sender_key_ciphertext),
             "created_at": row.created_at,
             "updated_at": row.updated_at,
         }
@@ -280,6 +293,18 @@ class RespondWorkspaceService:
         """Plaintext ideation embed signing secret for server-side use (minting the
         SSO assertion), or None when unset/undecryptable."""
         cipher = getattr(row, "ideation_embed_signing_secret_ciphertext", None)
+        if not cipher:
+            return None
+        try:
+            return decrypt_secret(cipher) or None
+        except ValueError:
+            return None
+
+    @staticmethod
+    def decrypt_chatbot_sender_key(row: RespondWorkspace) -> Optional[str]:
+        """Plaintext chatbot sender key for the `X-Chatbot-Sender-Key` header, or None
+        when unset/undecryptable."""
+        cipher = getattr(row, "chatbot_sender_key_ciphertext", None)
         if not cipher:
             return None
         try:

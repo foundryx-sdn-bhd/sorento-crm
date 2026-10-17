@@ -49,6 +49,7 @@ from app.services.chat_history_ingest_service import (
 from app.services.integration_service import IntegrationLogService, sanitize_request_headers
 from app.services.media_proxy_service import allowed_hosts
 from app.services.otp_redaction import otp_template_code_slots, redact_otp_item
+from app.tasks import chat_turns
 
 logger = logging.getLogger(__name__)
 
@@ -317,6 +318,17 @@ def _handle(db: Session, request: Request, raw: bytes) -> dict:
     _log(db, request, logged, row.contact_id, status.HTTP_200_OK, None)
     if not already_existed:
         announce_new_row(db, message_pk=message_pk, contact_id=row.contact_id, traffic=row.type)
+    # CHAT-SPEED: with the direct-ingress switch on, a fresh incoming text starts its turn
+    # here instead of waiting for the n8n producer and dispatcher. Never raises; anything
+    # it does not enqueue is answered by the n8n copy, as before.
+    chat_turns.enqueue_direct_turn(
+        db,
+        payload,
+        contact_id=row.contact_id,
+        traffic=row.type,
+        channel=row.channel,
+        already_existed=already_existed,
+    )
     return {"id": message_pk, "status": "duplicate" if already_existed else "created"}
 
 

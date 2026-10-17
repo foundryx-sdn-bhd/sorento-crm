@@ -422,8 +422,12 @@ ActionKind = Literal[ACTION_KINDS]  # type: ignore[valid-type]
 
 # Which injector delivered this envelope (D15). The engine never behaves differently on
 # it; it exists so a trace row can say where a duplicate came from.
-INGRESS_KINDS = ("webhook", "poller", "retry", "console")
+INGRESS_KINDS = ("webhook", "poller", "retry", "console", "respond_webhook")
 IngressKind = Literal[INGRESS_KINDS]  # type: ignore[valid-type]
+# CHAT-SPEED: the CRM's own respond.io webhook started this turn (`direct_ingress.py`), not
+# the n8n producer. The one ingress the engine DOES treat differently: it is always ordered
+# per contact and never left delegated, because no n8n spine is waiting on its answer.
+DIRECT_INGRESS = "respond_webhook"
 
 # The business lane's resolve+gate exits (S6a). Taken from the four `resolve-exit-*`
 # bodies' own `_exit_kind` literals, in the order `sub-main-processing`'s `resolve-arm`

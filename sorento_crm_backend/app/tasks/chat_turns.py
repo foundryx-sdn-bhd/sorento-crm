@@ -63,6 +63,74 @@ def run_turn_job(
     return payload
 
 
+# A direct turn waits at most `chatbot_queue_wait_seconds` (capped at 30 s) for its ticket,
+# then runs a turn n8n would give 90 s. Past this RQ kills the work-horse.
+DIRECT_TURN_JOB_TIMEOUT_SECONDS = 180
+
+
+def enqueue_direct_turn(
+    db: Any,
+    payload: dict[str, Any],
+    *,
+    contact_id: str,
+    traffic: str,
+    channel: str,
+    already_existed: bool,
+) -> bool:
+    """CHAT-SPEED: put a webhook message on `chat` as a turn, when the gate allows it.
+
+    Called by the respond.io webhook AFTER the message is stored. A doorway, like the rest of
+    this file: the gate lives in `app.services.chatbot.direct_ingress`. **Never raises**: the
+    webhook's answer to respond.io must not depend on the queue, and anything not enqueued
+    here is answered by the n8n copy exactly as before. True when a job was enqueued.
+    """
+    try:
+        from app.services.chatbot import direct_ingress
+        from app.services.queue_service import enqueue_job
+
+        reason = direct_ingress.skip_reason(
+            db,
+            payload,
+            contact_id=contact_id,
+            traffic=traffic,
+            channel=channel,
+            already_existed=already_existed,
+        )
+        if reason is not None:
+            if reason not in ("off", "contact_not_listed"):
+                logger.info("direct ingress: not enqueued for %s (%s)", contact_id, reason)
+            return False
+        enqueue_job(
+            run_direct_turn_job,
+            payload,
+            queue_name=CHAT_QUEUE,
+            job_timeout=DIRECT_TURN_JOB_TIMEOUT_SECONDS,
+        )
+        return True
+    except Exception:  # noqa: BLE001 - see the docstring: the n8n copy is the fallback
+        logger.warning("direct ingress: could not enqueue the turn for %s", contact_id, exc_info=True)
+        return False
+
+
+def run_direct_turn_job(payload: dict[str, Any]) -> dict[str, Any]:
+    """The RQ job: run the webhook-started turn and hand its actions to the n8n sender.
+
+    The argument is the respond.io webhook body as JSON, the same reason `run_turn_job`
+    takes a dict. Returns `{turn_id, status, duplicate, sent}` for the job log.
+    """
+    from app.services.chatbot import direct_ingress
+
+    outcome = direct_ingress.run(payload)
+    logger.info(
+        "direct ingress turn %s: status=%s duplicate=%s sent=%s",
+        outcome.get("turn_id"),
+        outcome.get("status"),
+        outcome.get("duplicate"),
+        outcome.get("sent"),
+    )
+    return outcome
+
+
 def sweep_chat_facts(
     db: Any, *, since: datetime, until: datetime | None = None, rebuild: bool = False
 ) -> int:

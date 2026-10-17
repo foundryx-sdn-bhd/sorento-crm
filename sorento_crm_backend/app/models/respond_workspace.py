@@ -65,6 +65,11 @@ class RespondWorkspace(Base):
     # because an admin-editable outbound URL is an SSRF primitive otherwise.
     chatbot_retry_ingress_url = Column(String(512), nullable=True)
     chatbot_retry_ingress_key_ciphertext = Column(Text, nullable=True)
+    # CHAT-SPEED: where a turn the respond.io webhook started posts its finished actions
+    # (the thin n8n sender; egress stays in n8n, D9). Same guard on save and on use as the
+    # retry pair above; the key is sent as `X-Chatbot-Sender-Key` and never echoed.
+    chatbot_sender_url = Column(String(512), nullable=True)
+    chatbot_sender_key_ciphertext = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, server_default="true")
     is_default = Column(Boolean, nullable=False, server_default="false")
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
