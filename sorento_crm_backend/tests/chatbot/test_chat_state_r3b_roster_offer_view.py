@@ -64,8 +64,10 @@ def _state(kind, entity_type, labels, team, answered, domain, *, offered=True, r
     opts = _options(entity_type, labels)
     payload = {"domain": domain, "answered_positions": [answered]}
     if offered:
+        # As production stores it: the roster was asked at turn 1, the miss reply (turn 2) stamped the offer.
         payload["escalate_offered"] = True
-    pending = ask(kind, opts, team=team if offered else None, asked_at_turn=2, payload=payload)
+        payload["offered_at_turn"] = 2
+    pending = ask(kind, opts, team=team if offered else None, asked_at_turn=1, payload=payload)
     rows = [{"raw": "x", "canonical_code": labels[0][1], "hint": "product", "current_message": False}] if restated else []
     focus = Focus(products=rows, domains=[domain], last_list=[
         {"position": o["position"], "label": o["label"], "code": o["code"]} for o in opts])
@@ -222,3 +224,71 @@ def test_r3b_review_a_later_pick_that_found_stock_leaves_no_offer_in_the_next_st
     c = seam.say("ok", _emit(domain_hint="inventory", intent_hint="check_stock", state_changes=[_op("keep")]))
     shown = _mem_state(seam, c)["shown"]
     assert "hand_over" not in shown and '"offer"' not in shown, shown
+
+
+# --------------------------------------------------------------------------- #
+# The offer shows on the turn after it is made, through both stamp paths
+# --------------------------------------------------------------------------- #
+
+_YES = dict(domain_hint=None, intent_hint=None, is_affirmative=True,
+            escalation={"is_escalation_confirmation": True, "company_pick": None},
+            open_question_answer={"mode": "yes", "picked": [], "items": [], "qty_for_all": None})
+
+
+def _staff_with_team(seam, monkeypatch):
+    from app.services.chatbot import turn_runtime
+    from tests.chatbot.test_escalation_agent_carry import _seed_escalation_team
+
+    monkeypatch.setattr(turn_runtime, "_stock_availability_only", lambda *a, **k: False)
+    _seed_escalation_team(seam.session_factory, agent_code="incoming_stock_enquiries", team_code="purchasing",
+                          team_label="Packing List", members=[("Lucas", []), ("Jereen", [])])
+
+
+@pytest.mark.parametrize("codes,miss", [(OWNER_FAMILY[:3], 1), (OWNER_FAMILY[:4], 3)], ids=["pick_1", "pick_3"])
+def test_r3b_positive_answer_bridge_stamp_the_next_state_shows_the_offer_and_a_yes_hands_over(seam, monkeypatch, codes, miss):
+    _staff_with_team(seam, monkeypatch)
+    a = seam.say(str(miss), _pick(miss, str(miss)), previous=_roster_state(seam, codes))
+    reply = ((a.reply or {}).get("text") or "").lower()
+    assert "escalate" in reply, reply
+    yes = seam.say("yes", _emit(state_changes=[_op("answer")], **_YES))
+    shown = _mem_state(seam, yes)["shown"]
+    line = next(l for l in shown.splitlines() if l.startswith("- open question:"))
+    oq = json.loads(line.split(": ", 1)[1])
+    assert oq.get("offer") == "hand_over" and oq.get("owed") == ["yes_no"], line
+    assert oq.get("hand_over_to") and oq["hand_over_to"].replace(" ", "_") in reply.replace(" ", "_"), (line, reply)
+    assert [o["code"] for o in oq["options"]] == codes, line
+    assert "answer_pending_accept" in seam.rules_fired, seam.rules_fired
+
+
+@pytest.mark.parametrize("codes,answered", [(["SRTWC286-SH", "SRTWC286-SH-150"], 1), (["MWB7630", "MWC7630-SH-P", "MWC7630-SH-S10"], 2)],
+                         ids=["two_options", "three_options"])
+def test_r3b_positive_compose_stamp_the_next_state_shows_the_offer(codes, answered):
+    from app.services.chatbot.turn.compose import compose
+    from app.services.chatbot.turn.policy import Policy
+    from app.services.chatbot.turn.state import Profile
+    from tests.chatbot._turn_helpers import TIER_ORDER_FIXTURE, _domain_row
+
+    opts = _options("product", [(c, c) for c in codes])
+    pend = ask("product_pick", opts, asked_at_turn=1, payload={"domain": "inventory", "answered_positions": [answered]})
+    row = {**_domain_row("inventory", narrowing={"product": "list_all"}), "label": "stock", "escalation_team_code": "warehouse"}
+    policy = Policy.from_rows(domains=[row], kinds=[], tier_order=TIER_ORDER_FIXTURE)
+    env = {"domain": "inventory", "denied": False, "entities": [codes[0]], "product_codes": [], "figures": [], "files": [],
+           "miss": [codes[0]], "has_result": False, "tool_has_result": False, "unresolved": [], "unresolved_suggestions": {},
+           "error": None, "lane_text": ""}
+    answer = compose([env], State(focus=Focus(), pending=pend, profile=Profile(), turn_no=3), policy, ctx=None)
+    assert answer.question is not None and "escalate" in answer.text.lower(), answer.text
+    nxt = State(focus=Focus(last_list=[{"position": o["position"], "label": o["label"], "code": o["code"]} for o in opts]),
+                pending=answer.question, turn_no=4)
+    v = chat_state.view(nxt, question_mod.of_pending(answer.question))
+    assert v["open_question"].get("offer") == "hand_over" and v["open_question"].get("owed") == ["yes_no"], v["open_question"]
+    assert v["open_question"].get("hand_over_to") == "warehouse", v["open_question"]
+    assert [i["position"] for i in v["last_list"]] == [o["position"] for o in opts]
+
+
+@pytest.mark.parametrize("codes,miss", [(OWNER_FAMILY[:3], 1), (OWNER_FAMILY[:3], 2)], ids=["pick_1", "pick_2"])
+def test_r3b_s1_the_offer_turns_own_after_view_shows_the_offer_as_the_next_parser_sees_it(seam, monkeypatch, codes, miss):
+    _staff_with_team(seam, monkeypatch)
+    a = seam.say(str(miss), _pick(miss, str(miss)), previous=_roster_state(seam, codes))
+    assert "escalate" in ((a.reply or {}).get("text") or "").lower()
+    after = _mem_state(seam, a)["after"]["open_question"]
+    assert after.get("offer") == "hand_over" and after.get("owed") == ["yes_no"], after
