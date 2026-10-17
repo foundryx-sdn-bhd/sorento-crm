@@ -1,6 +1,6 @@
 # PLAN - Files page: every folder has its own URL
 
-Status: **Behaviour card posted, waiting on crew answers. Track: small fix (expected diff well under 300 lines, frontend only, no migration, no auth/RBAC change, no new ingest).**
+Status: **Behaviour card answered 17 Oct (build as written: 1a 2a 3a 4a 5a). Red tests committed; fix in progress. Track: small fix (frontend only, no migration, no auth/RBAC change, no new ingest).**
 UAC: `documentation/plans/resources/files-url-nav-acceptance-criteria.md`
 Lane: FILES-URL-NAV, base `origin/main` 20c191d8.
 
