@@ -124,3 +124,8 @@ Request: the held-out code-lookup fails counted by failing check name (no items)
 - Carrying the last answer's domain into the parser input (cp0-df53e90ebf) belongs to CHAT-STATE r2.
 - Lane, red-first: two equally close near codes give no pick (csk11b class), a held member with no file says so for
   that code (cp0-232723529a class), a set + spec word picks the variant set with no unasked attribute (9793 lane half).
+- Crew decision 18 Oct (owner rulings 17 Oct + 11 Oct "let's not assume" + 16 Oct "trust the parser's registry-valid
+  value"): gated code-side REFUSAL of an unsafe pick: drop a product pick back to the typed word only on a true tie
+  (another listed near code with an equal shortlist score) or a partial code held by 2+ listed codes with none exact;
+  never when one code beats the rest. Code never chooses. Prove both directions on TRAIN. Set + other spec stays
+  prompt-only. When-deliver class wording approved on an unlabelled version.
