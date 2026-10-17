@@ -679,7 +679,7 @@ def _word_tokens(text: Any) -> list[str]:
         elif NUMBER_UNIT_RE.fullmatch(bare.lower()):
             out.extend(re.findall(r"\d+(?:\.\d+)?|[a-z]+", bare.lower()))
         else:
-            out.extend(re.findall(r"[a-z0-9]+", word.lower()))
+            out.extend(re.findall(r"\d+(?:\.\d+)?|[a-z0-9]+", word.lower()))   # a decimal stays one number
     return out
 
 
