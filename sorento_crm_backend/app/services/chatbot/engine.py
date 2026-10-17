@@ -6991,23 +6991,15 @@ def _run_stages_body(  # noqa: PLR0915
                 class_terms = turn_runtime.class_scope_terms(verdict)
                 qualifying = int((predicate or {}).get("qualifying_total") or 0)
                 asked = named_count(verdict.get("top_n"))
-                withheld = (
-                    predicate is not None
-                    and plan.fetch
-                    and spec_tier
-                    and qualifying > business_answer.SET_LIST_MAX
-                    and asked is None
-                    and bool((predicate or {}).get("breakdown"))
-                )
-                # Fix round 9 on PR #833: a long set nothing splits lists what fits, and
-                # is carried like a named count so "another N" continues it.
+                # Fix round 9 on PR #833: a long set lists what fits, and is carried like
+                # a named count so "another N" continues it (SET-STOCK-RENDER, owner 16
+                # Oct 2026: every long set, never withheld for a breakdown).
                 listed_to_the_limit = (
                     predicate is not None
                     and plan.fetch
                     and spec_tier
                     and qualifying > business_answer.SET_LIST_MAX
                     and asked is None
-                    and not withheld
                 )
                 # W4 (owner hand test round 2): a set listed only in part (the customer
                 # named fewer than qualify) is carried too, so their own "another N"
@@ -7049,7 +7041,7 @@ def _run_stages_body(  # noqa: PLR0915
                             state_out.focus.extra.pop(kind, None)
                 elif miss_on_typed_product and not class_terms:
                     state_out.focus.set_page = None
-                elif withheld or partly_listed or listed_to_the_limit:
+                elif partly_listed or listed_to_the_limit:
                     state_out.focus.set_page = turn_runtime.set_page_carry(
                         predicate,
                         plan.fetch[0],
@@ -7058,9 +7050,7 @@ def _run_stages_body(  # noqa: PLR0915
                             envelopes[0].get("access_levels_used") if envelopes else None
                         ),
                         shown=(
-                            0
-                            if withheld
-                            else business_answer.SET_LIST_MAX
+                            business_answer.SET_LIST_MAX
                             if listed_to_the_limit
                             else min(asked, business_answer.SET_LIST_MAX)
                         ),

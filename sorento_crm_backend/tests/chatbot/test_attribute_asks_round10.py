@@ -212,7 +212,8 @@ def test_pnk_water_closet_says_pnk_as_typed(chat, world, verdict):
     print(text)
     lines = text.split("\n")
     assert lines[0] == "Here's what you want: pnk water closets", text
-    assert any(re.fullmatch(r"• White water closets: \d+", line) for line in lines), text
+    # SET-STOCK-RENDER (SSR-7): no breakdown lines.
+    assert not [ln for ln in lines if re.fullmatch(r"• .+: [\d,]+", ln)], text
     assert "Couldn't find: pnk (finish or colour). Would you like me to escalate to" in text, text
     assert "pink" not in text.lower(), text
 
@@ -221,8 +222,9 @@ def test_pnk_inside_the_category_token_is_said_back_never_searched(chat, world):
     text = chat.say(P1, _code_ask(P1, _entity("pnk water closet", "category")))
     print(text)
     lines = text.split("\n")
+    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the typed header and the miss line stay.
     assert lines[0] == "Here's what you want: pnk water closets", text
-    assert all(re.fullmatch(r"• \S+ water closets: \d+", line) for line in lines[1:-2]) and lines[1:-2], text
+    assert not [ln for ln in lines if re.fullmatch(r"• .+: [\d,]+", ln)], text
     assert 'Couldn\'t find: "pnk".' in text, text
     assert "*Product Code:*" not in text and "product:" not in text, text
 

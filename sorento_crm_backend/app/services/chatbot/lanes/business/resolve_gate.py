@@ -841,8 +841,8 @@ def resolve_entity_body(
     if require is not None:
         body["require"] = require
         body["predicate_words"] = derive_predicate_words(parse_output, require, message_text=_query_text(ctx))
-        # Fix round 9 on PR #833: the reply's list limit, so a longer set comes back with
-        # its breakdown and a zero set with its described products (read at call time).
+        # Fix round 9 on PR #833: the reply's list limit, so a zero set comes back with
+        # its described products (read at call time).
         from app.services.chatbot.lanes.business import answer as answer_mod
 
         body["set_list_max"] = int(answer_mod.SET_LIST_MAX)

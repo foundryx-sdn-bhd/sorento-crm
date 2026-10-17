@@ -504,7 +504,10 @@ def test_r6_a_set_ask_with_an_unknown_value_is_said_back_and_the_answer_reruns_i
     )
     # Amended to fix round 9 on PR #833: the one reply structure; the water closets broken
     # down by trap are the lines.
-    assert text.startswith("Here's what you want: t trap water closets\n• P trap water closets: "), text
+    # SET-STOCK-RENDER (SSR-7): the typed header, no breakdown line, no rows, then the miss line.
+    assert text.split("\n", 1)[0] == "Here's what you want: t trap water closets", text
+    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
+    assert "*Product Code:*" not in text, text
     assert "Couldn't find: t trap (trap). Would you like me to escalate to" in text, text
     assert not _codes(world["srt_strap"]) & {r["code"] for r in _rows(text)}, text
     again = chat.say("p trap", _product_ask("p trap", "p trap"))
@@ -624,8 +627,10 @@ def test_replay_the_owners_eight_exchanges(chat, world, list_max_2):
     # default; too many is the count and a breakdown by the next attribute (the brand);
     # every miss and unknown value is the one reply structure.
     # 1: the count and the brand breakdown, one line each, no paging question.
-    assert one.startswith("Here's what you want: wash basins with stock (6)\n• "), one
-    assert f"• {sorento} wash basins: 3" in one and "How many" not in one, one
+    # SET-STOCK-RENDER (SSR-5): the first 2 of 6 are listed, no breakdown lines.
+    assert one.startswith("Here's what you want: wash basins with stock (6, showing 1 to 2)"), one
+    assert not [ln for ln in one.split("\n") if ln.startswith("• ")], one
+    assert "How many" not in one, one
     # 2: R3. "10" lists what fits, the product-code rows.
     assert len(row_blocks(two)) == 2, two
     # 3: R2. The product type and trap are both named.

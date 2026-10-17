@@ -511,6 +511,8 @@ CATALOG: tuple[ToolSpec, ...] = (
             "own open sales-order quantity, not yet a delivery order) to every stock row, and an "
             "`(O/S: n)` suffix on the compact block's Total and warehouse lines. Default false. "
             "Field-reveal gated downstream (`inventory.sellable`), not by this tool.\n\n"
+            "EMPTY LOCATIONS: pass `hide_zero_locations=true` to drop the locations holding none "
+            "of the product for this call (the compact Total is unchanged). Default false.\n\n"
             "COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + `space_id` to scope "
             "results to that contact's company/companies; omit both for all-company results. "
             "Pass BOTH or NEITHER: `contact_id` without `space_id` returns no rows."
@@ -520,7 +522,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         (
             "page", "limit", "product_ids", "sort", "dir", "warehouse_ids", "quantity_operator",
             "quantity_value", "status", "requested_qty", "requested_quantities", "include_sellable",
-            "contact_id", "space_id",
+            "hide_zero_locations", "contact_id", "space_id",
         ),
         domain="inventory",
         related_tools=("crm_inventory_warehouses_list",),
