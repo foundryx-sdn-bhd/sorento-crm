@@ -140,17 +140,42 @@ def test_the_alias_lookup_set_adds_its_words_to_the_type_it_names(db):
     )
 
 
-def test_a_type_no_product_carries_and_a_certificate_kind_are_not_file_types(db):
+def _file_elsewhere(db, type_id: str) -> None:
+    """A live file of the type that sits on no product (an SCM shipment line photo)."""
+    db.add(Attachment(
+        id=str(uuid.uuid4()), original_filename="line.jpg", stored_filename=f"{uuid.uuid4().hex}.jpg",
+        file_path="https://cdn.test/line.jpg", attachment_type_id=type_id, is_deleted=False,
+        company_id=DEFAULT_COMPANY_ID, entity_type="inbound_shipment_line",
+    ))
+    db.flush()
+
+
+def test_a_type_whose_files_sit_only_on_other_records_and_a_certificate_kind_are_not_file_types(db):
     product = _product(db)
     photos = _type(db, "Product Photos", code="product_photos")
-    _type(db, "Shipment Line Photo", code="shipment_line_photo")  # an internal SCM type, no product file
-    certs = _type(db, "Certification", code="certification", cert=True)
     _file_on_product(db, photos, product)
+    _file_elsewhere(db, _type(db, "Shipment Line Photo", code="shipment_line_photo"))
+    certs = _type(db, "Certification", code="certification", cert=True)
     _file_on_product(db, certs, product)
+
+    assert pv.render_value(db, "attachment_types") == "File type product_photos: Product Photos."
+
+
+def test_a_type_no_file_carries_yet_is_listed_so_its_ask_is_answered_none_on_record(db):
+    """S6 (17 Oct): Installation Guide carried no product file on dev, so it was off the list
+    and the strict enum forced its ask onto Technical Specifications (the wrong type and the
+    wrong files). A type with no live file anywhere is a product file type still to be filled."""
+    product = _product(db)
+    _file_on_product(db, _type(db, "Product Photos", code="product_photos"), product)
+    _type(db, "Installation Guide")
     gone = _type(db, "Old Brochure", code="old_brochure")
     _file_on_product(db, gone, product, deleted=True)
 
-    assert pv.render_value(db, "attachment_types") == "File type product_photos: Product Photos."
+    assert pv.render_value(db, "attachment_types") == (
+        "File type Installation Guide: Installation Guide.\n"
+        "File type old_brochure: Old Brochure.\n"
+        "File type product_photos: Product Photos."
+    )
 
 
 def test_a_type_without_a_code_is_listed_by_its_name(db):
