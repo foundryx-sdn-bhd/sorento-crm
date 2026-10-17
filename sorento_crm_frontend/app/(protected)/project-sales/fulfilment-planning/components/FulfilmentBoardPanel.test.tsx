@@ -24,6 +24,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const routerReplace = vi.fn();
 let currentSearchParams = new URLSearchParams('');
 
+// The item chip reads stock through its own batched query; this test pins row order only.
+vi.mock('@/components/stock-status/StockStatusChip', () => ({ StockStatusChip: () => null }));
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
     push: vi.fn(),

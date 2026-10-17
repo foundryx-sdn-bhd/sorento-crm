@@ -80,16 +80,20 @@ export interface LocationDocument {
   qty: number;
   lineId: string | null;
   coveredInCrm: boolean;
+  warehouseId: string;
 }
 
-/** Every counted document behind one location, earliest due first, undated last. */
+/**
+ * Every counted document behind one location (or, `warehouseId` null, behind every location
+ * given), earliest due first, undated last.
+ */
 export function documentsForLocation(
   data: Pick<StockStatus, 'sales_orders' | 'purchase_orders' | 'spos'>,
-  warehouseId: string,
+  warehouseId: string | null,
 ): LocationDocument[] {
   const docs: LocationDocument[] = [];
   for (const s of data.sales_orders) {
-    if (s.warehouse_id !== warehouseId) continue;
+    if (warehouseId !== null && s.warehouse_id !== warehouseId) continue;
     docs.push({
       key: `so-${s.line_id}`,
       kind: 'SO',
@@ -104,10 +108,11 @@ export function documentsForLocation(
       qty: -s.qty,
       lineId: s.line_id,
       coveredInCrm: s.covered_in_crm,
+      warehouseId: s.warehouse_id,
     });
   }
   for (const p of data.purchase_orders) {
-    if (p.warehouse_id !== warehouseId) continue;
+    if (warehouseId !== null && p.warehouse_id !== warehouseId) continue;
     docs.push({
       key: `po-${p.line_id}`,
       kind: 'PO',
@@ -122,10 +127,11 @@ export function documentsForLocation(
       qty: p.qty,
       lineId: null,
       coveredInCrm: false,
+      warehouseId: p.warehouse_id,
     });
   }
   for (const x of data.spos) {
-    if (x.warehouse_id !== warehouseId) continue;
+    if (warehouseId !== null && x.warehouse_id !== warehouseId) continue;
     docs.push({
       key: `spo-${x.allocation_id}`,
       kind: 'SPO',
@@ -140,6 +146,7 @@ export function documentsForLocation(
       qty: x.qty,
       lineId: null,
       coveredInCrm: false,
+      warehouseId: x.warehouse_id,
     });
   }
   return docs.sort((a, b) => {

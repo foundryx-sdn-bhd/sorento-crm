@@ -19,7 +19,9 @@ import { SectionSkeleton } from '@/components/common/SectionSkeleton';
 import { ListLoadFailure } from '@/components/common/ListLoadFailure';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { formatDateInMalaysia } from '@/lib/helpers';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { usePermissions } from '@/hooks/usePermissions';
+import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { cn } from '@/lib/utils';
 import { useStockStatus } from './useStockStatus';
 import {
@@ -50,6 +52,36 @@ export function Qty({ value, signed = false }: { value: number; signed?: boolean
 
 const date = (value: string | null) => (value ? formatDateInMalaysia(value) : null);
 
+/** The permission each document's CRM page is reached by (the menu's gate on that page). */
+const PAGE_PERMISSION: Record<LocationDocument['kind'] | 'PL', string> = {
+  SO: 'scm.dashboard.view',
+  PO: 'scm.dashboard.view',
+  SPO: 'procurement.spo_allocations.view',
+  PL: 'procurement.packing_lists.view',
+};
+
+/** A document number: a link to its page, or plain text for a viewer who cannot open it (R7). */
+function DocNumber({ kind, href, number }: { kind: keyof typeof PAGE_PERMISSION; href: string; number: string }) {
+  const { permissionSet } = usePermissions();
+  if (!permissionSet.has(PAGE_PERMISSION[kind])) {
+    return (
+      <span className="truncate font-medium" title={number}>
+        {number}
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      className="truncate font-medium text-primary hover:underline"
+      title={number}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {number}
+    </Link>
+  );
+}
+
 export interface StockStatusPanelProps {
   productId: string;
   /** Sales order lines the panel was opened for: their SO rows read "This line". */
@@ -66,6 +98,14 @@ export function StockStatusPanel({ productId, lineIds = [], showOpenFullPage = f
   const query = useStockStatus(productId, soDueBy);
   const [search, setSearch] = React.useState('');
   const [tab, setTab] = React.useState('location');
+  // Lifted so Enter in the search can open the first shown location (R11).
+  const [expanded, setExpanded] = React.useState<ExpandedState>({});
+  const openFirstShown = () => {
+    const first = query.data?.locations.find((l) => matchesLocation(l, search));
+    if (!first) return;
+    setTab('location');
+    setExpanded({ [first.warehouse_id]: true });
+  };
 
   return (
     <div className={cn('flex min-w-0 flex-col gap-3', className)} data-testid="stock-status-panel">
@@ -85,6 +125,7 @@ export function StockStatusPanel({ productId, lineIds = [], showOpenFullPage = f
           onChange={setSearch}
           placeholder="Search locations"
           aria-label="Search locations"
+          onSubmit={openFirstShown}
           className="w-full sm:w-56"
         />
         {showOpenFullPage && (
@@ -113,7 +154,7 @@ export function StockStatusPanel({ productId, lineIds = [], showOpenFullPage = f
         <>
           {query.data.as_of && (
             <p className="text-xs text-muted-foreground">
-              On hand as of <span className="font-medium text-foreground">{date(query.data.as_of)}</span>
+              On hand as of <span className="font-medium text-foreground">{formatDateTimeInMalaysia(query.data.as_of)}</span>
             </p>
           )}
           <Tabs value={tab} onValueChange={setTab}>
@@ -122,7 +163,13 @@ export function StockStatusPanel({ productId, lineIds = [], showOpenFullPage = f
               <TabsTrigger value="totals">SO totals</TabsTrigger>
             </TabsList>
             <TabsContent value="location" className="pt-3">
-              <LocationsView data={query.data} search={search} lineIds={lineIds} />
+              <LocationsView
+                data={query.data}
+                search={search}
+                lineIds={lineIds}
+                expanded={expanded}
+                onExpandedChange={setExpanded}
+              />
             </TabsContent>
             <TabsContent value="totals" className="pt-3">
               <SoTotalsView data={query.data} search={search} />
@@ -134,8 +181,16 @@ export function StockStatusPanel({ productId, lineIds = [], showOpenFullPage = f
   );
 }
 
-function LocationsView({ data, search, lineIds }: { data: StockStatus; search: string; lineIds: string[] }) {
-  const [expanded, setExpanded] = React.useState<ExpandedState>({});
+interface LocationsViewProps {
+  data: StockStatus;
+  search: string;
+  lineIds: string[];
+  expanded: ExpandedState;
+  onExpandedChange: React.Dispatch<React.SetStateAction<ExpandedState>>;
+}
+
+function LocationsView({ data, search, lineIds, expanded, onExpandedChange: setExpanded }: LocationsViewProps) {
+  const isMobile = useIsMobile();
   const [plOpen, setPlOpen] = React.useState(false);
   const shown = React.useMemo(() => data.locations.filter((l) => matchesLocation(l, search)), [data, search]);
   const sums = sumLocations(shown);
@@ -165,7 +220,7 @@ function LocationsView({ data, search, lineIds }: { data: StockStatus; search: s
         id: 'location',
         header: 'Location',
         cell: ({ row }) => (
-          <span className="flex min-w-0 items-center gap-1.5" title={row.original.warehouse_name ?? undefined}>
+          <span className="flex min-w-0 items-center gap-1.5" title={locationTitle(row.original)}>
             <span className="truncate font-medium">{row.original.warehouse_code}</span>
             {!row.original.is_active && (
               <Badge variant="secondary" appearance="light" size="xs">
@@ -187,9 +242,7 @@ function LocationsView({ data, search, lineIds }: { data: StockStatus; search: s
         id: 'incoming_pl',
         header: () => <span className="block text-end">Incoming PL</span>,
         cell: () => (
-          <span className="block text-end text-muted-foreground" title="A packing list has no location until it becomes an SPO">
-            -
-          </span>
+<span className="block text-end text-muted-foreground">-</span>
         ),
         footer: () => (
           <span className="block text-end font-semibold">{filtered ? '-' : <Qty value={data.totals.incoming_pl} />}</span>
@@ -205,19 +258,31 @@ function LocationsView({ data, search, lineIds }: { data: StockStatus; search: s
 
   return (
     <div className="flex flex-col gap-2">
-      <PanelDataGrid
-        columns={columns}
-        rows={shown}
-        getRowId={(l) => l.warehouse_id}
-        listingKey={null}
-        emptyTitle={`No location matches ${search.trim()}`}
-        paginate={false}
-        sortable={false}
-        expanded={expanded}
-        onExpandedChange={setExpanded}
-        onRowClick={(l) => setExpanded((prev) => toggle(prev, l.warehouse_id))}
-        scrollerMaxHeight={false}
-      />
+      {isMobile ? (
+        <LocationCards
+          data={data}
+          shown={shown}
+          filtered={filtered}
+          search={search}
+          lineIds={lineIds}
+          expanded={expanded}
+          onToggle={(id) => setExpanded((prev) => toggle(prev, id))}
+        />
+      ) : (
+        <PanelDataGrid
+          columns={columns}
+          rows={shown}
+          getRowId={(l) => l.warehouse_id}
+          listingKey={null}
+          emptyTitle={`No location matches ${search.trim()}`}
+          paginate={false}
+          sortable={false}
+          expanded={expanded}
+          onExpandedChange={setExpanded}
+          onRowClick={(l) => setExpanded((prev) => toggle(prev, l.warehouse_id))}
+          scrollerMaxHeight={false}
+        />
+      )}
       <div className="rounded-md border text-sm" data-testid="stock-status-summary">
         {filtered && (
           <SummaryLine label="All locations">
@@ -250,6 +315,112 @@ function LocationsView({ data, search, lineIds }: { data: StockStatus; search: s
         </SummaryLine>
       </div>
     </div>
+  );
+}
+
+function locationTitle(l: StockStatusLocation): string {
+  const code = l.warehouse_code ?? '';
+  return l.warehouse_name && l.warehouse_name !== code ? `${code}\n${l.warehouse_name}` : code;
+}
+
+/** First cards shown on a phone before "+ n more locations" (mock round 4, frame 1 at 375). */
+const CARDS_BEFORE_MORE = 4;
+
+interface LocationCardsProps {
+  data: StockStatus;
+  shown: StockStatusLocation[];
+  filtered: boolean;
+  search: string;
+  lineIds: string[];
+  expanded: ExpandedState;
+  onToggle: (warehouseId: string) => void;
+}
+
+/** The phone layout of By location: one card per location, then a Total card. */
+function LocationCards({ data, shown, filtered, search, lineIds, expanded, onToggle }: LocationCardsProps) {
+  const [all, setAll] = React.useState(false);
+  const isOpen = (id: string) => expanded === true || Boolean(expanded[id]);
+  // A search, or a location opened from it, shows every match.
+  const capped = !all && !filtered && shown.length > CARDS_BEFORE_MORE;
+  const visible = capped ? shown.slice(0, CARDS_BEFORE_MORE) : shown;
+  const sums = sumLocations(shown);
+  return (
+    <div className="flex flex-col gap-2" data-testid="stock-status-cards">
+      {shown.length === 0 && (
+        <p className="rounded-md border px-3 py-6 text-center text-sm text-muted-foreground">
+          No location matches {search.trim()}
+        </p>
+      )}
+      {visible.map((l) => (
+        <div key={l.warehouse_id} className="rounded-md border">
+          <button
+            type="button"
+            className="flex w-full flex-col gap-1 px-3 py-2 text-start"
+            onClick={() => onToggle(l.warehouse_id)}
+            aria-expanded={isOpen(l.warehouse_id)}
+          >
+            <span className="flex w-full items-center gap-1.5">
+              <span className="truncate font-medium" title={locationTitle(l)}>
+                {l.warehouse_code}
+              </span>
+              {!l.is_active && (
+                <Badge variant="secondary" appearance="light" size="xs">
+                  Inactive in CRM
+                </Badge>
+              )}
+              <span className="ms-auto font-semibold tabular-nums">
+                <Qty value={l.forecast} />
+              </span>
+            </span>
+            <CardFigures onHand={l.on_hand} so={l.so_qty} po={l.po_qty} spo={l.spo_qty} />
+          </button>
+          {isOpen(l.warehouse_id) && (
+            <div className="border-t px-1">
+              <DocumentsGrid docs={documentsForLocation(data, l.warehouse_id)} lineIds={lineIds} />
+            </div>
+          )}
+        </div>
+      ))}
+      {capped && (
+        <button
+          type="button"
+          className="rounded-md border border-dashed px-3 py-2 text-sm font-medium text-primary"
+          onClick={() => setAll(true)}
+        >
+          + {shown.length - CARDS_BEFORE_MORE} more locations
+        </button>
+      )}
+      {shown.length > 0 && (
+        <div className="flex flex-col gap-1 rounded-md border bg-muted/40 px-3 py-2" data-testid="stock-status-total-card">
+          <span className="flex items-center font-semibold">
+            <span>{filtered ? `Shown, ${shown.length} of ${data.locations.length}` : 'Total'}</span>
+            <span className="ms-auto tabular-nums">
+              <Qty value={sums.forecast} />
+            </span>
+          </span>
+          <CardFigures onHand={sums.on_hand} so={sums.so_qty} po={sums.po_qty} spo={sums.spo_qty} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardFigures({ onHand, so, po, spo }: { onHand: number; so: number; po: number; spo: number }) {
+  const figure = (label: string, value: number) => (
+    <span className="flex flex-col">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="tabular-nums">
+        <Qty value={value} />
+      </span>
+    </span>
+  );
+  return (
+    <span className="grid w-full grid-cols-4 gap-2 text-sm">
+      {figure('On hand', onHand)}
+      {figure('SO', -so)}
+      {figure('PO', po)}
+      {figure('SPO', spo)}
+    </span>
   );
 }
 
@@ -300,10 +471,17 @@ const KIND_VARIANT: Record<LocationDocument['kind'], 'destructive' | 'primary' |
   SPO: 'success',
 };
 
-function DocumentsGrid({ docs, lineIds }: { docs: LocationDocument[]; lineIds: string[] }) {
+interface DocumentsGridProps {
+  docs: LocationDocument[];
+  lineIds: string[];
+  /** SO totals: the documents span locations, so each row names its own. */
+  locationCodes?: Record<string, string>;
+}
+
+function DocumentsGrid({ docs, lineIds, locationCodes }: DocumentsGridProps) {
   const mine = React.useMemo(() => new Set(lineIds), [lineIds]);
-  const columns = React.useMemo<ColumnDef<LocationDocument>[]>(
-    () => [
+  const columns = React.useMemo<ColumnDef<LocationDocument>[]>(() => {
+    const all: ColumnDef<LocationDocument>[] = [
       {
         id: 'kind',
         header: 'Type',
@@ -312,7 +490,7 @@ function DocumentsGrid({ docs, lineIds }: { docs: LocationDocument[]; lineIds: s
             {row.original.kind}
           </Badge>
         ),
-        size: 70,
+        size: 84,
         meta: { headerTitle: 'Type' },
       },
       {
@@ -320,14 +498,7 @@ function DocumentsGrid({ docs, lineIds }: { docs: LocationDocument[]; lineIds: s
         header: 'Doc no',
         cell: ({ row }) => (
           <span className="flex min-w-0 items-center gap-1.5">
-            <Link
-              href={row.original.href}
-              className="truncate font-medium text-primary hover:underline"
-              title={row.original.number}
-              onClick={(event) => event.stopPropagation()}
-            >
-              {row.original.number}
-            </Link>
+            <DocNumber kind={row.original.kind} href={row.original.href} number={row.original.number} />
             {row.original.lineId && mine.has(row.original.lineId) && (
               <Badge variant="info" appearance="light" size="xs">
                 This line
@@ -335,14 +506,18 @@ function DocumentsGrid({ docs, lineIds }: { docs: LocationDocument[]; lineIds: s
             )}
           </span>
         ),
-        size: 170,
+        size: 190,
         meta: { headerTitle: 'Doc no' },
       },
       {
         id: 'account',
         header: 'Account',
-        cell: ({ row }) => <span className="truncate">{row.original.account ?? '-'}</span>,
-        size: 100,
+        cell: ({ row }) => (
+          <span className="truncate" title={row.original.account ?? undefined}>
+            {row.original.account ?? '-'}
+          </span>
+        ),
+        size: 116,
         meta: { headerTitle: 'Account' },
       },
       {
@@ -360,7 +535,7 @@ function DocumentsGrid({ docs, lineIds }: { docs: LocationDocument[]; lineIds: s
             )}
           </span>
         ),
-        size: 200,
+        size: 240,
         meta: { headerTitle: 'Name' },
       },
       {
@@ -378,7 +553,7 @@ function DocumentsGrid({ docs, lineIds }: { docs: LocationDocument[]; lineIds: s
         id: 'docDate',
         header: 'Doc date',
         cell: ({ row }) => <span>{date(row.original.docDate) ?? '-'}</span>,
-        size: 100,
+        size: 116,
         meta: { headerTitle: 'Doc date' },
       },
       {
@@ -392,14 +567,18 @@ function DocumentsGrid({ docs, lineIds }: { docs: LocationDocument[]; lineIds: s
               No date
             </Badge>
           ),
-        size: 110,
+        size: 122,
         meta: { headerTitle: 'Due / ETA' },
       },
       {
         id: 'loading',
         header: 'Loading',
-        cell: ({ row }) => <span className="truncate">{row.original.loading ?? '-'}</span>,
-        size: 120,
+        cell: ({ row }) => (
+          <span className="truncate" title={row.original.loading ?? undefined}>
+            {row.original.loading ?? '-'}
+          </span>
+        ),
+        size: 130,
         meta: { headerTitle: 'Loading' },
       },
       {
@@ -413,9 +592,24 @@ function DocumentsGrid({ docs, lineIds }: { docs: LocationDocument[]; lineIds: s
         size: 90,
         meta: { headerTitle: 'Qty' },
       },
-    ],
-    [mine],
-  );
+    ];
+    if (!locationCodes) return all;
+    const location: ColumnDef<LocationDocument> = {
+      id: 'location',
+      header: 'Location',
+      cell: ({ row }) => {
+        const code = locationCodes[row.original.warehouseId] ?? '-';
+        return (
+          <span className="truncate" title={code}>
+            {code}
+          </span>
+        );
+      },
+      size: 110,
+      meta: { headerTitle: 'Location' },
+    };
+    return [all[0], all[1], location, ...all.slice(2)];
+  }, [mine, locationCodes]);
   return (
     <div className="py-1" data-testid="stock-status-documents">
       <PanelDataGrid
@@ -439,12 +633,11 @@ function IncomingPlGrid({ rows }: { rows: StockStatusIncomingPl[] }) {
         id: 'number',
         header: 'Packing list',
         cell: ({ row }) => (
-          <Link
+          <DocNumber
+            kind="PL"
             href={`/procurement-management/packing-lists/${row.original.shipment_id}`}
-            className="truncate font-medium text-primary hover:underline"
-          >
-            {row.original.shipment_number}
-          </Link>
+            number={row.original.shipment_number}
+          />
         ),
         size: 150,
         meta: { headerTitle: 'Packing list' },
@@ -452,7 +645,11 @@ function IncomingPlGrid({ rows }: { rows: StockStatusIncomingPl[] }) {
       {
         id: 'container',
         header: 'Container',
-        cell: ({ row }) => <span className="truncate">{row.original.container_number ?? '-'}</span>,
+        cell: ({ row }) => (
+          <span className="truncate" title={row.original.container_number ?? undefined}>
+            {row.original.container_number ?? '-'}
+          </span>
+        ),
         size: 130,
         meta: { headerTitle: 'Container' },
       },
@@ -502,6 +699,11 @@ function plNumber(id: string, title: string, of: (r: StockStatusIncomingPl) => n
 
 function SoTotalsView({ data, search }: { data: StockStatus; search: string }) {
   const [by, setBy] = React.useState<GroupBy>('project');
+  const [expanded, setExpanded] = React.useState<ExpandedState>({});
+  const codes = React.useMemo(
+    () => Object.fromEntries(data.locations.map((l) => [l.warehouse_id, l.warehouse_code ?? ''])),
+    [data],
+  );
   const cols = React.useMemo(() => soColumns(data.locations, search), [data, search]);
   const filtered = search.trim() !== '';
   const groups = React.useMemo(() => {
@@ -517,6 +719,28 @@ function SoTotalsView({ data, search }: { data: StockStatus; search: string }) {
 
   const columns = React.useMemo<ColumnDef<SoGroup>[]>(
     () => [
+      {
+        id: 'expand',
+        header: () => null,
+        cell: ({ row }) =>
+          row.getIsExpanded() ? (
+            <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
+          ) : (
+            <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
+          ),
+        size: 36,
+        enableResizing: false,
+        meta: {
+          headerTitle: 'Expand',
+          expandedContent: (g: SoGroup) => (
+            <DocumentsGrid
+              docs={documentsForLocation({ sales_orders: g.rows, purchase_orders: [], spos: [] }, null)}
+              lineIds={[]}
+              locationCodes={codes}
+            />
+          ),
+        },
+      },
       {
         id: 'label',
         header: groupLabel,
@@ -569,7 +793,7 @@ function SoTotalsView({ data, search }: { data: StockStatus; search: string }) {
         meta: { headerTitle: 'SO' },
       },
     ],
-    [cols, filtered, groupLabel, shownTotal, withSo],
+    [cols, codes, filtered, groupLabel, shownTotal, withSo],
   );
 
   return (
@@ -593,6 +817,9 @@ function SoTotalsView({ data, search }: { data: StockStatus; search: string }) {
         emptyTitle={filtered ? `No SO at locations matching ${search.trim()}` : 'No open SO for this item'}
         paginate={false}
         sortable={false}
+        expanded={expanded}
+        onExpandedChange={setExpanded}
+        onRowClick={(g) => setExpanded((prev) => toggle(prev, g.key))}
         scrollerMaxHeight={false}
       />
       {filtered && (

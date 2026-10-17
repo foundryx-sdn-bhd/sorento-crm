@@ -14,7 +14,19 @@ vi.mock('./useStockStatus', () => ({
   useStockStatus: (...args: unknown[]) => useStockStatusMock(...args),
 }));
 
+// The viewer's permissions (R7: a document the viewer cannot open is plain text).
+let granted = new Set<string>();
+vi.mock('@/hooks/usePermissions', () => ({
+  usePermissions: () => ({ permissionSet: granted, isLoading: false }),
+}));
+
 import { StockStatusPanel } from './StockStatusPanel';
+
+const ALL_DOCUMENT_PAGES = [
+  'scm.dashboard.view',
+  'procurement.spo_allocations.view',
+  'procurement.packing_lists.view',
+];
 
 // The grid reads column preferences through React Query; give it a client of its own.
 function render(ui: React.ReactElement) {
@@ -58,6 +70,8 @@ const DATA: StockStatus = {
 };
 
 beforeEach(() => {
+  granted = new Set(ALL_DOCUMENT_PAGES);
+  window.innerWidth = 1024;
   useStockStatusMock.mockReset();
   useStockStatusMock.mockReturnValue({ data: DATA, isLoading: false, error: null, refetch: vi.fn() });
 });
@@ -129,5 +143,63 @@ describe('StockStatusPanel', () => {
     });
     render(<StockStatusPanel productId="p1" />);
     expect(screen.getByText('No stock, orders or incoming for this item')).toBeInTheDocument();
+  });
+
+  it('a viewer without the right to a document sees its number as plain text (R7)', () => {
+    granted = new Set(['scm.dashboard.view']);
+    render(<StockStatusPanel productId="p1" />);
+    fireEvent.click(screen.getByText('BRW-BB'));
+    const docs = screen.getByTestId('stock-status-documents');
+    expect(within(docs).getByRole('link', { name: 'SO341788' })).toBeInTheDocument();
+    expect(within(docs).queryByRole('link', { name: 'SPO-2026/10-0024' })).not.toBeInTheDocument();
+    expect(within(docs).getByText('SPO-2026/10-0024')).toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId('stock-status-summary')).getByRole('button', { name: /Incoming PL/ }));
+    expect(screen.queryByRole('link', { name: 'PL-2610-001' })).not.toBeInTheDocument();
+    expect(screen.getByText('PL-2610-001')).toBeInTheDocument();
+  });
+
+  it('an SO totals row expands to its SOs (R8)', async () => {
+    render(<StockStatusPanel productId="p1" />);
+    await userEvent.click(screen.getByRole('tab', { name: 'SO totals' }));
+    expect(screen.queryByRole('link', { name: 'SO341788' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('MANDARIN PR'));
+    expect(screen.getByRole('link', { name: 'SO341788' })).toHaveAttribute('href', '/scm/sales-orders/so1');
+  });
+
+  it('Enter in the location search opens the first shown location (R11)', async () => {
+    render(<StockStatusPanel productId="p1" />);
+    await userEvent.type(screen.getByRole('textbox', { name: 'Search locations' }), 'brw{Enter}');
+    expect(within(screen.getByTestId('stock-status-documents')).getByText('SO341788')).toBeInTheDocument();
+  });
+
+  it('says when on hand was last pushed, date and time (R9)', () => {
+    render(<StockStatusPanel productId="p1" />);
+    expect(screen.getByText(/15\/10\/2026, 2:00/)).toBeInTheDocument();
+  });
+
+  it('on a phone the locations read as cards, the first four then the rest on request, a Total card last', () => {
+    window.innerWidth = 375;
+    const extra = ['A1', 'A2', 'A3'].map((code) => ({
+      warehouse_id: code, warehouse_code: code, warehouse_name: code, is_active: true,
+      on_hand: 1, so_qty: 0, po_qty: 0, spo_qty: 0, forecast: 1,
+    }));
+    useStockStatusMock.mockReturnValue({
+      data: { ...DATA, locations: [...DATA.locations, ...extra] },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    render(<StockStatusPanel productId="p1" />);
+    const cards = screen.getByTestId('stock-status-cards');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    const bb = within(cards).getByRole('button', { name: /BRW-BB/ });
+    expect(within(bb).getByText('-5,528')).toBeInTheDocument();
+    expect(within(bb).getByText('-7,312')).toBeInTheDocument();
+    expect(within(cards).queryByText('A2')).not.toBeInTheDocument();
+    fireEvent.click(within(cards).getByRole('button', { name: '+ 2 more locations' }));
+    expect(within(cards).getByText('A2')).toBeInTheDocument();
+    expect(within(cards).getByTestId('stock-status-total-card')).toHaveTextContent('Total');
+    fireEvent.click(bb);
+    expect(within(screen.getByTestId('stock-status-documents')).getByText('SO341788')).toBeInTheDocument();
   });
 });
