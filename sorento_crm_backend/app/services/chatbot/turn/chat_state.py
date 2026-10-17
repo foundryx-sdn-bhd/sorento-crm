@@ -194,12 +194,24 @@ def _same_list(items: list[dict[str, Any]], oq: dict[str, Any] | None) -> bool:
     return {key(i) for i in items} == {key(o) for o in options if isinstance(o, dict)}
 
 
+#: The `offer` value of a roster that carries a stamped hand-over offer.
+HAND_OVER_OFFER = "hand_over"
+
+
 def _open_question(focus: Focus, oq: dict[str, Any] | None, pending: Any = None) -> dict[str, Any] | None:
     obj = _plain(oq) if oq else {}
     if obj and pending is not None and getattr(pending, "kind", None) in ESCALATION_OFFER_KINDS:
         # A hand-over offer states its kind and the team it would go to (a name, never an id),
         # so a yes or a no can be read as accepting or declining it.
         obj["offer"] = pending.kind
+        team = _clean(getattr(pending, "team", None))
+        if team:
+            obj["hand_over_to"] = team.replace("_", " ")
+    elif obj and pending is not None and (getattr(pending, "payload", None) or {}).get("escalate_offered"):
+        # An answered roster the reply followed with a hand-over offer (contract 36 keeps the
+        # roster stored, stamped): the open question is that offer, not a pick still owed.
+        obj["offer"] = HAND_OVER_OFFER
+        obj["owed"] = ["yes_no"]
         team = _clean(getattr(pending, "team", None))
         if team:
             obj["hand_over_to"] = team.replace("_", " ")
@@ -230,7 +242,7 @@ def view(state: State, open_question: dict[str, Any] | None) -> dict[str, Any]:
         "subject": _subject(focus),
         "open_question": oq,
         "last_list": items or None,
-        "last_list_is_question": bool(items) and _same_list(items, oq),
+        "last_list_is_question": bool(items) and _same_list(items, oq) and (oq or {}).get("offer") != HAND_OVER_OFFER,
         "task": _plain(task) if task else None,
         "task_is_question": stock_is_question,
     }
