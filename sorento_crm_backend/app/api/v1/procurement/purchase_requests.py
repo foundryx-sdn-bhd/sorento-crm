@@ -1,4 +1,5 @@
 """Purchase requests / sponsorship forms API routes."""
+from uuid import UUID
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Request, Body
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -61,6 +62,7 @@ async def get_purchase_requests(
     assigned_to: Optional[str] = Query(None, description="users.id of the latest unresolved SLA assignee, or __unassigned__"),
     sort: Optional[str] = Query("submitted_at"),
     dir: Optional[str] = Query("desc"),
+    project_id: Optional[UUID] = Query(None, description="Only forms linked to this project"),
     current_user: dict = Depends(get_current_user_or_api_key),
     db: Session = Depends(get_db),
 ):
@@ -78,6 +80,7 @@ async def get_purchase_requests(
             assigned_to=assigned_to,
             sort_field=sort or "submitted_at",
             sort_dir=dir or "desc",
+            project_id=str(project_id) if project_id else None,
         )
         return result
     except Exception as e:

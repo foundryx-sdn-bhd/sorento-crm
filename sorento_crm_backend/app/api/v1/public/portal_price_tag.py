@@ -102,6 +102,17 @@ def portal_list_price_tag_requests(
 # ---------------------------------------------------------------------------
 
 
+def _check_portal_project(db: Session, token: PortalToken, project_id, current=None):
+    """FORMS-PROJECT: a portal contact links only a project of one of their own companies."""
+    from app.models.access import RespondContact
+    from app.services.project_link import check_portal_project_link
+
+    contact = db.query(RespondContact).filter(RespondContact.id == token.contact_id).first()
+    return check_portal_project_link(
+        db, contact=contact, project_id=project_id, current=current
+    )
+
+
 @router.post("/submissions/price_tag_request", status_code=201)
 def portal_create_price_tag_request(
     payload: PriceTagRequestCreate,
@@ -116,14 +127,16 @@ def portal_create_price_tag_request(
     a header-level check here.
     """
     _assert_visible(db, token.contact_id)
+    project_id = _check_portal_project(db, token, payload.project_id)
     company_id = _resolve_company(db, token)
     with company_scope(db, frozenset({company_id})):
         req = PriceTagRequestService.create_request(
             db,
             contact_id=token.contact_id,
             company_id=company_id,
-            data=payload.model_dump(),
+            data={**payload.model_dump(), "project_id": project_id},
             viewer=tag_data_service.contact_viewer(db, token.contact_id),
+            project_checked=True,
         )
     db.commit()
     return _detail_body(db, req)
@@ -380,6 +393,10 @@ def portal_update_price_tag_request(
     _require_draft(req, "Only a draft can be edited.")
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "project_id" in update_data:
+        update_data["project_id"] = _check_portal_project(
+            db, token, update_data["project_id"], current=req.project_id
+        )
     # `lines` is a relationship, not a column: given, it REPLACES the draft's
     # lines; omitted, it leaves them alone. Re-saving a draft posts the whole
     # table, which is why the form no longer creates a second request each time.

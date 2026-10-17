@@ -94,6 +94,7 @@ import {
   markReadyForCollection,
   markCollected,
   updatePriceTagPrintBy,
+  updatePriceTagRequestFields,
   lookupLinePricing,
   updatePriceTagLinePrice,
   type PriceTagRequestDetail as PriceTagRequestDetailType,
@@ -107,6 +108,9 @@ import {
   printByLabel,
   type PrintBy,
 } from '@/lib/dealer-kit/print-collection';
+import { ProjectLinkSelect } from '@/components/common/ProjectLinkSelect';
+import { ProjectLinkValue } from '@/components/common/ProjectLinkValue';
+import { isProjectLinkError } from '@/lib/project-link';
 import { PrintBySelect } from '@/components/dealer-kit/PrintBySelect';
 import ProductDataReviewDialog from '@/components/dealer-kit/ProductDataReviewDialog';
 import {
@@ -189,6 +193,7 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
   const [exportLoading, setExportLoading] = useState(false);
   /** The gear's Edit request modal (r9 D7): today it holds the print choice. */
   const [editOpen, setEditOpen] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
   const [reviewTagId, setReviewTagId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -383,6 +388,32 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
         toast.success('Request updated');
       } catch {
         toast.error('Failed to update the request');
+      } finally {
+        setActionLoading(false);
+      }
+    },
+    [requestId],
+  );
+
+  /** Link or clear the registered project (null clears). A refused project reads under the picker. */
+  const handleSaveProject = useCallback(
+    async (next: string | null) => {
+      setActionLoading(true);
+      setProjectError(null);
+      try {
+        await updatePriceTagRequestFields(requestId, { project_id: next });
+        const data = await getPriceTagRequest(requestId);
+        setRequest(data);
+        toast.success('Request updated');
+      } catch (error) {
+        if (isProjectLinkError(error)) {
+          setProjectError((error as Error).message);
+        }
+        toast.error(
+          error instanceof Error && error.message
+            ? error.message
+            : 'Failed to update the request',
+        );
       } finally {
         setActionLoading(false);
       }
@@ -973,6 +1004,15 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
                       and the collection CTA stays hidden until it is (D7). */}
                   <p className="font-medium">{printByLabel(request.print_by)}</p>
                 </div>
+                <div>
+                  <span className="text-muted-foreground block">Project</span>
+                  <p className="font-medium">
+                    <ProjectLinkValue
+                      projectId={request.project_id}
+                      projectLabel={request.project_label}
+                    />
+                  </p>
+                </div>
               </div>
               <div className="mt-4">
                 <span className="text-sm text-muted-foreground block">Notes</span>
@@ -1526,7 +1566,13 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
       {/* Edit request (r9 D7): the office fixing the print choice, in a modal
           the way every other edit in this app is. One field today; the rest of
           a request is the salesperson's to change through a revision. */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <Dialog
+        open={editOpen}
+        onOpenChange={(next) => {
+          if (!next) setProjectError(null);
+          setEditOpen(next);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Edit request</DialogTitle>
@@ -1541,6 +1587,20 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
               onChange={(next) => void handleSavePrintBy(next)}
               onClear={() => void handleSavePrintBy(null)}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Project (optional)</Label>
+            <ProjectLinkSelect
+              value={request.project_id ?? null}
+              disabled={busy}
+              onChange={(next) => void handleSaveProject(next)}
+              selectedLabel={request.project_label}
+            />
+            {projectError ? (
+              <p role="alert" className="text-sm text-destructive">
+                {projectError}
+              </p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)}>

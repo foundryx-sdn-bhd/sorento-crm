@@ -26,6 +26,10 @@ export interface PortalSalesOpportunity {
   customer_id: string | null;
   customer_name: string | null;
   prospect_name: string | null;
+  /** The registered project, when one is linked. */
+  project_id?: string | null;
+  project_code?: string | null;
+  project_label?: string | null;
   stage_key: string;
   stage_label: string;
   outcome: string;
@@ -44,6 +48,8 @@ export interface PortalSalesOpportunitySavePayload {
   expected_close_date?: string;
   customer_id?: string | null;
   prospect_name?: string | null;
+  /** null clears the link; omitted leaves it unchanged. */
+  project_id?: string | null;
   status_id?: string;
   lost_reason?: string | null;
   lines?: { product_id: string; qty: number; unit_price?: number | string | null }[];

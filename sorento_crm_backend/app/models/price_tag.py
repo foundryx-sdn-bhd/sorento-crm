@@ -95,6 +95,11 @@ class PriceTagRequest(Base, CompanyScopedMixin):
         nullable=False,
     )
     debtor_code = Column(String(100), nullable=True)
+    # FORMS-PROJECT: the explicit project link, picked by a person (no name matching).
+    # Nullable; deleting the project unlinks the form, never deletes it.
+    project_id = Column(
+        UUID(as_uuid=False), ForeignKey("projects.projects.id", ondelete="SET NULL"), nullable=True
+    )
     # Nullable since D48a: Save Draft validates nothing, so a half-typed request
     # has to be storable. Completeness is enforced on SUBMIT, in the service, where
     # the refusal can name the field that is missing.
@@ -180,6 +185,7 @@ class PriceTagRequest(Base, CompanyScopedMixin):
         Index("ix_price_tag_requests_status", "status"),
         Index("ix_price_tag_requests_contact_id", "contact_id"),
         Index("ix_price_tag_requests_assigned_to_id", "assigned_to_id"),
+        Index("ix_price_tag_requests_project_id", "project_id"),
         # company_id index is already created by CompanyScopedMixin (index=True).
     )
 

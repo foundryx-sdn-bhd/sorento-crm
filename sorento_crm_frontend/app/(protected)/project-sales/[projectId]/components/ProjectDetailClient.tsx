@@ -9,6 +9,7 @@ import {
   Clock,
   FileText,
   Flame,
+  FolderInput,
   HandCoins,
   History,
   Info,
@@ -58,6 +59,7 @@ import { DeliverySchedulesPanel } from './DeliverySchedulesPanel';
 import { PurchaseOrdersPanel } from './PurchaseOrdersPanel';
 import { SalesOrdersPanel } from './SalesOrdersPanel';
 import { QuotationsPanel } from './QuotationsPanel';
+import { FormsPanel } from './FormsPanel';
 import { SampleRequestsPanel } from './SampleRequestsPanel';
 import { SamplesPanel } from './SamplesPanel';
 import { SponsorshipsPanel } from './SponsorshipsPanel';
@@ -82,6 +84,7 @@ export const TABS = [
   { id: 'sample-requests', label: 'Sample requests', icon: ClipboardList },
   { id: 'samples', label: 'Samples', icon: Package },
   { id: 'sponsorships', label: 'Sponsorships', icon: HandCoins },
+  { id: 'forms', label: 'Forms', icon: FolderInput },
   { id: 'pos', label: 'POs', icon: ShoppingCart },
   { id: 'schedules', label: 'Delivery schedules', icon: CalendarRange },
   { id: 'sales-orders', label: 'Sales orders', icon: Receipt },
@@ -394,6 +397,9 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
         </TabsContent>
         <TabsContent value="sponsorships">
           <SponsorshipsPanel project={project} />
+        </TabsContent>
+        <TabsContent value="forms">
+          <FormsPanel project={project} />
         </TabsContent>
         <TabsContent value="pos">
           <PurchaseOrdersPanel project={project} />

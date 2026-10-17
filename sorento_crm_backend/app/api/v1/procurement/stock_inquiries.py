@@ -1,5 +1,6 @@
 """Stock inquiries API routes."""
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Request, Body, Response, File, UploadFile
 from fastapi.responses import JSONResponse
@@ -60,6 +61,7 @@ async def get_stock_inquiries(
     status: Optional[str] = Query(None, description="Comma-separated status values to filter by"),
     sort: Optional[str] = Query("created_at"),
     dir: Optional[str] = Query("desc"),
+    project_id: Optional[UUID] = Query(None, description="Only inquiries linked to this project"),
     current_user: dict = Depends(get_current_user_or_api_key),
     db: Session = Depends(get_db)
 ):
@@ -79,6 +81,7 @@ async def get_stock_inquiries(
             space_id=None,
             statuses=statuses,
             viewer_user_id=(current_user or {}).get("id"),
+            project_id=str(project_id) if project_id else None,
         )
         return result
     except Exception as e:

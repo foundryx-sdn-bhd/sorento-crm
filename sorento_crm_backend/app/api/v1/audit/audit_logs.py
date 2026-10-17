@@ -132,6 +132,33 @@ def _integration_names(db: Session, integration_ids: list[str]) -> dict[str, str
     return {str(r.id): r.name for r in rows}
 
 
+def _project_labels(db: Session, items) -> dict[str, str]:
+    """`CODE - Title` for every `project_id` a page of rows moved between, in one query
+    (FORMS-PROJECT: the trail never shows a project UUID)."""
+    from app.services.project_link import project_label, project_labels
+
+    ids = {
+        str(value)
+        for it in items
+        for values in (it.old_values or {}, it.new_values or {})
+        if (value := values.get("project_id")) and _is_uuid(str(value))
+    }
+    return {
+        pid: project_label(code, title) for pid, (code, title) in project_labels(db, ids).items()
+    }
+
+
+def _label_project_values(payload: dict, labels: dict[str, str]) -> None:
+    """Swap each `project_id` value in a serialized row for its label, leaving every other
+    field of the change as it is (a description would hide them, see AuditTrail.tsx)."""
+    for values in (payload.get("old_values"), payload.get("new_values")):
+        if values and values.get("project_id"):
+            # A project outside the viewer's companies has no label here; say so, no UUID.
+            values["project_id"] = labels.get(
+                str(values["project_id"]), "Linked project not visible"
+            )
+
+
 # Human-readable one-liner for a status transition, e.g. "status: pending → approved".
 # Derived at serialize time from the JSONB diff - no schema/storage change.
 def _status_labels(db: Session, items) -> dict[str, str]:
@@ -234,6 +261,7 @@ async def get_audit_logs(
 
     record_labels = entity_labels(db, items)
     status_labels = _status_labels(db, items)
+    project_link_labels = _project_labels(db, items)
     data = []
     for it in items:
         payload = AuditLogResponse.model_validate(it).model_dump()
@@ -253,6 +281,7 @@ async def get_audit_logs(
         )
         payload["description"] = _derive_description(it, status_labels)
         payload["entity_label"] = record_labels.get(str(it.id))
+        _label_project_values(payload, project_link_labels)
         data.append(AuditLogResponse(**payload))
     return {
         "data": data,

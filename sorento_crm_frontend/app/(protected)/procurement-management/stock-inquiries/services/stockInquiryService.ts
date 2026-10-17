@@ -1,5 +1,5 @@
 import { apiFetch } from '@/lib/api';
-import { extractApiError } from '@/lib/api-client';
+import { codedError, extractApiError } from '@/lib/api-client';
 import type {
   StockInquiry,
   StockInquiryFormData,
@@ -15,9 +15,9 @@ import type { FormPdfExportOptions } from '@/lib/revision-export';
 
 
 export async function getStockInquiries(
-  params: DataGridApiFetchParams & { statuses?: string[] },
+  params: DataGridApiFetchParams & { statuses?: string[]; project_id?: string },
 ): Promise<DataGridApiResponse<StockInquiry>> {
-  const { pageIndex, pageSize, sorting, searchQuery, statuses } = params;
+  const { pageIndex, pageSize, sorting, searchQuery, statuses, project_id } = params;
   const sortField = sorting?.[0]?.id || '';
   const sortDirection = sorting?.[0]?.desc ? 'desc' : 'asc';
   const queryParams = new URLSearchParams({
@@ -26,6 +26,7 @@ export async function getStockInquiries(
     ...(sortField ? { sort: sortField, dir: sortDirection } : {}),
     ...(searchQuery ? { query: searchQuery } : {}),
     ...(statuses && statuses.length ? { status: statuses.join(',') } : {}),
+    ...(project_id ? { project_id } : {}),
   });
   const response = await apiFetch(
     `/api/v1/procurement/stock-inquiries?${queryParams.toString()}`,
@@ -72,10 +73,7 @@ export async function createStockInquiry(
     body: JSON.stringify(data),
   });
   if (!response.ok) {
-    const error = await response
-      .json()
-      .catch(() => ({ message: 'Failed to create stock inquiry' }));
-    throw new Error(error.message);
+    throw await codedError(response, 'Failed to create stock inquiry');
   }
   return response.json();
 }
@@ -90,10 +88,7 @@ export async function updateStockInquiry(
     body: JSON.stringify(data),
   });
   if (!response.ok) {
-    const error = await response
-      .json()
-      .catch(() => ({ message: 'Failed to update stock inquiry' }));
-    throw new Error(error.message);
+    throw await codedError(response, 'Failed to update stock inquiry');
   }
   return response.json();
 }
@@ -111,10 +106,7 @@ export async function updateStockInquiryAndReply(
     },
   );
   if (!response.ok) {
-    const error = await response
-      .json()
-      .catch(() => ({ message: 'Failed to update and reply' }));
-    throw new Error(error.detail || error.message || 'Failed to update and reply');
+    throw await codedError(response, 'Failed to update and reply');
   }
   return response.json();
 }

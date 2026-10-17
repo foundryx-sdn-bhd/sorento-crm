@@ -1,5 +1,6 @@
 'use client';
 
+import { ProjectLinkSelect } from '@/components/common/ProjectLinkSelect';
 import { useMemo } from 'react';
 import type { UseFormReturn, FieldArrayWithId } from 'react-hook-form';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -430,6 +431,23 @@ export function PurchaseRequestDocumentEditCard({
                     <FormControl>
                       <Input placeholder="Project title" {...field} value={field.value ?? ''} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </DocField>
+
+            <DocField label="Project (optional)" className="sm:col-span-2">
+              <FormField
+                control={control}
+                name="project_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <ProjectLinkSelect
+                      value={field.value}
+                      onChange={field.onChange}
+                      selectedLabel={request.project_label}
+                    />
                     <FormMessage />
                   </FormItem>
                 )}

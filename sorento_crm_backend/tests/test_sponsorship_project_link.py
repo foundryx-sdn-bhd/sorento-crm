@@ -75,6 +75,21 @@ def _contact(db, *, requires_project: bool, company_ids=()) -> RespondContact:
     return contact
 
 
+def _token(contact):
+    """`_apply_payload` reads only `contact_id` off the token."""
+    from datetime import datetime, timedelta
+
+    from app.models.portal import PortalToken
+
+    return PortalToken(
+        id=_uid(),
+        token=_uid(),
+        contact_id=contact.id,
+        space_id="zzt-space",
+        expires_at=datetime.utcnow() + timedelta(days=1),
+    )
+
+
 def _project(db, company_id: str, owner: str, title=None):
     from app.services.project_service import register_project
 
@@ -422,9 +437,10 @@ def test_free_text_in_the_project_field_is_refused_not_a_500():
     with blank_session() as db:
         row = PurchaseRequestHeader(id=_uid(), request_type="sponsorship_form")
 
+        contact = _contact(db, requires_project=False, company_ids=[_sorento(db)])
         with pytest.raises(AppException) as excinfo:
             PortalService(db)._apply_payload(
-                "sponsorship_form", row, {"project_id": "PO received"}
+                "sponsorship_form", row, {"project_id": "PO received"}, token=_token(contact)
             )
 
         # 400, the same client-error shape every other payload guard here raises.
@@ -445,9 +461,11 @@ def test_a_real_project_id_still_applies():
         owner = _user(db, f"{MARKER} Siti")
         project = _project(db, company_id, owner)
         row = PurchaseRequestHeader(id=_uid(), request_type="sponsorship_form")
+        # FORMS-PROJECT: every portal write now checks the contact owns the project.
+        contact = _contact(db, requires_project=False, company_ids=[company_id])
 
         PortalService(db)._apply_payload(
-            "sponsorship_form", row, {"project_id": str(project.id)}
+            "sponsorship_form", row, {"project_id": str(project.id)}, token=_token(contact)
         )
 
         assert str(row.project_id) == str(project.id)

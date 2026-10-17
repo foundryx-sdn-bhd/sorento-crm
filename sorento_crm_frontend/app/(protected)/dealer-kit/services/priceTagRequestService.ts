@@ -78,7 +78,7 @@
 
 import { apiFetch } from '@/lib/api';
 import type { LineDataChange } from '@/lib/dealer-kit/product-data-changes';
-import { buildDataGridParams, extractApiError } from '@/lib/api-client';
+import { buildDataGridParams, codedError, extractApiError } from '@/lib/api-client';
 import type { LineTagData, TagSheetDoc } from '@/lib/dealer-kit/tag-template-types';
 import type { PrintBy } from '@/lib/dealer-kit/print-collection';
 import {
@@ -246,6 +246,10 @@ export interface PriceTagRequestSummary {
    *  route only for a row a cheap query says was touched since its last
    *  check - never resolved per row on every page load. */
   data_changed_tag_count?: number;
+  /** Registered project link; null when unlinked. `project_label` is `CODE - Title`. */
+  project_id?: string | null;
+  project_code?: string | null;
+  project_label?: string | null;
 }
 
 export interface PriceTagRequestDetail extends PriceTagRequestSummary {
@@ -273,6 +277,8 @@ export interface PriceTagRequestListParams {
   dir?: 'asc' | 'desc';
   query?: string;
   status?: string;
+  /** Only this project's requests (the project page's Forms tab). */
+  project_id?: string;
 }
 
 export interface PriceTagRequestListResult {
@@ -295,7 +301,7 @@ export async function listPriceTagRequests(
         : [],
       searchQuery: params.query ?? '',
     },
-    { status: params.status },
+    { status: params.status, project_id: params.project_id },
   );
 
   const response = await apiFetch(`${BASE}?${usp.toString()}`);
@@ -346,13 +352,25 @@ export async function updatePriceTagPrintBy(
   id: string,
   printBy: PrintBy | null,
 ): Promise<void> {
+  return updatePriceTagRequestFields(id, { print_by: printBy });
+}
+
+/**
+ * The office PATCH with whichever of its fields the caller names. `project_id`: a uuid
+ * links, null clears; omit a key to leave it unchanged. A refused project throws an error
+ * whose `code` is `PROJECT_LINK_NOT_FOUND` (see `isProjectLinkError`).
+ */
+export async function updatePriceTagRequestFields(
+  id: string,
+  fields: { print_by?: PrintBy | null; project_id?: string | null },
+): Promise<void> {
   const response = await apiFetch(`${BASE}/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ print_by: printBy }),
+    body: JSON.stringify(fields),
   });
   if (!response.ok) {
-    throw new Error(await extractApiError(response, 'Failed to update the request'));
+    throw await codedError(response, 'Failed to update the request');
   }
 }
 

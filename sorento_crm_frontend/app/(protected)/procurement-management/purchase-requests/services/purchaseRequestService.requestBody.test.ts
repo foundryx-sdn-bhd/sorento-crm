@@ -36,7 +36,8 @@ const GIVEN = {
   sponsor_subject_other: 'Annual dinner',
   products: [],
 };
-const KEYS = ['customer_id', 'sales_type', 'pic', 'sponsor_subject_other'] as const;
+// project_id: #1689, the staff project pick was dropped the same way.
+const KEYS = ['customer_id', 'sales_type', 'pic', 'sponsor_subject_other', 'project_id'] as const;
 
 beforeEach(() => asMock.mockClear());
 

@@ -43,6 +43,11 @@ export interface SalesOpportunityListItem {
   lost_reason_label?: string | null;
   sales_order_id?: string | null;
   sales_order_no?: string | null;
+  /** Registered project link; null when unlinked. */
+  project_id?: string | null;
+  project_code?: string | null;
+  /** `CODE - Title`, ready to display. */
+  project_label?: string | null;
   source: 'portal' | 'crm';
   created_by_label?: string | null;
   created_by_contact_id?: string | null;
@@ -73,6 +78,8 @@ export interface SalesOpportunitySavePayload {
   status_id?: string;
   lost_reason?: string | null;
   sales_order_id?: string | null;
+  /** null clears the link; omitted leaves it unchanged. */
+  project_id?: string | null;
   lines?: SalesOpportunityLineInput[];
 }
 
@@ -123,6 +130,7 @@ export interface SalesOpportunityListParams {
   statusId?: string;
   salesAgentId?: string;
   customerId?: string;
+  projectId?: string;
   closeFrom?: string;
   closeTo?: string;
   outcome?: string;

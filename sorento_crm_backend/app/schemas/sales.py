@@ -173,6 +173,8 @@ class SalesOpportunityCreate(BaseModel):
     expected_close_date: DateType
     customer_id: Optional[str] = None
     prospect_name: Optional[str] = Field(None, max_length=200)
+    #: FORMS-PROJECT: the explicit project link; null clears it.
+    project_id: Optional[str] = None
     #: CRM only: stamped from the customer when omitted (S2-7).
     sales_agent_id: Optional[str] = None
     lines: Optional[List[SalesOpportunityLineInput]] = _LINES_FIELD
@@ -194,6 +196,8 @@ class SalesOpportunityUpdate(BaseModel):
     expected_close_date: Optional[DateType] = None
     customer_id: Optional[str] = None
     prospect_name: Optional[str] = Field(None, max_length=200)
+    #: FORMS-PROJECT: the explicit project link; null clears it.
+    project_id: Optional[str] = None
     sales_agent_id: Optional[str] = None
     status_id: Optional[str] = None
     lost_reason: Optional[str] = Field(None, max_length=150)
@@ -222,6 +226,8 @@ class PortalSalesOpportunityCreate(BaseModel):
     expected_close_date: DateType
     customer_id: Optional[str] = None
     prospect_name: Optional[str] = Field(None, max_length=200)
+    #: FORMS-PROJECT: the explicit project link; null clears it.
+    project_id: Optional[str] = None
     lines: Optional[List[SalesOpportunityLineInput]] = _LINES_FIELD
 
     @field_validator("title")
@@ -241,6 +247,8 @@ class PortalSalesOpportunityUpdate(BaseModel):
     expected_close_date: Optional[DateType] = None
     customer_id: Optional[str] = None
     prospect_name: Optional[str] = Field(None, max_length=200)
+    #: FORMS-PROJECT: the explicit project link; null clears it.
+    project_id: Optional[str] = None
     status_id: Optional[str] = None
     lost_reason: Optional[str] = Field(None, max_length=150)
     lines: Optional[List[SalesOpportunityLineInput]] = _LINES_FIELD
@@ -280,6 +288,9 @@ class SalesOpportunityResponse(BaseModel):
     customer_id: Optional[str] = None
     customer_code: Optional[str] = None
     customer_name: Optional[str] = None
+    project_id: Optional[str] = None
+    project_code: Optional[str] = None
+    project_label: Optional[str] = None  # `CODE - Title`
     prospect_name: Optional[str] = None
     sales_agent_id: Optional[str] = None
     sales_agent_label: Optional[str] = None

@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 from datetime import date as DateType
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -92,6 +93,7 @@ def list_opportunities(
     limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
     sort: str = Query("created_at"),
     dir: str = Query("desc", pattern="^(asc|desc)$"),
+    project_id: Optional[UUID] = Query(None),
     _user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -109,6 +111,7 @@ def list_opportunities(
             limit=limit,
             sort=sort,
             dir=dir,
+            project_id=str(project_id) if project_id else None,
         )
         return {
             "data": svc.serialize_list(db, rows),

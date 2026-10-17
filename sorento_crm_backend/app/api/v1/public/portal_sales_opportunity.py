@@ -212,6 +212,20 @@ def portal_customer_options(
     return svc.customer_options(db, q=q, sales_agent_id=[a.id for a in agents])
 
 
+def _check_portal_project(db: Session, token: PortalToken, body: dict, current=None) -> None:
+    """FORMS-PROJECT: a portal contact links only a project of one of their own companies."""
+    if not body.get("project_id"):
+        return
+    from app.models.access import RespondContact
+    from app.services.project_link import check_portal_project_link
+
+    contact = db.query(RespondContact).filter(RespondContact.id == token.contact_id).first()
+    # Store what the check returned (trimmed), not the raw value sent.
+    body["project_id"] = check_portal_project_link(
+        db, contact=contact, project_id=body["project_id"], current=current
+    )
+
+
 @router.post("/sales-opportunities", status_code=status.HTTP_201_CREATED)
 def portal_create_sales_opportunity(
     payload: PortalSalesOpportunityCreate,
@@ -223,6 +237,7 @@ def portal_create_sales_opportunity(
     agents = _require_agents(db, token)
     try:
         body = payload.model_dump(exclude_unset=True)
+        _check_portal_project(db, token, body)
         # The agent whose customer it is; a prospect (no customer) goes to the first by code
         # that the request's scope can see.
         agent = svc.agent_owning_customer(db, agents, body.get("customer_id")) or svc.default_portal_agent(
@@ -238,6 +253,7 @@ def portal_create_sales_opportunity(
                 source="portal",
                 created_by_contact_id=token.contact_id,
                 restrict_customer_to_agent_id=[a.id for a in agents],
+                project_checked=True,
             )
         db.commit()
         db.refresh(opportunity)
@@ -271,6 +287,7 @@ def portal_update_sales_opportunity(
     opportunity = svc.get_opportunity_for_agent_or_404(db, opportunity_id, agent_ids)
     try:
         body = payload.model_dump(exclude_unset=True)
+        _check_portal_project(db, token, body, current=opportunity.project_id)
         # Moved to another linked agent's customer: the opportunity follows the customer to
         # that agent, the same rule a create stamps by.
         owner = svc.agent_owning_customer(db, agents, body.get("customer_id"))
@@ -282,6 +299,7 @@ def portal_update_sales_opportunity(
                 opportunity,
                 body,
                 restrict_customer_to_agent_id=agent_ids,
+                project_checked=True,
             )
         db.commit()
         db.refresh(opportunity)

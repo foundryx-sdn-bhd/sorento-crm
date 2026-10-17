@@ -47,10 +47,20 @@ export async function getPurchaseRequests(
     requestType?: string;
     approvalStatus?: string;
     assignedTo?: string;
+    /** Only this project's records (the project page's Forms tab). */
+    projectId?: string;
   },
 ): Promise<DataGridApiResponse<PurchaseRequest>> {
-  const { pageIndex, pageSize, sorting, searchQuery, requestType, approvalStatus, assignedTo } =
-    params;
+  const {
+    pageIndex,
+    pageSize,
+    sorting,
+    searchQuery,
+    requestType,
+    approvalStatus,
+    assignedTo,
+    projectId,
+  } = params;
   const sortField = sorting?.[0]?.id || 'request_date';
   const sortDirection = sorting?.[0]?.desc ? 'desc' : 'asc';
   const queryParams = new URLSearchParams({
@@ -62,6 +72,7 @@ export async function getPurchaseRequests(
     ...(requestType ? { request_type: requestType } : {}),
     ...(approvalStatus ? { approval_status: approvalStatus } : {}),
     ...(assignedTo ? { assigned_to: assignedTo } : {}),
+    ...(projectId ? { project_id: projectId } : {}),
   });
   const response = await apiFetch(
     `/api/v1/procurement/purchase-requests?${queryParams.toString()}`,
@@ -147,6 +158,7 @@ function toRequestBody(data: PurchaseRequestFormData) {
     customer_id: data.customer_id ?? null,
     pic: data.pic ?? null,
     project_title: data.project_title || null,
+    project_id: data.project_id || null,
     purpose: data.purpose ?? null,
     delivery_address: data.delivery_address ?? null,
     total_project_value: data.total_project_value ?? null,
@@ -471,7 +483,7 @@ export async function getPurchaseRequestConversation(
  * link to the same registered projects with the same label rule (code + title, never a UUID),
  * and two copies would drift the moment one of them starts showing the developer.
  */
-export { searchProjectsForLink } from '@/app/(protected)/complaint-management/complaints/services/complaintService';
+export { searchProjectsForLink } from '@/services/projectLinkService';
 
 /**
  * Queue a printable Purchase Request / Sponsorship Form PDF.

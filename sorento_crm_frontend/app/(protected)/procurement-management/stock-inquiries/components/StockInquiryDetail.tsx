@@ -1,5 +1,6 @@
 'use client';
 
+import { ProjectLinkValue } from '@/components/common/ProjectLinkValue';
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1104,6 +1105,14 @@ export default function StockInquiryDetail({
         </InquiryFormTableRow>
         <InquiryFormTableRow label="Project name">
           <InquiryReadValue>{inquiry.project_name}</InquiryReadValue>
+        </InquiryFormTableRow>
+        <InquiryFormTableRow label="Project">
+          <p className="text-sm py-1">
+            <ProjectLinkValue
+              projectId={inquiry.project_id}
+              projectLabel={inquiry.project_label}
+            />
+          </p>
         </InquiryFormTableRow>
         <InquiryFormTableRow label="Qty">
           <InquiryReadValue>{inquiry.quantity != null ? String(inquiry.quantity) : ''}</InquiryReadValue>

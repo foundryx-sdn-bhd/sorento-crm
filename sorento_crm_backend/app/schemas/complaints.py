@@ -229,6 +229,7 @@ class ComplaintResponse(ComplaintBase):
     # `project_id` and gets these back, so no screen has to render a UUID.
     project_code: Optional[str] = None
     project_name: Optional[str] = None
+    project_label: Optional[str] = None  # `CODE - Title` (FORMS-PROJECT)
     system_id: Optional[str] = None
     form_type: Optional[str] = None
     view_url: Optional[str] = None

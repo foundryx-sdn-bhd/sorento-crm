@@ -194,6 +194,10 @@ export interface PriceTagRequestSummary {
   /** Null on a draft, for the same reason as `debtor_name`. */
   needed_by_date: string | null;
   notes: string | null;
+  /** The registered project, when one is linked; `project_code` is what is shown. */
+  project_id?: string | null;
+  project_code?: string | null;
+  project_label?: string | null;
   /** Defaults to 'list' server-side; absent on a request created before r7. */
   price_mode?: PriceMode;
   status: string;
@@ -609,6 +613,8 @@ export interface CreatePriceTagRequestInput {
   // (`PriceTagRequestLineInput.promotion_id`).
   needed_by_date: string | null;
   notes: string | null;
+  /** The optional registered project; null clears it. */
+  project_id?: string | null;
   price_mode: PriceMode;
   /**
    * Who prints (r9 D7). Null on a draft; `submit` refuses with 422
