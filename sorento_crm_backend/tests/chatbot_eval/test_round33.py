@@ -113,3 +113,39 @@ def test_guard_real_shape_did_you_mean_with_sibling_options_and_no_answer_still_
     r = _real_shape(_lookup(SIBLINGS, reply="Did you mean:\n1. SRTA100-BL\n2. SRTA100-GM"))
     res = grade_turn(r, item("code_lookup", **GOLD_CL))
     assert res["checks"]["no_picker"] is False and res["passed"] is False, res["checks"]
+
+
+# 33c: siblings share the EXACT family head (code before the first "-", which must hold a digit)
+def _full(gold_code, q):
+    r = _with_oq(row2(state_products=[prod(gold_code, UA)], mem_after=[prod(gold_code, UA)], tools=[TOOL_A],
+                      reply=f"{gold_code} has 40 pcs."), q)
+    return grade_turn(r, item("code_lookup", code=gold_code, fact="inventory"))
+
+
+def test_red_options_that_only_extend_the_gold_head_are_another_family():
+    res = _full("SRTA100", _pick("SRTA1000", "SRTA1001"))
+    assert res["checks"]["no_picker"] is False, res["checks"]
+    assert res["passed"] is False
+
+
+def test_red_a_gold_head_without_a_digit_has_no_family():
+    res = _full("SRT-A100", _pick("SRTB200", "SRTC300"))
+    assert res["checks"]["no_picker"] is False, res["checks"]
+    assert res["passed"] is False
+
+
+@pytest.mark.parametrize("gold,opts", [
+    ("SRTA100", ("SRTA100", "SRTA100-GM", "SRTA100-BL")),
+    ("SRTWC286-SH", ("SRTWC286-SH-P", "SRTWC286-NEW")),
+])
+def test_guard_options_sharing_the_exact_head_are_siblings(gold, opts):
+    res = _full(gold, _pick(*opts))
+    assert res["checks"]["no_picker"] is not False, res["checks"]
+
+
+def test_red_a_did_you_mean_on_a_typo_is_no_answer_even_when_the_lookup_ran():
+    reply = 'Couldn\'t find "srta10o" (product). Did you mean:\n1. SRTA100\n2. SRTA100-GM'
+    r = _real_shape(_lookup(SIBLINGS_WITH_SELF, reply=reply))
+    res = grade_turn(r, item("code_lookup", **GOLD_CL))
+    assert res["checks"]["no_picker"] is False, res["checks"]
+    assert res["passed"] is False
