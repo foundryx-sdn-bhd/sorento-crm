@@ -939,3 +939,63 @@ def test_r11_a_refine_keeps_the_held_quantity():
     out = _apply(state, verdict(domain_hint="inventory", entities=[brand], state_changes=[_op("set", "brand")]))
     assert out.valid is True, out.log.get("rejected")
     assert [p.get("quantity") for p in out.state.focus.products] == [5]
+
+
+# --------------------------------------------------------------------------- #
+# r2-A: the quantity of an answered stock task carries onto refined, kept and swapped items
+# --------------------------------------------------------------------------- #
+
+
+def _answered_state(code: str, qty: int) -> State:
+    from app.services.chatbot.turn import task as task_mod
+
+    key = f"00000000-0000-4000-8000-{abs(hash(code)) % 10**12:012d}"
+    row = {**_held(code), "uuid": key}
+    task = task_mod.Task(
+        kind="stock_qty", domain="inventory", status=task_mod.ANSWERED, slots=(task_mod.Slot(key, code, qty),)
+    )
+    return State(focus=Focus(products=[row], domains=["inventory"], tasks=(task,)), turn_no=4)
+
+
+def _carried_quantities(out) -> list:
+    rows = [e for e in out.verdict.get("entities") or [] if e.get("hint") == "product"] or list(
+        out.state.focus.products
+    )
+    return [r.get("quantity") for r in rows]
+
+
+def _brand(code="SORENTO"):
+    return entity(code.lower(), "brand", canonical_code=code)
+
+
+HELD_QTY_CASES = [
+    # (id, held code, qty, state_changes, verdict kwargs)
+    ("keep_brand", "SRT5733", 5, [_op("keep")], dict(entities=[_brand()])),
+    ("keep_spec_colour", "MWB8051", 12, [_op("keep")], dict(entities=[entity("black", "specification", canonical_code="black")])),
+    ("set_brand", "SRTWC286-SH", 3, [_op("set", "brand")], dict(entities=[_brand("MOCHA")])),
+    ("set_tier", "ELP3754", 20, [_op("set", "tier")], dict(access_levels=["dealer"])),
+    ("set_sort", "SRT391-GM", 7, [_op("set", "sort")], dict(sort_by="price")),
+    ("set_channel", "SRTKT1631SS", 8, [_op("set", "channel")], dict(sales_channel="dealer")),
+    ("swap_product_en", "SRT1", 10, [_op("set", "product")], dict(entities=[entity("SRTWC8608-RL")])),
+    ("swap_product_bm", "MWC6603-S8", 2, [_op("set", "product")], dict(entities=[entity("SRTGV332-DIY")])),
+    ("swap_product_zh", "SRT5732", 6, [_op("set", "product")], dict(entities=[entity("MWB8052")], user_goal="还有这个吗")),
+]
+
+
+@pytest.mark.parametrize("held,qty,changes,extra", [c[1:] for c in HELD_QTY_CASES], ids=[c[0] for c in HELD_QTY_CASES])
+def test_r2a_the_answered_quantity_carries_onto_the_refined_or_swapped_item(held, qty, changes, extra):
+    out = _apply(_answered_state(held, qty), verdict(domain_hint="inventory", state_changes=changes, **extra))
+    assert out.valid is True, out.log.get("rejected")
+    quantities = _carried_quantities(out)
+    assert quantities and set(quantities) == {qty}, quantities
+
+
+def test_r2a_a_quantity_the_message_states_wins_over_the_held_one():
+    state = _answered_state("SRT1", 10)
+    out = _apply(
+        state,
+        verdict(domain_hint="inventory", state_changes=[_op("set", "product")],
+                entities=[entity("SRTWC8608-RL", quantity=4)]),
+    )
+    assert out.valid is True, out.log.get("rejected")
+    assert set(_carried_quantities(out)) == {4}
