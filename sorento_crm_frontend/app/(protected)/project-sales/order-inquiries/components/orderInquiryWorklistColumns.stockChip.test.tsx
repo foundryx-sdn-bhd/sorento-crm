@@ -89,6 +89,8 @@ describe('worklist Item code: the stock status chip', () => {
         productId: 'prod-1',
         itemCode: 'SRTWB1515',
         lineIds: ['line-80'],
+        // The row's own id: two rows of one product never share an open popover.
+        openKey: 'row-0',
       }),
     );
   });

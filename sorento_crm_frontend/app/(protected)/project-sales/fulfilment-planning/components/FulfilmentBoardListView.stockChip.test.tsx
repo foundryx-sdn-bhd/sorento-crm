@@ -8,7 +8,7 @@
  * chip on the REAL list surviving that rebuild. The panel inside it is stubbed.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
@@ -111,5 +111,36 @@ describe('fulfilment board List view: the stock chip', () => {
     expect(
       await screen.findByTestId('stock-status-panel-stub'),
     ).toBeInTheDocument();
+  });
+
+  it('two rows of the same product with no SO line id: a click opens exactly one popover (reviewer B1)', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rows = [
+      { ...ROW, key: 'so-1:line-10', line_id: null, so_number: 'SO421741' },
+      { ...ROW, key: 'so-2:line-20', line_id: null, so_number: 'SO420099' },
+    ] as unknown as BoardContribution[];
+    render(
+      <QueryClientProvider client={client}>
+        <FulfilmentBoardListView
+          contributions={rows}
+          draft={{}}
+          onDecide={vi.fn()}
+          onDecideMany={vi.fn(async () => ({ saved: 0, failed: 0 }))}
+          onDecideBatch={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    const chips = screen.getAllByRole('button', {
+      name: 'Stock status of SRTWB1515',
+    });
+    expect(chips).toHaveLength(2);
+    await userEvent.click(chips[0]);
+    await waitFor(() =>
+      expect(screen.getAllByTestId('stock-status-panel-stub')).toHaveLength(1),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getAllByTestId('stock-status-panel-stub')).toHaveLength(1);
   });
 });

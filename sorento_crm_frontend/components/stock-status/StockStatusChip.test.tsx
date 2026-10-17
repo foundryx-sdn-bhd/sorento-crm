@@ -24,7 +24,10 @@ vi.mock('./StockStatusPanel', async (importOriginal) => {
   };
 });
 
-import { StockStatusChip } from './StockStatusChip';
+import {
+  StockStatusChip,
+  resetStockStatusChipsForTests,
+} from './StockStatusChip';
 
 function renderChips() {
   const client = new QueryClient({
@@ -39,6 +42,8 @@ function renderChips() {
 }
 
 beforeEach(() => {
+  // The open chip lives in a module store: each test starts with none open.
+  resetStockStatusChipsForTests();
   apiFetchMock.mockReset();
   panelSpy.mockReset();
   apiFetchMock.mockResolvedValue(
@@ -154,5 +159,81 @@ describe('StockStatusChip', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     remount(4);
     expect(screen.queryByTestId('panel')).not.toBeInTheDocument();
+  });
+
+  it('two chips for the same product on two rows: a click opens exactly that one (reviewer B1)', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <StockStatusChip productId="a" itemCode="SRTWB1515" openKey="row-1" />
+        <StockStatusChip productId="a" itemCode="SRTWB1515" openKey="row-2" />
+      </QueryClientProvider>,
+    );
+    const [first, second] = screen.getAllByRole('button', {
+      name: 'Stock status of SRTWB1515',
+    });
+    await userEvent.click(first);
+    await waitFor(() => expect(screen.getAllByTestId('panel')).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getAllByTestId('panel')).toHaveLength(1);
+    expect(first).toHaveAttribute('aria-expanded', 'true');
+    expect(second).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  // Reviewer S1: a fixed floor on the height pushed a mid-screen popover off a small screen.
+  // The chip picks the side with more room when the room below is short, and the height
+  // stays capped at what that side has, so it can never clip.
+  async function openAt(top: number, viewportHeight: number) {
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: viewportHeight,
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <StockStatusChip productId="a" itemCode="SRTWB1515" openKey="row-1" />
+      </QueryClientProvider>,
+    );
+    const chip = screen.getByRole('button', {
+      name: 'Stock status of SRTWB1515',
+    });
+    chip.getBoundingClientRect = () =>
+      ({
+        top,
+        bottom: top + 20,
+        left: 300,
+        right: 400,
+        width: 100,
+        height: 20,
+        x: 300,
+        y: top,
+      }) as DOMRect;
+    await userEvent.click(chip);
+    await screen.findByTestId('panel');
+    return document.querySelector('[data-stock-status-popover]') as HTMLElement;
+  }
+
+  it('opens above a chip low on the screen, below one high on it', async () => {
+    expect((await openAt(665, 900)).dataset.requestedSide).toBe('top');
+  });
+
+  it('opens below a chip with room under it', async () => {
+    expect((await openAt(150, 900)).dataset.requestedSide).toBe('bottom');
+  });
+
+  it('caps the height at the room on its side, no floor that could push it off screen', async () => {
+    // The surface is the inner element (PopoverContent animates a child, Radix positions the outer).
+    const content = (await openAt(333, 667)).firstElementChild as HTMLElement;
+    expect(content.className).toContain(
+      'max-h-(--radix-popover-content-available-height)',
+    );
+    expect(content.className).not.toMatch(/28rem/);
+    expect((content.parentElement as HTMLElement).dataset.requestedSide).toBe(
+      'top',
+    );
   });
 });
