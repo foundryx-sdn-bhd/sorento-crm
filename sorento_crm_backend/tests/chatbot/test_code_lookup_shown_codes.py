@@ -6,6 +6,8 @@ the key is ungated (code_lookup on or off). Harnesses reused: tests/chatbot/test
 way tests/chatbot/test_ai_allowed_gate.py does: the persisted ChatbotTurn row."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 import app.main  # noqa: F401  isort:skip
@@ -107,3 +109,67 @@ def test_a_plain_answer_records_no_shown_codes(session_factory, seeded, stub_acc
 def test_shown_codes_do_not_change_the_reply(build, expected, code_lookup, session_factory, seeded, stub_access, monkeypatch):
     """Ungated, and the text of each list reply is today's, byte for byte (green today, stays green)."""
     assert _text(build(session_factory, stub_access, monkeypatch, code_lookup)) == expected
+
+
+# ---- reviewer blocker on d77bf95b45: two listed shapes escaped the trace
+
+ONE_CODE = "ZZQXW55510"
+ONE_TEXT_CONTACT = (
+    'Couldn\'t find "zzqxw55519" (product). Did you mean:\n1. ZZQXW55510 - no stock details\n'
+    "Reply with a code to continue, or would you like me to escalate to warehouse team?"
+)
+ONE_TEXT_STAFF = (
+    'Couldn\'t find "zzqxw55519" (product). Did you mean:\n1. ZZQXW55510 - no stock details\nReply with a code to continue.'
+)
+
+
+def _one_code_dym(session_factory, stub_access, monkeypatch, *, staff: bool):
+    from sqlalchemy import text as sql
+
+    _seed_codes(session_factory, ONE_CODE)
+    if staff:
+        db = session_factory()
+        db.execute(sql("UPDATE respond_contacts SET chatbot_profile = CAST(:p AS jsonb)"), {"p": json.dumps({"tier": "office"})})
+        db.commit()
+    unknown = {"raw": "zzqxw55519", "hint": "product", "canonical_code": None, "current_message": True, "confident": True}
+    v = _ask("check_stock", "inventory", unknown)
+    [(r, _c)] = _turns(session_factory, stub_access, monkeypatch, [("stock zzqxw55519", v)])
+    return r
+
+
+def test_one_code_did_you_mean_records_its_code(session_factory, seeded, stub_access, monkeypatch):
+    """One candidate falls under the roster guard and becomes a team_pick offer (answer_bridge.py:1337,
+    :1384-1392); the reply still lists the code."""
+    r = _one_code_dym(session_factory, stub_access, monkeypatch, staff=False)
+
+    assert _text(r) == ONE_TEXT_CONTACT
+    assert _replied_facts(session_factory, r).get("shown_codes") == [ONE_CODE]
+
+
+def test_one_code_did_you_mean_for_staff_records_its_code(session_factory, seeded, stub_access, monkeypatch):
+    """Staff: the offer is stripped, the question is None, the reply still lists the code."""
+    r = _one_code_dym(session_factory, stub_access, monkeypatch, staff=True)
+
+    assert _text(r) == ONE_TEXT_STAFF
+    assert _replied_facts(session_factory, r).get("shown_codes") == [ONE_CODE]
+
+
+def test_a_listed_set_code_is_recorded():
+    """A roster whose first row is a set becomes `product_set_pick`, and set rows carry entity_type
+    "product_set" (entity_resolver.py:985): _shown_codes must keep them, in display order with the
+    products (a roster builds its options through answer_bridge._roster_option)."""
+    from types import SimpleNamespace
+
+    from app.services.chatbot.answer_bridge import _roster_option
+    from app.services.chatbot.engine import _shown_codes
+
+    rows = [
+        {"entity_type": "product_set", "code": "ZZSETQ7701-RL", "uuid": "u1"},
+        {"entity_type": "product", "code": "ZZPRQ7701-GM", "uuid": "u2"},
+        {"entity_type": "product_set", "code": "ZZSETQ7701-P-RL", "uuid": "u3"},
+    ]
+    for kind in ("product_set_pick", "product_pick"):
+        options = [_roster_option(row, kind=kind, position=i + 1) for i, row in enumerate(rows)]
+        question = SimpleNamespace(kind=kind, options=options)
+
+        assert _shown_codes(question) == ["ZZSETQ7701-RL", "ZZPRQ7701-GM", "ZZSETQ7701-P-RL"], kind
