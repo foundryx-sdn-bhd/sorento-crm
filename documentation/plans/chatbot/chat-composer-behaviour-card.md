@@ -75,8 +75,9 @@ new layout.
 `❌ No stock and no incoming. Please refer to your salesman.` (TRAIN cp0-7b70831ab3, cp0-2ec090127f, cp0-b5eb30e1b9);
 staff compact and detailed views (picked by the contact's stock mode; TRAIN cp0-2e2ebf11cb, cp0-37456a72da).
 Changes: (a) one miss wording for a dealer stock miss instead of three (TRAIN cp0-0498229323 "Couldn't find: cb890-bl,
-cb890-GM- diy."); (b) one quantity question per case instead of four, every option with its name, never a blank
-"CODE - " (TRAIN cp0-29c26e8809 lists 100+ "ACC-SRT1023 - " rows); (c) the stock block shown under an ETA miss uses the
+cb890-GM- diy."); (b) WITHDRAWN 17 Oct (v1 error): the "CODE - " fill-in line (TRAIN cp0-29c26e8809)
+is an owner ruling (round 6, ruling 2, `turn/task.py:394-397`) and stays; only the bare "How many units do you need?"
+(P:121) vs the named "How many units of X?" (T:395) remains, moved to S3; (c) the stock block shown under an ETA miss uses the
 same numbered block, not the "- *Product Code:*" variant (TRAIN cp0-5430419641, cp0-338d26fba4).
 
 **ETA / incoming.** Stays: dealer `CODE: ✅ ETA 23/10/2026` + refer line (TRAIN cp0-dad9d8c2de); staff per-shipment

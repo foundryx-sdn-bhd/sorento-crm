@@ -16,31 +16,29 @@ Each AC names the card rule or change it proves. S0/S1 are detailed; later slice
 
 ## S0 scaffolding (no reply change)
 
-- AC-0.1 `Settings.chat_composer_enabled` defaults to False; env `CHAT_COMPOSER_ENABLED=true` sets it True.
-- AC-0.2 Shared line rule: a fact prints as `*Label:* value`, one per line (R1).
-- AC-0.3 Dates print dd/mm/yyyy for an ISO date, an ISO datetime and a date / datetime object; anything else prints
-  unchanged (R13).
-- AC-0.4 Money prints `MYR 1,234.00` (thousands separator, 2 decimals) (R13).
-- AC-0.5 An un-asked empty field is left out; an asked field with no value gives `No <attr> on record for <product>.`
-  (R4, Q3).
-- AC-0.6 A capped list ends with `Reply "more" to see the next N.` where N is how many the next page shows (R9, Q4);
-  an uncapped list (a picker) has no such line.
-- AC-0.7 A composer returns `Reply{text, question, offer}`; `question` and `offer` are structured (options carry real
-  names), so code downstream reads flags, not English.
+- AC-0.1 `Settings.chat_composer_enabled` defaults to False; env `CHAT_COMPOSER_ENABLED=true` sets it True; the
+  composers read it at call time.
+- AC-0.2 Shared line rule: a fact prints as `*Label:* value`, one per line (R1); the value printer and timestamp
+  printer are the ones the lane uses today, moved, byte for byte.
+- AC-0.3 Composer modules import nothing from engine / head / tail / dialogue / turn.compose / lanes.
+
+Helpers land in the slice that first prints them (lead decision 17 Oct, seam design): dates dd/mm/yyyy (S2),
+`Reply{text, question, offer}` and `Reply "more" to see the next N.` (S3, Q4), money `MYR 1,234.00` and
+`No <attr> on record for <product>.` with un-asked empty fields left out (S6, Q3).
 
 ## S1 stock (gate on)
 
 - AC-1.1 Dealer availability lines keep today's words and marks: `CODE x Q: ✅ Got stock.`, `✅ Only N got stock.`,
   `❌ No stock, ETA dd/mm/yyyy.`, `❌ No stock and no incoming. Please refer to your salesman.`, the too-big line,
   the discontinued flag line and the `Alternative:` line (R6; TRAIN cp0-7b70831ab3, cp0-2ec090127f, cp0-b5eb30e1b9).
-- AC-1.2 Staff compact and detailed stock blocks keep today's layout (TRAIN cp0-2e2ebf11cb, cp0-37456a72da), except
-  that an empty Warehouse / System Location line is left out (Q3).
+- AC-1.2 Staff compact and detailed stock blocks keep today's layout and bytes (TRAIN cp0-2e2ebf11cb,
+  cp0-37456a72da). (Q3's empty-line rule reaches these blocks when the main row printer moves, with S6 or the flip.)
 - AC-1.3 A stock miss on the dealer path reads the same on every path: `Couldn't find X.` (several: `Couldn't find X,
   Y.`), and with candidates `Couldn't find X. Did you mean:` + one numbered real name per line (card s.4 stock (a);
   today three wordings, TRAIN cp0-0498229323).
-- AC-1.4 The quantity question has one wording per case: one product `How many units of X?`; several `How many units
-  for each?` + one numbered product per line; no option line ends in a dangling " - " (card s.4 stock (b); TRAIN
-  cp0-29c26e8809).
+- AC-1.4 WITHDRAWN (card s.4 stock (b)): the quantity question keeps today's text in both gate states, including the
+  owner-ruled `N. CODE - ` fill-in lines (round 6, ruling 2, `turn/task.py:394-397`). The bare-vs-named question moves
+  to S3.
 - AC-1.5 Stock rows shown under another answer (an ETA ask with no incoming) use the same numbered stock block as a
   stock answer, not the "- *Product Code:*" variant (card s.4 stock (c); TRAIN cp0-5430419641, cp0-338d26fba4).
 - AC-1.6 Refer marking, escalation-offer suppression and the open quantity question behave as on the gate-off path
