@@ -40,10 +40,12 @@ router = APIRouter()
 # wiring at all (no PortalRevisionService dispatch, no revise/save-draft route), so a
 # settings row for it would configure nothing - exactly the trap the SUPPORTED_TYPES
 # comment in portal_service.py warns about. Add it back here the day it gets one.
+# sample_request (SR-CORE #1718) is out for the same reason: the portal revise route
+# refuses it (no RevisionAdapter in portal_revision_service.ADAPTERS).
 REVISABLE_PORTAL_FORM_TYPES = tuple(
     kind
     for kind in GRANTABLE_PORTAL_FORM_TYPES
-    if kind not in ("sales_opportunity", "customer_asks", "conversation")
+    if kind not in ("sales_opportunity", "sample_request", "customer_asks", "conversation")
 )
 
 

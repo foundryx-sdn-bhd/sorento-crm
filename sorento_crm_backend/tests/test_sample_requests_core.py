@@ -1108,6 +1108,29 @@ def test_review_r10_company_is_not_null():
     assert "company_id UUID NOT NULL" in body
 
 
+def test_another_companys_scope_cannot_read_the_request(world):
+    """`sample_requests` is a CompanyScopedMixin table (tests/test_company_scope.py counts it
+    as owned), so a session scoped to another company sees no row: the detail is a 404, the
+    list leaves it out, and an ORM read finds nothing. The same id reads fine in its own
+    company, so the 404 is the scope and not a bad id."""
+    from app.models.base import company_scope
+    from app.models.sample_request import SampleRequest
+    from tests._sample_request_seed import second_company
+
+    rid = _draft(world)["id"]
+    other = second_company(world.db)
+
+    with company_scope(world.db, frozenset({other})):
+        assert world.api.as_(world.admin).get(f"{SR}/{rid}").status_code == 404
+        rows = world.api.as_(world.admin).get(SR, params={"status": "draft"}).json()["data"]
+        assert rid not in {r["id"] for r in rows}
+        assert world.db.query(SampleRequest).filter(SampleRequest.id == rid).first() is None
+
+    assert world.api.as_(world.admin).get(f"{SR}/{rid}").status_code == 200
+    rows = world.api.as_(world.admin).get(SR, params={"status": "draft"}).json()["data"]
+    assert rid in {r["id"] for r in rows}
+
+
 def test_review_r12_customer_name_sort_uses_the_debtor_name_too(world):
     """R12: sort=customer_name orders on coalesce(debtor name, typed name)."""
     mid = make_customer(world.db, world.company_id)
