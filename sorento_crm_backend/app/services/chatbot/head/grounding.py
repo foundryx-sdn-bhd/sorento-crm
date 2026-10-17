@@ -838,7 +838,10 @@ def ground(
                 canonical = ""
             elif pick_info and picked != typed and (info := pick_info.get(typed)):
                 scores, holds = info.get("scores") or {}, info.get("holds") or []
-                tie = picked in scores and picked not in holds and any(
+                # The typed word is itself a listed code (an exact code with a spec word variant
+                # picked): it is on file, so nothing is refused.
+                on_file = typed in holds or typed in scores
+                tie = not on_file and picked in scores and picked not in holds and any(
                     other != picked and other not in holds and score == scores[picked] for other, score in scores.items()
                 )
                 several = len(holds) >= 2 and typed not in holds and picked in holds
