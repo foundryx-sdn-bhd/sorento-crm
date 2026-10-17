@@ -37,7 +37,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import desc, func
@@ -682,6 +682,87 @@ def console_turn(
         actions=result.actions,
         message_id=result.message_id,
     )
+
+
+class ParserTryRequest(BaseModel):
+    """One customer message, stripped, 1 to 500 characters."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    text: str = Field(min_length=1, max_length=500)
+
+
+def _parser_pick(entity: dict, rows: dict) -> dict:
+    """One emission entity as the row a person reads: words, kind, field, value."""
+    from app.services.product_spec_registry import display_spec_value
+
+    raw = str(entity.get("raw") or "")
+    spec_key = entity.get("spec_key")
+    if not spec_key:
+        return {
+            "raw": raw,
+            "kind": entity.get("hint") or "entity",
+            "field_label": None,
+            "value": str(entity.get("canonical_code") or entity.get("listed_item") or raw),
+        }
+    row = rows.get(spec_key)
+    value = entity.get("spec_value")
+    if row is None:
+        shown = display_spec_value(value)
+    elif (row.data_type or "").lower() == "numeric":
+        shown = " ".join(p for p in (display_spec_value(value), row.unit) if p)
+    else:
+        shown = display_spec_value(value, row.value_labels or {})
+    return {
+        "raw": raw,
+        "kind": "specification",
+        "field_label": row.label if row is not None else str(spec_key),
+        "value": shown,
+    }
+
+
+@router.post("/parser-try")
+def parser_try(
+    payload: ParserTryRequest,
+    _user: dict = Depends(require_permission("master_data.spec_registry.view")),
+    db: Session = Depends(get_db),
+):
+    """Run the real parser on one message and say what it picked. A dry run: no turn, no
+    audit row, nothing sent. The parser seams are read through the module so a test (or a
+    future stub) replaces them in one place."""
+    from datetime import date
+
+    from app.models.product_spec import ProductSpecRegistry
+    from app.services.chatbot.head import parser
+    from app.services.error_handler import AppException
+
+    try:
+        config = parser.resolve_config(db, current_date=date.today().isoformat())
+        block = parser.build_user_block(
+            previous_response=None, latest_user_message=payload.text, pending_kind=None
+        )
+        parsed = parser.parse(config, block)
+    except Exception as exc:
+        logger.warning("parser-try failed: %s", exc)
+        raise AppException(
+            status_code=422,
+            message=f"The chatbot parser could not read that message: {exc}",
+            code="parser_try_unavailable",
+        )
+    entities = [e for e in (parsed.get("entities") or []) if isinstance(e, dict)]
+    keys = {e.get("spec_key") for e in entities if e.get("spec_key")}
+    rows = (
+        {
+            r.spec_key: r
+            for r in db.query(ProductSpecRegistry).filter(ProductSpecRegistry.spec_key.in_(keys))
+        }
+        if keys
+        else {}
+    )
+    return {
+        "prompt_version": getattr(config, "prompt_version", None),
+        "picks": [_parser_pick(e, rows) for e in entities],
+    }
 
 
 @router.get("/console/media/{media_id}", response_model=ConsoleMediaStatusResponse)

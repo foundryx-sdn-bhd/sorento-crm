@@ -152,6 +152,12 @@ class ProductSpecRegistry(Base):
     # AND user rows, like user_synonyms: staff-owned, never seed-repaired (nothing in
     # `_seed_values` names this column, so the repair loop cannot touch it).
     value_labels = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict)
+    # What this field means to the chatbot: one line (max 200) printed on its line in the
+    # parser's `{{specs}}`. Staff-owned and never seed-repaired (`_seed_values` does not
+    # name it).
+    parser_hint = Column(Text, nullable=True)
+    # True once staff edited `label`: the seed repair then leaves the name alone.
+    label_owned = Column(Boolean, nullable=False, server_default=text("false"), default=False)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), nullable=True, onupdate=func.now())
 
