@@ -1,7 +1,7 @@
 # PLAN: CHAT-COMPOSER - one composer per answer type
 
-**Status:** Card v1 filed to crew (17 Oct), waiting for answers to Q1-Q4; no code. Track: L, LEAD pattern (local lane).
-**Card:** `chat-composer-behaviour-card.md` (discovery, contract, rules R1-R13, per-type changes, slices, Q1-Q4).
+**Status:** Build S0 (17 Oct). Card answered by crew (Q1-Q4 all (a)); UAC written; seam design S0/S1 in progress. Track: L, LEAD pattern (local lane).
+**UAC:** `chat-composer-acceptance-criteria.md`. **Card:** `chat-composer-behaviour-card.md` (discovery, contract, rules R1-R13, per-type changes, slices, Q1-Q4).
 **Lane:** CHAT-COMPOSER, branch `crew/chat-composer`, base origin/main 20c191d86. Step 3 of the 16 Oct chatbot scale
 design (`crew/state/reports/CHATBOT-SCALE-DESIGN-16oct.html`, section 4 row F, section 8 step 3) and reports
 `CHATBOT-SCALE-{A-ARCH,B-FAILURES,E-PATTERNS}-16oct.md` (159 formatters; replies built in many places; failure family F).
@@ -44,6 +44,23 @@ attachments / documents, order and document status, lists / sets, not found / cl
 Open PRs on the same answer paths: CHAT-STATE #1747, CHAT-CLOSED-LISTS #1755, SET-STOCK-RENDER #1744 (parked; the
 design names it the first composer). CHAT-CODE-LOOKUP runs in parallel. Their files are not rewritten here; overlap
 goes to crew in a crew-note so crew can order merges.
+
+## Slices (queue)
+
+| Slice | Content | Status |
+|---|---|---|
+| S0 | gate `chat_composer_enabled`, composer package, `Reply`, shared format helpers, contract tests | next |
+| S1 | stock (single + multi code; dealer and staff) | queued |
+| S2 | ETA / incoming | queued |
+| S3 | not found / clarify / hand-over | queued |
+| S4 | files + promotions | queued |
+| S5 | order / document status | queued |
+| S6 | product info + price | queued |
+| Sets | set / list wrapper, after #1744 merges (Q1) | waits #1744 |
+| Flip | follow-up PR: gate removed, divergent formatters deleted (Q2) | after bench + owner hand test |
+
+Each slice: tester red tests (test(red) commit, crew-note red-proof) -> coder green -> L1 replay gate-off 0 diffs +
+gate-on diff list -> kill-proof. Reviewer once per lane (Phase 3).
 
 ## Open
 

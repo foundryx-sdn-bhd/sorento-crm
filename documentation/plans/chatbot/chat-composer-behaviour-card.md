@@ -150,6 +150,9 @@ every hunk in a shared file is listed in a crew-note on the PR.
 
 ## 9. Questions (at most 5)
 
+**Crew answers 17 Oct (ask a17504629): Q1 (a), Q2 (a), Q3 (a), Q4 (a).** Q3/Q4 go to the owner as applied rulings.
+TRAIN export for code / spec / attachment slices: crew asked EVAL-BENCH; path follows from crew.
+
 - Q1 SET-STOCK-RENDER #1744 (parked, review-clean, ungated) rewrites the set stock reply in A/F, which our set slice
   replaces. (a) #1744 merges first when its hand-test hold clears; our set slice builds on it after S1-S3.
   (b) Close #1744 and fold its rules and tests into our set slice behind the gate. Recommend (a): half of #1744 is
