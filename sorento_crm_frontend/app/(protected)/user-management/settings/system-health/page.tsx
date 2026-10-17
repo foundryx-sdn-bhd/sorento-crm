@@ -18,27 +18,21 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { Switch } from '@/components/ui/switch';
 import { useSettings } from '../components/settings-context';
 
-/** Clamp a free-text number field to a positive integer (>= 1).
- *  These settings are durations and counts - 0 is not a meaningful value and
- *  would either disable the check silently or divide the window to nothing. */
-function toPositiveInt(raw: string, fallback: number): number {
-  const n = parseInt(raw, 10);
-  if (Number.isNaN(n) || n < 1) return fallback;
-  return n;
-}
-
-/** Clamp a free-text number field to a non-negative integer. */
-function toNonNegativeInt(raw: string, fallback: number): number {
-  const n = parseInt(raw, 10);
-  if (Number.isNaN(n) || n < 0) return fallback;
-  return n;
-}
+// Equal to the backend bounds (app/api/v1/user_management/settings.py), so a figure that
+// passes here is never refused by the server.
+const FAIL_THRESHOLD_RULES = { min: 1, max: 100000, integer: true };
+const AUDIT_FLOOR_RULES = { min: 0, max: 1000000, integer: true };
+const LATENCY_TARGET_RULES = { min: 1, max: 3600, integer: true };
+const LATENCY_MULTIPLIER_RULES = { min: 1, max: 100, integer: true };
+const LATENCY_NO_REPLY_RULES = { min: 1, max: 1440, integer: true };
+const LATENCY_MIN_SAMPLE_RULES = { min: 1, max: 100000, integer: true };
 
 const SystemHealthSettingsPage = () => {
   const queryClient = useQueryClient();
@@ -93,6 +87,18 @@ const SystemHealthSettingsPage = () => {
 
 
 
+  // Set by a Save that found a wrong number; the sentences then follow the typing.
+  const [checked, setChecked] = useState(false);
+  const errors = {
+    failThreshold: numberFieldError(failThreshold, FAIL_THRESHOLD_RULES),
+    auditFloor: numberFieldError(auditFloor, AUDIT_FLOOR_RULES),
+    latencyTarget: numberFieldError(latencyTarget, LATENCY_TARGET_RULES),
+    latencyMultiplier: numberFieldError(latencyMultiplier, LATENCY_MULTIPLIER_RULES),
+    latencyNoReply: numberFieldError(latencyNoReply, LATENCY_NO_REPLY_RULES),
+    latencyMinSample: numberFieldError(latencyMinSample, LATENCY_MIN_SAMPLE_RULES),
+  };
+  const hasNumberError = Object.values(errors).some(Boolean);
+
   const mutation = useMutation({
     mutationFn: async () => {
       // apiFetch maps /api/... straight to the FastAPI backend; POST /general
@@ -105,31 +111,13 @@ const SystemHealthSettingsPage = () => {
           health_alerts_enabled: alertsEnabled,
           health_notify_role_ids: roleIds,
           health_notify_user_ids: userIds,
-          health_integration_fail_threshold: toNonNegativeInt(
-            failThreshold,
-            settings.healthIntegrationFailThreshold ?? 10,
-          ),
-          health_audit_volume_floor: toNonNegativeInt(
-            auditFloor,
-            settings.healthAuditVolumeFloor ?? 0,
-          ),
-          chat_latency_p99_target_seconds: toPositiveInt(
-            latencyTarget,
-            settings.chatLatencyTargetSeconds ?? 10,
-          ),
+          health_integration_fail_threshold: Number(failThreshold),
+          health_audit_volume_floor: Number(auditFloor),
+          chat_latency_p99_target_seconds: Number(latencyTarget),
           chat_latency_percentile: Number(latencyPercentile),
-          chat_latency_ceiling_multiplier: toPositiveInt(
-            latencyMultiplier,
-            settings.chatLatencyCeilingMultiplier ?? 3,
-          ),
-          chat_latency_no_reply_minutes: toPositiveInt(
-            latencyNoReply,
-            settings.chatLatencyNoReplyMinutes ?? 5,
-          ),
-          chat_latency_min_sample: toPositiveInt(
-            latencyMinSample,
-            settings.chatLatencyMinSample ?? 30,
-          ),
+          chat_latency_ceiling_multiplier: Number(latencyMultiplier),
+          chat_latency_no_reply_minutes: Number(latencyNoReply),
+          chat_latency_min_sample: Number(latencyMinSample),
         }),
       });
       if (!response.ok) {
@@ -147,6 +135,7 @@ const SystemHealthSettingsPage = () => {
   const isProcessing = mutation.status === 'pending';
 
   const handleReset = () => {
+    setChecked(false);
     setDigestEnabled(settings.healthDigestEnabled);
     setAlertsEnabled(settings.healthAlertsEnabled);
     setRoleIds([...initialRoleIds]);
@@ -314,13 +303,13 @@ const SystemHealthSettingsPage = () => {
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="health-fail-threshold">Integration failure alert threshold</Label>
-            <Input
+            <NumberInput
               id="health-fail-threshold"
               data-testid="health-integration-fail-threshold"
-              type="number"
-              min={0}
+              min={1}
               value={failThreshold}
               onChange={(e) => setFailThreshold(e.target.value)}
+                error={checked ? errors.failThreshold : undefined}
             />
             <div className="text-muted-foreground text-2sm">
               Failed integration logs on a single channel within the window that
@@ -329,13 +318,13 @@ const SystemHealthSettingsPage = () => {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="health-audit-floor">Daily audit volume floor</Label>
-            <Input
+            <NumberInput
               id="health-audit-floor"
               data-testid="health-audit-volume-floor"
-              type="number"
               min={0}
               value={auditFloor}
               onChange={(e) => setAuditFloor(e.target.value)}
+                error={checked ? errors.auditFloor : undefined}
             />
             <div className="text-muted-foreground text-2sm">
               Warn in the daily digest when audit events fall below this count. Set
@@ -377,13 +366,13 @@ const SystemHealthSettingsPage = () => {
 
             <div className="space-y-1.5">
               <Label htmlFor="chat-latency-target">Target (seconds)</Label>
-              <Input
+              <NumberInput
                 id="chat-latency-target"
                 data-testid="chat-latency-target"
-                type="number"
                 min={1}
                 value={latencyTarget}
                 onChange={(e) => setLatencyTarget(e.target.value)}
+                error={checked ? errors.latencyTarget : undefined}
               />
               <div className="text-muted-foreground text-2sm">
                 The SLA the chosen percentile must stay under.
@@ -392,13 +381,13 @@ const SystemHealthSettingsPage = () => {
 
             <div className="space-y-1.5">
               <Label htmlFor="chat-latency-multiplier">Hard ceiling multiplier</Label>
-              <Input
+              <NumberInput
                 id="chat-latency-multiplier"
                 data-testid="chat-latency-multiplier"
-                type="number"
                 min={1}
                 value={latencyMultiplier}
                 onChange={(e) => setLatencyMultiplier(e.target.value)}
+                error={checked ? errors.latencyMultiplier : undefined}
               />
               <div className="text-muted-foreground text-2sm">
                 Any single turn slower than target x this alerts immediately, with no
@@ -408,13 +397,13 @@ const SystemHealthSettingsPage = () => {
 
             <div className="space-y-1.5">
               <Label htmlFor="chat-latency-no-reply">No-reply alert (minutes)</Label>
-              <Input
+              <NumberInput
                 id="chat-latency-no-reply"
                 data-testid="chat-latency-no-reply"
-                type="number"
                 min={1}
                 value={latencyNoReply}
                 onChange={(e) => setLatencyNoReply(e.target.value)}
+                error={checked ? errors.latencyNoReply : undefined}
               />
               <div className="text-muted-foreground text-2sm">
                 An incoming message with no reply after this long is reported.
@@ -423,13 +412,13 @@ const SystemHealthSettingsPage = () => {
 
             <div className="space-y-1.5">
               <Label htmlFor="chat-latency-min-sample">Minimum sample</Label>
-              <Input
+              <NumberInput
                 id="chat-latency-min-sample"
                 data-testid="chat-latency-min-sample"
-                type="number"
                 min={1}
                 value={latencyMinSample}
                 onChange={(e) => setLatencyMinSample(e.target.value)}
+                error={checked ? errors.latencyMinSample : undefined}
               />
               <div className="text-muted-foreground text-2sm">
                 Below this many turns in the hour, no percentile is claimed - a p99
@@ -452,7 +441,13 @@ const SystemHealthSettingsPage = () => {
         <Button type="button" variant="outline" onClick={handleReset}>
           Reset
         </Button>
-        <Button type="button" onClick={() => mutation.mutate()} disabled={isProcessing}>
+        <Button type="button" onClick={() => {
+            if (hasNumberError) {
+              setChecked(true);
+              return;
+            }
+            mutation.mutate();
+          }} disabled={isProcessing}>
           {isProcessing && <LoaderCircleIcon className="animate-spin" />}
           Save Settings
         </Button>

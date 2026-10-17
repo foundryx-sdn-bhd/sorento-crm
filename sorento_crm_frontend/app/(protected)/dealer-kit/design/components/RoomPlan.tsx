@@ -4,6 +4,8 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Copy, RotateCw, Trash2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import {
   DEFAULT_GRID_MM,
   areaSquareMetres,
@@ -134,7 +136,7 @@ export function RoomPlan({
    * live ON the wall - a side panel makes you look away from the thing you are
    * changing.
    */
-  const [editingWall, setEditingWall] = useState<{ index: number; value: string } | null>(null);
+  const [editingWall, setEditingWall] = useState<{ index: number; value: string; error?: string } | null>(null);
 
   const liveBounds = useMemo(() => viewBoxFor(outline), [outline]);
 
@@ -361,7 +363,14 @@ export function RoomPlan({
     // Read the state, do not fold the edit into a setState updater: React may
     // run an updater twice, and applying a length twice moves the wall twice.
     if (!editingWall) return;
-    const next = setWallLength(outline, editingWall.index, Number(editingWall.value));
+    // A blank or unusable length is not applied and not thrown away: the box stays open
+    // with what was typed and says why.
+    const error = numberFieldError(editingWall.value, { min: 1 });
+    if (error) {
+      setEditingWall({ ...editingWall, error });
+      return;
+    }
+    const next = setWallLength(outline, editingWall.index, parseNumberDraft(editingWall.value) as number);
     setEditingWall(null);
     if (next !== outline) {
       onOutlineChange(next);
@@ -576,17 +585,17 @@ export function RoomPlan({
                   x={labelX - (horizontal ? boxWidth / 2 : outward < 0 ? boxWidth : 0)}
                   y={labelY - boxHeight / 2}
                   width={boxWidth}
-                  height={boxHeight}
+                  height={boxHeight + (editingWall.error ? 300 : 0)}
                 >
-                  <input
+                  <NumberInput
                     autoFocus
                     // Pre-selected: the number is being REPLACED, not edited,
                     // so typing should overwrite it without a select-all first.
                     onFocus={(event) => event.currentTarget.select()}
-                    type="number"
                     aria-label={`Length of wall ${index + 1} in millimetres`}
                     data-dk-wall-input={index}
                     value={editingWall.value}
+                    aria-invalid={editingWall.error ? true : undefined}
                     onChange={(event) =>
                       setEditingWall({ index, value: event.target.value })
                     }
@@ -601,6 +610,14 @@ export function RoomPlan({
                     style={{ fontSize: 170, height: boxHeight, width: boxWidth }}
                     className="w-full rounded border-2 border-primary bg-background px-2 text-center text-foreground"
                   />
+                  {editingWall.error ? (
+                    <p
+                      className="text-center leading-tight text-destructive"
+                      style={{ fontSize: 110, marginTop: 20 }}
+                    >
+                      {editingWall.error}
+                    </p>
+                  ) : null}
                 </foreignObject>
               );
             }

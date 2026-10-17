@@ -32,6 +32,11 @@ export interface AsyncComboboxProps<T> {
   displayValue?: string;
   id?: string;
   /**
+   * Accessible name for a box that has no visible label of its own (a table cell). Giving
+   * it also marks the input as a combobox for assistive tech.
+   */
+  ariaLabel?: string;
+  /**
    * When true, renders the input as an auto-growing `<textarea>` so long
    * values wrap onto multiple lines instead of scrolling horizontally. The
    * search dropdown still works; pressing Enter while a result is highlighted
@@ -61,6 +66,7 @@ export function AsyncCombobox<T>({
   allowFreeText = true,
   displayValue,
   id,
+  ariaLabel,
   multiline,
 }: AsyncComboboxProps<T>) {
   /** Label of the option picked in THIS session, so the sync-from-parent effect
@@ -274,6 +280,9 @@ export function AsyncCombobox<T>({
         <Input
           id={id}
           type="text"
+          {...(ariaLabel
+            ? { role: 'combobox', 'aria-label': ariaLabel, 'aria-expanded': open }
+            : {})}
           value={text}
           placeholder={placeholder}
           disabled={disabled}

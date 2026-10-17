@@ -15,6 +15,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
@@ -306,6 +308,10 @@ function ChecklistItemDialog({
   );
   const [isActive, setIsActive] = React.useState(item?.is_active ?? true);
 
+  const [showErrors, setShowErrors] = React.useState(false);
+  const offsetError = numberFieldError(offset, { min: 0, integer: true, optional: true });
+  const sortError = numberFieldError(sortOrder, { integer: true });
+
   const isEdit = Boolean(item);
   const pending = create.isPending || update.isPending;
 
@@ -323,13 +329,17 @@ function ChecklistItemDialog({
         <form
           onSubmit={async (event) => {
             event.preventDefault();
+            if (offsetError || sortError) {
+              setShowErrors(true);
+              return;
+            }
             const body = {
               name: name.trim(),
               description: description.trim() || null,
               task_phase: phase as TaskPhase,
               category: category.trim() || null,
               default_offset_days: offset.trim() === '' ? null : Number(offset),
-              sort_order: Number(sortOrder) || 0,
+              sort_order: Number(sortOrder),
               is_active: isActive,
             };
             if (item) {
@@ -368,11 +378,11 @@ function ChecklistItemDialog({
 
               <div className="space-y-1.5">
                 <Label htmlFor="checklist-offset">Due, days after registration</Label>
-                <Input
+                <NumberInput
                   id="checklist-offset"
-                  type="number"
                   min={0}
                   value={offset}
+                  error={showErrors ? offsetError : undefined}
                   onChange={(event) => setOffset(event.target.value)}
                   placeholder="No default"
                 />
@@ -404,10 +414,10 @@ function ChecklistItemDialog({
 
               <div className="space-y-1.5">
                 <Label htmlFor="checklist-sort">Order</Label>
-                <Input
+                <NumberInput
                   id="checklist-sort"
-                  type="number"
                   value={sortOrder}
+                  error={showErrors ? sortError : undefined}
                   onChange={(event) => setSortOrder(event.target.value)}
                 />
               </div>

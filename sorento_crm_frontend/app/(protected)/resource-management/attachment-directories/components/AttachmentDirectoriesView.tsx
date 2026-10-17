@@ -34,6 +34,7 @@ import type { AttachmentDirectoryTreeNode } from '../../attachments/services/dir
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import DirectoryTreeSidebar from './DirectoryTreeSidebar';
 import AttachmentsInFolderPanel from './AttachmentsInFolderPanel';
+import { useFolderUrl, type OpenFolder } from './useFolderUrl';
 import BulkAttachmentAccessLevelsDialog, {
   type BulkAccessLevelsScope,
 } from './BulkAttachmentAccessLevelsDialog';
@@ -138,7 +139,7 @@ function AttachmentDirectoriesContent({
   onOpenAccessLevels,
 }: {
   selectedId: string | null;
-  setSelectedId: (id: string | null) => void;
+  setSelectedId: OpenFolder;
   selectedFolderName: string | null;
   onOpenAccessLevels: (scope: BulkAccessLevelsScope) => void;
 }) {
@@ -189,8 +190,8 @@ function AttachmentDirectoriesContent({
             </SheetHeader>
             <DirectoryTreeSidebar
               selectedId={selectedId}
-              onSelect={(id) => {
-                setSelectedId(id);
+              onSelect={(id, opts) => {
+                setSelectedId(id, opts);
                 setTreeDrawerOpen(false);
               }}
               onAdjustFolderAccessLevels={(id) => onOpenAccessLevels({ directoryId: id })}
@@ -268,14 +269,12 @@ function AttachmentDirectoriesContent({
   );
 }
 
-export default function AttachmentDirectoriesView({
-  initialDirectoryId = null,
-}: {
-  initialDirectoryId?: string | null;
-}) {
+export default function AttachmentDirectoriesView() {
   const queryClient = useQueryClient();
   const dndId = useId();
-  const [selectedId, setSelectedId] = useState<string | null>(initialDirectoryId);
+  // The open folder is the URL's `?directoryId=`, so Back / Forward / reload / a pasted
+  // link all land on it (FILES-URL-NAV).
+  const { folderId: selectedId, openFolder: setSelectedId } = useFolderUrl();
   const [accessLevelsScope, setAccessLevelsScope] = useState<BulkAccessLevelsScope>(null);
   const { data: tree = [] } = useDirectoryTree();
   const updateAttachmentMutation = useUpdateAttachment();

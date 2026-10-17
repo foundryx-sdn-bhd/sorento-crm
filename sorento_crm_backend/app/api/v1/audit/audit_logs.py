@@ -6,7 +6,7 @@ from typing import Optional
 from app.database import get_db
 from app.dependencies import get_current_user_or_api_key
 from app.services.audit_actor_label import actor_label as _actor_label
-from app.services.audit_service import list_audit_logs
+from app.services.audit_service import _is_uuid, list_audit_logs
 from app.schemas.audit import AuditLogResponse
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.models.user import User
@@ -28,6 +28,7 @@ _PER_RECORD_VIEW_PERMISSION: dict[str, str] = {
     "stock_inquiry": "procurement.stock_inquiries.view",
     "purchase_request": "procurement.purchase_requests.view",
     "product": "master_data.products.view",
+    "project_sample_requests": "projects.sample_requests.view",
     # Packing List detail, Timeline tab (usePackingLists.ts, R17).
     "inbound_shipments": "procurement.packing_lists.view",
 }
@@ -133,11 +134,38 @@ def _integration_names(db: Session, integration_ids: list[str]) -> dict[str, str
 
 # Human-readable one-liner for a status transition, e.g. "status: pending → approved".
 # Derived at serialize time from the JSONB diff - no schema/storage change.
-def _derive_description(it) -> Optional[str]:
+def _status_labels(db: Session, items) -> dict[str, str]:
+    """Labels for every status-engine `status_id` an UPDATE row moved between, in one query,
+    so the trail reads "Status: Draft -> Submitted" instead of two raw ids."""
+    ids = set()
+    for it in items:
+        for values in (it.old_values or {}, it.new_values or {}):
+            value = values.get("status_id")
+            # Only real ids reach the query: one legacy or hand-written value must not turn
+            # the whole trail into a 500.
+            if value and _is_uuid(str(value)):
+                ids.add(str(value))
+    if not ids:
+        return {}
+    from app.models.status import Status
+
+    rows = db.query(Status.id, Status.label).filter(Status.id.in_(list(ids))).all()
+    return {str(r.id): r.label for r in rows}
+
+
+def _derive_description(it, status_labels: Optional[dict[str, str]] = None) -> Optional[str]:
     if it.description:
         return it.description
     old = it.old_values or {}
     new = it.new_values or {}
+    if status_labels and new.get("status_id") and new.get("status_id") != old.get("status_id"):
+        to = status_labels.get(str(new.get("status_id")))
+        if to:
+            if not old.get("status_id"):
+                return f"Status: ∅ → {to}"
+            frm = status_labels.get(str(old.get("status_id")))
+            # An old status that no longer exists is not "no status".
+            return f"Status: {frm} → {to}" if frm else f"Status changed to {to}"
     # Attachment upload activity: surface the filename + what happened.
     if it.entity_type == "attachment":
         fname = new.get("original_filename") or old.get("original_filename")
@@ -205,6 +233,7 @@ async def get_audit_logs(
     from app.services.activity_service import entity_labels
 
     record_labels = entity_labels(db, items)
+    status_labels = _status_labels(db, items)
     data = []
     for it in items:
         payload = AuditLogResponse.model_validate(it).model_dump()
@@ -222,7 +251,7 @@ async def get_audit_logs(
             it, user_names, contact_names, integration_names, payload["user_display_name"],
             scheduled_names=scheduled_names,
         )
-        payload["description"] = _derive_description(it)
+        payload["description"] = _derive_description(it, status_labels)
         payload["entity_label"] = record_labels.get(str(it.id))
         data.append(AuditLogResponse(**payload))
     return {

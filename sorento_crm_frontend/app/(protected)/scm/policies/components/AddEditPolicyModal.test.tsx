@@ -237,3 +237,23 @@ describe('AddEditPolicyModal - engine fields (AC-EDIT-2)', () => {
     expect(screen.getByLabelText('Choose a buy scope')).toHaveValue('warehouse');
   });
 });
+
+describe('AddEditPolicyModal - bad input on an optional override (round 2, S-B)', () => {
+  it('"5-" in Min override (badInput) + Save shows the sentence under the box and saves nothing', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderModal({ onSubmit });
+    fireEvent.change(screen.getByLabelText('Choose a scope'), { target: { value: 'product_class' } });
+    fireEvent.change(screen.getByLabelText('Search a product class'), { target: { value: 'BRK' } });
+    const typeSelect = screen
+      .getAllByRole('combobox')
+      .find((el) => (el as HTMLSelectElement).querySelector('option[value="min_max"]'))!;
+    fireEvent.change(typeSelect, { target: { value: 'min_max' } });
+    const min = screen.getByPlaceholderText('e.g. 40') as HTMLInputElement;
+    fireEvent.change(min, { target: { value: '5' } });
+    Object.defineProperty(min, 'validity', { value: { badInput: true }, configurable: true });
+    fireEvent.change(min, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add policy/i }));
+    expect(screen.getByText('Enter a number of at least 0, or leave it blank.')).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+});

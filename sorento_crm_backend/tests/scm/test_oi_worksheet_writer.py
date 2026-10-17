@@ -29,7 +29,6 @@ import openpyxl
 from app.services.order_inquiry_worklist_service import (
     EXPORT_HEADINGS,
     EXPORT_TITLE,
-    EXPORT_UNDATED_SHEET,
     OrderInquiryWorklistService,
 )
 from tests.scm.conftest import requires_pg
@@ -123,7 +122,7 @@ def test_c3_default_columns_still_carries_every_heading_for_the_list_page_export
     assert len(headings) == len(EXPORT_HEADINGS), headings
 
 
-def test_c3_row_ids_scoped_undated_row_lands_on_the_no_date_sheet(db, chain):
+def test_c3_row_ids_scoped_undated_row_stays_on_the_one_sheet(db, chain):
     f = chain
     leg = _scope_row(db, product=f["product"], qty=4, delivery=None)
     db.flush()
@@ -132,7 +131,35 @@ def test_c3_row_ids_scoped_undated_row_lands_on_the_no_date_sheet(db, chain):
     _filename, content = svc.export_xlsx(row_ids=[leg["row"].id])
 
     workbook = openpyxl.load_workbook(io.BytesIO(content))
-    assert workbook.sheetnames == [EXPORT_UNDATED_SHEET], workbook.sheetnames
+    assert workbook.sheetnames == [EXPORT_TITLE], workbook.sheetnames
+    assert len(_data_rows(workbook)) == 1
+
+
+def test_the_oi_worksheet_is_one_sheet_across_delivery_months(db, chain):
+    """Owner, 16 Oct 2026: "our OI excel cannot split by month, this applies to all places
+    where OI excel is printed". This is the reorder run's OI worksheet call
+    (`columns=WORKSHEET_HEADINGS`, `app/tasks/export_tasks.py`); three months and an
+    undated row print on ONE sheet, dated rows in date order and the undated one last."""
+    f = chain
+    october = _scope_row(db, product=f["product"], qty=5, delivery=date(2026, 10, 1))
+    december = _scope_row(db, product=f["product"], qty=7, delivery=date(2026, 12, 20))
+    january = _scope_row(db, product=f["product"], qty=9, delivery=date(2027, 1, 2))
+    undated = _scope_row(db, product=f["product"], qty=2, delivery=None)
+    db.flush()
+
+    svc = OrderInquiryWorklistService(db)
+    _filename, content = svc.export_xlsx(
+        row_ids=[leg["row"].id for leg in (january, undated, october, december)],
+        columns=WORKSHEET_HEADINGS,
+    )
+
+    workbook = openpyxl.load_workbook(io.BytesIO(content))
+    assert workbook.sheetnames == [EXPORT_TITLE], workbook.sheetnames
+    rows = _data_rows(workbook)
+    assert [row[3] for row in rows] == [5.0, 7.0, 9.0, 2.0], rows  # QTY, by date
+    # TOTAL QTY: one supplier + item run, so one total on its last row, summing every date
+    # (crew ruling 16 Oct 2026, not a total per month).
+    assert [row[4] for row in rows] == [None, None, None, 23.0], rows
 
 
 def test_fr1_a_row_ids_match_under_a_different_companys_scope_yields_nothing(db, chain):

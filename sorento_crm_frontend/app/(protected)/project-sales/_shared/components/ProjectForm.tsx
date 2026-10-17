@@ -16,6 +16,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -195,6 +197,8 @@ export function ProjectForm(props: ProjectFormProps) {
   const wouldBlock =
     identityChanged && hasChecked && candidates.some((candidate) => candidate.blocks);
   const pending = register.isPending || update.isPending;
+  const [showErrors, setShowErrors] = React.useState(false);
+  const valueError = numberFieldError(estimatedValue, { min: 0, optional: true });
   // A new project comes from a lead (owner, 13 Oct): the picker offers to create one when
   // none matches. Edit leaves it optional, so a project registered before the rule saves.
   const leadMissing = mode === 'create' && !leadId;
@@ -233,6 +237,10 @@ export function ProjectForm(props: ProjectFormProps) {
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!canSubmit) return;
+    if (valueError) {
+      setShowErrors(true);
+      return;
+    }
     // The one duplicate check on submit: the guard, whether or not Check was pressed.
     if (checkable && identityChanged) {
       const trimmed = title.trim();
@@ -444,13 +452,13 @@ export function ProjectForm(props: ProjectFormProps) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="project-value">Estimated sales value (RM)</Label>
-              <Input
+              <NumberInput
                 id="project-value"
-                type="number"
                 min="0"
                 step="0.01"
                 inputMode="decimal"
                 value={estimatedValue}
+                error={showErrors ? valueError : undefined}
                 onChange={(event) => setEstimatedValue(event.target.value)}
                 placeholder="0.00"
               />

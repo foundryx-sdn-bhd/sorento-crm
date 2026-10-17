@@ -52,7 +52,8 @@ export type FormSLASourceType =
   | 'complaint'
   | 'ticket'
   | 'workflow_submission'
-  | 'price_tag_request';
+  | 'price_tag_request'
+  | 'sample_request';
 
 export async function getFormSLATrackers(
   sourceEntityType: FormSLASourceType,
@@ -371,6 +372,8 @@ export const FORM_SLA_EVENT_OPTIONS: Record<FormSLASourceType, readonly string[]
   // Single marketing stage (D8): the portal submit route emits only
   // 'submit'. No Void event here - void is a CRM action, not a form event.
   price_tag_request: ['submit'],
+  // No stage config ships for sample requests; the detail tab reads empty.
+  sample_request: [],
 };
 
 export const FORM_SLA_TYPE_LABELS: Record<FormSLASourceType, string> = {
@@ -381,4 +384,5 @@ export const FORM_SLA_TYPE_LABELS: Record<FormSLASourceType, string> = {
   ticket: 'Ticket',
   workflow_submission: 'Workflow Submission',
   price_tag_request: 'Price Tag Request',
+  sample_request: 'Sample Request',
 };

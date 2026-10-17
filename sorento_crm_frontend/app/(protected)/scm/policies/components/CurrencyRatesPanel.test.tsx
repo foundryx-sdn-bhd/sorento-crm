@@ -130,7 +130,27 @@ describe('CurrencyRatesPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: /add rate for CNY/i }));
     fireEvent.change(await screen.findByLabelText(/^rate to/i), { target: { value: '0' } });
 
-    expect(screen.getByRole('button', { name: /^Save currency rate$/i })).toBeDisabled();
+    // NUMBER-FIELDS: Save stays enabled; pressing it says why and sends nothing.
+    const saveButton = screen.getByRole('button', { name: /^Save currency rate$/i });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+    expect(await screen.findByText(/^Enter a number/)).toBeInTheDocument();
+    expect(saveCurrencyRate).not.toHaveBeenCalled();
+  });
+
+  it('a blank rate keeps Save enabled, names the gap on press and sends nothing', async () => {
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: /add rate for CNY/i }));
+    const rate = await screen.findByLabelText(/^rate to/i);
+    fireEvent.change(rate, { target: { value: '0.5' } });
+    fireEvent.change(rate, { target: { value: '' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Save currency rate$/i }));
+    expect(await screen.findByText(/^Enter a number/)).toBeInTheDocument();
+    expect(saveCurrencyRate).not.toHaveBeenCalled();
+    fireEvent.change(rate, { target: { value: '0.62' } });
+    expect(screen.queryByText(/^Enter a number/)).not.toBeInTheDocument();
   });
 
   it('parks the removal rather than asking first (S6-10)', async () => {

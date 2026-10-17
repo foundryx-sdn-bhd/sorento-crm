@@ -95,6 +95,7 @@ AGENT_ONLY_FORM_TYPES = (CUSTOMER_ASKS_FORM_TYPE, CONVERSATION_FORM_TYPE)
 GRANTABLE_PORTAL_FORM_TYPES = SUPPORTED_TYPES + (
     "price_tag_request",
     "sales_opportunity",
+    "sample_request",
     CUSTOMER_ASKS_FORM_TYPE,
     CONVERSATION_FORM_TYPE,
 )
@@ -1010,6 +1011,7 @@ class PortalService:
     ) -> dict:
         kind = kind.strip().lower()
         if submission_id is None:
+            self._check_line_numbers(kind, payload)
             row = self._instantiate(kind, token, payload)
             row.portal_draft_at = _utcnow()
             self.db.add(row)
@@ -1511,6 +1513,15 @@ class PortalService:
                 explicit_other if norm_subject == "others" and explicit_other else norm_other
             )
 
+    def _check_line_numbers(self, kind: str, payload: dict) -> None:
+        """Refuse a bad line figure before the header is written."""
+        if kind not in ("purchase_request", "sponsorship_form"):
+            return
+        for line_data in payload.get("products") or []:
+            if isinstance(line_data, dict):
+                for key in ("quantity", "unit_price", "total"):
+                    self._coerce_decimal(line_data.get(key))
+
     def _replace_request_lines_if_needed(self, kind: str, row: Any, payload: dict) -> None:
         if kind == "complaint":
             self._replace_complaint_lines_if_needed(row, payload)
@@ -1726,12 +1737,15 @@ class PortalService:
     def _coerce_decimal(value: Any) -> Optional[Decimal]:
         if value is None or value == "":
             return None
-        if isinstance(value, Decimal):
-            return value
         try:
-            return Decimal(str(value))
+            number = value if isinstance(value, Decimal) else Decimal(str(value))
         except (InvalidOperation, ValueError):
             return None
+        if not number.is_finite():
+            raise handle_validation_error("Enter a valid number.")
+        if number >= 10**13 or number <= -(10**13):
+            raise handle_validation_error("Quantity is too large.")
+        return number
 
     # ---------- Requestor ("requested by" / "salesperson") options ----------
     #

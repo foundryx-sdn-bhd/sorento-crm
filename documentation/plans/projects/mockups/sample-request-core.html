@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sample request mockup v2</title>
+<!-- SR-CORE mock v2 (16 Oct), after owner notes 1-5 on v1. Built ONLY from existing components; every element names
+     its component + repo path. Card: documentation/plans/projects/CARD-sample-request-core-15oct.md.
+     Paths: FE = sorento_crm_frontend/. People are roles; phones and street addresses are placeholders. -->
+<style>
+:root{
+  --bg:#ffffff; --fg:#09090b; --muted:#71717a; --border:#e4e4e7; --muted-bg:#f4f4f5;
+  --primary:#1b84ff; --destructive:#dc2626; --callout:#e11d74;
+  --font:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#f4f4f5;color:var(--fg);font:14px/1.45 var(--font)}
+.doc{max-width:1760px;margin:0 auto;padding:24px 16px 64px}
+.doc>h1{font-size:22px;margin:0 0 4px}
+.doc>.sub{color:var(--muted);margin:0 0 8px;max-width:960px}
+h2.frame-title{font-size:15px;margin:32px 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.layout{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.scroll{overflow-x:auto;max-width:100%}
+.frame{background:var(--bg);border:1px solid var(--border);border-radius:12px;position:relative;overflow:hidden}
+.w1280{width:1280px}.w375{width:375px;flex:none}
+.notes{flex:1 1 360px;min-width:300px;max-width:600px}
+.notes ol{margin:0;padding:0;list-style:none}
+.notes li{display:flex;gap:10px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.notes li b{display:block;margin-bottom:2px}
+.ref{display:block;color:var(--muted);font-size:12px;margin-top:4px;font-family:ui-monospace,Menlo,monospace;word-break:break-word}
+.co{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:22px;height:22px;padding:0 3px;border-radius:50%;background:var(--callout);color:#fff;font-size:12px;font-weight:700;box-shadow:0 0 0 2px #fff}
+.pin{position:absolute;z-index:5;right:-6px;top:-8px}
+.rel{position:relative}
+.muted{color:var(--muted)}.xs{font-size:12px}.sm{font-size:13px}.b{font-weight:600}
+.mono{font-family:ui-monospace,Menlo,monospace}
+/* shadcn-ish primitives as rendered by components/ui/* */
+.card{border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.card.b2{border-width:2px}
+.sect{margin-bottom:16px}
+.sect .hd{display:flex;justify-content:space-between;align-items:center;padding:12px 16px}
+.sect .hd .t{font-size:16px;font-weight:600;display:block}
+.sect .hd .s{font-size:12px;color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px}
+.sect .bd{border-top:1px solid var(--border);padding:16px}
+.chev{color:var(--muted)}
+.fld{margin-bottom:16px}.fld:last-child{margin-bottom:0}
+.fld label{display:block;font-size:14px;font-weight:500;margin-bottom:6px}
+.inp{border:1px solid var(--border);border-radius:6px;padding:7px 10px;min-height:36px;display:flex;justify-content:space-between;align-items:center;gap:6px;background:#fff}
+.inp.ph{color:var(--muted)}
+.inp .x{color:var(--muted)}
+.dd{border:1px solid var(--border);border-radius:6px;margin-top:4px;box-shadow:0 2px 6px rgba(0,0,0,.08);font-size:13px}
+.dd div{padding:6px 10px}.dd div.hl{background:var(--muted-bg)}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;padding:2px;flex-wrap:wrap}
+.seg span{padding:5px 10px;border-radius:4px;font-size:13px;color:var(--muted)}
+.seg span.on{background:var(--primary);color:#fff}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--primary);background:var(--primary);color:#fff;border-radius:6px;padding:7px 14px;font:500 13px var(--font);white-space:nowrap}
+.btn.out{background:#fff;color:var(--fg);border-color:var(--border)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--fg)}
+.btn.sm{padding:4px 10px;font-size:12px}
+.btn.green{background:#059669;border-color:#059669}
+.btn.red{background:#fff;color:var(--destructive);border-color:var(--destructive)}
+.err{font-size:12px;color:var(--destructive);margin-top:4px}
+.amber{border:1px solid #fcd34d;background:#fffbeb;color:#78350f;border-radius:6px;padding:8px 12px;font-size:13px}
+.pill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:600}
+.p-draft{background:#f1f5f9;color:#334155}.p-sub{background:#e0f2fe;color:#075985}.p-proc{background:#fef3c7;color:#92400e}
+.p-conf{background:#dbeafe;color:#1e40af}.p-del{background:#d1fae5;color:#065f46}.p-can{background:#e2e8f0;color:#334155}
+.badge2{display:inline-flex;border-radius:6px;background:var(--muted-bg);padding:1px 8px;font-size:12px;font-weight:500}
+table.t{border-collapse:collapse;width:100%;table-layout:fixed;font-size:13px}
+table.t th{background:#fafafa;color:var(--muted);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.t td{padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+table.lt th{background:#f9f9fa;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+/* app shell */
+.shell{display:flex}
+.side{width:232px;flex:none;border-right:1px solid var(--border);padding:16px 12px;background:#fcfcfd;font-size:13px}
+.side .brand{font-weight:700;font-size:16px;margin:0 8px 18px}
+.side .grp{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:14px 8px 6px}
+.side .it{padding:6px 8px;border-radius:6px;color:#3f3f46;position:relative}
+.side .it.on{background:#e9f3ff;color:var(--primary);font-weight:600}
+.topbar{height:52px;border-bottom:1px solid var(--border)}
+.main{flex:1;min-width:0}
+.content{padding:20px 28px 28px}
+.phdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.phdr h1{font-size:20px;font-weight:600;margin:0}
+.crumb{font-size:12px;color:var(--muted)}
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--border);margin-bottom:20px;font-size:14px}
+.tabs span{padding:8px 0;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs span.on{color:var(--fg);font-weight:500;border-bottom-color:var(--fg)}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:20px 40px}
+.kv .l{font-size:14px;color:var(--muted)}.kv .v{font-weight:500}
+.kv .span2{grid-column:span 2}
+.toolbar{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);gap:8px}
+.search{border:1px solid var(--border);border-radius:6px;padding:6px 10px;width:256px;color:var(--muted)}
+.pager{display:flex;justify-content:space-between;padding:10px 16px;font-size:13px;color:var(--muted)}
+.paper{width:794px;background:#fff;border:1px solid #d4d4d8;padding:36px 44px;font:12px/1.4 Arial,sans-serif;color:#111}
+.paper h3{text-align:center;font-size:15px;margin:12px 0}
+.paper table{border-collapse:collapse;width:100%}
+.paper td,.paper th{border:1px solid #333;padding:4px 6px;text-align:left}
+.tick{display:inline-block;width:12px;height:12px;border:1px solid #333;margin:0 4px -2px 10px;text-align:center;line-height:11px;font-size:10px}
+.box{border:1px solid #333;padding:6px}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Sample Request (SR-CORE) mock v2</h1>
+<p class="sub">Rebuilt after the owner's notes on v1 (16 Oct 08:54). Every element is an EXISTING component, and the notes beside each frame name it with its repo path. The portal form copies the Price Tag Request form (plain page, collapsible sections, same pickers). The staff pages copy Purchase Request / Sponsorship Form / Stock Inquiry. They show the current status as a pill only (no submitted &rarr; processing flow), and a status move is one plain button per allowed move. Data is built on the real Form C (10 Oct), with people shown as roles.</p>
+<p class="sub"><b>What changed from v1:</b> no branded portal header (note 2, 3); the project picker is the portal's existing AsyncCombobox (note 1); the staff request page has no status strip and uses the PR/SF/SI page layout (note 4); the list is the DataGrid + DataGridListToolbar those lists use, with "Create" in the toolbar (note 5). New / edit opens a full page, like New Purchase Request, instead of a modal.</p>
+
+<!-- ============ FRAME 1: PORTAL NEW ============ -->
+<h2 class="frame-title">1. Portal, salesperson, new sample request (375 wide). Price tag request pattern</h2>
+<div class="layout">
+<div class="frame w375"><div style="padding:16px 12px 32px">
+  <div class="rel"><span class="btn ghost sm">&larr; Back</span><span class="co pin" style="right:auto;left:70px;top:0">1</span></div>
+  <div style="font-size:18px;font-weight:600;margin:12px 0 16px">New Sample Request</div>
+
+  <div class="card sect rel"><span class="co pin">2</span>
+    <div class="hd"><div><span class="t">Customer &amp; project</span></div><span class="chev">&#8963;</span></div>
+    <div class="bd">
+      <div class="fld"><label>Customer</label><div class="inp"><span>JV PERKASA SDN BHD (PROJECT)</span><span class="x">&times;</span></div><div class="xs muted" style="margin-top:2px">300-J099</div></div>
+      <div class="fld rel"><span class="co pin">3</span><label>Registered project</label><div class="inp ph">Search your registered projects...</div>
+        <div class="dd"><div class="muted">No matches</div></div></div>
+      <div class="fld"><label>Project title (if not registered)</label><div class="inp">52 double-storey terraces, Taman Nusa Duta Fasa 10 (TARIKAN ABADI)</div></div>
+      <div class="fld"><label>Quotation</label><div class="inp ph">Pick a registered project first</div></div>
+      <div class="fld"><label>For (scope)</label><div class="inp ph">e.g. Tower A &amp; B</div></div>
+    </div></div>
+
+  <div class="card sect rel"><span class="co pin">4</span>
+    <div class="hd"><div><span class="t">Lines</span><span class="s">21 lines &middot; board: NUSA DUTA FASA 10</span></div><span class="chev">&#8963;</span></div>
+    <div class="bd">
+      <div class="fld"><label>Mount &amp; label sample board</label><div class="seg"><span>No</span><span class="on">Yes</span></div></div>
+      <div class="fld"><label>Board label</label><div class="inp">NUSA DUTA FASA 10</div></div>
+      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:6px">
+      <table class="t lt" style="min-width:560px"><thead><tr><th style="width:30px">#</th><th>Item</th><th style="width:150px">Or (alternative)</th><th style="width:56px">Qty</th><th style="width:110px">Remarks</th><th style="width:34px"></th></tr></thead><tbody>
+        <tr><td>1</td><td><div class="inp" style="min-height:30px;padding:4px 8px"><span>SRT73-CR</span><span class="x">&times;</span></div></td><td><div class="inp ph" style="min-height:30px;padding:4px 8px">Optional</div></td><td>1</td><td></td><td class="muted">&#128465;</td></tr>
+        <tr><td>2</td><td><div class="inp" style="min-height:30px;padding:4px 8px"><span>CB313</span><span class="x">&times;</span></div></td><td><div class="inp ph" style="min-height:30px;padding:4px 8px">Optional</div></td><td>1</td><td></td><td class="muted">&#128465;</td></tr>
+        <tr><td>3</td><td><div class="inp" style="min-height:30px;padding:4px 8px"><span>CB2829</span><span class="x">&times;</span></div></td><td><div class="inp" style="min-height:30px;padding:4px 8px"><span>CB2805A</span><span class="x">&times;</span></div></td><td>1</td><td></td><td class="muted">&#128465;</td></tr>
+        <tr><td>4</td><td style="white-space:normal"><div class="inp" style="min-height:30px;padding:4px 8px"><span class="mono">tpe9101</span></div>
+          <div class="dd"><div class="hl"><b>TPE-9101</b><br><span class="xs muted">Product - TPE-9101</span></div><div>TPE-9101-W<br><span class="xs muted">Product - TPE-9101-W</span></div></div></td><td></td><td>1</td><td></td><td class="muted">&#128465;</td></tr>
+        <tr class="rel"><td>5</td><td style="white-space:normal"><div class="inp" style="min-height:30px;padding:4px 8px"><span class="mono">cb2829ss-cr</span></div>
+          <div class="dd"><div class="muted">CB2829SS-CR is not in the product list. Pick the product you mean, or ask purchasing to add it as a new product before you request it.</div></div></td><td></td><td>1</td><td></td><td class="muted">&#128465;</td></tr>
+      </tbody></table></div>
+      <div class="rel" style="margin-top:10px"><span class="btn out sm">+ Add line</span><span class="co pin" style="right:auto;left:100px;top:0">5</span></div>
+    </div></div>
+
+  <div class="card sect rel"><span class="co pin">6</span>
+    <div class="hd"><div><span class="t">Delivery</span><span class="s">Immediate &middot; Deliver by driver &middot; CHENXIN PLUMBING</span></div><span class="chev">&#8963;</span></div>
+    <div class="bd">
+      <div class="fld"><label>Delivery</label><div class="seg"><span>On a date</span><span class="on">Immediate arrangement</span></div></div>
+      <div class="fld"><label>Delivery mode</label><div class="seg"><span class="on">Deliver by driver</span><span>Self-deliver</span><span>Customer collects</span></div></div>
+      <div class="fld"><label>Ship to</label><div class="inp">CHENXIN PLUMBING SDN BHD</div></div>
+      <div class="fld"><label>Shipping address</label><div class="inp" style="min-height:58px;align-items:flex-start">(address), Johor Bahru</div></div>
+      <div class="fld"><label>Site contact</label><div class="inp">Site supervisor</div></div>
+      <div class="fld"><label>Contact phone</label><div class="inp">01x-xxx xxxx</div></div>
+      <div class="fld"><label>Contact note</label><div class="inp">Call 1 day before</div></div>
+    </div></div>
+
+  <div class="card sect rel"><span class="co pin">7</span>
+    <div class="hd"><div><span class="t">Additional Information</span><span class="s">Loan 2 months &middot; Either</span></div><span class="chev">&#8963;</span></div>
+    <div class="bd">
+      <div class="fld"><label>Loan period</label><div style="display:flex;gap:8px"><div class="inp" style="width:70px">2</div><div class="seg"><span>Days</span><span class="on">Months</span></div></div></div>
+      <div class="fld"><label>Goods from</label><div class="seg"><span>Demo set</span><span>New goods</span><span class="on">Either</span></div></div>
+      <div class="fld"><label>Purpose</label><div class="inp ph" style="min-height:58px;align-items:flex-start">Any additional notes...</div></div>
+    </div></div>
+
+  <div class="rel" style="display:flex;flex-direction:column;gap:8px"><span class="co pin">8</span>
+    <span class="btn out" style="justify-content:center">Save Draft</span><span class="btn" style="justify-content:center">Submit</span></div>
+</div></div>
+<div class="notes"><ol>
+  <li><span class="co">1</span><div><b>Plain page, no branded header</b> (owner notes 2, 3). The page has a Back button, then the title in text-lg font-semibold, inside <span class="mono">w-full max-w-5xl mx-auto px-3 pt-4 pb-8 space-y-4</span>, the same shell as the price tag form.<span class="ref">FE app/(auth)/portal/components/PriceTagRequestForm.tsx:2573-2640; route copied from app/(auth)/portal/c/[slug]/price_tag_request/new/page.tsx:12</span></div></li>
+  <li><span class="co">2</span><div><b>Section by section</b> (owner note 2). Each block is the same collapsible FormSection the price tag form uses. Only the first section is open at the start, each closed section shows a one-line summary, and a failed Submit opens the first section with a problem.<span class="ref">FE components/common/FormSection.tsx; opening rule as PriceTagRequestForm.tsx:706-748, :1551</span></div></li>
+  <li><span class="co">3</span><div><b>Project picker = the existing portal project picker</b> (owner note 1), the one the sponsorship form uses, with the same placeholder and the same "No matches". While the switch "Sample requests need a registered project" is OFF, the plain Input below it takes a typed title; with the switch ON that Input is hidden. The customer picker is the price tag form's dealer SearchableSelect (code shown under the name), and Quotation is a SearchableSelect over the picked project's quotations.<span class="ref">AsyncCombobox FE app/(auth)/portal/components/AsyncCombobox.tsx, used at SubmissionForm.tsx:3031 with lookupProjects lib/portal-client.ts:1060; customer SearchableSelect PriceTagRequestForm.tsx:2664 (debtors-for-agent lib/price-tag-request-service.ts:362); components/common/SearchableSelect.tsx</span></div></li>
+  <li><span class="co">4</span><div><b>Lines = the price tag form's line table.</b> Each row's Item is a clearable SearchableSelect, with the option text "Product - CODE". "X OR Y" puts a second SearchableSelect in the "Or" column. The board is a header choice (No / Yes segmented control, the same control as the price form's "List price / Selling price") plus a label Input, never a line. The search ignores dashes and case ("tpe9101" lists TPE-9101). It only lists: the salesperson taps the product.<span class="ref">Line table PriceTagRequestForm.tsx:2725 (row :3321, item picker :3324, option text :1016); segmented control :2844</span></div></li>
+  <li><span class="co">5</span><div><b>Not in the list = the picker's empty message</b>, set through SearchableSelect's existing <span class="mono">emptyMessage</span> prop (default "No results found."). The text: "CB2829SS-CR is not in the product list. Pick the product you mean, or ask purchasing to add it as a new product before you request it." Nothing is added, and the other lines still submit. "+ Add line" is the same outline button under the table.<span class="ref">SearchableSelect emptyMessage components/common/SearchableSelect.tsx:181; Add line PriceTagRequestForm.tsx:2823</span></div></li>
+  <li><span class="co">6</span><div><b>Delivery section.</b> The same segmented control is used for "On a date / Immediate arrangement" (On a date shows an Input type=date) and for delivery mode, which is required on submit. Ship-to and site contact are plain Input and Textarea fields.<span class="ref">Input type=date PriceTagRequestForm.tsx:2909; Textarea :2923; components/ui/input.tsx, textarea.tsx</span></div></li>
+  <li><span class="co">7</span><div><b>Additional Information, the same section name as the price tag form.</b> Loan period is a number Input plus Days / Months, with 2 months as the default. Goods from defaults to Either, and Purpose is a Textarea.<span class="ref">PriceTagRequestForm.tsx:2896</span></div></li>
+  <li><span class="co">8</span><div><b>Footer = the price tag form's footer.</b> Save Draft (outline), then Submit. The footer is not sticky. Field errors show as text-xs text-destructive under the field, with the "N things need attention." box above the footer.<span class="ref">PriceTagRequestForm.tsx:2983 (footer), :2964 (summary box), :2673 (field error)</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 1b: PORTAL READ-ONLY ============ -->
+<h2 class="frame-title">1b. Portal, after submit (read-only, 375 wide)</h2>
+<div class="layout">
+<div class="frame w375"><div style="padding:16px 12px 24px">
+  <div class="rel" style="display:flex;justify-content:space-between;align-items:center"><span class="btn ghost sm">&larr; Back</span><span class="sm muted">SR-000003 &nbsp;&#9881;</span><span class="co pin">9</span></div>
+  <div class="rel" style="margin:12px 0 4px"><span class="sm muted">Status:</span> <span class="pill p-sub">Submitted</span><span class="co pin" style="right:auto;left:150px;top:-2px">10</span></div>
+  <div class="xs muted" style="margin-bottom:14px">Created 10/10/2026</div>
+  <div class="card sect"><div class="hd"><div><span class="t">Customer &amp; project</span></div><span class="chev">&#8963;</span></div>
+    <div class="bd"><div class="fld"><label class="muted" style="font-weight:400">Customer</label><div class="sm b">JV PERKASA SDN BHD (PROJECT)</div></div>
+    <div class="fld"><label class="muted" style="font-weight:400">Project</label><div class="sm b">52 double-storey terraces, Taman Nusa Duta Fasa 10 (TARIKAN ABADI)</div></div></div></div>
+  <div class="card sect"><div class="hd"><div><span class="t">Lines (21)</span><span class="s">board: NUSA DUTA FASA 10</span></div><span class="chev">&#8964;</span></div></div>
+  <div class="card sect"><div class="hd"><div><span class="t">Delivery</span><span class="s">Immediate &middot; Deliver by driver</span></div><span class="chev">&#8964;</span></div></div>
+  <div class="card sect"><div class="hd"><div><span class="t">Additional Information</span><span class="s">Loan 2 months</span></div><span class="chev">&#8964;</span></div></div>
+</div></div>
+<div class="notes"><ol>
+  <li><span class="co">9</span><div><b>Read-only = the same sections in the same order</b>, with each input replaced by its value. The header row has Back, the doc number and the gear menu, which holds Print / Download PDF and Cancel request (offered only while the request is Submitted).<span class="ref">PriceTagRequestForm.tsx:2044-2438 (read view), :2439 (header row), DetailActionsMenu FE components/common/DetailActionsMenu</span></div></li>
+  <li><span class="co">10</span><div><b>Current status only</b>, as "Status:" followed by the same rounded-full pill the price tag form shows. There is no timeline. On the portal landing the request shows up as a normal submission card.<span class="ref">PriceTagRequestForm.tsx:2066; landing card PortalLanding.tsx:1161-1215 in LandingCardShell.tsx:17-29</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 2: PROJECT TAB ============ -->
+<h2 class="frame-title">2. Staff, project detail, "Sample requests" tab (1280 wide)</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Project Sales</div><div class="it">Pipeline</div><div class="it on">Projects</div><div class="it">Sample Requests</div><div class="it">Leads</div></div>
+  <div class="main"><div class="topbar"></div><div class="content">
+    <div class="phdr"><div><h1>52 double-storey terraces, Taman Nusa Duta Fasa 10</h1><div class="crumb">Project Sales / Projects</div></div></div>
+    <div class="tabs rel"><span>Overview</span><span>Stakeholders</span><span>Tasks</span><span>Quotations</span><span class="on">Sample requests</span><span>Samples</span><span>Sponsorships</span><span>POs</span><span>Delivery schedules</span><span>Sales orders</span><span>Activity</span><span>Documents</span><span class="co pin" style="right:auto;left:440px;top:-4px">11</span></div>
+    <div class="card rel"><span class="co pin">12</span>
+      <div class="toolbar"><span class="b sm">Sample requests</span><span class="btn sm">+ Create</span></div>
+      <table class="t"><thead><tr><th style="width:120px">Number</th><th style="width:110px">Submitted</th><th style="width:130px">Status</th><th style="width:150px">Delivery</th><th style="width:150px">Mode</th><th style="width:70px">Lines</th><th>Ship to</th><th style="width:150px">Salesperson</th></tr></thead><tbody>
+        <tr><td class="b">SR-000003</td><td>10/10/2026</td><td><span class="pill p-sub">Submitted</span></td><td>Immediate</td><td>Deliver by driver</td><td>21</td><td>CHENXIN PLUMBING SDN BHD</td><td>Salesperson A</td></tr>
+      </tbody></table></div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">11</span><div><b>One new entry in the existing project TABS</b>, placed before Samples (the feedback tab, unchanged).<span class="ref">FE app/(protected)/project-sales/[projectId]/components/ProjectDetailClient.tsx:74-86 (Samples :80), panels :313-406</span></div></li>
+  <li><span class="co">12</span><div><b>The tab body is the PanelDataGrid every project tab already uses</b>, with Create in its header. Create opens the full "New Sample Request" page with this project prefilled. A row opens the request page (frame 4). The status column uses the same pill as frame 3.<span class="ref">FE components/common/PanelDataGrid.tsx; pill lib/status-pill.ts:97 STATUS_PILL_BASE + statusPillClass</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 3: STAFF LIST ============ -->
+<h2 class="frame-title">3. Staff list, all projects (coordinator queue, 1280 wide). Purchase Requests list pattern</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Project Sales</div><div class="it">Pipeline</div><div class="it">Projects</div><div class="it on rel">Sample Requests<span class="co pin" style="top:2px;right:6px">13</span></div><div class="it">Leads</div></div>
+  <div class="main"><div class="topbar"></div><div class="content">
+    <div class="phdr rel"><div><h1>Sample Requests</h1><div class="crumb">Project Sales / Sample Requests</div></div><span class="co pin" style="right:auto;left:200px;top:0">14</span></div>
+    <div class="card rel"><span class="co pin">15</span>
+      <div class="toolbar"><div style="display:flex;gap:8px"><span class="search">Search...</span><span class="btn out sm">Filters (1)</span></div><div style="display:flex;gap:8px"><span class="btn out sm">&#8635;</span><span class="btn out sm">Export</span><span class="btn sm">+ Create</span></div></div>
+      <table class="t"><thead><tr><th style="width:36px"></th><th style="width:110px">Number</th><th style="width:100px">Submitted</th><th style="width:130px">Status</th><th style="width:110px">Delivery</th><th style="width:190px">Customer</th><th>Project Title</th><th style="width:140px">Mode</th><th style="width:140px">Salesperson</th></tr></thead><tbody>
+        <tr><td>&#9744;</td><td class="b">SR-000003</td><td>10/10/2026</td><td><span class="pill p-sub">Submitted</span></td><td>Immediate</td><td title="JV PERKASA SDN BHD (PROJECT)">JV PERKASA SDN BHD (PROJECT)</td><td title="52 double-storey terraces, Taman Nusa Duta Fasa 10">52 double-storey terraces, Taman Nusa Duta Fasa 10</td><td>Deliver by driver</td><td>Salesperson A</td></tr>
+        <tr><td>&#9744;</td><td class="b">SR-000001</td><td>15/10/2026</td><td><span class="pill p-sub">Submitted</span></td><td>Immediate</td><td>JV PERKASA SDN BHD (PROJECT)</td><td>3-tower service apartments, Bukit Senibong</td><td>Deliver by driver</td><td>Salesperson A</td></tr>
+        <tr><td>&#9744;</td><td class="b">SR-000002</td><td>09/10/2026</td><td><span class="pill p-proc">Processing</span></td><td>13/10/2026</td><td>PINNACLE HOME <span class="badge2">No debtor code</span></td><td>EDUCITY DEVELOPMENT</td><td>Deliver by driver</td><td>Salesperson B</td></tr>
+      </tbody></table>
+      <div class="pager"><span>Rows per page 20</span><span>1 - 3 of 3</span></div>
+    </div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">13</span><div><b>New sidebar item under Project Sales</b>, shown only with <span class="mono">projects.sample_requests.view</span>.<span class="ref">FE config/menu.config.tsx:147-185</span></div></li>
+  <li><span class="co">14</span><div><b>Page = Container + PageHeader with title only</b>, the same as the Purchase Requests, Sponsorship Forms and Stock Inquiries list pages.<span class="ref">FE app/(protected)/procurement-management/purchase-requests/page.tsx:14-23; components/common/PageHeader.tsx</span></div></li>
+  <li><span class="co">15</span><div><b>List = the same DataGrid build as PurchaseRequestsList</b> (owner note 5): Card, then DataGridListToolbar (ListSearchInput "Search...", a custom Filters popover with Status / Salesperson SearchableSelect, refresh, export), then CardTable, DataGridTable and DataGridPagination. "Create" sits in the toolbar's primaryAction and opens the full New page. The default filter is open work (Submitted, Processing, Customer confirmed), sorted by delivery date with Immediate first. Phone and address never appear in the list. The "No debtor code" tag is the secondary Badge the PR list uses for Rev.<span class="ref">FE app/(protected)/procurement-management/purchase-requests/components/PurchaseRequestsList.tsx:467-606 (toolbar :480-587, Create :459-464, status column :326-341, rowHref :209-228); components/ui/data-grid-list-toolbar; components/ui/badge.tsx</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 4: STAFF DETAIL ============ -->
+<h2 class="frame-title">4. Staff, request page (coordinator, 1280 wide). Purchase Request / Stock Inquiry detail pattern, current status only</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Project Sales</div><div class="it">Pipeline</div><div class="it">Projects</div><div class="it on">Sample Requests</div><div class="it">Leads</div></div>
+  <div class="main"><div class="topbar"></div><div class="content">
+    <div class="phdr rel"><div><h1>Sample Request</h1><div class="crumb">Project Sales / Sample Requests</div></div><span class="btn out sm">&larr; Back to sample requests</span><span class="co pin" style="right:auto;left:170px;top:0">16</span></div>
+    <div class="tabs rel"><span class="on">Details</span><span>Comments (0)</span><span>SLA Tracking</span><span class="co pin" style="right:auto;left:290px;top:-4px">17</span></div>
+    <div class="rel" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span class="co pin" style="right:auto;left:420px;top:0">18</span>
+      <div><div style="font-size:24px;font-weight:700">Sample Request - SR-000003</div><div class="sm muted">Submitted: 10/10/2026 &middot; <span class="pill p-sub">Submitted</span></div></div>
+      <div style="display:flex;gap:8px;align-items:center" class="rel"><span class="co pin" style="right:auto;left:-26px;top:4px">19</span><span class="btn out sm">&lsaquo; 2 of 3 &rsaquo;</span><span class="btn out sm">&#9881;</span><span class="btn sm green">Change to processing</span><span class="btn sm red">Cancel request</span><span class="btn out sm">Edit</span></div>
+    </div>
+    <div class="card b2 rel" style="padding:24px 40px 32px;margin-bottom:20px"><span class="co pin">20</span>
+      <div style="display:flex;gap:8px"><span class="badge2">Portal</span><span class="pill p-sub">Submitted</span></div>
+      <div style="text-align:center;font-size:20px;font-weight:600;border-bottom:1px solid var(--border);padding-bottom:16px;margin:8px 0 24px">Sample Request</div>
+      <div class="kv">
+        <div><div class="l">Salesperson</div><div class="v">Salesperson A</div></div>
+        <div><div class="l">Customer</div><div class="v">300-J099 JV PERKASA SDN BHD (PROJECT)</div></div>
+        <div><div class="l">Project</div><div class="v">52 double-storey terraces, Taman Nusa Duta Fasa 10 (typed title, not registered)</div></div>
+        <div><div class="l">Quotation</div><div class="v muted">None</div></div>
+        <div><div class="l">For (scope)</div><div class="v muted">None</div></div>
+        <div><div class="l">Requested delivery</div><div class="v">Immediate arrangement</div></div>
+        <div><div class="l">Delivery mode</div><div class="v">Deliver by driver</div></div>
+        <div><div class="l">Ship to</div><div class="v">CHENXIN PLUMBING SDN BHD, (address), Johor Bahru</div></div>
+        <div><div class="l">Site contact</div><div class="v">Site supervisor, 01x-xxx xxxx, call 1 day before</div></div>
+        <div><div class="l">Sample board</div><div class="v">Mount &amp; label: NUSA DUTA FASA 10</div></div>
+        <div><div class="l">Loan period</div><div class="v">2 months</div></div>
+        <div><div class="l">Goods from</div><div class="v">Either</div></div>
+        <div class="span2"><div class="l">Purpose</div><div class="v muted">None</div></div>
+        <div class="rel"><span class="co pin" style="right:auto;left:150px;top:0">21</span><div class="l">Consignment No (internal)</div><div class="v muted">Not set</div></div>
+        <div><div class="l">PO No (internal)</div><div class="v muted">Not set</div></div>
+      </div>
+      <p class="sm b" style="margin:28px 0 10px">Line items</p>
+      <div class="card rel"><span class="co pin">22</span>
+        <table class="t"><thead><tr><th style="width:34px"></th><th style="width:44px">No</th><th style="width:110px">Brand</th><th style="width:170px">Model</th><th>Description</th><th style="width:150px">Or (alternative)</th><th style="width:60px">Qty</th><th style="width:160px">Remark</th></tr></thead><tbody>
+          <tr><td></td><td>1</td><td>SORENTO</td><td class="b">SRT73-CR</td><td>product name</td><td></td><td>1</td><td></td></tr>
+          <tr><td>&#9662;</td><td>2</td><td>CABANA</td><td class="b">CB313</td><td>product name</td><td></td><td>1</td><td></td></tr>
+          <tr><td colspan="8" style="background:#fafafa;padding:10px 14px;white-space:normal">
+            <div class="xs muted" style="margin-bottom:6px">Stock, CB313 (existing OrderInquiryStockGrid, location BRW)</div>
+            <table class="t" style="width:520px;background:#fff;border:1px solid var(--border)"><thead><tr><th>Location</th><th style="width:90px">On hand</th><th style="width:90px">Tag</th></tr></thead><tbody>
+              <tr><td>BRW</td><td>2129</td><td>Own</td></tr><tr><td>BRW-BB</td><td>2066</td><td>Group</td></tr><tr><td>BRW-IB</td><td>560</td><td>Group</td></tr><tr><td>BRW-IR</td><td>226</td><td>Group</td></tr></tbody></table></td></tr>
+          <tr><td></td><td>3</td><td>CABANA</td><td class="b">CB2829</td><td>product name</td><td>CB2805A</td><td>1</td><td></td></tr>
+        </tbody></table></div>
+    </div>
+    <div class="card rel" style="padding:14px 16px"><span class="co pin">23</span><div class="b">Audit Trail</div><div class="sm muted" style="margin-top:6px">10/10/2026 09:12 &middot; Salesperson A &middot; Status: Draft &rarr; Submitted</div></div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">16</span><div><b>Route page = PageHeader + BackToList</b>, the same as the Purchase Request detail route.<span class="ref">FE app/(protected)/procurement-management/purchase-requests/[id]/page.tsx:20-52; components/common/BackToList</span></div></li>
+  <li><span class="co">17</span><div><b>Line tabs from FormDetailWithSLATabs</b>: Details, Comments (n), SLA Tracking. Comments is the existing FormComments thread. The build adds the <span class="mono">sample_request</span> kind to the comment and SLA kind lists, because both hardcode their kinds today.<span class="ref">FE app/(protected)/sla-management/_shared/FormDetailWithSLATabs.tsx:77-111; components/common/comments/FormComments.tsx; BE services/form_comment_service.py:38, form_sla_service.py:33-42</span></div></li>
+  <li><span class="co">18</span><div><b>Current status only</b> (owner note 4): the record number in text-2xl, and under it the date plus the one status pill, as on Stock Inquiry. There is no submitted &rarr; processing visual. Each move is written to the Audit Trail (23).<span class="ref">StockInquiryDetail.tsx:378-396 (pill in subtitle); PurchaseRequestDetail.tsx:596-614; lib/status-pill.ts:97</span></div></li>
+  <li><span class="co">19</span><div><b>DetailActions, as on Purchase Request</b>: ListPager (prev/next through the list), the gear DetailActionsMenu (Print / Download PDF, Copy link, Delete draft), then one plain button for each move allowed from the current status, with Edit last. Submitted shows "Change to processing" (emerald) and "Cancel request" (destructive outline). Processing shows "Customer confirmed" (asks for a date). Customer confirmed shows "Mark delivered" (asks for a date). Only <span class="mono">projects.sample_requests.process</span> sees these buttons.<span class="ref">FE components/common/DetailActions.tsx:82-98, ListPager.tsx, DetailActionsMenu; buttons as PurchaseRequestDetail.tsx:836-933 (emerald approve, destructive-outline reject, Edit last)</span></div></li>
+  <li><span class="co">20</span><div><b>Read-only block = the Purchase Request document card</b>: border-2, a source Badge plus the status pill, a centred title, then a 2-column label / value grid. Every field is shown, and an empty field reads "None" / "Not set". Edit opens the same fields in the same order on the full Edit page.<span class="ref">PurchaseRequestDetail.tsx:1207-1345 (Card border-2, grid sm:grid-cols-2 gap-x-10 gap-y-5)</span></div></li>
+  <li><span class="co">21</span><div><b>Consignment No and PO No are two more fields in the same grid</b>, filled through Edit by the coordinator only. No new box.<span class="ref">Same grid as 20; card rule 10</span></div></li>
+  <li><span class="co">22</span><div><b>Line items = PurchaseRequestLineItemsGrid's PanelDataGrid</b> (no paging). A row expands through PanelDataGrid's existing <span class="mono">expanded</span> + <span class="mono">meta.expandedContent</span>, and the expanded row holds OrderInquiryStockGrid for that product exactly as it is used today (real CB313 dev spread shown). The board is shown in the "Sample board" field, not as a line.<span class="ref">PurchaseRequestDetail.tsx:115-208; components/common/PanelDataGrid.tsx:172-179, :299-311; FE app/(protected)/project-sales/_shared/components/OrderInquiryStockGrid.tsx:31-141</span></div></li>
+  <li><span class="co">23</span><div><b>Audit Trail</b> below the card, the same as the PR page. This is where the status history lives, in place of a timeline.<span class="ref">FE components/audit/AuditTrail.tsx, as PurchaseRequestDetail.tsx:1561</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 5: PRINT ============ -->
+<h2 class="frame-title">5. Printed requisition (A4, the paper's layout). Unchanged from v1</h2>
+<div class="layout">
+<div class="scroll"><div class="paper">
+  <div style="font-weight:700;font-size:14px">SORENTO SDN BHD</div><div style="font-size:11px">letterhead</div>
+  <h3 class="rel"><span class="co" style="position:absolute;right:0;top:-4px">24</span>CONSIGNMENT REQUISITION FORM &nbsp; SR-000003</h3>
+  <table style="margin-bottom:8px"><tr><td style="width:50%">Sales Person: Salesperson A</td><td>Date: 10/10/2026</td></tr>
+    <tr><td>Customer Name: JV PERKASA SDN BHD (PROJECT) (300-J099)</td><td>Request Delivery Date: IMMEDIATE ARRANGEMENT</td></tr>
+    <tr><td colspan="2">PROJECT: 52 double-storey terraces, Taman Nusa Duta Fasa 10 (TARIKAN ABADI SDN BHD)</td></tr>
+    <tr><td>Shipping Address: CHENXIN PLUMBING SDN BHD, Johor Bahru</td><td>Contact Person: Site supervisor, 01x-xxx xxxx, call 1 day before</td></tr></table>
+  <div class="box" style="margin-bottom:8px;width:50%">For Internal Purpose: Consignment No: ______ &nbsp; PO No: ______</div>
+  <table><thead><tr><th style="width:36px">No</th><th style="width:90px">Brand</th><th>Model</th><th style="width:50px">Qty</th></tr></thead><tbody>
+    <tr><td>1</td><td></td><td>MOUNT &amp; LABEL SAMPLE BOARD - NUSA DUTA FASA 10</td><td></td></tr>
+    <tr><td>2</td><td>SORENTO</td><td>SRT73-CR</td><td>1</td></tr>
+    <tr><td>3</td><td>CABANA</td><td>CB313</td><td>1</td></tr>
+    <tr><td>4</td><td>CABANA</td><td>CB2829 OR CB2805A</td><td>1</td></tr>
+    <tr><td colspan="4">... remaining lines</td></tr></tbody></table>
+  <div style="margin-top:10px">Delivery: <span class="tick">&#10003;</span>Deliver-Van <span class="tick"></span>Self-Deliver <span class="tick"></span>Self-Collection</div>
+  <div style="margin-top:6px">Loan Period: 2 months &nbsp; Goods Taken From: <span class="tick"></span>Demo Sets <span class="tick"></span>New Goods &nbsp; Purpose: -</div>
+</div></div>
+<div class="notes"><ol>
+  <li><span class="co">24</span><div><b>Same columns and ticks as the paper.</b> The per-line "Approved by" columns are dropped: approval is borrow-only and arrives in SR-STOCK. Brand comes from the product. Opened from the gear menu "Print / Download PDF", the same item as on PR.<span class="ref">BE services/pdf_render.py:153 render_html, as purchase_request_pdf_service.py:47 and stock_inquiry_pdf_service.py:37; gear item PurchaseRequestDetail.tsx:782-783</span></div></li>
+</ol></div>
+</div>
+
+</div>
+</body>
+</html>

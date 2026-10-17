@@ -12,6 +12,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { readable } from '@/lib/spec-readable';
@@ -74,11 +76,13 @@ export function AddProposalRowDialog({
   );
   const [picked, setPicked] = useState('');
   const [draft, setDraft] = useState('');
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     if (open) return;
     setPicked('');
     setDraft('');
+    setChecked(false);
   }, [open]);
 
   const offered = useMemo(() => {
@@ -94,6 +98,8 @@ export function AddProposalRowDialog({
   );
 
   const value = key ? fromDraft(draft, key.data_type) : null;
+  const numeric = key?.data_type === 'numeric';
+  const numberError = numeric && checked ? numberFieldError(draft) : undefined;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -179,13 +185,23 @@ export function AddProposalRowDialog({
                 />
               ) : (
                 <div className="relative">
-                  <Input
-                    id="fsp-add-value"
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    type={key.data_type === 'numeric' ? 'number' : 'text'}
-                    disabled={saving}
-                  />
+                  {numeric ? (
+                    <NumberInput
+                      id="fsp-add-value"
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      disabled={saving}
+                      error={numberError}
+                    />
+                  ) : (
+                    <Input
+                      id="fsp-add-value"
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      type="text"
+                      disabled={saving}
+                    />
+                  )}
                   {key.unit && (
                     <span className="pointer-events-none absolute inset-y-0 end-2 flex items-center text-xs text-muted-foreground">
                       {key.unit}
@@ -206,10 +222,12 @@ export function AddProposalRowDialog({
             Cancel
           </Button>
           <Button
-            disabled={!key || value === null || saving}
+            disabled={!key || (!numeric && value === null) || saving}
             data-testid="fsp-add-row-submit"
             onClick={() => {
-              if (!key || value === null) return;
+              if (!key) return;
+              if (numeric) setChecked(true);
+              if (value === null) return;
               onAdd({ spec_key: key.spec_key, value });
             }}
           >

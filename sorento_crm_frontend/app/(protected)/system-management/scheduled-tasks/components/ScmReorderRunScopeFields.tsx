@@ -1,7 +1,7 @@
 'use client';
 
 import type { FieldErrors, UseFormRegister, UseFormSetValue, UseFormWatch } from 'react-hook-form';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -81,9 +81,8 @@ export function ScmReorderRunScopeFields({
             <Label htmlFor="scm-horizon-start" className="mb-1 block text-2xs text-muted-foreground">
               From (days from run day)
             </Label>
-            <Input
+            <NumberInput
               id="scm-horizon-start"
-              type="number"
               {...register('horizon_start_days', {
                 setValueAs: (v) => (v === '' || v === null ? '' : Number(v)),
               })}
@@ -93,9 +92,8 @@ export function ScmReorderRunScopeFields({
             <Label htmlFor="scm-horizon-end" className="mb-1 block text-2xs text-muted-foreground">
               To (days from run day)
             </Label>
-            <Input
+            <NumberInput
               id="scm-horizon-end"
-              type="number"
               {...register('horizon_end_days', {
                 setValueAs: (v) => (v === '' || v === null ? '' : Number(v)),
               })}
@@ -141,9 +139,8 @@ export function ScmReorderRunScopeFields({
 
       <div>
         <Label htmlFor="scm-budget" className="mb-1 block">Budget</Label>
-        <Input
+        <NumberInput
           id="scm-budget"
-          type="number"
           min={0}
           placeholder="Full budget"
           {...register('budget', {

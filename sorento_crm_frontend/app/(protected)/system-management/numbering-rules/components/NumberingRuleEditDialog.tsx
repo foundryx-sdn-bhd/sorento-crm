@@ -19,12 +19,21 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, type NumberFieldRules } from '@/lib/number-field';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useUpdateNumberingRule } from '../hooks/useNumberingRules';
 import type { DocumentNumberingRule } from '../types/numberingRule.types';
 import { DOC_TYPE_LABELS, RESET_POLICY_OPTIONS } from '../types/numberingRule.types';
+
+const DIGITS_RULES: NumberFieldRules = { min: 1, max: 10, integer: true };
+const COUNTER_RULES: NumberFieldRules = { min: 0, integer: true };
+
+// Checked on Save only; the boxes hold what was typed, so a cleared box stays empty.
+const checkNumber = (rules: NumberFieldRules) => (value: unknown) =>
+  numberFieldError(value as string | number | null | undefined, rules) ?? true;
 
 interface FormValues {
   enabled: boolean;
@@ -80,9 +89,9 @@ export default function NumberingRuleEditDialog({
         data: {
           enabled: data.enabled,
           prefix_template: data.prefix_template || null,
-          number_digits: data.number_digits,
-          next_value: data.next_value,
-          start_value: data.start_value,
+          number_digits: Number(data.number_digits),
+          next_value: Number(data.next_value),
+          start_value: Number(data.start_value),
           reset_policy: data.reset_policy,
         },
       },
@@ -121,16 +130,16 @@ export default function NumberingRuleEditDialog({
             <FormField
               control={form.control}
               name="number_digits"
+              rules={{ validate: checkNumber(DIGITS_RULES) }}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Number digits (padding)</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={10}
                       {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 1)}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormMessage />
@@ -140,15 +149,15 @@ export default function NumberingRuleEditDialog({
             <FormField
               control={form.control}
               name="next_value"
+              rules={{ validate: checkNumber(COUNTER_RULES) }}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Next running number</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={0}
                       {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormMessage />
@@ -158,15 +167,15 @@ export default function NumberingRuleEditDialog({
             <FormField
               control={form.control}
               name="start_value"
+              rules={{ validate: checkNumber(COUNTER_RULES) }}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Start value (after reset)</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={0}
                       {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormMessage />

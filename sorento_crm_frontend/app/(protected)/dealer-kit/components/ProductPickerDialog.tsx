@@ -16,6 +16,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RuleBuilder } from '@/components/rule-builder/RuleBuilder';
+import { ruleTreeHasBadNumber } from '@/components/rule-builder/ruleTreeBadNumber';
+import { useRuleFacts } from '@/components/rule-builder/useRuleFacts';
 import type { RuleGroup } from '@/components/rule-builder/types';
 import { cn } from '@/lib/utils';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
@@ -153,6 +155,9 @@ export function ProductPickerDialog({
   onSave: (selection: ProductSelection) => void;
 }) {
   const [draft, setDraft] = useState<ProductSelection>(value);
+  const { data: ruleFacts } = useRuleFacts(['product']);
+  const [tab, setTab] = useState('rule');
+  const [ruleRefused, setRuleRefused] = useState(false);
   const {
     value: search,
     setValue: setSearch,
@@ -163,6 +168,16 @@ export function ProductPickerDialog({
   // Remount-on-open keeps the draft honest when the dialog is reopened after a
   // cancel; without it the previous edit would silently persist.
   const [openedWith, setOpenedWith] = useState(value);
+  // A fresh opening starts on By rule, with no leftover refusal and the saved selection.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setTab('rule');
+      setRuleRefused(false);
+      setDraft(value);
+    }
+  }
   if (open && openedWith !== value) {
     setOpenedWith(value);
     setDraft(value);
@@ -327,7 +342,7 @@ export function ProductPickerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="rule">
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList variant="default">
             <TabsTrigger value="rule">By rule</TabsTrigger>
             <TabsTrigger value="manual">By hand</TabsTrigger>
@@ -540,12 +555,25 @@ export function ProductPickerDialog({
           </p>
         )}
 
+        {ruleRefused && ruleTreeHasBadNumber(draft.conditions, ruleFacts) && (
+          <p role="alert" className="text-xs text-destructive">
+            Fix the number in the rule before using these products.
+          </p>
+        )}
+
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
             onClick={() => {
+              if (ruleTreeHasBadNumber(draft.conditions, ruleFacts)) {
+                // Back to the rule, where the box carries its sentence.
+                setTab('rule');
+                setRuleRefused(true);
+                return;
+              }
+              setRuleRefused(false);
               onSave(draft);
               onOpenChange(false);
             }}

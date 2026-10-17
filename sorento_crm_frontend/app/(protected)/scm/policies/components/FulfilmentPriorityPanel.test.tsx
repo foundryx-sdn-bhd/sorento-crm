@@ -171,6 +171,20 @@ describe('FulfilmentPriorityPanel', () => {
     expect(mutateAsync).not.toHaveBeenCalled();
   });
 
+  it('NUMBER-FIELDS: a blank number blocks the save with a sentence under the field, never saved as 0', () => {
+    hooks.useFulfilmentPriority.mockReturnValue({ data: DATA, isLoading: false, isError: false });
+    render(<FulfilmentPriorityPanel />);
+
+    fireEvent.change(screen.getByLabelText(/Pool share/i), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save fulfilment priority/i }));
+
+    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/Pool share/i)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText(/^Enter a whole number between 0 and 100/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Pool share/i), { target: { value: '40' } });
+    expect(screen.queryByText(/^Enter a whole number between 0 and 100/)).not.toBeInTheDocument();
+  });
+
   it('renders and saves the transfer-days field (AC-2.3)', async () => {
     hooks.useFulfilmentPriority.mockReturnValue({ data: DATA, isLoading: false, isError: false });
     render(<FulfilmentPriorityPanel />);
