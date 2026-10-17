@@ -151,7 +151,7 @@ def test_r3a_an_explicit_clear_of_the_quantity_carries_nothing_to_the_fetch(seam
 
 def test_r3a_a_quantity_fills_only_its_own_code_not_another_product_the_message_names(seam):
     prev = _answered(seam, [("SRT1", 5)])
-    seam.say("and SRT391-GM?", _ask(_product("SRT391-GM"), changes=[_op("add", "product")]), previous=prev)
+    seam.say("and SRT391-GM?", _ask(_product("SRT391-GM"), changes=[_op("keep")]), previous=prev)
     wanted = _wanted(seam.turn_calls[-1])
     assert seam.uuid_of["SRT391-GM"] not in wanted, wanted
 
@@ -185,12 +185,13 @@ FAMILIES = [
 ]
 
 
-def _seed_family(session_factory, parent: str, children: list[str], other: str) -> dict[str, str]:
+def _seed_family(session_factory, parent: str, children: list[str], other: str, *, registry: bool = True) -> dict[str, str]:
     db = session_factory()
-    db.add(ProductSpecRegistry(
+    if registry:
+      db.add(ProductSpecRegistry(
         id=str(uuid.uuid4()), spec_key="trap_type", label="Trap", data_type="enum",
         allowed_values=["s_trap", "p_trap"], synonyms={"p_trap": ["p trap"], "s_trap": ["s trap"]},
-    ))
+      ))
     cat = ProductCategory(id=str(uuid.uuid4()), category_code=unique_code("WC")[:50], category_name="ZZT WC",
                           class_label="Water Closet", company_id=DEFAULT_COMPANY_ID)
     uom = UnitOfMeasure(id=str(uuid.uuid4()), uom_code=unique_code("UOM")[:50], uom_name="Each", company_id=DEFAULT_COMPANY_ID)
@@ -212,12 +213,12 @@ def _seed_family(session_factory, parent: str, children: list[str], other: str) 
     return ids
 
 
-def _family_turn(session_factory, stub_access, monkeypatch, message, ids, parent, qty, verdict):
-    key = ids[parent]
-    row = {"raw": parent, "canonical_code": parent, "hint": "product", "uuid": key, "current_message": False}
+def _family_turn(session_factory, stub_access, monkeypatch, message, ids, parent, qty, verdict, *, held=None):
+    held = held or [(parent, qty)]
+    rows = [{"raw": c, "canonical_code": c, "hint": "product", "uuid": ids[c], "current_message": False} for c, _q in held]
     task = task_mod.Task(kind="stock_qty", domain="inventory", status=task_mod.ANSWERED,
-                         slots=(task_mod.Slot(key, parent, qty),))
-    prev = {"focus": focus_to_wire(Focus(products=[row], domains=["inventory"], tasks=(task,))), "open_question": None}
+                         slots=tuple(task_mod.Slot(ids[c], c, q) for c, q in held))
+    prev = {"focus": focus_to_wire(Focus(products=rows, domains=["inventory"], tasks=(task,))), "open_question": None}
 
     def fake_resolve_config(db, *, current_date, override_version_id=None):
         return parser_mod.ParserConfig(system_prompt="stub", prompt_version=1, provider="openai", model="m",
@@ -291,3 +292,50 @@ def _seed_more_plain(session_factory, code: str) -> str:
                    list_price=1, company_id=DEFAULT_COMPANY_ID))
     db.commit()
     return pid
+
+
+# --------------------------------------------------------------------------- #
+# Review round: B1 nothing declared, N1 differing quantities
+# --------------------------------------------------------------------------- #
+
+B1_CASES = [
+    ("en_any_p_trap", "any p trap?", "MWC6603-S8", 5, ["MWC7601-RL-P", "MWC7609-RL-P"], "MWC7610-RL"),
+    ("bm_ada_p_trap", "ada p trap tak?", "SRTWC286-SH", 10, ["SRTWC286-SH-P", "SRTWC286-SH-P-150"], "SRTWC286-SH-NEW"),
+    ("zh_p_trap", "有P trap吗?", "MWCX7604-RL", 3, ["MWCX7604-RL-P", "MWCX7605-RL-P", "MWCX7615-RL-P"], "MWCX7606-RL"),
+]
+
+
+@pytest.mark.parametrize("message,parent,qty,children,other", [c[1:] for c in B1_CASES], ids=[c[0] for c in B1_CASES])
+def test_r3a_b1_a_turn_that_declares_nothing_carries_the_quantity_only_to_the_held_own_code(
+    session_factory, seeded, stub_access, monkeypatch, message, parent, qty, children, other
+):
+    ids = _seed_family(session_factory, parent, children, other)
+    verdict = _parser_output(intent_hint="check_stock", domain_hint="inventory", user_goal="stock",
+                             entities=[dict(P_TRAP)], state_changes=[])
+    _out, calls = _family_turn(session_factory, stub_access, monkeypatch, message, ids, parent, qty, verdict)
+    wanted = _wanted(calls)
+    assert not (set(wanted) & {ids[c] for c in children}), (wanted, calls)
+
+
+N1_CASES = [
+    ("two_rows_2_and_5", [("MWC6603-S8", 2), ("MWC6700-S8", 5)],
+     {"MWC6603-S8": ["MWC7601-RL-P", "MWC7609-RL-P"], "MWC6700-S8": ["MWC6700-S8-P"]}),
+    ("two_rows_10_and_3", [("SRTWC286-SH", 10), ("MWCX7604-RL", 3)],
+     {"SRTWC286-SH": ["SRTWC286-SH-P", "SRTWC286-SH-P-150"], "MWCX7604-RL": ["MWCX7604-RL-P"]}),
+]
+
+
+@pytest.mark.parametrize("held,families", [c[1:] for c in N1_CASES], ids=[c[0] for c in N1_CASES])
+def test_r3a_n1_differing_held_quantities_give_no_family_code_a_quantity(
+    session_factory, seeded, stub_access, monkeypatch, held, families
+):
+    ids: dict[str, str] = {}
+    for n, (parent, kids) in enumerate(families.items()):
+        ids.update(_seed_family(session_factory, parent, kids, f"{parent}-ZZ", registry=(n == 0)))
+    verdict = _parser_output(intent_hint="check_stock", domain_hint="inventory", user_goal="stock",
+                             entities=[dict(P_TRAP)], state_changes=[_op("keep")])
+    _out, calls = _family_turn(session_factory, stub_access, monkeypatch, "p trap", ids, held[0][0], held[0][1],
+                               verdict, held=held)
+    children = {ids[c] for kids in families.values() for c in kids}
+    wanted = _wanted(calls)
+    assert not (set(wanted) & children), (wanted, calls)
