@@ -92,18 +92,19 @@ const COLUMNS: Array<{
   aria?: string;
 }> = [
   { key: 'grip', label: '', width: 28, className: GRIP_STICKY, aria: 'Drag' },
-  { key: 'line', label: 'Line', width: 48, className: DESKTOP_ONLY },
+  { key: 'line', label: 'Line', width: 44, className: DESKTOP_ONLY },
   { key: 'soDate', label: 'SO date', width: 80, className: DESKTOP_ONLY },
-  { key: 'soNo', label: 'S/O no', width: 84, className: DESKTOP_ONLY },
+  { key: 'soNo', label: 'S/O no', width: 76, className: DESKTOP_ONLY },
   { key: 'item', label: 'Item code', width: 112, className: ITEM_STICKY },
-  { key: 'location', label: 'Location', width: 72, className: DESKTOP_ONLY },
-  { key: 'qty', label: 'Qty', width: 56 },
-  { key: 'date', label: 'Delivery date', width: 104 },
+  { key: 'location', label: 'Location', width: 64, className: DESKTOP_ONLY },
+  { key: 'qty', label: 'Qty', width: 52 },
+  { key: 'date', label: 'Delivery date', width: 96 },
   { key: 'changeQty', label: 'Change quantity', width: 80, change: true },
-  { key: 'changeDate', label: 'Change date', width: 200, change: true },
+  // DD/MM/YYYY in full beside the calendar button and the widest pill (ADVANCE).
+  { key: 'changeDate', label: 'Change date', width: 236, change: true },
   { key: 'sitsOn', label: 'AutoCount line', width: 144, change: true },
   { key: 'remark', label: 'Remark', change: true },
-  { key: 'balance', label: 'Balance', width: 92 },
+  { key: 'balance', label: 'Balance', width: 88 },
   { key: 'remove', label: '', width: 34, aria: 'Remove' },
 ];
 
@@ -151,11 +152,16 @@ function DragHandle({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      onMouseDown={(event) => {
+        listeners?.onMouseDown?.(event);
+        // A press on a grip or chip never starts a text selection (browser pass D3).
+        event.preventDefault();
+      }}
       {...rest}
       aria-label={label}
       data-drag-handle=""
       className={cn(
-        'touch-none select-none focus-visible:outline-2 focus-visible:outline-primary',
+        'touch-none select-none [-webkit-touch-callout:none] focus-visible:outline-2 focus-visible:outline-primary',
         COARSE_HIT_TARGET_CLASS,
         PRESSED_CLASS,
         disabled ? 'cursor-default opacity-40' : 'cursor-grab',
@@ -269,7 +275,7 @@ const RemainButton = ({
       handlers.open(line, cell, event.key);
     }}
     className={cn(
-      'h-7 w-full cursor-text rounded-md border border-dashed border-transparent text-2xs font-semibold tracking-wide text-muted-foreground hover:border-input hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary',
+      'h-7 w-full cursor-text select-none rounded-md border border-dashed border-transparent text-2xs font-semibold tracking-wide text-muted-foreground hover:border-input hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary',
       COARSE_HIT_TARGET_CLASS,
       PRESSED_CLASS,
     )}
@@ -558,7 +564,11 @@ const LineBlock = React.memo(function LineBlock({
                   onDate={(iso) => handlers.date(line, split.id, iso)}
                   onBlur={handlers.fieldBlur}
                 />
-                {split.deliveryDate ? <ChangePill word={word} /> : null}
+                {split.deliveryDate ? (
+                  <span className="shrink-0">
+                    <ChangePill word={word} />
+                  </span>
+                ) : null}
               </div>
             )}
           </TableCell>
@@ -805,7 +815,7 @@ export function LineSplitSheet({
       aria-label="Split delivery sheet"
       data-split-sheet=""
       onKeyDown={onKeyDown}
-      className="min-w-[1240px] table-fixed border-separate border-spacing-0 text-xs max-md:min-w-[1000px]"
+      className="min-w-[1180px] table-fixed border-separate border-spacing-0 text-xs max-md:min-w-[1000px]"
     >
       <TableHeader className="[&_tr]:border-0">
         <TableRow className="border-0 hover:bg-transparent">

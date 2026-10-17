@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import { useLineSplits } from '../../_shared/hooks/useLineSplits';
 import {
   addSplit,
@@ -564,6 +565,8 @@ export function LineSplitDialog({
     const keyboard =
       typeof (event.activatorEvent as KeyboardEvent | null)?.key === 'string';
     const next = { source, groupKey: groupKeyOf(line) };
+    // A press that wandered over a row before the drag began leaves no selection behind.
+    window.getSelection()?.removeAllRanges();
     dragRef.current = { ...next, keyboard };
     overRef.current = null;
     keyboardIndexRef.current = -1;
@@ -732,7 +735,11 @@ export function LineSplitDialog({
         <div
           ref={containerCallback}
           data-testid="line-split-dialog"
-          className="flex h-full min-h-0 flex-col"
+          className={cn(
+            'flex h-full min-h-0 flex-col',
+            // No text is selected while something is being dragged (browser pass D3).
+            drag && 'select-none',
+          )}
         >
           <DialogHeader className="mb-0 flex flex-col gap-3 space-y-0 border-b border-border px-4 py-3 text-start sm:text-start lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
