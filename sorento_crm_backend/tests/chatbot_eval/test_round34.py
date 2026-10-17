@@ -33,6 +33,12 @@ def test_red_a_mix_of_the_scheme_and_another_scheme_fails():
     assert res["passed"] is False, res["checks"]
 
 
+def test_guard_a_mix_in_the_other_order_fails_too():
+    res = _grade(["h9", "h1"])
+    assert res["passed"] is False, res["checks"]
+    assert res["checks"]["scheme"] is False, res["checks"]
+
+
 def test_guard_the_schemes_own_certificates_pass():
     res = _grade(["h1", "h2"])
     assert res["passed"] is True, (res["reason"], res["checks"])
