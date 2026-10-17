@@ -263,3 +263,10 @@ def test_an_account_marker_past_v_is_not_a_branch():
     from app.services.sales.dealer_target_import import branch_key
 
     assert branch_key("ABC (A/C VI) SDN BHD") == "ABC"
+
+
+def test_a_branch_starting_with_raw_is_not_an_account_marker():
+    """Re-check should-fix: "(RAWANG)" is a town, not A/C <n>."""
+    from app.services.sales.dealer_target_import import branch_key
+
+    assert branch_key("ABC (RAWANG) SDN BHD") == "ABC RAWANG"
