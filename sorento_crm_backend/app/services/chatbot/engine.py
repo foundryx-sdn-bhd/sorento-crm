@@ -7590,6 +7590,7 @@ def _stock_ask_reply(
         and domains != ["inventory"]
         and entities
         and not any(e.get("current_message") is True for e in entities)
+        and not (verdict.get("domain_in_message") is True and verdict.get("domain_hint") == "inventory")
     )
     state_out.focus.tasks = (
         tuple(t for t in reply.tasks if not (t.kind == "stock_qty" and t.opened_at_turn == turn_no))
