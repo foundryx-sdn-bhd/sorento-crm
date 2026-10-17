@@ -1109,6 +1109,24 @@ def _tier_spec_check(row: dict[str, Any], item: dict[str, Any]) -> tuple[str, bo
     return ("tier_spec", found <= spec_products, "The products found do not match the spec asked.")
 
 
+def _sibling_picker_ok(row: dict[str, Any], item: dict[str, Any], checks: list[tuple[str, bool | None, str]]) -> bool:
+    """Owner ruling 17 Oct: after a FULL answer to an EXACT code, an open picker of that code's sibling variants is right
+    (answer.py), so it is not a needless picker. Full = every other check is not False; sibling = the option's code starts
+    with the gold code's family stem (the part before its first "-")."""
+    gold = item.get("gold") or {}
+    raw = gold.get("code") or next(iter(gold.get("subject_after") or []), None)   # an and-x item names its code as the subject
+    code = _key(raw)
+    if (not code or gold.get("code_unresolved") or _asking(row)
+            or any(ok is False for name, ok, _ in checks if name != "no_picker")):
+        return False
+    after = _oq(row)[1]
+    if not (isinstance(after, dict) and after.get("kind") == "product_pick"):
+        return False
+    stem = _key(str(raw).split("-")[0])
+    opts = [_key(o.get("code") or o.get("label")) for o in (after.get("options") or []) if isinstance(o, dict)]
+    return bool(opts) and all(o.startswith(stem) for o in opts)
+
+
 def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     checks = _SLICES[item["slice"]](row, item)
     set_list = _set_list_check(row)
@@ -1122,6 +1140,8 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     informational = {"class"} | ({"old_dropped"} if real else set())
     info = {name: ok for name, ok, _ in checks if name in informational}   # reported, never deciding
     checks = [c for c in checks if c[0] not in informational]
+    if any(n == "no_picker" and ok is False for n, ok, _ in checks) and _sibling_picker_ok(row, item, checks):
+        checks = [(n, True if n == "no_picker" else ok, m) for n, ok, m in checks]
     failed = next((msg for name, ok, msg in checks if ok is False), None)
     # A leak fails the item on any slice; made-up facts stay their own bar, counted by `summarise`.
     leak_msg = ("The reply shows an internal id." if any(x.startswith("internal id") for x in leaks)
