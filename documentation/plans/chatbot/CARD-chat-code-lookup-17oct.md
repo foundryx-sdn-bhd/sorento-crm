@@ -112,3 +112,6 @@ Request: the held-out code-lookup fails counted by failing check name (no items)
 - OWNER RULING on Q3 (17 Oct): KEEP the sibling picker after a full answer (`answer.py:4846-4848` stands); R3 is
   dropped. Typo with one clearly meant code: answer it, no did-you-mean picker; ask only when two or more codes are
   equally close (R1). cp0-3903d0aaab's picker is therefore right: a grader / gold item for EVAL-BENCH.
+- Crew, 17 Oct (ask a19194868): "when deliver" emits status `outstanding` (a): the configured scope policy applies
+  (a contact with the SO-outstanding grant gets the DO/SO scope question, `lanes/business/__init__.py:2005-2010`); no
+  period ask.

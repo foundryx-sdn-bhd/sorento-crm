@@ -50,8 +50,8 @@ Every criterion runs with the lane gate ON (parser prompt carrying the lane mark
 
 ## Q5 "when deliver"
 
-- U7.1 "SRTKT73SS-BL when deliver to <customer>" -> outstanding order status for that code and customer, no
-  "Which period?".
+- U7.1 "SRTKT73SS-BL when deliver to <customer>" -> parser status `outstanding` for that code and customer; no
+  "Which period?"; the configured DO/SO scope policy applies unchanged (crew a19194868).
 
 ## Measurement
 
