@@ -28,7 +28,7 @@ function realDate(y: number, m: number, d: number): Date | undefined {
 
 /** Parse YYYY-MM-DD or DD/MM/YYYY to local Date; return undefined if invalid or empty.
  *  ISO needs both digits of month and day, so a half-typed `2026-07-0` is not a date yet. */
-function parseDateInput(value: string): Date | undefined {
+export function parseDateInput(value: string): Date | undefined {
   if (!value || value.trim() === '') return undefined;
   const trimmed = value.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {

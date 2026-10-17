@@ -283,6 +283,32 @@ export function setDate(
   });
 }
 
+/** The date taken off a split: it reads "date to fill" until staff type one (UAC B1). */
+export function clearDate(
+  lines: SplitLine[],
+  lineId: string,
+  splitId: string,
+): SplitLine[] {
+  return editLine(lines, lineId, (splits) => {
+    const split = splits.find((candidate) => candidate.id === splitId);
+    if (!split || split.isCancel || split.deliveryDate === null) return null;
+    split.deliveryDate = null;
+    return splits;
+  });
+}
+
+/** A split row removed at once, staged until Save (UAC A5). */
+export function removeSplit(
+  lines: SplitLine[],
+  lineId: string,
+  splitId: string,
+): SplitLine[] {
+  return editLine(lines, lineId, (splits) => {
+    const next = splits.filter((candidate) => candidate.id !== splitId);
+    return next.length === splits.length ? null : next;
+  });
+}
+
 /** The date a split takes when it lands on `line`: AutoCount's current one, else its base (UAC A7). */
 export function targetDateOf(line: SplitLine): string | null {
   return line.nowDate ?? line.baseDate;

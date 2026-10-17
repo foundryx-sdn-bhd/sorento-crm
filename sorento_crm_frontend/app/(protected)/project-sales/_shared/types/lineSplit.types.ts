@@ -42,6 +42,8 @@ export interface LineSplitLine {
 export interface LineSplitsPayload {
   pso_id: string;
   so_number: string | null;
+  /** The AutoCount SO document date (ISO), the sheet's SO DATE column; null when unknown. */
+  so_date?: string | null;
   customer: string | null;
   project: string | null;
   lines: LineSplitLine[];
