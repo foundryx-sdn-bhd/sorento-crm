@@ -965,6 +965,10 @@ def _preflight(session_factory: Callable[[], Any]) -> int | None:
     current, heads = _db_revisions(session_factory), _code_heads(os.getcwd())
     if current == heads:
         return None
+    if not current:
+        print(f"refused: replay DB has no alembic_version row (unstamped); run: "
+              f"SORENTO_ENV_FILE={os.environ.get('SORENTO_ENV_FILE') or '.env'} alembic upgrade head", file=sys.stderr)
+        return 2
     ahead = {r for r in current - heads if not _revision_known(os.getcwd(), r)}   # the DB is ahead: another lane migrated it
     if current - heads == ahead:
         print(f"warning: replay DB alembic {' '.join(sorted(ahead))} is unknown to this checkout (DB ahead)", file=sys.stderr)
@@ -1044,7 +1048,8 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     print(f"skipped {json.dumps(res['counts']['skipped'], sort_keys=True)}")
     print(f"unintended {len(res['unintended'])}")
     print(f"compared {res['compared']}")
-    print(f"BROKEN: broken {len(res['broken'])} {' '.join(str(b[1]) for b in res['broken'][:5])}".rstrip())
+    if res["broken"]:
+        print(f"BROKEN: broken {len(res['broken'])} {' '.join(str(b[1]) for b in res['broken'][:5])}".rstrip())
     if res["broken"] or res["compared"] == 0:   # checked first: broken or nothing compared is no evidence, not "no diff"
         return 3
     return 1 if res["unintended"] else 0
