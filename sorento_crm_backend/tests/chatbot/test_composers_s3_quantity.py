@@ -31,7 +31,7 @@ class _Plan:
         self.fetch = [_Spec(d) for d in domains]
 
 
-def _multi(*, current):
+def _multi(*, current, in_message=None, hint="inventory"):
     from app.services.chatbot.engine import _stock_ask_reply
 
     entity = ht.asked("SRTKS7547")
@@ -42,7 +42,11 @@ def _multi(*, current):
         state,
         ht.envelopes(ht.row("SRTKS7547")),
         _Plan("inventory", "promotion"),
-        verdict(domain_hint="inventory", entities=[entity]),
+        verdict(
+            domain_hint=hint,
+            entities=[entity],
+            **({} if in_message is None else {"domain_in_message": in_message}),
+        ),
         turn_no=5,
     )
     opened = [t for t in state.focus.tasks if t.kind == "stock_qty" and t.opened_at_turn == 5]
@@ -51,7 +55,7 @@ def _multi(*, current):
 
 def test_carried_stock_leg_drops_the_question_gate_on(monkeypatch):
     _set_gate(monkeypatch, True)
-    out, _opened = _multi(current=False)
+    out, _opened = _multi(current=False, in_message=False, hint="promotion")
     assert BARE not in out.text and "How many units" not in out.text
     assert out.text.startswith("I have attached the file(s) below."), out.text
     assert "1. *Promotion:* CABANA" in out.text
@@ -59,8 +63,17 @@ def test_carried_stock_leg_drops_the_question_gate_on(monkeypatch):
 
 def test_carried_stock_leg_opens_no_task_gate_on(monkeypatch):
     _set_gate(monkeypatch, True)
-    _out, opened = _multi(current=False)
+    _out, opened = _multi(current=False, in_message=False, hint="promotion")
     assert opened == []
+
+
+def test_current_message_asks_stock_about_carried_subject_keeps_question_gate_on(monkeypatch):
+    """"stock for it" after a promo answer: every entity is carried, but the parser says this
+    message asks the inventory domain, so the question and the task stay."""
+    _set_gate(monkeypatch, True)
+    out, opened = _multi(current=False, in_message=True, hint="inventory")
+    assert out.text == f"{BARE}\n\n{PROMO}"
+    assert len(opened) == 1
 
 
 def test_current_message_stock_leg_keeps_question_and_task_gate_on(monkeypatch):
