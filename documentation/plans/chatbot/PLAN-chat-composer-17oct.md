@@ -56,7 +56,10 @@ goes to crew in a crew-note so crew can order merges.
 | S4 | files + promotions | queued |
 | S5 | order / document status | queued |
 | S6 | product info + price | queued |
-| Sets | set / list wrapper, after #1744 merges (Q1) | waits #1744 |
+| Sets | set / list wrapper + one "more" line on every capped list, paging via the parser continuation flag (owner 17 Oct ~15:15) | waits #1744; continuation waits #1747/#1755 |
+| S3a | one miss wording, no internal names, carried-stock-leg bare question dropped | red 870131699; code next |
+| S3b/S3c | M7 (waits #1744), run_gate:1598 (waits #1755) | waits |
+| R10 | tier question order: own small lane after #1744/#1747/#1755 merge | out of lane |
 | Flip | follow-up PR: gate removed, divergent formatters deleted (Q2) | after bench + owner hand test |
 
 Each slice: tester red tests (test(red) commit, crew-note red-proof) -> coder green -> L1 replay gate-off 0 diffs +

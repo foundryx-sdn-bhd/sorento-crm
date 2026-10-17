@@ -66,4 +66,6 @@ Helpers land in the slice that first prints them (lead decision 17 Oct, seam des
 - S6 product info + price: `No <attr> on record for <product>.` per product; price answer = code, description,
   list price; un-asked empty fields left out (TRAIN cp0-245d689a0c); fit line unchanged (R8).
 - Sets (after #1744 merges): a set reuses the single-code block, capped at 50 with the "more" line, never a reply
-  without products (R2, R9; TRAIN cp0-665ba3e897, cp0-75e516bd40).
+  without products (R2, R9; TRAIN cp0-665ba3e897, cp0-75e516bd40). OWNER RULING 17 Oct ~15:15 (supersedes 26 Sep
+  "no paging"): every capped list ends with ONE `Reply "more" to see the next N.` line and "more" pages on to the
+  next N, through the parser's continuation flag (no word rule); the continuation is wired once #1747 / #1755 merge.
