@@ -9320,6 +9320,12 @@ class PurchaseRequestService:
         if linked_name:
             payload["customer_name"] = linked_name
 
+    def _apply_project_link(self, payload: dict) -> None:
+        """#1689: a staff pick reaches the row only if the editor can see that project."""
+        from app.services.project_link import apply_project_link
+
+        apply_project_link(self.db, payload)
+
     def create_request(self, data: PurchaseRequestHeaderCreate):
         """Create purchase request header + lines (internal API)."""
         dump = data.model_dump(exclude={"products"})
@@ -9347,6 +9353,9 @@ class PurchaseRequestService:
         if respond_inbox_url is not None:
             dump["respond_inbox_url"] = respond_inbox_url
         requestor_value = dump.pop("requested_by_contact_id", None)
+        from app.services.project_link import apply_project_link
+
+        apply_project_link(self.db, dump)
         if "customer_id" in dump:
             from app.services.debtor_type import link_customer
 
@@ -9426,6 +9435,7 @@ class PurchaseRequestService:
         self._apply_sponsor_subject_to_payload(payload, header)
         requestor_value = payload.pop("requested_by_contact_id", _UNSET_REQUESTOR)
         self._apply_customer_link(header, payload)
+        self._apply_project_link(payload)
         for key, value in payload.items():
             if hasattr(header, key):
                 setattr(header, key, value)
@@ -9511,6 +9521,7 @@ class PurchaseRequestService:
 
         self._apply_sponsor_subject_to_payload(payload, header)
         self._apply_customer_link(header, payload)
+        self._apply_project_link(payload)
         for key, value in payload.items():
             if hasattr(header, key):
                 setattr(header, key, value)
