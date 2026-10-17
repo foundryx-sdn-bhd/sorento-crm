@@ -347,6 +347,8 @@ def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | No
     trace = list(turn.trace or []) if turn is not None else []
     db.close()
     out["misses"] = misses
+    if getattr(result, "status", None) == "failed":   # the engine closed the turn as failed: a type and a stage, never text
+        misses.append({"error": "failed", "stage": getattr(result, "stage", None)})
     out["stages"] = {
         "grounded": _entities(trace),
         "decision": _decision(trace, result.branch_kind),
@@ -757,7 +759,7 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
         usage=usage, tool_results=tool_results, uuid_codes=uuid_codes,
         turn={"envelope": copy.deepcopy(turn.envelope) if turn is not None else None, "trace": trace,
               "response": copy.deepcopy(turn.response) if turn is not None else None,
-              "branch_kind": result.branch_kind},
+              "branch_kind": result.branch_kind, "status": getattr(result, "status", None)},
     )
     if misses:
         out["misses"] = misses
@@ -786,7 +788,7 @@ def _live_errored(res: dict[str, Any]) -> bool:
     if "error" in res:
         return True
     turn = res.get("turn")
-    return isinstance(turn, dict) and not turn.get("trace") and not turn.get("response")
+    return isinstance(turn, dict) and (turn.get("status") == "failed" or (not turn.get("trace") and not turn.get("response")))
 
 
 def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], *,
@@ -898,13 +900,16 @@ def diff_rows(base: list[dict[str, Any]], head: list[dict[str, Any]],
             skipped["missing_in_base"] = skipped.get("missing_in_base", 0) + 1
             diffs.append((key[0], key[1], "missing_in_base"))
     unintended = [d for d in diffs if d[2] == "missing_in_base" or (d[0], d[2]) not in intended]
+    head_keys = {(h["case_id"], h["turn_id"]): h for h in head}
+    compared = sum(1 for b in base if (b["case_id"], b["turn_id"]) in head_keys
+                   and not b.get("skipped") and not head_keys[(b["case_id"], b["turn_id"])].get("skipped"))
     broken: list[tuple[str, str, str]] = []
     for r in (*base, *head):   # a row broken in either arm counts once, even when both arms match
         key = (r["case_id"], r["turn_id"])
         reason = _broken_reason(r)
         if reason and key not in {b[:2] for b in broken}:
             broken.append((*key, reason))
-    return {"diffs": diffs, "unintended": unintended, "broken": broken, "counts": {"stage": stage_counts, "skipped": skipped}}
+    return {"diffs": diffs, "unintended": unintended, "broken": broken, "compared": compared, "counts": {"stage": stage_counts, "skipped": skipped}}
 
 
 # --------------------------------------------------------------------------- #
@@ -942,10 +947,27 @@ def _code_heads(backend_dir: str) -> set[str]:
     return set(ScriptDirectory.from_config(cfg).get_heads())
 
 
+def _revision_known(backend_dir: str, rev: str) -> bool:
+    """Whether this arm's migration scripts contain `rev` (False: the DB was migrated by another lane)."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config(os.path.join(backend_dir, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(backend_dir, "alembic"))
+    try:
+        return ScriptDirectory.from_config(cfg).get_revision(rev) is not None
+    except Exception:  # noqa: BLE001 - an unresolvable revision is unknown to this arm
+        return False
+
+
 def _preflight(session_factory: Callable[[], Any]) -> int | None:
     """Refuse (2) a replay DB that is not at this checkout's alembic head: a stale schema fails every turn quietly."""
     current, heads = _db_revisions(session_factory), _code_heads(os.getcwd())
     if current == heads:
+        return None
+    ahead = {r for r in current - heads if not _revision_known(os.getcwd(), r)}   # the DB is ahead: another lane migrated it
+    if current - heads == ahead:
+        print(f"warning: replay DB alembic {' '.join(sorted(ahead))} is unknown to this checkout (DB ahead)", file=sys.stderr)
         return None
     env = os.environ.get("SORENTO_ENV_FILE") or ".env"
     print(f"refused: replay DB alembic {' '.join(sorted(current))} != code head {' '.join(sorted(heads))}; "
@@ -1021,8 +1043,9 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     print(f"stages {json.dumps(res['counts']['stage'], sort_keys=True)}")
     print(f"skipped {json.dumps(res['counts']['skipped'], sort_keys=True)}")
     print(f"unintended {len(res['unintended'])}")
-    print(f"broken {len(res['broken'])} {' '.join(str(b[1]) for b in res['broken'][:5])}".rstrip())
-    if res["broken"]:   # checked first: an identical broken row in both arms is no diff, and no evidence
+    print(f"compared {res['compared']}")
+    print(f"BROKEN: broken {len(res['broken'])} {' '.join(str(b[1]) for b in res['broken'][:5])}".rstrip())
+    if res["broken"] or res["compared"] == 0:   # checked first: broken or nothing compared is no evidence, not "no diff"
         return 3
     return 1 if res["unintended"] else 0
 
