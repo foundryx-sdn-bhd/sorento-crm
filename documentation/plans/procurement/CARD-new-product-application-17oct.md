@@ -1,6 +1,8 @@
 # Behaviour card: New Product Application (NEW-PRODUCT-APP)
 
-Status: card filed for owner approval (17 Oct 2026). Size L, full track (migration + new permissions).
+Status: card filed 17 Oct 2026. Crew answers 17 Oct: Q2 (a) by the #1698 precedent (below), Q3 (a), Q4 (a), Q5 (a);
+Q1 (staff only now) with the owner, staff side built meanwhile. Mock v2 follows these answers.
+Size L, full track (migration + new permissions).
 Owner 15 Oct: "stock inquiry about a new product code -> inquiry responded -> new product application ->
 purchasing opens the product code after receiving the application."
 Paths: BE = `sorento_crm_backend/app/`, FE = `sorento_crm_frontend/`.
@@ -27,7 +29,7 @@ Paths: BE = `sorento_crm_backend/app/`, FE = `sorento_crm_frontend/`.
   approver setting at `:867-991`). On the staff side an approved PR is **not** locked (`update_request`,
   `procurement_service.py:9387`, only refuses a status change) and there is **no staff Revise button**; Revise exists
   only in the portal (`PortalRevisionService.revise`, `portal_revision_service.py:1502`: reason, `revision_no + 1`,
-  snapshot row in `portal_form_revisions`, back to `submitted`, approval cleared). See Q2.
+  snapshot row in `portal_form_revisions`, back to `submitted`, approval cleared). Q2 answer: follow #1698 instead, rule 5.
 - **Freshest sibling to copy:** Sample Request (#1718): status-engine graph
   (`modules/projects/status_entities.py`), PR-style document card, product search that ignores dashes and case and
   only lists (`services/sample_request_service.py:538`), countdown delete of drafts, `request_no` numbering.
@@ -62,15 +64,26 @@ One record, **New Product Application** `NPA-000001`, under Procurement Manageme
    (`PurchaseRequestAttachmentsSection.tsx:10-12`), so this would add a new upload surface. Follow-up if purchasing
    asks for the supplier quote on the application itself.
 5. **Statuses** (status-engine graph `new_product_application`, labels editable in Status graphs, like SR):
-   Draft -> Submitted -> Approved -> Completed, plus Rejected and Cancelled.
+   Draft -> Submitted -> Approved -> Completed, plus Rejected and Cancelled. Approval, lock and Revise copy the
+   owner-approved quotation approval of #1698 (`PLAN-quote-approval-ux-15oct.md` Design BE 2-4), which is the
+   precedent for "approval flows mirror PR":
+   - **Approvers** = active, non-integration users holding `procurement.new_product_applications.approve` AND a
+     grant for the application's company, the sender excluded (the `project_notify_service.approver_user_ids:70`
+     query, with this form's slug). An approve-permission step, not the PR's form-SLA stage.
    - Draft: applicant edits freely; Delete draft = countdown, no confirm dialog.
-   - Submit checks the required fields; refuses with one message per missing field.
-   - Submitted: **locked** for the applicant. An approver Approves or Rejects (reason required).
-   - Rejected: shows the reason banner; applicant presses **Revise** to edit and resubmit.
-   - Approved: **locked** (nobody edits the lines). Purchasing works the lines (rule 6). **Revise** (applicant or
-     approver, reason required) returns it to Draft with `revision_no + 1`, needs approval again, and keeps the
-     approved version in the revision history. Revise is refused once any line has been opened.
+   - Submit checks the required fields; refuses with one message per missing field, naming the line.
+   - **Submitted and Approved are locked**: every header and line write answers 422
+     `new_product_application_locked` (one `assert_unlocked` guard, like #1698's). Approve, reject, revise, line
+     linking and cancel are not edits and are not locked.
+   - Submitted: an approver presses Approve or Reject (reason required).
+   - Rejected: the reason shows in the red banner; the applicant edits and presses the same **Submit** again (one
+     press, Rejected -> Draft -> Submitted). No "Back to draft" button.
+   - **Revise** (applicant or approver) on Submitted or Approved: asks "What changed, and why?" (required), returns
+     the application to Draft and writes one audit row with the reason. From Submitted it tells the approvers the
+     request was withdrawn. No snapshot copy and no revision number (#1698 keeps none; the audit trail holds the old
+     values). Revise is refused once any line has been opened.
    - Cancelled: applicant, from Draft / Submitted / Approved while no line is opened.
+   - One primary button = the viewer's next action (Submit; Approve + Reject for an approver; Revise).
 6. **Purchasing opens the code** (permission `open_code`). Per line, on an Approved application:
    - **Link product**: a product search (same as SR: ignores dashes, spaces and case; only LISTS matches; a person
      picks one; nothing preselected, no nearest-code guess). Picking stores `opened_product_id` on the line, plus who
@@ -83,10 +96,12 @@ One record, **New Product Application** `NPA-000001`, under Procurement Manageme
    (`stock_inquiry_id`). The stock inquiry detail page shows a **New product applications** row listing each
    application number, status and opened codes (read by query, no new column on `stock_inquiries`).
 8. **Notifications, only when someone has to act** (in-app + email, the existing notification service):
-   - Submitted -> holders of `approve` ("NPA-000001 waits for your approval").
-   - Approved -> holders of `open_code` ("NPA-000001: 2 new codes to open").
-   - Rejected -> applicant (to revise). Completed -> applicant (codes ready to quote).
-   Nothing on draft saves, cancels, revisions or single line links.
+   - Submitted -> the approvers of rule 5 ("NPA-000001 waits for your approval").
+   - Revised from Submitted -> the same approvers ("NPA-000001 was withdrawn"), so nobody approves a dead request.
+   - Approved -> active holders of `open_code` in the company ("NPA-000001: 2 new codes to open").
+   - Rejected -> applicant (to fix and resubmit). Completed -> applicant (codes ready to quote).
+   Sent after the status commits, best effort, never undoing it (#1698). Nothing on draft saves, cancels, revisions
+   from Approved or single line links.
 9. **Permissions** `procurement.new_product_applications.view | create | approve | open_code`, all four to the admin
    roles; `create` also to holders of `procurement.stock_inquiries.edit`. Approver sees all; applicant sees own.
 10. **Company scoped** (`CompanyScopedMixin`, fail closed). The linked product must be in the same company.
@@ -102,7 +117,8 @@ One record, **New Product Application** `NPA-000001`, under Procurement Manageme
 | A4 | Purchasing opens `XY1234MB` in AutoCount; ESB sends it; purchasing types "xy1234" in Link product | List shows `XY1234MB`; purchasing picks it. Application Completed; applicant notified; inquiry page shows NPA-000001 -> `XY1234MB` |
 | B | Same as A but searched before the ESB push | "xy1234 is not in the product list yet ..."; line stays open; nothing breaks |
 | C | Application with 3 colour lines (CP / MB / BG); supplier discontinues BG | Purchasing links CP and MB, marks BG Not opening "supplier dropped BG". Completed |
-| D | Approved application, sales notices wrong UOM | Revise "UOM is SET not UNIT": back to Draft R1, fix, submit, approve again. History keeps R0 |
+| D | Approved application, sales notices wrong UOM | Revise, reason "UOM is SET not UNIT": back to Draft, fix, Submit, approve again. The audit trail shows the reason and the old UOM |
+| D2 | Rejected "supplier price too high, find another" | Applicant changes supplier and cost, presses Submit: Submitted again, approvers notified again |
 | E | Expected qty typed 40 then cleared | Saved as empty, no 0 forced |
 
 ## Edge cases
@@ -115,24 +131,13 @@ One record, **New Product Application** `NPA-000001`, under Procurement Manageme
 - Two purchasers link the same line at once: second write gets 409 "already linked"; screen refreshes.
 - Company switch: applications and products of another company never show.
 
-## Questions (each with a recommendation)
+## Questions
+
+Answered by crew 17 Oct: Q2 (a) (the #1698 approve-permission step, rule 5), Q3 (a) inquiry link optional,
+Q4 (a) many lines, each linked on its own, Q5 (a) description, item group, base UOM required before submit.
+Open with the owner:
 
 - **Q1 Who fills it in.** (a) staff only in this lane (project sales staff start it from the responded inquiry;
   a portal kind for contacts follows as its own lane) / (b) portal kind for salesmen now too.
   **Rec (a)**: the fields are master-data decisions (item group, UOM, supplier) the inquiry's submitter rarely knows,
-  and (b) doubles the form surface.
-- **Q2 Approval and Revise.** The PR has no staff lock and no staff Revise today; its approver comes from the
-  form-SLA stage. (a) one approval step by holders of `approve`, lock on Submitted/Approved, Revise as rule 5 reusing
-  the PR revision mechanics (`portal_form_revisions` snapshot + `revision_no`) / (b) route approval through the PR's
-  form-SLA stage and default-approver setting.
-  **Rec (a)**: one permission is the simplest working route; SLA stages, team tiers and trackers exist for forms
-  with a clock, which this form does not have yet.
-- **Q3 Inquiry link required?** (a) optional (the Create button on a responded inquiry is the main entry; New on the
-  list still works) / (b) required, only from a responded inquiry.
-  **Rec (a)**: a new code can also come from a supplier offer with no inquiry, and (b) leaves those stuck.
-- **Q4 Lines.** (a) many lines per application, each opened and linked on its own / (b) one product per
-  application like the stock inquiry. **Rec (a)**: a new series usually comes in finishes (CP / MB / BG), and the
-  owner asked for the product line table.
-- **Q5 Who must fill what before submit.** (a) Description, Item group and Base UOM required, the rest optional /
-  (b) also Supplier and Cost price required. **Rec (a)**: the salesman often has no supplier quote yet; purchasing
-  supplies those in AutoCount, and the linked product then carries the real values.
+  and (b) doubles the form surface. The staff side is built meanwhile.
