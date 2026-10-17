@@ -661,10 +661,26 @@ def _followup(row, item):
     return first + _followup_checks(row, item, kind, gold) + [c for c in needless if c not in first]
 
 
+NUMBER_UNIT_RE = re.compile(r"\d+(?:\.\d+)?[a-z]+")
+
+
 def _word_tokens(text: Any) -> list[str]:
-    """Whole words of a string: lower case, split on non-alphanumerics and between letter and digit runs ("300mm" is
-    "300", "mm"; "SRTWB3001" is "srtwb", "3001")."""
-    return re.findall(r"[a-z]+|\d+", str(text).lower())
+    """Whole words of a string. A uuid gives none; a product code (a whitespace-separated word of CODE_RE shape) is ONE
+    opaque token; a number with its unit ("300mm") splits into the number and the unit; other text splits on
+    non-alphanumerics."""
+    text = str(text).strip()
+    if UUID_RE.fullmatch(text):
+        return []
+    out: list[str] = []
+    for word in text.split():
+        bare = word.strip(".,;:!?()[]\"'")
+        if CODE_RE.fullmatch(bare.upper()):
+            out.append(re.sub(r"[^a-z0-9]", "", bare.lower()))
+        elif NUMBER_UNIT_RE.fullmatch(bare.lower()):
+            out.extend(re.findall(r"\d+(?:\.\d+)?|[a-z]+", bare.lower()))
+        else:
+            out.extend(re.findall(r"[a-z0-9]+", word.lower()))
+    return out
 
 
 def _words_of(*xs: Any) -> set[str]:
