@@ -252,7 +252,7 @@ table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-sp
 <h2 class="ft">Element -> component map (backend)</h2>
 <div class="card" style="padding:16px 20px;max-width:1200px"><table class="t"><thead><tr><th style="width:320px">Piece</th><th>Built from</th></tr></thead><tbody>
 <tr><td>Tables new_product_applications + _lines (company scoped)</td><td>alembic migration modelled on alembic/versions/sr_0001_sample_requests.py; CompanyScopedMixin (models/base.py:112)</td></tr>
-<tr><td>Statuses Draft / Submitted / Approved / Completed / Rejected / Cancelled</td><td>status engine entity, like modules/projects/status_entities.py _register_sample_request; moves checked as sample_request_service._edge_exists</td></tr>
+<tr><td>Statuses Draft / Submitted / Approved / Completed / Rejected / Cancelled</td><td>plain status column + CHECK, moves coded in the service (as stock inquiry / PR); the status engine is projects-module only</td></tr>
 <tr><td>Number NPA-000001</td><td>the Sample Request request_no numbering</td></tr>
 <tr><td>Approvers, lock, Revise</td><td>as #1698: approver query project_notify_service.approver_user_ids:70 (this form's slug), assert_unlocked + revise_approval in services/project_quotation_approval_service.py:227,507 (Revise = reason required, back to Draft, one audit row; withdrawn notice from Submitted)</td></tr>
 <tr><td>Product search for Link product</td><td>services/sample_request_service.py:538 search_products (lifted to a shared helper, not copied)</td></tr>

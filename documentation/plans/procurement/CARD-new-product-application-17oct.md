@@ -30,7 +30,7 @@ Paths: BE = `sorento_crm_backend/app/`, FE = `sorento_crm_frontend/`.
   `procurement_service.py:9387`, only refuses a status change) and there is **no staff Revise button**; Revise exists
   only in the portal (`PortalRevisionService.revise`, `portal_revision_service.py:1502`: reason, `revision_no + 1`,
   snapshot row in `portal_form_revisions`, back to `submitted`, approval cleared). Q2 answer: follow #1698 instead, rule 5.
-- **Freshest sibling to copy:** Sample Request (#1718): status-engine graph
+- **Freshest sibling to copy:** Sample Request (#1718): status-engine graph (not copied, rule 5)
   (`modules/projects/status_entities.py`), PR-style document card, product search that ignores dashes and case and
   only lists (`services/sample_request_service.py:538`), countdown delete of drafts, `request_no` numbering.
 
@@ -63,7 +63,8 @@ One record, **New Product Application** `NPA-000001`, under Procurement Manageme
 4. **No attachments in this lane.** Each form's attachment section is wired to its own endpoints
    (`PurchaseRequestAttachmentsSection.tsx:10-12`), so this would add a new upload surface. Follow-up if purchasing
    asks for the supplier quote on the application itself.
-5. **Statuses** (status-engine graph `new_product_application`, labels editable in Status graphs, like SR):
+5. **Statuses** (a plain `status` column with a CHECK, moves coded in the service, like the stock inquiry and the
+   PR; the status engine lives in the projects module and nothing here needs editable labels):
    Draft -> Submitted -> Approved -> Completed, plus Rejected and Cancelled. Approval, lock and Revise copy the
    owner-approved quotation approval of #1698 (`PLAN-quote-approval-ux-15oct.md` Design BE 2-4), which is the
    precedent for "approval flows mirror PR":
@@ -90,7 +91,7 @@ One record, **New Product Application** `NPA-000001`, under Procurement Manageme
      and when. If the code has not arrived from AutoCount yet, the search says "<typed> is not in the product list yet.
      It appears after AutoCount sends it." and the line simply stays open: never a stuck UI.
    - **Not opening** (reason required) closes the line without a product.
-   - Undo either while the application is not Completed.
+   - Undo either (holder of `open_code`); undoing a line of a Completed application returns it to Approved.
    When every line is linked or closed, the application moves to **Completed** by itself.
 7. **Links (explicit only).** Line -> product (`opened_product_id`), application -> stock inquiry
    (`stock_inquiry_id`). The stock inquiry detail page shows a **New product applications** row listing each
@@ -126,8 +127,8 @@ One record, **New Product Application** `NPA-000001`, under Procurement Manageme
 - Inquiry later voided or reopened: the link stays; the inquiry row shows its own status. No cascade.
 - Same inquiry gets a second application (first was rejected or cancelled): allowed; the inquiry lists both.
 - Linked product later deactivated: link kept, shown with an "Inactive" badge.
-- Product picked by mistake: Undo on the line (before Completed). After Completed: Revise is refused (rule 5); an
-  admin with `open_code` can still unlink a line, which reopens the application to Approved.
+- Product picked by mistake: Undo on the line, also after Completed (it reopens the application to Approved).
+  Revise stays refused once a line is opened (rule 5).
 - Two purchasers link the same line at once: second write gets 409 "already linked"; screen refreshes.
 - Company switch: applications and products of another company never show.
 
