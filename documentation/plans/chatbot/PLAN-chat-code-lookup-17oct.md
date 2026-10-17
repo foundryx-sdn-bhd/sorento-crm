@@ -1,6 +1,6 @@
 # PLAN: CHAT-CODE-LOOKUP (chatbot code lookups toward the owner's 97% bar)
 
-Status: Merge-ready pending crew (crew-done 17 Oct at the last fix 36b75db496: reviewer READY, security PASS, L1 0 vs #1755, live TRAIN arm 2 89.4% vs main 86.2%); stacked on #1755, retarget after it merges. Track: L, LEAD pattern, local lane. Branch
+Status: Round 2 in progress (Build): R2-1, R2-2, R2-4, R2-5 committed; R2-6 prompt-only near-code rule and three round-2 review fixes in red-first; round 1 was crew-done at 36b75db496. Stacked on #1755, retarget after it merges. Track: L, LEAD pattern, local lane. Branch
 `crew/chat-code-lookup`, base origin/main 20c191d861.
 
 Owner approval: 17 Oct ~14:10 ("Ok" to a code-lookup lane, in parallel with steps 1-2).
@@ -91,7 +91,8 @@ branch). EVAL-BENCH's answer.py clash patch with #1760 is applied when crew rela
 - R2-1 "when deliver" reliable (passed 1 of 2 live runs; the parser left status null in arm 2 although the CODE LOOKUP
   section names it, because v63 ORDER_STATUS FILTER says status comes ONLY from its listed words). Parser-level gold:
   `scripts/chatbot_eval/gold/parser_when_deliver.jsonl`, synthetic paraphrases (English, Malay, Chinese, typos, with and
-  without a customer) expecting status "outstanding", domain_hint "order", the product entity, no "delivery" attribute,
+  without a customer) expecting status "outstanding", domain_hint "order", the product entity (the "no delivery attribute" check was
+  dropped: no reader of a "delivery" attribute exists, crew 17 Oct),
   plus negative controls (an arrival / ETA ask stays incoming; "delivered" stays delivered; a dated DO list stays a DO
   list). A parser-only runner `scripts/chatbot_eval/parser_gold.py` calls only the semantic parser with a pinned
   unlabelled prompt version, N repeats, metered with a USD cap; its pure grading is unit-tested red-first. Then the

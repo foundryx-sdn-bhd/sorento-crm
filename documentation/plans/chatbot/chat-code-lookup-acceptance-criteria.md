@@ -20,6 +20,12 @@ Every criterion runs with the lane gate ON (parser prompt carrying the lane mark
 - U1.4 Parser says none (two or more codes equally close, or none fits): today's did-you-mean list, unchanged.
 - U1.6 One clearly meant code: answered, no did-you-mean picker (owner, 17 Oct).
 - U1.5 Code never picks: no score, rule or word list in code chooses between candidates.
+- U1.7 (R2-6, crew 18 Oct) The parser picks a near code only when no other listed code is as close. A typed word with
+  two listed codes about as close (one is the word without its last letter, another has a different last letter) gets
+  no pick and today's did-you-mean. Swapped adjacent digits or letters still pick even when numbered siblings are listed.
+- U1.8 (R2-4, crew 18 Oct) Code may REFUSE, never choose: a parser pick drops back to the typed word (then the
+  did-you-mean) only when another listed near code has an equal D2 shortlist score, or a typed partial code is held by
+  2+ listed codes with none exact. Never when the typed word is on file, never when one code beats the rest.
 - Examples: "Check stock CBCM66631" -> CBMC66631 stock; "Check stock chs2072 x 72 units" -> CSH2072, 72 units.
 
 ## R2 set-only codes
@@ -45,6 +51,8 @@ Every criterion runs with the lane gate ON (parser prompt carrying the lane mark
 
 - U5.1 Held SRTWC286-SH-NEW + "Srtwc286 drawing" -> the drawing of SRTWC286-SH-NEW, no picker.
 - U5.2 No held member: a multi-member family stays a pick (MWC7630).
+- U5.3 (R2-2) A held member with no file of the asked type says so for that code in the contact's language (catalogue
+  line "{code} has no {types}."), not a did-you-mean.
 
 ## R6 domain reuse, count = stock
 
