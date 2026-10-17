@@ -375,3 +375,64 @@ def test_r11_the_prompt_puts_the_options_of_the_open_question_under_pick_and_val
     assert "open question" in pick and "option" in pick and "last list" in pick, pick
     assert "yes" in answer and "no" in answer and "value" in answer, answer
     assert "one of its options" not in answer, answer
+
+
+# --------------------------------------------------------------------------- #
+# Round 2 integration: one schema when both gated sections are on
+# --------------------------------------------------------------------------- #
+
+CLOSED_MARKER = "== CLOSED LISTS =="
+
+
+def _sent_schema(monkeypatch, session_factory, raw_template: str) -> tuple[Any, dict[str, Any]]:
+    """resolve_config on a seeded version, then the schema parse() hands the provider."""
+    from app.services.chatbot import llm_call
+
+    config = _resolve(monkeypatch, session_factory, raw_template)
+    sent: dict[str, Any] = {}
+
+    def fake_chat(provider, api_key, model, messages, **kwargs):
+        sent.update(kwargs)
+        return types.SimpleNamespace(
+            content=json.dumps({key: None for key in parser_mod.DECLARED_KEYS}),
+            prompt_tokens=1, completion_tokens=1, total_tokens=2, cached_tokens=0,
+        )
+
+    monkeypatch.setattr(llm_call, "chat", fake_chat)
+    parser_mod.parse(config, "Current user message: hi")
+    return config, sent["json_schema"]
+
+
+def _entity_props(schema: dict[str, Any]) -> dict[str, Any]:
+    return schema["properties"]["entities"]["items"]["properties"]
+
+
+def test_r2_both_sections_turn_both_gates_on_and_one_schema_carries_both_additions(monkeypatch, session_factory):
+    raw = f"Rules {{{{current_date}}}}\n{CLOSED_MARKER}\n{HEADING_LINE}\nFill state_changes.\n"
+    config, schema = _sent_schema(monkeypatch, session_factory, raw)
+    assert config.state_block is True and config.closed_lists is True
+    assert "listed_item" in _entity_props(schema)
+    assert "listed_item" in schema["properties"]["entities"]["items"]["required"]
+    assert list(schema["properties"])[-1] == "state_changes"
+    assert schema["required"][-1] == "state_changes"
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["state_changes"] == parser_mod.PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE["properties"]["state_changes"]
+
+
+def test_r2_closed_lists_alone_sends_its_own_schema_without_state_changes(monkeypatch, session_factory):
+    config, schema = _sent_schema(monkeypatch, session_factory, f"Rules {{{{current_date}}}}\n{CLOSED_MARKER}\n")
+    assert config.closed_lists is True and config.state_block is False
+    assert "listed_item" in _entity_props(schema)
+    assert "state_changes" not in schema["properties"]
+
+
+def test_r2_state_alone_sends_the_state_schema_object(monkeypatch, session_factory):
+    config, schema = _sent_schema(monkeypatch, session_factory, f"Rules {{{{current_date}}}}\n{HEADING_LINE}\n")
+    assert config.state_block is True and config.closed_lists is False
+    assert schema is parser_mod.PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE
+
+
+def test_r2_neither_section_sends_the_base_schema_object(monkeypatch, session_factory):
+    config, schema = _sent_schema(monkeypatch, session_factory, "Rules {{current_date}}.\n")
+    assert config.state_block is False and config.closed_lists is False
+    assert schema is parser_mod.PARSE_OUTPUT_JSON_SCHEMA
