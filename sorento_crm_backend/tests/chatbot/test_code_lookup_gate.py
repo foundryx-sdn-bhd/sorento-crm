@@ -118,15 +118,25 @@ def _publisher():
     return publish_code_lookup_prompt
 
 
+def _base_with_anchor(lead: str = "parser") -> str:
+    return f"{lead} {CLP_MARKER}\nORDER_STATUS FILTER\n  {_publisher().OUTSTANDING_ANCHOR} tail of the bullet\n  - next bullet\n"
+
+
+def _expected(base: str) -> str:
+    pub = _publisher()
+    at = base.index(pub.OUTSTANDING_ANCHOR) + len(pub.OUTSTANDING_ANCHOR)
+    return base[:at] + pub.OUTSTANDING_ADDITION + base[at:] + _cl().SECTION
+
+
 def test_publish_appends_the_section_to_the_closed_lists_production_once_unlabelled():
     with blank_session() as db:
-        prod = _version(db, f"parser {CLP_MARKER}", label="production")
+        prod = _version(db, _base_with_anchor(), label="production")
 
         first = _publisher().publish(db)
         again = _publisher().publish(db)
 
         row = db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY, AIPromptVersion.version == first).one()
-        assert row.template == prod.template + _cl().SECTION
+        assert row.template == _expected(prod.template)
         assert again is None
         labels = {(lab.label, lab.version_id) for lab in db.query(AIPromptLabel).filter(AIPromptLabel.name == KEY)}
         assert labels == {("production", prod.id)}
@@ -134,13 +144,44 @@ def test_publish_appends_the_section_to_the_closed_lists_production_once_unlabel
 
 def test_publish_from_a_named_version_builds_on_that_version():
     with blank_session() as db:
-        _version(db, f"parser {CLP_MARKER}", label="production")
-        base = _version(db, f"lane own {CLP_MARKER}")
+        _version(db, _base_with_anchor(), label="production")
+        base = _version(db, _base_with_anchor("lane own"))
 
         new = _publisher().publish(db, from_version=base.version)
 
         row = db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY, AIPromptVersion.version == new).one()
-        assert row.template == base.template + _cl().SECTION
+        assert row.template == _expected(base.template)
+
+
+def test_publish_inserts_the_when_deliver_class_once_and_leaves_the_rest_byte_identical():
+    pub = _publisher()
+    with blank_session() as db:
+        base = _version(db, _base_with_anchor(), label="production")
+        new = pub.publish(db)
+        row = db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY, AIPromptVersion.version == new).one()
+        assert row.template.count(pub.OUTSTANDING_ADDITION) == 1
+        assert row.template.endswith(_cl().SECTION)
+        body = row.template[: -len(_cl().SECTION)]
+        assert body.replace(pub.OUTSTANDING_ADDITION, "", 1) == base.template
+        add = pub.OUTSTANDING_ADDITION.lower()
+        assert "when" in add and "deliver" in add and "bila hantar" in add and "几时送" in add
+
+
+def test_publish_refuses_a_base_without_the_outstanding_anchor_and_writes_nothing():
+    with blank_session() as db:
+        _version(db, f"parser {CLP_MARKER} no outstanding bullet", label="production")
+        with pytest.raises(SystemExit):
+            _publisher().publish(db)
+        assert db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY).count() == 1
+
+
+def test_publish_refuses_a_base_with_the_outstanding_anchor_twice():
+    anchor = _publisher().OUTSTANDING_ANCHOR
+    with blank_session() as db:
+        _version(db, f"parser {CLP_MARKER}\n{anchor} a\n{anchor} b\n", label="production")
+        with pytest.raises(SystemExit):
+            _publisher().publish(db)
+        assert db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY).count() == 1
 
 
 def test_publish_refuses_a_base_without_the_closed_lists_section():
