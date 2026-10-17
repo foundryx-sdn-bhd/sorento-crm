@@ -157,13 +157,19 @@ def test_stock_inquiry_resubmit_of_a_rejected_row_refuses_a_foreign_project(w):
     from app.models.procurement import StockInquiry
 
     inquiry = _si(w)
+    number = f"ZZT-SI-{_uid()[:6]}"
     w.db.query(StockInquiry).filter(StockInquiry.id == inquiry.id).update(
-        {"status": "rejected"}, synchronize_session=False
+        {"status": "rejected", "inquiry_number": number}, synchronize_session=False
     )
     w.db.flush()
+    w.db.expire_all()
     with pytest.raises(AppException) as exc:
-        _si(w, inquiry_number=inquiry.inquiry_number, project_id=w.foreign)
-    assert _code(exc.value) == "PROJECT_LINK_NOT_FOUND"
+        _si(w, inquiry_number=number, project_id=w.foreign)
+    assert _code(exc.value) == "PROJECT_LINK_NOT_FOUND", exc.value.detail
+    # And the path is the resubmit one: an own project lands on the SAME row.
+    resubmitted = _si(w, inquiry_number=number, project_id=w.own)
+    assert str(resubmitted.id) == str(inquiry.id)
+    assert str(resubmitted.project_id) == w.own
 
 
 def test_complaint_update_and_reply_refuses_a_foreign_project(w):
