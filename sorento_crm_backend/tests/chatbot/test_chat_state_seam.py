@@ -932,3 +932,30 @@ def test_r9_a_stated_attachment_type_runs_the_file_lookup_for_the_held_products(
     assert files, [n for n, _ in seam.turn_calls[-1]]
     assert seam.uuid_of["SRT1"] in json.dumps(files, default=str)
     assert "which kind" not in ((out.reply or {}).get("text") or "").lower()
+
+
+def test_r11_a_pick_with_a_misspelt_code_beside_it_answers_the_picked_option_not_a_did_you_mean(seam):
+    prev = _roster_state(seam, OWNER_FAMILY[:3])
+    out = seam.say(
+        "2 stwc2867",
+        _emit(domain_hint="inventory", intent_hint="check_stock", reference_positions=[2],
+              entities=[_product("STWC2867")],
+              open_question_answer={"mode": "pick", "picked": [2], "items": [], "qty_for_all": None},
+              state_changes=[_op("pick", position=2)]),
+        previous=prev,
+    )
+    assert seam.stock_ids(seam.turn_calls[-1]) == [seam.uuid_of[OWNER_FAMILY[1]]], seam.rules_fired
+    assert "did you mean" not in ((out.reply or {}).get("text") or "").lower()
+
+
+def test_r11_set_product_with_an_unresolvable_code_leaves_the_replaced_product_out_of_the_stored_focus(seam):
+    prev_turn = _held_srt1(seam)
+    out = seam.say(
+        "ZZQ9999 stock",
+        _emit(domain_hint="inventory", intent_hint="check_stock", domain_in_message=True,
+              entities=[_product("ZZQ9999")], state_changes=[_op("set", "product")]),
+        previous=prev_turn,
+    )
+    assert seam.uuid_of["SRT1"] not in json.dumps(seam.turn_calls[-1], default=str)
+    assert "ZZQ9999" in ((out.reply or {}).get("text") or "").upper()
+    assert "SRT1" not in [p.get("canonical_code") for p in seam.state["focus"]["products"]]

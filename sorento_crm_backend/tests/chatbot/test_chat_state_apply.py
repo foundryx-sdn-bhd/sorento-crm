@@ -881,3 +881,61 @@ def test_r10_the_same_channel_with_an_explicit_set_applies_across_the_switch():
     assert out.valid is True, out.log.get("rejected")
     assert out.verdict["sales_channel"] == "dealer"
     assert out.state.focus.sales_channel == "dealer"
+
+
+# --------------------------------------------------------------------------- #
+# Round 11: stated values lose to nothing (pick consumes its name, set clears the held value)
+# --------------------------------------------------------------------------- #
+
+
+def test_r11_a_pick_on_a_roster_drops_a_typed_entity_of_the_picked_kind_that_no_set_claims():
+    pending, oq = _roster([("SRT1", "SRT1"), ("SRT2", "SRT2"), ("SRT3", "SRT3")])
+    state = State(focus=Focus(), pending=pending, turn_no=3)
+    out = _apply(state, verdict(entities=[entity("SRT22")], state_changes=[_op("pick", position=2)]), open_question=oq)
+    assert out.valid is True, out.log.get("rejected")
+    assert [e for e in out.verdict["entities"] if e.get("canonical_code") == "SRT22"] == []
+    assert out.verdict["reference_positions"] == [2]
+
+
+def test_r11_a_pick_on_a_data_list_keeps_only_the_picked_row_as_the_product_entity():
+    state = State(focus=Focus(last_list=_list_rows()), turn_no=3)
+    out = _apply(state, verdict(entities=[entity("SRT22")], state_changes=[_op("pick", position=2)]))
+    assert out.valid is True, out.log.get("rejected")
+    assert [e["canonical_code"] for e in out.verdict["entities"]] == ["SRT2"]
+
+
+def test_r11_a_pick_next_to_a_set_product_keeps_the_stated_entity():
+    state = State(focus=Focus(last_list=_list_rows()), turn_no=3)
+    out = _apply(
+        state,
+        verdict(entities=[entity("SRT22")], state_changes=[_op("pick", position=2), _op("set", "product")]),
+    )
+    assert out.valid is True, out.log.get("rejected")
+    assert "SRT22" in [e["canonical_code"] for e in out.verdict["entities"]]
+
+
+def test_r11_set_product_clears_the_held_product_before_the_stated_one_is_written():
+    state = State(focus=Focus(products=[_held("SRT1")], domains=["inventory"]), turn_no=3)
+    out = _apply(state, verdict(domain_hint="inventory", entities=[entity("ZZQ9999")],
+                                state_changes=[_op("set", "product")]))
+    assert out.valid is True, out.log.get("rejected")
+    assert [p.get("canonical_code") for p in out.state.focus.products] == []
+    assert [e["canonical_code"] for e in out.verdict["entities"]] == ["ZZQ9999"]
+
+
+@pytest.mark.parametrize("axis", ["product", "null", "brand", None])
+def test_r11_keep_with_an_axis_that_is_not_a_slot_is_a_plain_keep(axis):
+    state = State(focus=Focus(products=[_held("SRT1")], customers=[_customer()], domains=["inventory"]), turn_no=3)
+    out = _apply(state, verdict(domain_hint="inventory", state_changes=[_op("keep", axis)]))
+    assert out.valid is True, out.log.get("rejected")
+    assert out.state.state_led == "carry"
+    assert [p["canonical_code"] for p in out.state.focus.products] == ["SRT1"]
+    assert out.log.get("slots", {}) == {}
+
+
+def test_r11_a_refine_keeps_the_held_quantity():
+    state = State(focus=Focus(products=[_held("SRT1", quantity=5)], domains=["inventory"]), turn_no=3)
+    brand = entity("sorento", "brand", canonical_code="SORENTO")
+    out = _apply(state, verdict(domain_hint="inventory", entities=[brand], state_changes=[_op("set", "brand")]))
+    assert out.valid is True, out.log.get("rejected")
+    assert [p.get("quantity") for p in out.state.focus.products] == [5]

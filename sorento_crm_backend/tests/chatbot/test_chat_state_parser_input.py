@@ -365,3 +365,13 @@ def test_r8_the_prompt_says_a_reference_to_the_held_subject_is_keep_and_never_an
     text = " ".join(STATE_SECTION.split())
     assert re.search(r"(refer|point)[^.]*held[^.]*`keep`", text) or re.search(r"`keep`[^.]*(refer|point)[^.]*held", text), text
     assert re.search(r"never[^.]*(as|an) entit", text), text
+
+
+def test_r11_the_prompt_puts_the_options_of_the_open_question_under_pick_and_values_under_answer():
+    from app.services.chatbot.head.chat_state_prompt import STATE_SECTION
+
+    rows = {l.split("|")[1].strip(): l for l in STATE_SECTION.splitlines() if l.startswith("| `")}
+    pick, answer = rows["`pick`"].lower(), rows["`answer`"].lower()
+    assert "open question" in pick and "option" in pick and "last list" in pick, pick
+    assert "yes" in answer and "no" in answer and "value" in answer, answer
+    assert "one of its options" not in answer, answer
