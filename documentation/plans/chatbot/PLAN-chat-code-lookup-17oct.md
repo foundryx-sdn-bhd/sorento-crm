@@ -110,5 +110,15 @@ branch). EVAL-BENCH's answer.py clash patch with #1760 is applied when crew rela
   miss on the held member, cp0-d9971420da #1648).
 - R2-1 red 661228fed6 + 9b0016b15a, fix 6e962eda8e (parser gold runner + when-deliver rule); live-path import bug red
   2b79a2da31, fix 498c3559b6. R2-2 red b3851e6310, fix 5ffa13b2da (code-pick rules, held member with no file).
-- Parser gold measurement pending (old v161 vs new v165 35119206, both on v158). A first attempt ran with EVAL-BENCH's
-  stack.env and was stopped by crew and discarded; re-runs use stack-ccl.env (own ports 8108 / 8208).
+- Gold fixes c735ac7c67. R2-4 red 7871575cd4, fix 545a00b8f7 (refuse an unsafe pick only on a true tie or several
+  holders with none exact; csk11b 0.625 vs 0.556 is not a tie and stays red by design). #1755 merged in at 12fe75451b;
+  L1 vs #1755 6402ad4af9: grounding 0, turn 0/585 unintended.
+- parser_gold registers the company scope listeners: red 6c76f0636e, fix bed381ed79. Parser golds (scoped, base v163
+  vs lane v169, N=3): when-deliver positives outstanding 0/42 -> 21/42; typo 11/18 -> 18/18; tie 0/12 and partial
+  0/12 both (handled post-parse by R2-4); set + spec 0/9 both (prompt-only by design).
+- R2-5: the rule at prompt END lost to the base ORDER_STATUS FILTER, so the publisher inserts the when-deliver class
+  into that list (anchor must occur exactly once or it refuses): red 0de4466447, fix 22d32d88c3, published v170
+  ee73a6b6 (= v163 + insertion + section). Parser gold on v170: pending.
+- train2_code main arm (63f4fe47c + v63): REAL 158/192 (82.3%), USD 1.23. Lane arm and a main re-run wait for
+  EVAL-BENCH's replay.py scope-listener fix (#1775): replay.py never registered the listeners, so cp0-f61e0d4814 was
+  an unscoped eval read, not a prod leak. Live runs use stack-ccl.env (own ports 8192 / 8292).
