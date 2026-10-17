@@ -7579,8 +7579,37 @@ def _stock_ask_reply(
         ],
         demand_qty=verdict.get("demand_qty"),
     )
-    state_out.focus.tasks = reply.tasks
-    if [spec.domain for spec in fetch_plan.fetch] != ["inventory"]:
+    from app.services.chatbot import composers
+
+    domains = [spec.domain for spec in fetch_plan.fetch]
+    entities = [e for e in (verdict.get("entities") or []) if isinstance(e, dict)]
+    # CHAT-COMPOSER Q1: a stock leg carried from an earlier turn (no entity of this message)
+    # beside another domain's answer opens no quantity task and prints no bare question.
+    carried_leg = bool(
+        composers.enabled()
+        and domains != ["inventory"]
+        and entities
+        and all(e.get("current_message") is False for e in entities)
+        and not (verdict.get("domain_in_message") is True and verdict.get("domain_hint") == "inventory")
+    )
+    removed = False
+    if carried_leg:
+        from app.services.chatbot.composers import misses as composers_misses
+
+        # The bare question, in English or as the catalogue words it, wherever it sits.
+        asked_forms = composers_misses.bare_question_forms()
+        paragraphs = getattr(answer, "text", "").split("\n\n")
+        kept = [p for p in paragraphs if p.strip() not in asked_forms]
+        removed = len(kept) != len(paragraphs)
+        if removed:
+            answer = dataclasses_replace(answer, text="\n\n".join(kept))
+    # A task is dropped only with its question: never a question without its task.
+    state_out.focus.tasks = (
+        tuple(t for t in reply.tasks if not (t.kind == "stock_qty" and t.opened_at_turn == turn_no))
+        if removed
+        else reply.tasks
+    )
+    if domains != ["inventory"]:
         return answer
     block_seen = any(
         isinstance(envelope, dict) and envelope.get("stock_availability")
@@ -7611,9 +7640,14 @@ def _stock_ask_reply(
     misses = _unplaced_tokens(envelopes)
     if not text and not misses:
         return answer
-    parts = _stock_answer_lines(envelopes)
+    from app.services.chatbot import composers
+    from app.services.chatbot.composers import stock as composers_stock
+
+    parts = _stock_answer_lines(envelopes, full=composers.enabled())
     if misses:
-        parts.append(f"Couldn't find: {', '.join(misses)}.")
+        miss_line = composers_stock.miss_line(misses)
+        if miss_line:
+            parts.append(miss_line)
     if text:
         parts.append(text)
     question = (
@@ -7635,13 +7669,20 @@ def _dealer_names_the_miss(answer: Any, envelopes: list[dict[str, Any]]) -> Any:
     line). A reply without that line (a total miss, already named) is left as it is."""
     text = getattr(answer, "text", "") or ""
     misses = _unplaced_tokens(envelopes)
-    if not misses or not _COMPOSE_MISS.search(text):
+    # CHAT-COMPOSER: compose stamped the exact miss sentence it printed (gate on only).
+    stamped = getattr(answer, "miss_text", "") or ""
+    if stamped and not text.rstrip().endswith(stamped):
+        stamped = ""
+    if not misses or not (stamped or _COMPOSE_MISS.search(text)):
         return answer
     from app.services.chatbot.turn import refer
     from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
-    blocks = _COMPOSE_MISS.sub("", text).rstrip().split("\n\n")
-    line = f"Couldn't find: {', '.join(misses)}."
+    stripped = text.rstrip()[: -len(stamped)] if stamped else _COMPOSE_MISS.sub("", text)
+    blocks = stripped.rstrip().split("\n\n")
+    from app.services.chatbot.composers import stock as composers_stock
+
+    line = composers_stock.miss_line(misses)
     if blocks and blocks[-1].strip() == REFER_TO_SALESMAN:
         # The refer line stays last, printed through its one helper.
         head = "\n\n".join(b for b in blocks[:-1] if b.strip())
@@ -7649,8 +7690,9 @@ def _dealer_names_the_miss(answer: Any, envelopes: list[dict[str, Any]]) -> Any:
     return dataclasses_replace(answer, text="\n\n".join(p for p in (*blocks, line) if p.strip()))
 
 
-def _stock_answer_lines(envelopes: list[dict[str, Any]]) -> list[str]:
-    """The answered lines the presenter printed ("<code> x <Q>: ..."), in the order asked."""
+def _stock_answer_lines(envelopes: list[dict[str, Any]], *, full: bool = False) -> list[str]:
+    """The answered lines the presenter printed ("<code> x <Q>: ..."), in the order asked.
+    `full` (CHAT-COMPOSER) prints each as its whole block: marker and alternatives too."""
     lines: list[str] = []
     for envelope in envelopes or []:
         if not isinstance(envelope, dict) or not envelope.get("stock_availability"):
@@ -7659,7 +7701,12 @@ def _stock_answer_lines(envelopes: list[dict[str, Any]]) -> list[str]:
             flags = item.get("flags") if isinstance(item, dict) else None
             title = item.get("title") if isinstance(item, dict) else None
             if isinstance(flags, dict) and flags.get("branch") and not flags.get("needs_quantity") and title:
-                lines.append(str(title))
+                if full:
+                    from app.services.chatbot.composers import stock as composers_stock
+
+                    lines.append(composers_stock.dealer_block(item))
+                else:
+                    lines.append(str(title))
     return lines
 
 
@@ -9922,26 +9969,9 @@ def _label_attachments(files: list, rows: list[tuple[Any, list[str]]]) -> list:
     PHOTO-SEND-CAP R2: every file is one WhatsApp message, and the same picture uploaded
     twice has two urls and one `fileHash` (sha256 of the bytes). An entry with no hash
     dedupes on its url alone, exactly as before."""
-    kept: list[Any] = []
-    seen_urls: set[Any] = set()
-    seen_hashes: set[str] = set()
-    for entry in files:
-        if not isinstance(entry, dict):
-            kept.append(entry)
-            continue
-        url = entry.get("url")
-        if not jsc.truthy(url):
-            # D9 (8 Sep 2026): a file with no link is listed in the answer (the presenter
-            # says "(file link unavailable right now)") but never sent - a send with no
-            # url is a dead action, not a delivery.
-            continue
-        file_hash = jsc.nullish_str(entry.get("fileHash")).strip()
-        if url in seen_urls or (file_hash and file_hash in seen_hashes):
-            continue
-        seen_urls.add(url)
-        if file_hash:
-            seen_hashes.add(file_hash)
-        kept.append(entry)
+    from app.services.chatbot.composers import files as composers_files
+
+    kept = composers_files.sendable(files)
 
     groups: dict[str, list[int]] = {}
     for index, entry in enumerate(kept):

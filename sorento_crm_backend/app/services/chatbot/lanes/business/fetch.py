@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.services.chatbot import jsc
+from app.services.chatbot.composers import format as composers_format
 from app.services.chatbot.label_catalog import IDENTITY, Localizer
 from app.services.chatbot.contracts import (
     SALES_REPORT_GROUP_BYS,
@@ -1445,7 +1446,7 @@ def call_tool(name: str, args: dict[str, Any], *, mcp: Any) -> Any:
 # output-structurer
 # --------------------------------------------------------------------------- #
 
-_ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+_ISO_RE = composers_format.ISO_RE
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
 # Identity is an ALLOW-LIST, not a label test: short, stable, and shared with the renderers.
@@ -1610,62 +1611,10 @@ def _extract_envelope(j: Any) -> dict[str, Any]:
     return empty
 
 
-def _fmt_ts(iso: Any) -> str | None:
-    """`new Date(iso)` then local `getDate()`/`getMonth()`/... - components, verbatim.
-
-    Every captured `last_updated_at` is a NAIVE ISO string, which `new Date` reads as local
-    time and `getDate()` then reads straight back, so the rendered components equal the
-    input's (measured on all 20 `output-structurer` captures). Implemented as a component
-    read rather than through a timezone, which is also what makes it deterministic.
-    """
-    if not jsc.truthy(iso):
-        return None
-    text = jsc.js_string(iso)
-    match = re.match(
-        r"^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}):(\d{2}))?", text
-    )
-    if not match:
-        return None
-    year, month, day = match.group(1), match.group(2), match.group(3)
-    date = f"{day}/{month}/{year}"
-    hour, minute, second = match.group(4), match.group(5), match.group(6)
-    if hour is None:
-        return date
-    if (int(hour), int(minute), int(second)) == (0, 0, 0):
-        return date  # midnight -> date only
-    return f"{date} {hour}:{minute}:{second}"
-
-
-# The JS renders an empty value and an object joiner with an EM DASH, and the access note
-# with one too. Written as escapes, not as the character: the repo forbids an em dash in
-# anything WE write, and these are neither ours nor prose - they are three literals from a
-# node body that ships, and changing them would change what a customer is sent. Nothing in
-# the 20 graded captures reaches any of the three, so this is faithfulness, not evidence.
-_EM_DASH = "\u2014"
-
-
-def _fmt_value(v: Any) -> str:
-    if v is None or v == "":
-        return _EM_DASH
-    if isinstance(v, bool):
-        return "Yes" if v else "No"
-    if isinstance(v, str):
-        # DO-ASK-SIMPLIFY tester pass 2: a value's own '*' (a product code "*REPLACE")
-        # would pair with the next label's bold marker and leave a stray '*' in WhatsApp.
-        # It prints as the look-alike U+2217, which WhatsApp does not read as formatting.
-        return ((_fmt_ts(v) or v) if _ISO_RE.match(v) else v).replace("*", "\u2217")
-    if isinstance(v, (int, float)):
-        return jsc.js_string(v)
-    if isinstance(v, list):
-        return ", ".join(_fmt_value(x) for x in v)
-    if isinstance(v, dict):
-        parts = [
-            (_fmt_value(x) if isinstance(x, (dict, list)) else jsc.js_string(x))
-            for x in v.values()
-            if x is not None and x != ""
-        ]
-        return f" {_EM_DASH} ".join(parts) if parts else _EM_DASH
-    return jsc.js_string(v)
+# Moved byte for byte into `composers/format.py` (CHAT-COMPOSER S0); the old names stay.
+_fmt_ts = composers_format.timestamp
+_EM_DASH = composers_format.EM_DASH
+_fmt_value = composers_format.value
 
 
 def _has_key(f: Any) -> bool:
@@ -1876,6 +1825,16 @@ def _names_a_base_property(norm: str) -> bool:
     return False
 
 
+def _base_property_column(norm: str) -> str | None:
+    """The column an asked base word names (`list_price`, `dimensions`, ...), by the same match
+    `_names_a_base_property` makes."""
+    words = default_policy().kind("product")
+    for w, column in (words.base_property_words if words is not None else {}).items():
+        if norm == w or (" " in w and w in norm):
+            return column
+    return None
+
+
 def _asks_discontinued(req_attrs: list[Any]) -> bool:
     """DISCONTINUED-ASK: the parser's closed `requested_attributes` vocabulary carries
     "discontinued" for a status question (`chatbot_parser_prompt.py`, REQUESTED ATTRIBUTES).
@@ -1995,6 +1954,9 @@ def _project_product_specs(
     available", instead of the ordinary "not recorded" line - and instead of, not
     in addition to it.
     """
+    from app.services.chatbot import composers
+
+    composers_on = composers.enabled()
     hidden = frozenset(str(k) for k in (hidden_spec_keys or []))
     vocab_raw = e.get("spec_vocabulary")
     vocab: dict[str, str] = vocab_raw if isinstance(vocab_raw, dict) else {}
@@ -2120,6 +2082,11 @@ def _project_product_specs(
             # per key. A product with no spec fields at all keeps exactly the fields
             # it has today: `base` IS `fields` there.
             fields_out = list(base)
+            if composers_on:
+                # CHAT-COMPOSER P1 (Q3): an EMPTY un-asked base field is left out.
+                fields_out = [
+                    f for f in fields_out if not isinstance(f, dict) or composers_format.present(f.get("value"))
+                ]
             if spec_fields:
                 summary = ", ".join(f"{f.get('label')}: {f.get('value')}" for f in spec_fields)
                 fields_out.append({"key": "specs_summary", "label": "Specs", "value": summary})
@@ -2131,6 +2098,19 @@ def _project_product_specs(
         kept_base = [
             f for f in base if isinstance(f, dict) and f.get("label") in _PRODUCT_IDENTITY_LABELS
         ]
+        missing_lines: list[str] = []
+        if composers_on:
+            # CHAT-COMPOSER P1 / P2 (Q3, R4): an empty base field is left out; one that was
+            # asked for (price, size) says so in one line instead.
+            empty_labels = {f.get("label") for f in kept_base if not composers_format.present(f.get("value"))}
+            kept_base = [f for f in kept_base if f.get("label") not in empty_labels]
+            for norm, _asked_word in asked:
+                column = _base_property_column(norm)
+                label = {"list_price": "List Price", "dimensions": "Dimensions"}.get(column or "")
+                if label and label in empty_labels:
+                    line = composers_format.missing_line(composers_format.noun(label), jsc.js_string(code))
+                    if line not in missing_lines:
+                        missing_lines.append(line)
         spec_norms: list[tuple[dict[str, Any], str, str]] = []  # (field, norm_key, norm_label)
         for f in spec_fields:
             raw_key = jsc.js_string(f.get("key") or "")[len(_SPEC_KEY_PREFIX):]
@@ -2167,7 +2147,13 @@ def _project_product_specs(
             # 2. a spec miss - UNLESS the word names a base property, which is already
             #    on the page (kept_base, above) and needs no "not recorded" line.
             if not hit and not _names_a_base_property(norm):
-                missed_codes[norm].append(jsc.js_string(code))
+                if composers_on:
+                    word = composers_format.noun(vocab_label_for(norm) or _asked_word)
+                    missing_lines.append(composers_format.missing_line(word, jsc.js_string(code)))
+                else:
+                    missed_codes[norm].append(jsc.js_string(code))
+        if missing_lines:
+            it["missing_lines"] = missing_lines
         it["fields"] = kept_base + matched
 
     # 3. one miss line per asked word, rendered ONCE after the items - ordinary
@@ -2831,6 +2817,11 @@ _LOCALIZED_TOOLS = frozenset(
 
 def _field_label(loc: Localizer, f: Any) -> str:
     """The printed label of a field: translated when the localizer knows it, else as sent."""
+    from app.services.chatbot import composers
+
+    if isinstance(f, dict) and "label" in f and composers.enabled():
+        # CHAT-COMPOSER: one label for the same key across incoming views.
+        f = {**f, "label": composers_format.label(f)}
     label = jsc.js_string(jsc.get(f, "label", jsc.UNDEFINED))
     return loc.label(f) if isinstance(f, dict) and "label" in f else label
 
@@ -3380,9 +3371,12 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     set_row_offset = int(jsc.get(set_predicate, "offset") or 0) if set_predicate is not None else 0
 
     def _item_line(position: int, it: Any, *, numbered: bool = True) -> str:
+        from app.services.chatbot import composers
+
+        composers_on = composers.enabled()
         field_lines = "\n".join(
             f"*{_field_label(loc, f)}:* "
-            f"{_fmt_value(jsc.get(f, 'value'))}"
+            f"{_fmt_value(composers_format.money_field(f) if composers_on else jsc.get(f, 'value'))}"
             for f in (jsc.get(it, "fields") or [])
         )
         # An item with no fields at all is named by its own title: the stock tool's
@@ -3396,6 +3390,10 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # `availability` item's title already starts "<code> x <Q>:", so it is not
         # numbered (plan sample (g) shows plain lines, not a numbered list).
         line = field_lines if not numbered else f"{position}. {field_lines}"
+        if composers_on:
+            # CHAT-COMPOSER P2: an asked attribute with no value, one line in this product's block.
+            for missing in jsc.array(jsc.get(it, "missing_lines")):
+                line += f"\n{jsc.nullish_str(missing)}"
         flags = jsc.get(it, "flags")
         if status_ask:
             # Q1 (a): the status alone is the status line; beside another property it is a
