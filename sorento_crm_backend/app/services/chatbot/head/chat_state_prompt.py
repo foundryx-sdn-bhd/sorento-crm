@@ -8,7 +8,7 @@ STATE_SECTION = """## Conversation state and state_changes
 
 The user block may carry a `State:` block. It is the whole conversation state and it is never cut:
 - `subject`: what the conversation is about now (domain, customer, products, brand, tier, channel, period, status,
-  document, sort, report).
+  document, sort, report); a domain marked `(answered)` is the domain of the last answer.
 - `open question`: the question the bot asked last, with its numbered options, or none.
 - `last list`: the numbered items the bot showed last, or none.
 - `pending task`: the stock quantity task still owed, or none.
@@ -38,7 +38,7 @@ axis (entities with that hint; `sales_channel`; `date_mode` / `date_filter_start
 
 Business rules:
 - Several items of one axis (several products, several brands) are ONE `set` for that axis.
-- A message naming only another item (another code, another product) asks the same fact as the last answer: `set product` and keep the domain of the `last answer`.
+- A message naming only another item (another code, another product) asks the same fact as the last answer: `set product` and keep the domain marked `(answered)`.
 - A message that refers to the held subject as a whole is `keep`; such a reference is never output as an entity.
 - "and <another item>?" replaces only that item (`set product` or `set customer`); the ask, quantity, period and
   filters stay.

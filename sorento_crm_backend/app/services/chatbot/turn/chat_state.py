@@ -251,8 +251,8 @@ def _subject_text(subject: dict[str, Any]) -> str:
         elif key == "sort":
             value = [" ".join(value)]
         joined = ', '.join(value) if isinstance(value, list) else value
-        # The held domain is the domain of the last answer.
-        parts.append(f"last answer: {joined}" if key == "domain" else f"{key} {joined}")
+        # The held domain is the domain that was answered last.
+        parts.append(f"domain {joined} (answered)" if key == "domain" else f"{key} {joined}")
     return "; ".join(parts)
 
 
@@ -369,6 +369,11 @@ def _clear_axis(focus: Focus, axis: str) -> None:
     elif axis == "quantity":
         for row in focus.products:
             row.pop("quantity", None)
+        # The answered check's quantity goes with it.
+        focus.tasks = tuple(
+            t for t in focus.tasks or ()
+            if not (getattr(t, "kind", None) == "stock_qty" and getattr(t, "status", None) == task_mod.ANSWERED)
+        )
     elif axis in ("product", "customer", "warehouse"):
         setattr(focus, {"product": "products", "customer": "customers", "warehouse": "warehouse"}[axis], [])
     else:
@@ -445,7 +450,9 @@ def _held(focus: Focus, axis: str) -> bool:
     if axis == "brand":
         return bool(focus.brands)
     if axis == "quantity":
-        return any(isinstance(r, dict) and r.get("quantity") is not None for r in focus.products)
+        return any(isinstance(r, dict) and r.get("quantity") is not None for r in focus.products) or bool(
+            _held_quantity(focus)[0]
+        )
     if axis == "product":
         return bool(focus.products)
     if axis == "warehouse":
@@ -804,14 +811,16 @@ def apply_changes(
     # The quantity of the answered check (or of the held row) carries onto the refined, kept
     # or swapped item when the message states none; a stated quantity wins.
     qty_by_code, shared_qty = _held_quantity(state.focus)
-    if shared_qty is not None and out.get("demand_qty") is None:
+    if shared_qty is not None and out.get("demand_qty") is None and not new_subject and not (
+        any(c.get("op") == "clear" and c.get("axis") == "quantity" for c in changes if isinstance(c, dict))
+    ):
         mine = [e for e in entities if e.get("hint") == "product"]
+        # Only an explicit one-for-one swap moves the quantity to another code.
         if "product" in set_axes and len(held_products) == 1 and len(mine) == 1 and mine[0].get("quantity") is None:
             mine[0]["quantity"] = shared_qty
         for row in focus.products:
             if isinstance(row, dict) and row.get("quantity") is None:
-                code = str(row.get("canonical_code") or row.get("raw") or "").casefold()
-                filled = qty_by_code.get(code, shared_qty if len(focus.products) == 1 else None)
+                filled = qty_by_code.get(str(row.get("canonical_code") or row.get("raw") or "").casefold())
                 if filled is not None:
                     row["quantity"] = filled
     picked_kinds = {"product" for _ in data_picks}
