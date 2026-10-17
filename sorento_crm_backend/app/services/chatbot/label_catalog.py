@@ -599,9 +599,9 @@ LANE_LABELS: dict[str, dict[str, str]] = {
         "ms": "(menunjukkan {first} hingga {last})",
         "zh": "（显示第 {first} 至 {last} 个）",
     },
-    "Those are the first 20 matches. Send more of the code to narrow it.": {
-        "ms": "Itulah 20 padanan pertama. Hantar lebih banyak kod untuk mengecilkan carian.",
-        "zh": "以上是前 20 个匹配项。请发送更完整的编码以缩小范围。",
+    "Those are the first {n} matches. Send more of the code to narrow it.": {
+        "ms": "Itulah {n} padanan pertama. Hantar lebih banyak kod untuk mengecilkan carian.",
+        "zh": "以上是前 {n} 个匹配项。请发送更完整的编码以缩小范围。",
     },
 }
 

@@ -68,6 +68,29 @@ def _lines_text(lines: list[tuple[str, Any]]) -> list[str]:
     return out
 
 
+def _po_lines(db: Session, po_id: Any) -> list[tuple[str, Any]]:
+    """A PO's lines, by product code then line id: one query for the card and every later page, so
+    the pages never overlap or skip."""
+    return [
+        (code or "", qty)
+        for code, qty in db.query(Product.product_code, PurchaseOrderLine.qty_ordered)
+        .join(Product, Product.id == PurchaseOrderLine.product_id)
+        .filter(PurchaseOrderLine.purchase_order_id == po_id)
+        .order_by(Product.product_code, PurchaseOrderLine.id)
+        .all()
+    ]
+
+
+def _pr_lines(db: Session, pr_id: Any) -> list[tuple[str, Any]]:
+    return [
+        (item or "", qty)
+        for item, qty in db.query(PurchaseRequestLine.item_code, PurchaseRequestLine.quantity)
+        .filter(PurchaseRequestLine.purchase_request_id == pr_id)
+        .order_by(PurchaseRequestLine.sort_order, PurchaseRequestLine.id)
+        .all()
+    ]
+
+
 def lookup_purchase_orders(db: Session, words: Iterable[str]) -> RefLookup:
     typed = [w.strip() for w in words if isinstance(w, str) and _fold(w)]
     out = RefLookup()
@@ -94,14 +117,7 @@ def lookup_purchase_orders(db: Session, words: Iterable[str]) -> RefLookup:
         if not found:
             out.missing.append(word)
         for po, supplier in found:
-            lines = [
-                (code or "", qty)
-                for code, qty in db.query(Product.product_code, PurchaseOrderLine.qty_ordered)
-                .join(Product, Product.id == PurchaseOrderLine.product_id)
-                .filter(PurchaseOrderLine.purchase_order_id == po.id)
-                .order_by(Product.product_code)
-                .all()
-            ]
+            lines = _po_lines(db, po.id)
             head = f"*Purchase order {po.po_number}*" + (f" - {supplier}" if supplier else "")
             status = _words(po.status).capitalize() or "Unknown"
             second = f"Issued {_day(po.issue_date)} - {status}" if po.issue_date else status
@@ -136,13 +152,7 @@ def lookup_purchase_requests(db: Session, words: Iterable[str]) -> RefLookup:
         if not found:
             out.missing.append(word)
         for pr in found:
-            lines = [
-                (item or "", qty)
-                for item, qty in db.query(PurchaseRequestLine.item_code, PurchaseRequestLine.quantity)
-                .filter(PurchaseRequestLine.purchase_request_id == pr.id)
-                .order_by(PurchaseRequestLine.sort_order)
-                .all()
-            ]
+            lines = _pr_lines(db, pr.id)
             head = f"*Purchase request {pr.request_number}*" + (f" - {pr.customer_name}" if pr.customer_name else "")
             status = _words(pr.status).capitalize() or "Unknown"
             if pr.approval_status:
@@ -163,26 +173,13 @@ def card_page(db: Session, ref: dict[str, Any], offset: int) -> str | None:
             return None
         supplier = db.query(Supplier.supplier_name).filter(Supplier.id == row.supplier_id).scalar()
         head = f"*Purchase order {row.po_number}*" + (f" - {supplier}" if supplier else "")
-        lines = [
-            (code or "", qty)
-            for code, qty in db.query(Product.product_code, PurchaseOrderLine.qty_ordered)
-            .join(Product, Product.id == PurchaseOrderLine.product_id)
-            .filter(PurchaseOrderLine.purchase_order_id == row.id)
-            .order_by(Product.product_code)
-            .all()
-        ]
+        lines = _po_lines(db, row.id)
     else:
         row = db.query(PurchaseRequestHeader).filter(PurchaseRequestHeader.id == ref.get("id")).first()
         if row is None:
             return None
         head = f"*Purchase request {row.request_number}*" + (f" - {row.customer_name}" if row.customer_name else "")
-        lines = [
-            (item or "", qty)
-            for item, qty in db.query(PurchaseRequestLine.item_code, PurchaseRequestLine.quantity)
-            .filter(PurchaseRequestLine.purchase_request_id == row.id)
-            .order_by(PurchaseRequestLine.sort_order)
-            .all()
-        ]
+        lines = _pr_lines(db, row.id)
     total = len(lines)
     if offset >= total:
         return f"{head} ({total:,}). That is all {total:,}."

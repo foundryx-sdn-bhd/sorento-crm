@@ -24,8 +24,8 @@ def page_size(named: int | None, cap: int) -> int:
 #: because the probe behind such a list may have stopped at its cap.
 RANGE = "({total}, showing {first} to {last})"
 RANGE_CAPPED = "(showing {first} to {last})"
-#: The last line of a capped list: the matches shown may not be all of them.
-NARROW = "Those are the first 20 matches. Send more of the code to narrow it."
+#: The last line of a capped list (n = the codes listed): the matches shown may not be all of them.
+NARROW = "Those are the first {n} matches. Send more of the code to narrow it."
 
 
 def ranged(sentence: str, fragment: str) -> str:

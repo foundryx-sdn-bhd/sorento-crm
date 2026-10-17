@@ -1313,8 +1313,8 @@ def with_set_count_from_text(
     """
     if not isinstance(carried, dict) or not isinstance(message, str):
         return verdict
-    if (carried.get("set_key") or {}).get("report_groups"):
-        # CHAT-COMPOSER Lists L2: the report's group page; a bare "1" is the offer's pick, not a count.
+    if (carried.get("set_key") or {}).get("report_groups") or (carried.get("set_key") or {}).get("code_list"):
+        # CHAT-COMPOSER Lists: after a cut report or code list a bare number is a pick, not a count.
         return verdict
     echoed = any(isinstance(e, dict) and e.get("current_message") is True for e in (verdict.get("entities") or []))
     # CLASS-HINT-KIND-PICK R2 (CHATBOT-TRIO console case 12, 7 Oct 2026): the parser read
@@ -3748,6 +3748,8 @@ def make_tool_runner(
         # instead. Flagged here so the next reader does not assume parity.
         lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy)
         lane_out = _spec_window(lane_out, spec)
+        # `ref_page` is the carry's alone; one the verdict supplies is dropped.
+        lane_out = {k: v for k, v in lane_out.items() if k != "ref_page"}
         if _lane_paged(carry) and (carry["set_key"]).get("ref_cards"):
             # CHAT-COMPOSER Lists L3: the reference card pages itself (`lanes/business`).
             lane_out = {**lane_out, "ref_page": carry["set_key"]}
@@ -3878,8 +3880,8 @@ def make_tool_runner(
         for lane_key in ("po_numbers", "pr_numbers"):
             if placed_refs[lane_key]:
                 lane_out = {**lane_out, lane_key: placed_refs[lane_key]}
-        if is_staff_profile(profile):
-            lane_out = {**lane_out, "ref_staff": True}
+        # The audience is the profile's, both ways: a verdict never supplies it.
+        lane_out = {**lane_out, "ref_staff": is_staff_profile(profile)}
         if po_words:
             # SO-PO-REF: the PO number the parser also emitted as an entity is answered by
             # the `po_refs` arm, so it is no miss for compose to name a second time (nor to
@@ -4104,7 +4106,7 @@ def make_tool_runner(
 
                 from app.services.chatbot.label_catalog import IDENTITY
 
-                said = text = (localizer or IDENTITY).text(composers_sets.NARROW)
+                said = text = (localizer or IDENTITY).fill(composers_sets.NARROW, n=f"{int(page_predicate.get('qualifying_total') or 0):,}")
             fragment: dict[str, Any] = {"fetch": {"has_result": True, "response": text, "set_header": said}}
         elif (
             (

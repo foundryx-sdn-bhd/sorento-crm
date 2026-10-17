@@ -994,7 +994,7 @@ def _fetch_semantic_input(
             if isinstance(parse_output.get("access_levels"), list)
             else []
         )
-    return {
+    semantic = {
         "message_type": parse_output.get("message_type"),
         "intent_hint": parse_output.get("intent_hint"),
         "domain_hint": parse_output.get("domain_hint"),
@@ -1028,8 +1028,6 @@ def _fetch_semantic_input(
         # AC-1138: "1"/"2" against an OPEN outstanding_detail offer - which detail list
         # to render, passed straight through to the MCP tool's own `detail` param.
         "outstanding_detail_pick": parse_output.get("outstanding_detail_pick"),
-        # CHAT-COMPOSER Lists L2: the report's group page start, present gate on only.
-        "outstanding_group_offset": parse_output.get("outstanding_group_offset"),
         # PLAN-chatbot-sales-report.md S4 wiring point 5 (AC-1652): the parser's OWN
         # channel value, never the message text - passed straight through to
         # `crm_sales_report`'s own `channel` param.
@@ -1072,6 +1070,12 @@ def _fetch_semantic_input(
         # the map could never reach the tool.
         "requested_quantities": parse_output.get("requested_quantities"),
     }
+    from app.services.chatbot import composers
+
+    if composers.enabled():
+        # CHAT-COMPOSER Lists L2: the report's group page start.
+        semantic["outstanding_group_offset"] = parse_output.get("outstanding_group_offset")
+    return semantic
 
 
 def _error_fragment(reason: str, *, outcome: str | None = None) -> dict[str, Any]:
@@ -1575,6 +1579,8 @@ def run_fetch(
     from app.services.chatbot import composers
 
     ref_page = parse_output.get("ref_page") if composers.enabled() else None
+    if isinstance(ref_page, dict) and db is None:
+        return _error_fragment("reference page refused", outcome="not_found")
     if (po_numbers or pr_numbers or isinstance(ref_page, dict)) and db is not None and (
         parse_output.get("ref_staff") is True or isinstance(ref_page, dict)
     ):
