@@ -9961,26 +9961,9 @@ def _label_attachments(files: list, rows: list[tuple[Any, list[str]]]) -> list:
     PHOTO-SEND-CAP R2: every file is one WhatsApp message, and the same picture uploaded
     twice has two urls and one `fileHash` (sha256 of the bytes). An entry with no hash
     dedupes on its url alone, exactly as before."""
-    kept: list[Any] = []
-    seen_urls: set[Any] = set()
-    seen_hashes: set[str] = set()
-    for entry in files:
-        if not isinstance(entry, dict):
-            kept.append(entry)
-            continue
-        url = entry.get("url")
-        if not jsc.truthy(url):
-            # D9 (8 Sep 2026): a file with no link is listed in the answer (the presenter
-            # says "(file link unavailable right now)") but never sent - a send with no
-            # url is a dead action, not a delivery.
-            continue
-        file_hash = jsc.nullish_str(entry.get("fileHash")).strip()
-        if url in seen_urls or (file_hash and file_hash in seen_hashes):
-            continue
-        seen_urls.add(url)
-        if file_hash:
-            seen_hashes.add(file_hash)
-        kept.append(entry)
+    from app.services.chatbot.composers import files as composers_files
+
+    kept = composers_files.sendable(files)
 
     groups: dict[str, list[int]] = {}
     for index, entry in enumerate(kept):

@@ -360,6 +360,7 @@ LABELS: dict[str, dict[str, str]] = {
     "But no stock matched these.": {"ms": 'Tiada stok yang sepadan.', "zh": '没有匹配的库存。'},
     "But no product matched these.": {"ms": 'Tiada produk yang sepadan.', "zh": '没有匹配的产品。'},
     "But no SPO line matched these.": {"ms": 'Tiada baris SPO yang sepadan.', "zh": '没有匹配的 SPO 行。'},
+    "No {what} on record for {product}.": {"ms": 'Tiada {what} dalam rekod untuk {product}.', "zh": '{product} 没有{what}记录。'},
     'I have {names}.': {"ms": 'Saya ada {names}.', "zh": '我已记下 {names}。'},
     'What would you like me to know?': {"ms": 'Apa yang anda mahu saya tahu?', "zh": '您想让我了解什么？'},
     "Sorry, we don't support direct goods receive & SPO at the moment. You may ask about incoming stock for a specific product or container": {"ms": 'Maaf, kami belum menyokong penerimaan barang terus & SPO buat masa ini. Anda boleh bertanya tentang stok masuk bagi produk atau kontena tertentu', "zh": '抱歉，我们目前暂不支持直接收货和 SPO 查询。您可以询问特定产品或货柜的到货库存'},
@@ -645,6 +646,7 @@ INLINE = frozenset(
         "But no stock matched these.",
         "But no product matched these.",
         "But no SPO line matched these.",
+        "No {what} on record for {product}.",
         'What would you like me to know?',
         "Sorry, we don't support direct goods receive & SPO at the moment. You may ask about incoming stock for a specific product or container",
         'Do you mean customer {customer} or sales agent {agent}? Reply 1 for the customer, 2 for the sales agent.',
@@ -824,6 +826,19 @@ def _inline_pattern(english: str, target: str) -> tuple[re.Pattern[str], str, in
     return regex, target, fixed, tuple(_TOKEN.findall(english))
 
 
+#: CHAT-COMPOSER S4: the generic "no <what> on record" sentence, and the product-find none lines it
+#: must never rewrite (a kind with no noun translation is said in English, not garbled into
+#: `{what}` = "mirror is").
+_GENERIC_MISSING = "No {what} on record for {product}."
+
+
+def _find_none_patterns() -> list[re.Pattern[str]]:
+    from app.services import product_find
+
+    lines = [f(k) for k in product_find.KINDS for f in (product_find.none_line, product_find.no_host_line)]
+    return [re.compile(re.escape(x).replace(re.escape("{code}"), ".+?")) for x in lines]
+
+
 class Localizer:
     """Rewrites catalogued labels and sentences for `language`; everything else is untouched."""
 
@@ -835,6 +850,7 @@ class Localizer:
         # The INLINE sentences the table carries: (regex for a start-anchored match, target,
         # fixed characters, token names). Longest fixed text wins where two start together.
         self._inline: list[tuple[re.Pattern[str], str, int, tuple[str, ...]]] = []
+        self._find_none = _find_none_patterns() if _GENERIC_MISSING in table else []
         for english, target in table.items():
             if english in INLINE and english not in DIRECT_ONLY:
                 self._inline.append(_inline_pattern(english, target))
@@ -871,6 +887,9 @@ class Localizer:
         For the few sentences too generic to be matched in running text (`DIRECT_ONLY`)."""
         return _TOKEN.sub(lambda t: values.get(t.group(1), t.group(0)), self.table.get(key, key))
 
+    def _is_find_none(self, span: str) -> bool:
+        return any(r.fullmatch(span) for r in self._find_none)
+
     def _text(self, s: str, *, inline: bool) -> str:
         if s in _VALUE_ONLY:
             return s
@@ -881,6 +900,8 @@ class Localizer:
             if is_inline and not inline:
                 continue  # INLINE sentences are replaced by `reply()` at their own boundaries
             m = regex.fullmatch(s)
+            if m and target == self.table.get(_GENERIC_MISSING) and self._is_find_none(s):
+                continue
             if m and (best is None or fixed > best[0]):
                 best = (fixed, m.groupdict(), target)
         if best is None:
@@ -919,9 +940,11 @@ class Localizer:
 
     def _inline_line(self, text: str) -> str:
         found: list[tuple[int, int, int, str]] = []
-        for regex, target, fixed, _names in self._inline:
+        for regex, target, fixed, names in self._inline:
             for m in regex.finditer(text):
                 values = m.groupdict()
+                if names == ("what", "product") and self._is_find_none(m.group(0)):
+                    continue
                 found.append((m.start(), m.end(), fixed, _TOKEN.sub(lambda t: values.get(t.group(1), t.group(0)), target)))
         found.sort(key=lambda f: (f[0], -f[2]))
         out, pos = [], 0

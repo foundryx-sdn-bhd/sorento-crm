@@ -33,8 +33,10 @@ from app.services.chatbot.turn.state import (
     offers_escalation,
 )
 from app.services.chatbot.turn import refer
+from app.services.chatbot.composers import files as composers_files
+from app.services.chatbot.composers import format as composers_format
 
-_ATTACHED_SENTENCE = "I have attached the file(s) below."
+_ATTACHED_SENTENCE = composers_files.ATTACHED_SENTENCE
 
 
 def _pretty_team(team: str) -> str:
@@ -154,6 +156,16 @@ def _render_row(n: int, fig: dict[str, Any]) -> str:
 def _file_key(f: dict[str, Any]) -> Any:
     # PHOTO-SEND-CAP: one picture under two urls (two domains' envelopes) is one file.
     return f.get("fileHash") or f.get("url") or f.get("id") or f.get("filename")
+
+
+def _same_file(a: Any, b: Any) -> bool:
+    """CHAT-COMPOSER F2: the send rule's "same file": the same url, or the same non-empty hash."""
+    if not (isinstance(a, dict) and isinstance(b, dict)):
+        return False
+    if not b.get("url"):
+        return False
+    ha, hb = str(a.get("fileHash") or "").strip(), str(b.get("fileHash") or "").strip()
+    return a.get("url") == b.get("url") or bool(ha and ha == hb)
 
 
 def _dealer_view(figures: list[dict[str, Any]]) -> bool:
@@ -528,6 +540,13 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
     missed_domains: list[str] = []
     files: list[dict[str, Any]] = []
     seen_file_keys: set[Any] = set()
+    from app.services.chatbot import composers
+
+    composers_on = composers.enabled()
+    # CHAT-COMPOSER F1: per text part, whether it opens with the attached sentence the
+    # presenter put there (read from the envelope's `lane_intro`, never by searching text).
+    printed_intro = localizer.sentence(_ATTACHED_SENTENCE)
+    opened: list[bool] = []
     # RESOLVER-TOKEN-CAP: a code the resolver cut at its ceiling rides every envelope
     # (`envelope_of.not_checked`) but is a fact about the message, so it is named once
     # per turn, under the first section that carries it.
@@ -719,10 +738,17 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         ):
             gaps = _types_without_files(product_codes, env.get("attachment_types") or [], figures)
             if gaps:
-                lines = "\n".join(
-                    localizer.fill("{code} has no {types}.", code=code, types=_join_words(missing, localizer))
-                    for code, missing in gaps
-                )
+                if composers_on:
+                    # CHAT-COMPOSER F3: the one "nothing on record" sentence.
+                    lines = "\n".join(
+                        composers_format.missing_line(_join_words(missing, localizer), code, fill=localizer.fill)
+                        for code, missing in gaps
+                    )
+                else:
+                    lines = "\n".join(
+                        localizer.fill("{code} has no {types}.", code=code, types=_join_words(missing, localizer))
+                        for code, missing in gaps
+                    )
                 # Its own paragraph, and the lane's footer keeps the blank line above it.
                 body, sep, footer = block.rpartition("\n_Data last updated")
                 block = (
@@ -777,9 +803,25 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             block = block + "\n" + f"Not checked: {', '.join(not_checked)}."
         if block:
             text_parts.append(block)
+            lane_intro = env.get("lane_intro")
+            opened.append(
+                bool(composers_on and lane_intro in (_ATTACHED_SENTENCE, printed_intro))
+                and (block == printed_intro or block.startswith(printed_intro + "\n\n"))
+            )
 
         for f in env_files:
             key = _file_key(f)
+            if composers_on:
+                # CHAT-COMPOSER F2: the send rule (url or hash already seen), so the reply's
+                # files equal what is sent.
+                dup = next((k for k in files if _same_file(k, f)), None)
+                if dup is not None:
+                    url = f.get("url") if isinstance(f, dict) else None
+                    if url and url != dup.get("url"):
+                        files[files.index(dup)] = {**dup, "aliasUrls": [*(dup.get("aliasUrls") or []), url]}
+                    continue
+                files.append(f)
+                continue
             if key in seen_file_keys:
                 # PHOTO-SEND-CAP (security review M1): the same image under another url is
                 # not sent twice, but this section's text may name that url under its row;
@@ -792,6 +834,8 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             seen_file_keys.add(key)
             files.append(f)
 
+    if composers_on:
+        text_parts = composers_files.place_attached(text_parts, opened, printed_intro, False)
     text = "\n\n".join(text_parts)
 
     # A token nobody could place is named, never dropped in silence (hand pass 2 item 6,
@@ -997,7 +1041,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         # presenters`'s universal "has attachments" intro) now that `lane_text` is
         # reused verbatim above - appending a second copy read as the sentence
         # twice in one reply.
-        if _ATTACHED_SENTENCE not in text:
+        if _ATTACHED_SENTENCE not in text and not (composers_on and any(opened)):
             text += "\n\n" + _ATTACHED_SENTENCE
 
     return Answer(

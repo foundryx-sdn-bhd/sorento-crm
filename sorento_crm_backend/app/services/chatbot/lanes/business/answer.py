@@ -3404,8 +3404,15 @@ def not_found_error_message(
 
         date_start = jsc.get(q, "date_filter_start")
         date_end = jsc.get(q, "date_filter_end")
+        from app.services.chatbot import composers
+        from app.services.chatbot.composers import format as composers_format
+
+        # CHAT-COMPOSER F5: the window reads dd/mm/yyyy gate on.
+        def _window_end(v: Any) -> str:
+            return (composers_format.date(v) if composers.enabled() else None) or jsc.js_string(v)
+
         date_range = (
-            f" from {jsc.js_string(date_start)} to {jsc.js_string(date_end)}"
+            f" from {_window_end(date_start)} to {_window_end(date_end)}"
             if (jsc.truthy(date_start) and jsc.truthy(date_end))
             else ""
         )
@@ -3880,7 +3887,9 @@ def not_found_error_message(
                         words.append(value)
             return ", ".join(words)
 
-        def build_breakdown_msg(domain_word: str, not_found_override: Any = None) -> str:
+        def build_breakdown_msg(
+            domain_word: str, not_found_override: Any = None, missing_lines: list[str] | None = None
+        ) -> str:
             nf = [
                 label_token(t)
                 for t in (not_found_override if not_found_override is not None else not_found_raw)
@@ -3969,6 +3978,10 @@ def not_found_error_message(
                 # R7 (round 4): "But no purchase order matched", never the domain key.
                 f"But no{active_inactive} {miss_noun}{miss_window}{access} matched these{co_suffix}."
             )
+            if missing_lines:
+                # CHAT-COMPOSER F4: the one "nothing on record" line per product, in place of
+                # "But no <types> matched these."
+                miss_sentence = "\n".join(missing_lines)
             if esc_ask:
                 miss_sentence = f"{miss_sentence} {esc_ask}"
             entitlement_miss = _entitlement_miss()
@@ -4263,6 +4276,42 @@ def not_found_error_message(
                     jsc.get(c, "entity_type") == "product" and jsc.truthy(jsc.get(c, "uuid"))
                     for c in jsc.array(jsc.get(g, "compatible_entities"))
                 )
+                # CHAT-COMPOSER F4: a resolved product with no file of the asked type, and no
+                # qualifier (active / inactive, dates, level, company, entitlement), is "nothing
+                # on record"; a filtered miss keeps today's sentence.
+                f4_lines: list[str] | None = None
+                if (
+                    composers.enabled()
+                    and product_resolved
+                    and not (active_inactive or date_range or access or co_suffix)
+                    and not jsc.truthy(_entitlement_miss())
+                ):
+                    kept_types = {
+                        jsc.get(c, "uuid")
+                        for c in jsc.array(jsc.get(g, "compatible_entities"))
+                        if jsc.get(c, "entity_type") == "attachment_type"
+                    }
+                    type_names: list[str] = []
+                    for res in jsc.array(jsc.get(r, "resolutions")):
+                        for m in jsc.array(jsc.get(res, "matches")):
+                            name = jsc.nullish_str(jsc.get(jsc.get(m, "display"), "type_name")).strip()
+                            if (
+                                jsc.get(m, "entity_type") == "attachment_type"
+                                and jsc.get(m, "uuid") in kept_types
+                                and name
+                                and name not in type_names
+                            ):
+                                type_names.append(name)
+                    what = " or ".join(type_names or [jsc.js_string(x) for x in attach_raws])
+                    codes = [
+                        jsc.js_string(jsc.get(c, "code"))
+                        for c in jsc.array(jsc.get(g, "compatible_entities"))
+                        if jsc.get(c, "entity_type") == "product"
+                        and jsc.truthy(jsc.get(c, "uuid"))
+                        and jsc.truthy(jsc.get(c, "code"))
+                    ]
+                    if what and codes:
+                        f4_lines = [composers_format.missing_line(what, code) for code in codes]
                 if unfound_products and not product_resolved:
                     esc = _esc_offer()
                     escalate_message = (
@@ -4286,6 +4335,7 @@ def not_found_error_message(
                     escalate_message = build_breakdown_msg(
                         jsc.js_string(attach_noun),
                         [t for t in not_found_raw if _nf_norm_raw(t) not in attach_set],
+                        f4_lines,
                     )
                 else:
                     # The resolver folds dashes off the typed code, so a resolved product
@@ -4318,7 +4368,9 @@ def not_found_error_message(
                         subject = requested if jsc.truthy(requested) else "the requested item"
                     esc = _esc_offer()
                     escalate_message = (
-                        f"Could not find{active_inactive} {subject}{date_range}{access}."
+                        "\n".join(f4_lines)
+                        if f4_lines
+                        else f"Could not find{active_inactive} {subject}{date_range}{access}."
                     ) + (f" {esc}" if esc else "")
             elif _outstanding_report_text(item):
                 # AC-1107 / S4 point 6, and the owner's approved miss mock: an outstanding

@@ -104,3 +104,11 @@ def label(f: Any) -> str:
     if key == "estimated_arrival_date":
         return "ETA"
     return jsc.js_string(jsc.get(f, "label", jsc.UNDEFINED))
+
+
+def missing_line(what: str, product: str, *, fill: Any = None) -> str:
+    """The one "nothing on record" sentence: `No Product Photos on record for X.`"""
+    key = "No {what} on record for {product}."
+    if fill is not None:
+        return fill(key, what=what, product=product)
+    return key.format(what=what, product=product)

@@ -5544,6 +5544,12 @@ def _suggestions_by_typed_word(
     }
 
 
+def _composers_on() -> bool:
+    from app.services.chatbot import composers
+
+    return composers.enabled()
+
+
 def envelope_of(
     fragment: dict[str, Any],
     spec: FetchSpec,
@@ -5650,6 +5656,8 @@ def envelope_of(
         # (#930's grammar, contract 102); this is what a tool with no rows to render -
         # a report, a refusal, a miss suggestion - has to say instead. A refused domain
         # says contract 7's registered sentence.
+        # CHAT-COMPOSER (gate on): the presenter's intro sentence, so compose reads it as data.
+        **({"lane_intro": fetched.get("response_intro")} if _composers_on() else {}),
         "lane_text": _lane_text_without_withheld_header(
             denial_text if refused else fetched.get("response"),
             fetched.get("set_header"),
