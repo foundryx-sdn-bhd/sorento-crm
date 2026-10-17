@@ -1,6 +1,6 @@
 # PLAN: CHAT-CODE-LOOKUP (chatbot code lookups toward the owner's 97% bar)
 
-Status: Review (slices A-C green at 50495b919e, red-first + kill-proof per slice on #1761; reviewer + security-reviewer running; live TRAIN arm waits for the eval stack). Track: L, LEAD pattern, local lane. Branch
+Status: Review, final checks (slices A-C + fix rounds 1-3 green at 24cb58be6b; security PASS; live TRAIN arm 2 89.4% vs main 86.2%). Track: L, LEAD pattern, local lane. Branch
 `crew/chat-code-lookup`, base origin/main 20c191d861.
 
 Owner approval: 17 Oct ~14:10 ("Ok" to a code-lookup lane, in parallel with steps 1-2).
@@ -67,10 +67,17 @@ meant existing code -> answer that code; a bare code after an ETA reply -> the i
 - S6 domain reuse, count = stock (R6), prompt. #1755-arm TRAIN: cp0-7ce4ddc2da, cp0-df53e90ebf.
 - R3 dropped: owner ruling 17 Oct keeps the sibling picker after a full answer (`answer.py:4846-4848`).
 
-## Evidence so far
+## Evidence
 
-- A: red ad4389c047, fix 4717509497, lead-approved test fixes 9f8d713e91, kill-proof posted. B: red 1833644813, fix
-  e6eb546af0, kill-proof posted. C: red 5ac8b3fec6, fix 50495b919e, kill-proof posted.
-- L1 grounding tier 0 / 1506 vs main and vs #1755 (slice A); turn tier on the fixed replay DB: #1755 vs lane 0 / 585,
-  main vs lane 3 / 585, the same 3 as main vs #1755 (owned by #1755).
-- Prompt: unlabelled v159 (slice A section) published on sorento_cagent_stack; production label v63 untouched.
+- Red-first per slice and round, kill-proof each (PR #1761 crew-notes): A ad4389c047 -> 4717509497 (+ lead-approved
+  test fixes 9f8d713e91); B 1833644813 -> e6eb546af0; C 5ac8b3fec6 -> 50495b919e; round 1 94df7d3722 -> 9e36f4e7b8;
+  round 2 bbd92f9851 -> 6192d8dedf (+ lead-approved G1 assertion 028fb6b07e); round 3 d39397d628 -> 24cb58be6b.
+- Review: reviewer rounds on 50495b919e, 9e36f4e7b8, 028fb6b07e, 24cb58be6b; security-reviewer NEEDS WORK twice, then
+  PASS at 028fb6b07e. Lead-accepted nits: an alternative for a discontinued set member keeps its own price; the
+  group_by path skips the set heading (no priced tool groups in a set domain today). Forwarded to CHAT-CLOSED-LISTS:
+  first-line-only shortlist, same-line forgery in `_code_label`.
+- L1 ($0, rolled-back replay_rows, clean sorento_eval_base, no rows written): vs #1755 0 unintended both tiers; vs main
+  grounding 0, turn 3 (cand-0036, cand-0289, chatfind-05), the same three main vs #1755 shows.
+- Live TRAIN (97 code-lookup turns x1, grader f58964a232): main 81/94 86.2%, arm 1 (50495b919e + v160) 83/94 88.3%,
+  arm 2 (028fb6b07e + v161) 84/94 89.4%; spend USD 1.19 of the two USD 1 envelopes. "When deliver" passed 1 of 2 runs.
+- Prompt: unlabelled v159, v160, v161 on sorento_cagent_stack; production label v63 untouched.
