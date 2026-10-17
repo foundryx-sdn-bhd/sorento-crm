@@ -1,7 +1,7 @@
 # PLAN: CHAT-STATE round 2 - the weak follow-up kinds
 
-**Status:** Build (r2-INT green 7833e7365e; root cause done; slices r2-A..D next). Track: L, LEAD pattern. Branch `crew/chat-state-r2` off
-`crew/chat-state` (#1747; rebase onto main after its squash merge).
+**Status:** Build (r2-A..D green after 2 rounds, reviewer READY, L1 replay 0 unintended; origin/main 63f4fe47c merged
+in after #1747 merged as e9ef7b416; live TRAIN next). Track: L, LEAD pattern. Branch `crew/chat-state-r2`.
 **Base design:** `PLAN-chat-state-16oct.md`, `chat-state-behaviour-card.md` (R1-R16), `chat-state-seam-design.md`.
 
 ## Goal (crew, 17 Oct, owner "run as much parallel as possible")
@@ -48,8 +48,10 @@ passes both arms: no TRAIN signal for the held-out 62.5%), refine 1/1 of 5, swit
   fcd44fe521 vs the family rule; round-32 gold on aad2aaec55 vs round 11 "pick drops the typed entity".
 - Every class is below the >= 8 phrasings bar: fresh paraphrase tests per class + EVAL-SETS Deliverable A (crew relays path).
 - Test DB: sorento_chatstate_throwaway2 (fresh, current schema).
-- Live runs (crew 17 Oct): own stack CRM 8109 / MCP 8209 with an env file in this worktree (never cp0/stack.env);
-  slot crew/state/live-slots/CHAT-STATE (max 2 entries machine-wide), rmdir on stop.
+- Live runs (crew 17 Oct, ports moved 18 Oct: a hand-test copy owns 8109): own stack CRM 8193 / MCP 8293 with an env
+  file in this worktree (never cp0/stack.env); slot crew/state/live-slots/CHAT-STATE (max 2 entries machine-wide),
+  rmdir on stop. Main arm = origin/main + production v63: without the state heading `parser_config.state_block` is
+  off (engine.py:4540), so main runs the pre-state baseline.
 
 ## Proof log (posted on the r2 PR when it opens)
 
@@ -60,3 +62,8 @@ passes both arms: no TRAIN signal for the held-out 62.5%), refine 1/1 of 5, swit
 - Reviewer r2 (faa9d0f11e): NOT READY on r2-A (B-A1 clear quantity undone; S-A2 qty onto another product; S-A3 qty onto a
   new subject; nit label wording); merge / #1755 alone / combined schema / publish READY.
 - r2 round 2: red 721f462bd1 (33 red); fix ff3ec689d9; kill-proof: reverted 33 failed / restored 191 passed.
+- Reviewer re-check (ff3ec689d9): READY.
+- L1 replay gate r2-2 (a17f1cf2b1) vs 697df41293, --split dev: grounding 0/1506, turn 0/585 unintended, exit 0.
+- Merge origin/main 63f4fe47c (#1747 squash e9ef7b416 + #1762): add/add conflicts resolved 3-way against the r1 commit
+  the branch already held (f3b0c5dc2); the merge adds only #1762's eval tooling and the import-boundary allowlist
+  lines, no chatbot runtime change, so the r2-2 gate stands.
