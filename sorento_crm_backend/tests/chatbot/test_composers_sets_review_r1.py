@@ -46,7 +46,7 @@ def _verdict(**kw):
 NEW_ASKS = {
     "domain_switch": {"domain_hint": "incoming", "domain_in_message": True},
     "date_window": {"date_filter_start": "2026-09-01", "date_filter_end": "2026-09-30"},
-    "request_for_help": {"query_type": "request_for_help"},
+    "request_for_help": {"message_type": "request_for_help"},
     "brand_query": {"query_brands": ["Bravat"]},
     "group_by": {"group_by": "warehouse"},
     "order_status": {"order_status": "outstanding"},
@@ -330,3 +330,120 @@ def test_n2_page_the_set_sizes_are_the_base_page(monkeypatch, gate, size, expect
     assert ids == [c["product_id"] for c in cands[:expect_shown]]
     assert predicate["next_carry"]["set_key"]["shown"] == expect_shown
     assert "offset" not in predicate and "exhausted" not in predicate
+
+
+# --------------------------------------------------------------------------- #
+# Round 2: a recorded "more" parse pages; message_type gates; the summary path is cut
+# --------------------------------------------------------------------------- #
+
+RECORDED = "handpass2-owner-17sep-stock-incoming.json"
+
+
+def _recorded_bare_continuation():
+    """A recorded continuation-true parse (REAL field shape: match_mode "and", the full key set),
+    stripped of any entity or ask so it is a bare continuation."""
+    import json
+
+    path = Path(__file__).resolve().parent / "replay_turns" / "console" / RECORDED
+    found: list[dict] = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            if o.get("continuation") is True and "message_type" in o and "match_mode" in o:
+                found.append(o)
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    walk(json.loads(path.read_text()))
+    assert found, "the recording holds a continuation-true parse"
+    v = dict(found[0])
+    v.update(entities=[], requested_attributes=[], asks=[], sub_asks=[], top_n=None, reference_positions=[])
+    return v
+
+
+def _carry_for(verdict):
+    return {"set_key": {"shown": 50, "total": 182, "domain": verdict.get("domain_hint")}}
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{}, {"match_mode": "or"}, {"match_mode": "and", "is_active": True}, {"match_mode": None, "is_active": True}],
+    ids=["as_recorded_and", "match_mode_or", "and_and_active", "active_only"],
+)
+def test_r2_a_recorded_bare_continuation_pages(monkeypatch, overrides):
+    from app.services.chatbot import turn_runtime
+
+    _set_gate(monkeypatch, True)
+    v = {**_recorded_bare_continuation(), **overrides}
+    assert v["continuation"] is True and v["message_type"] == "business_query"
+    out = turn_runtime.with_set_more(v, carried=_carry_for(v))
+    assert out.get("set_continue") is True and out["top_n"] == 50 and out["reference_positions"] == []
+
+
+@pytest.mark.parametrize("message_type", ["request_for_help", "clarification", "casual", "unknown"])
+def test_r2_message_type_other_than_business_query_is_not_more(monkeypatch, message_type):
+    from app.services.chatbot import turn_runtime
+
+    _set_gate(monkeypatch, True)
+    v = _verdict(message_type=message_type)
+    assert turn_runtime.with_set_more(v, carried=CARRY) == v
+
+
+@pytest.mark.parametrize("message_type", [None, "business_query"])
+def test_r2_message_type_business_query_or_absent_pages(monkeypatch, message_type):
+    from app.services.chatbot import turn_runtime
+
+    _set_gate(monkeypatch, True)
+    v = _verdict() if message_type is None else _verdict(message_type=message_type)
+    assert turn_runtime.with_set_more(v, carried=CARRY).get("set_continue") is True
+
+
+def _summary_set_page():
+    def f(label, value):
+        return {"label": label, "value": value}
+
+    items = [{"title": f"SRTWC{i:03d}", "fields": [f("Product Code", f"SRTWC{i:03d}")]} for i in range(50)]
+    summary = [
+        {
+            "title": None,
+            "fields": [
+                f("Product Code", f"SRTWC{i:03d}"),
+                f("Customer", f"CUSTOMER NUMBER {c} SDN BHD"),
+                f("Ordered Qty", 100 + c),
+                f("SO Outstanding", c),
+            ],
+        }
+        for i in range(50)
+        for c in range(4)
+    ]
+    env = {
+        "result_type": "products",
+        "intro": "x",
+        "items": items,
+        "summary_items": summary,
+        "has_result": True,
+        "last_updated_at": "2026-10-03T18:42:43",
+    }
+    return _run(env, 182)
+
+
+def test_r2_a_summary_set_page_can_exceed_a_message_today(monkeypatch):
+    """Gate off: 50 products x 4 customers print 20,000+ chars (bounded only by the page)."""
+    _set_gate(monkeypatch, False)
+    assert len(_summary_set_page()["response"]) > BUDGET
+
+
+def test_r2_a_summary_set_page_is_cut_to_one_message(monkeypatch):
+    _set_gate(monkeypatch, True)
+    out = _summary_set_page()
+    text = out["response"]
+    last = out["set_window"]["last"]
+    assert len(text) <= BUDGET, len(text)
+    assert 0 < last < 50
+    assert text.startswith(f"Here's what you want: water closets (182, showing 1 to {last})")
+    assert f'Reply "more" to see the next {min(50, 182 - last)}.' in text
+    products = {m for m in re.findall(r"^\*Product Code:\* (\w+)", text, re.MULTILINE)}
+    assert len(products) == last
