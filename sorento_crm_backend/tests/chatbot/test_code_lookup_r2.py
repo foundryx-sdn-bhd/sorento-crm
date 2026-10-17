@@ -95,3 +95,15 @@ def test_r2_2_held_member_file_miss_keeps_the_escalate_offer(session_factory, se
     result = _held_turn(session_factory, stub_access, monkeypatch, "zzjc802a drawing")
 
     assert "escalate" in ((result.reply or {}).get("text") or "").lower(), result.reply
+
+
+def test_r2_2_held_member_unplaced_line_matches_the_normal_miss_line(session_factory, seeded, stub_access, monkeypatch):
+    """The normal file miss prints `Couldn't find: "zzqq999" (product).` (probed through the same
+    harness for a non-held code; the quoting is lanes/business/answer.py:2763 `not_understood_line`,
+    the " (product)" suffix is added by the miss path). The held-member reply carries that exact
+    line, not a hand-built one without the suffix."""
+    unplaced = {"raw": "zzqq999", "hint": "product", "canonical_code": None, "current_message": True, "confident": True}
+
+    reply = (_held_turn(session_factory, stub_access, monkeypatch, "zzjc802a zzqq999 drawing", unplaced).reply or {}).get("text") or ""
+
+    assert 'Couldn\'t find: "zzqq999" (product).' in reply, reply
