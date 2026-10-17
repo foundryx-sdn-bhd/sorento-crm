@@ -116,6 +116,8 @@ one entity hint value and no new top-level key.
 | S4b-v2 listed_item enum on the wire (crew dev data check) | 60097592 | 3e3dc50f | only `listed_item`, code/name, or an explicit alias link validate |
 | S4c "which file?" lists the product's own types (Q3 (a)) | 25e88686 | 75cc82ff | a bare "2" fetches that type |
 | S5 no word rewrites under the gate (c27) | (S5 red commit) | 811f22fb | `_category_word_under_documents` off; listed type binds; F4 kept |
+| T2 scheme pick indexes the product's certificates | c6c71e8b | c6c71e8b | explicit link product > attachment > revision > scheme; none held = the cert kind |
+| `{{specs}}` token in the lane version (SPEC-REGISTRY-UI #1765) | (this commit) | (this commit) | the publisher swaps the baked specification lines for `{{specs}}`; the existing `specs` variable renders them at read time |
 
 Held (crew Q4 (a)): deleting the gate-off rewrites waits for the owner to move the label; each is
 listed with the replay diff it would need. Gated off under the CLOSED LISTS path today:
