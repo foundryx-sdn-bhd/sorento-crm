@@ -165,6 +165,10 @@ def test_a_model_born_after_the_move_keeps_the_prefix_convention_it_was_born_wit
 
     assert _audit_entity_type(StockDebtSnapshot) == "project_stock_debt_snapshots"
     assert _audit_entity_type(StockDebtSnapshotRow) == "project_stock_debt_snapshot_rows"
+    # SR-CORE (#1718): the same convention, pinned at birth.
+    from app.models.sample_request import SampleRequest
+
+    assert _audit_entity_type(SampleRequest) == "project_sample_requests"
 
 
 def test_every_renamed_model_pins_its_pre_move_audit_entity_type():

@@ -1127,6 +1127,8 @@ def test_another_companys_scope_cannot_read_the_request(world):
         assert world.db.query(SampleRequest).filter(SampleRequest.id == rid).first() is None
 
     assert world.api.as_(world.admin).get(f"{SR}/{rid}").status_code == 200
+    rows = world.api.as_(world.admin).get(SR, params={"status": "draft"}).json()["data"]
+    assert rid in {r["id"] for r in rows}
 
 
 def test_review_r12_customer_name_sort_uses_the_debtor_name_too(world):

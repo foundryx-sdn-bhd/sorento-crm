@@ -1,6 +1,6 @@
 # PLAN: guard tests know #1718's projects tables (RELEASE-FIX-1017C)
 
-Status: implemented (PR #1763). Small fix track: tests only, no product code, no migration.
+Status: implemented (PR #1763). Small fix track: tests plus one product line (`REVISABLE_PORTAL_FORM_TYPES`), no migration.
 
 ## Problem
 
