@@ -399,6 +399,63 @@ def test_another_companys_warehouse_never_appears(scm_app):
     assert body["totals"]["on_hand"] == 3
 
 
+def test_another_companys_documents_packing_lists_and_products_never_appear(scm_app):
+    """Security re-review S-A / S-B: every read is pinned to the caller's company, the ones
+    no visible-warehouse filter sits behind (Incoming PL, the summary, the product) included."""
+    from app.models.company import Company
+    from app.models.product import Product
+
+    app, db, w, p = _setup(scm_app)
+    mine = _wh(db, "MINE")
+    _on_hand(db, p, mine, 3)
+    other = str(uuid.uuid4())
+    db.add(Company(id=other, name=f"{MARKER} other {other[:6]}",
+                   code=f"{MARKER}O{uuid.uuid4().hex[:6]}".upper(), is_active=True))
+    db.flush()
+    uid = lambda: str(uuid.uuid4())  # noqa: E731
+    theirs = Warehouse(id=uid(), warehouse_code=f"{MARKER}-THEIRS-{uid()[:6]}", warehouse_name="other",
+                       is_active=True, company_id=other)
+    db.add(theirs)
+    db.flush()
+    db.add(Stock(id=uid(), product_id=p.id, warehouse_id=theirs.id, quantity_on_hand=99, company_id=other))
+    so = SalesOrder(id=uid(), so_number=f"{MARKER}-THEIR-SO", status="open", demand_class="retail",
+                    order_date=date(2026, 9, 1), company_id=other)
+    po = PurchaseOrder(id=uid(), po_number=f"{MARKER}-THEIR-PO", supplier_id=w.supplier.id,
+                       issue_date=date(2026, 8, 1), status="active", company_id=other)
+    ship = InboundShipment(id=uid(), shipment_number=f"{MARKER}-THEIR-PL", supplier_id=w.supplier.id,
+                           shipment_date=date(2026, 9, 20), shipment_status="in_transit",
+                           estimated_arrival_date=date(2026, 10, 20), shipping_container_number="THEIR1234567",
+                           company_id=other)
+    db.add_all([so, po, ship])
+    db.flush()
+    db.add_all([
+        SalesOrderLine(id=uid(), sales_order_id=so.id, product_id=p.id, warehouse_id=theirs.id, qty_ordered=40,
+                       qty_delivered=0, line_status="open", company_id=other),
+        PurchaseOrderLine(id=uid(), purchase_order_id=po.id, product_id=p.id, warehouse_id=theirs.id,
+                          qty_ordered=30, qty_received=0, line_status="open", company_id=other),
+        InboundShipmentLine(id=uid(), shipment_id=ship.id, product_id=p.id, quantity_shipped=70,
+                            quantity_received=0, company_id=other),
+        SPOAllocation(id=uid(), spo_number=f"{MARKER}-THEIR-SPO", spo_line_number=1, inbound_shipment_id=ship.id,
+                      product_id=p.id, warehouse_id=theirs.id, allocated_quantity=20, quantity_received=0,
+                      supplier_id=w.supplier.id, company_id=other),
+    ])
+    their_product = Product(id=uid(), product_code=f"{MARKER}-THEIRS-{uid()[:6]}", product_name="theirs",
+                            category_id=p.category_id, base_uom_id=p.base_uom_id, list_price=0, is_active=True,
+                            is_discontinued=False, company_id=other)
+    db.add(their_product)
+    db.flush()
+
+    body = _get(app, p)
+
+    assert body["incoming_pl"] == []
+    assert (body["sales_orders"], body["purchase_orders"], body["spos"]) == ([], [], [])
+    assert {k: body["totals"][k] for k in ("on_hand", "so_qty", "po_qty", "spo_qty", "incoming_pl")} == {
+        "on_hand": 3, "so_qty": 0, "po_qty": 0, "spo_qty": 0, "incoming_pl": 0}
+    summary = TestClient(app).get(SUMMARY_URL, params={"product_ids": f"{p.id},{their_product.id}"}).json()
+    assert summary == [{"product_id": str(p.id), "on_hand": 3, "so_qty": 0}]
+    assert TestClient(app).get(URL, params={"product_id": str(their_product.id)}).status_code == 404
+
+
 # ---------------------------------------------------------------- summary (item chips in lists)
 SUMMARY_URL = "/api/v1/inventory/stock-status/summary"
 
