@@ -123,3 +123,24 @@ branch). EVAL-BENCH's answer.py clash patch with #1760 is applied when crew rela
 - train2_code main arm (63f4fe47c + v63): REAL 158/192 (82.3%), USD 1.23. Lane arm and a main re-run wait for
   EVAL-BENCH's replay.py scope-listener fix (#1775): replay.py never registered the listeners, so cp0-f61e0d4814 was
   an unscoped eval read, not a prod leak. Live runs use stack-ccl.env (own ports 8192 / 8292).
+
+### Round 2 progress (18 Oct)
+
+- R2-5 measured (parser gold, N=3): when-deliver positives v163 0/42, v169 21/42, v170 31/42; negatives 30/30. Left:
+  Malay "sampai ke kedai" (arrival-close) and a first-person recipient ("delivered to us"); not chased (anti-overfit).
+- R2-3 made-up family codes: TRAIN $0 repro finds only deterministic resolver lists (did-you-mean, Related products,
+  Which product) naming scoped catalogue candidates absent from tool_results; crew default is a grader gap (a59234050).
+- Round-2 review: blocker (R2-4 tie refusal on an exact typed code) red 43573ebbec, fix 2dcb5c0eba; held member
+  localised + miss extras red 9890016a2a, fix 66de1934e3, unplaced line parity red 7c9093a071, fix 7254e96dd0;
+  parser_gold pin check red 3e90f663ce, fix 0210e3dced. Re-review READY; L1 at 0210e3dced 0 / 1506 grounding,
+  0 / 585 turn. Security PASS.
+- R2-6 (crew option (c), prompt-only "pick a near code only when no other listed code is as close") had no effect and
+  was reverted (a6bbb39199). One experiment with the D2 shortlist score shown on each near-code line (v173, patch
+  kept at scratchpad exp_c_score_lines.patch, never committed) had no effect either: with three near codes listed at an
+  equal visible score 0.64, the parser still picked the first one 3/3. Parser gold N=3 on v170 / v171 / v172 / v173:
+  amb 0/18, tie 0/12, part 0/12, trans 6/12 on every version.
+- Finding: the parser (gpt-5.4-mini) picks the FIRST listed near code whatever the prompt says (it ignores an explicit
+  equal-tie rule and visible equal scores; position bias). R2-4's post-parse refusal is the only effective guard for
+  true ties and partials. The csk11b class (one near code scores higher) stays red. Crew raises the parser-model
+  choice with the owner.
+- The dead "Several listed codes" pick-none sentences were dropped (d422b3afce, v172).
