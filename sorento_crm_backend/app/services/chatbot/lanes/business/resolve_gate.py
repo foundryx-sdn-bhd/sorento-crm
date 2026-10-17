@@ -158,6 +158,16 @@ def _parser_output(ctx: dict[str, Any]) -> dict[str, Any]:
     return output if isinstance(output, dict) else {}
 
 
+def held_product_uuids(ctx: dict[str, Any]) -> frozenset[str]:
+    """The products the conversation held before this message: the stored focus, read the
+    way the engine loads it (`turn_runtime.load_state`)."""
+    from app.services.chatbot import session_state
+    from app.services.chatbot.turn.state import focus_from_wire
+
+    focus = focus_from_wire(session_state.five_keys(jsc.get(ctx, "session")).get("focus"))
+    return frozenset(str(p["uuid"]) for p in focus.products or [] if isinstance(p, dict) and p.get("uuid"))
+
+
 def _prev_variables(ctx: dict[str, Any]) -> dict[str, Any]:
     """The previous turn's session variables, both shapes (`head/route._prev_variables`)."""
     session = jsc.get(ctx, "session")
@@ -1489,6 +1499,9 @@ def run(
         tier_gate=tier_gate_out,
         aggregate=aggregate,
         roster_caps=roster_caps,
+        # HELD-FAMILY runs under the CLOSED LISTS gate only (production keeps the picker
+        # PR #833 round 13 pinned until the owner moves the label).
+        held_product_uuids=held_product_uuids(ctx) if parser.get("closed_lists") else None,
     )
     gate_snapshot = _snapshot(gate_item)
 

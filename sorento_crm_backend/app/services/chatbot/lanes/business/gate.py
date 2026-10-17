@@ -392,8 +392,13 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
     tier_gate: dict[str, Any] | None = None,
     aggregate: dict[str, Any] | None = None,
     roster_caps: Mapping[str, int] | None = None,
+    held_product_uuids: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     """`disallowed-entity-gate`'s output item. `item` is mutated and returned, as in JS.
+
+    `held_product_uuids` (CHAT-CLOSED-LISTS HELD-FAMILY): the products the conversation
+    already held before this message. A product picker whose candidates for a token hold
+    exactly one of them is no choice: that product is the token.
 
     `roster_caps` (PLAN-chatbot-answer-half-reattach.md "Roster cap", owner ruling
     20 Sep 2026) is `{entity kind: chatbot_entity_kinds.roster_cap}`, read at the two
@@ -899,6 +904,19 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                 )
                 if len(option["candidates"]) > 0
             ]
+
+        if len(specific_options) > 0 and held_product_uuids:
+            # HELD-FAMILY (CHAT-STATE handoff, 17 Oct 2026): "incoming srtwc286?" with
+            # SRTWC286-SH held is about the held variant. Exactly one held candidate settles
+            # the token; two or none leave the picker. Data only: no word is read.
+            unsettled: list[dict[str, Any]] = []
+            for o in specific_options:
+                held = [c for c in o["candidates"] if str(c.get("uuid")) in held_product_uuids]
+                if len(held) == 1:
+                    exact_entities.append({"uuid": held[0]["uuid"], "entity_type": "product", "code": held[0]["label"]})
+                else:
+                    unsettled.append(o)
+            specific_options = unsettled
 
         if len(specific_options) > 0:
             require_specific = True

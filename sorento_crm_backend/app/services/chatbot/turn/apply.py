@@ -2299,6 +2299,7 @@ def _narrow_and_plan(
     candidates: dict[str, list[dict[str, Any]]] | None = None,
     unplaced: frozenset[str] | set[str] | None = None,
     refuse_empty_subject: bool = False,
+    held_product_uuids: frozenset[str] = frozenset(),
 ) -> Plan:
     denied: list[str] = []
     ask: Pending | None = None
@@ -2344,6 +2345,7 @@ def _narrow_and_plan(
                 # rosters already read through `roster_caps` - never `narrow.py`'s
                 # module literal.
                 roster_cap=getattr(policy.kind(kind), "roster_cap", None),
+                held_uuids=held_product_uuids if kind == "product" else frozenset(),
             )
             trace.narrowing.append(f"{name}.{kind}:{outcome.note or policy_value}")
             if outcome.ask_kind:
@@ -3743,6 +3745,15 @@ def _apply(
         attributes,
         candidates,
         unplaced,
+        # HELD-FAMILY: the products the conversation held BEFORE this message; none when
+        # the parser read the message as asking for the whole family.
+        held_product_uuids=(
+            frozenset()
+            if verdict.get("family") is True or verdict.get("broaden_to") or not verdict.get("closed_lists")
+            else frozenset(
+                str(p["uuid"]) for p in state.focus.products or [] if isinstance(p, dict) and p.get("uuid")
+            )
+        ),
         # Ported from PR #1118 (not merged), review round 9 finding 4 / D34 round 11:
         # a bare quantity with nothing open, or a cancel that names nothing, is not a
         # subject - see `_narrow_and_plan`'s own comment on `refuse_empty_subject`.
