@@ -2017,7 +2017,7 @@ def _options(
                 reason=reason,
                 fulfil_date=fulfil,
                 # Wording: a masked delay is counted late from the date the viewer sees.
-                days_late=_days_late(spo_supply.shown_date(fulfil) or fulfil, required_date),
+                days_late=_days_late(spo_supply.shown_date(fulfil), required_date),
                 debt_so_number=offer.donor_so_number if debt and offer else None,
                 debt_month=(
                     month_key(offer.donor_required_date)
@@ -2030,9 +2030,9 @@ def _options(
     return tuple(out)
 
 
-def _days_late(fulfil: date, required_date: Optional[date]) -> int:
+def _days_late(fulfil: Optional[date], required_date: Optional[date]) -> int:
     """Never negative: landing before the required date is ON TIME, not minus six days."""
-    if required_date is None:
+    if required_date is None or fulfil is None:
         return 0
     return max((fulfil - required_date).days, 0)
 
