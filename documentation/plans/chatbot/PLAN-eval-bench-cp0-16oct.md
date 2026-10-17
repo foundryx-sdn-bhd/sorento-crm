@@ -362,6 +362,10 @@ price tier before finding any product, five run results, now fail), attachment 6
     from the original gold: only this item changes.
   - 4dfbcd267e (bench, crew `reexport.py`): ideas-lane items cannot run live (train_followups README), and the train
     export still carried 2 of them (4dfbcd267e, 99bb47ce6d). The export now drops `ideas` items: 86 -> 84.
-  - c7ec5f1c31 (crew ruling (a), 17 Oct): grader unchanged, by the round 25 rule (a list left open is a picker except on
-    spec answers). The related-products picker left open after a full exact answer is a bot defect, logged for the
-    answer-composer work.
+  - c7ec5f1c31: HELD (crew, 17 Oct, asking the owner). No change to the bot, the grader or the gold. The bot's picker
+    is the sibling picker that `lanes/business/answer.py:4846-4848` documents as an owner ruling ("ALWAYS a numbered
+    picker whenever at least one sibling exists ... the owner reversed the earlier split"). The grader's round 25
+    rule (`targets.py` `_picker_check`: a list left open is a picker unless the gold is `ambiguous`, except on spec
+    answers) fails it. The same rule decides held-out rows that fail on `no_picker` alone: per run 1/2/3, code
+    lookups 13 / 13 / 14 of 149, attachment 1 / 1 / 0, follow-ups 4 / 4 / 4, scope 1 / 2 / 3 (UNVERIFIED how many of
+    them are sibling pickers). The owner's answer decides whether that rule changes.
