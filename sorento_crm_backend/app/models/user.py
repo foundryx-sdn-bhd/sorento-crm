@@ -447,6 +447,10 @@ class SystemSetting(Base):
     cost_price_verification_enabled = Column(
         Boolean, nullable=False, server_default="false", default=False
     )
+    # Sample requests (SR-CORE card rules 2 and 3): soft-transition switches, OFF on deploy.
+    sample_request_require_project = Column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
     # How many days an untouched price tag collection waits before the sweep
     # closes it (r9 D10). 0 turns the sweep off; 7 is the shipped default.
     price_tag_auto_collect_days = Column(

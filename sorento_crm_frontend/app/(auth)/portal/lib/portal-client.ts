@@ -1214,6 +1214,8 @@ export const AI_EXTRACT_FORM_KEYS: Record<PortalLandingKind, string> = {
   // prefix as every other portal form key (Phase 1 briefly had this as a
   // bare `price_tag_request` - wrong; fixed to match convention).
   price_tag_request: 'portal.price_tag_request',
+  // Never read: the sample request form offers no AI extract.
+  sample_request: 'portal.sample_request',
   // Never read: the opportunity form offers no AI extract. Present because the map is keyed
   // by every landing kind.
   sales_opportunity: 'portal.sales_opportunity',
