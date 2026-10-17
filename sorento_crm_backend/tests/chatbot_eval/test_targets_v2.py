@@ -2196,3 +2196,50 @@ def test_r29b_without_none_on_record_a_none_reply_still_fails_on_shown():
     res = _r29b("Here's what you want: chrome taps\n\nBut none matched. Please refer to your salesman.", SPEC_ITEM)
     assert res["checks"].get("shown") is False and "none_on_record" not in res["checks"], res["checks"]
     assert res["passed"] is False and res["reason"] == "The reply showed no product.", res["reason"]
+
+
+# round 29c: the bot's own quantity slots and menus are not an answer
+QTY_BLOCKED_29C = "The bot asked how many instead of giving the answer."
+
+
+def _r29c(reply, slice_="scope", message="any promo for SRTA100 and SRTA200", **gold):
+    return grade_turn(row2(message=message, reply=reply), item(slice_, **gold))
+
+
+def _r29c_blocked(res):
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+    assert res["reason"] == QTY_BLOCKED_29C, res["reason"]
+
+
+def test_r29c_quantity_slot_lines_are_not_a_promotion_answer():
+    _r29c_blocked(_r29c("How many units for each?\n1. SRTA100 - \n2. SRTA200 - ", fact="promotion"))
+
+
+def test_r29c_a_filled_slot_number_is_not_a_files_answer():
+    _r29c_blocked(_r29c("How many units for each?\n1. SRTA100 - 10\n2. SRTA200 - ",
+                        message="send the brochures of SRTA100 and SRTA200", fact="product_attachment", fact_label="files"))
+
+
+def test_r29c_menu_option_lines_are_not_a_promotion_answer():
+    _r29c_blocked(_r29c("How many units do you need?\nWhich access level?\n1. Office\n2. Dealer", fact="promotion"))
+
+
+def test_r29c_a_chinese_how_many_is_a_how_many():
+    _r29c_blocked(_r29c("SRTA100 需要多少件？", fact="promotion"))
+
+
+def test_r29c_a_code_and_the_question_on_one_line_is_not_an_answer():
+    _r29c_blocked(_r29c("SRTMCB21616: how many units do you need?", message="send the brochure of SRTMCB21616",
+                        fact="product_attachment", fact_label="files"))
+
+
+def test_r29c_an_attachment_item_with_no_fact_answered_only_by_how_many_fails():
+    res = grade_turn(row2(message="send the brochure of SRTMCB21616", reply="How many units of SRTMCB21616?"),
+                     item("attachment"))
+    assert res["checks"].get("no_qty_ask") is False, res["checks"]
+
+
+def test_r29c_a_promotion_answer_block_beside_a_how_many_is_an_answer():
+    reply = "How many units do you need?\n\n1. *Promotion:* CABANA COMBINE PROMO DEALER_08072026.pdf"
+    res = _r29c(reply, message="any promo for SRTA100", fact="promotion")
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
