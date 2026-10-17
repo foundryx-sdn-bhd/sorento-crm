@@ -128,6 +128,8 @@ class SystemSettingUpdate(BaseModel):
     # on, a staff upload goes through Submit/Decide/Return before Apply. Same rule again -
     # must appear here AND in the GET dict below.
     cost_price_verification_enabled: Optional[bool] = None
+    # Sample requests (SR-CORE, card rule 2): soft-transition switch, OFF on deploy. Must appear here, in the GET dict, and in AppConfigResponse below.
+    sample_request_require_project: Optional[bool] = None
     # Chatbot media endpoint (PLAN-chatbot-media-endpoint section 2.4). Same rule
     # again - every one of these must ALSO appear in the GET dict below.
     #
@@ -245,6 +247,9 @@ class AppConfigResponse(BaseModel):
     #: `price_tag_auto_collect_days` is here. A warehouse id, never rendered as text -
     #: only matched against the dialog's own resolved pool options.
     oi_reserve_default_pool_warehouse_id: Optional[str] = None
+    #: SR-CORE: a salesperson's sample request form must know whether to require a
+    #: registered project, and holds no `user_management.settings.view`.
+    sample_request_require_project: bool = False
 
 
 @router.get("/")
@@ -414,6 +419,9 @@ async def get_settings(
                 "cost_price_verification_enabled": (
                     bool(getattr(settings, "cost_price_verification_enabled", False)) if settings else False
                 ),
+                "sample_request_require_project": (
+                    bool(getattr(settings, "sample_request_require_project", False)) if settings else False
+                ),
                 # Chatbot media. NULL is meaningful for the three model columns:
                 # provider/model inherit the AIAssistantConfig row, and a NULL
                 # degraded model means the monthly quota is a hard stop rather
@@ -529,6 +537,9 @@ async def get_app_config(
                 getattr(settings, "oi_reserve_default_pool_warehouse_id", None)
                 if settings
                 else None
+            ),
+            sample_request_require_project=bool(
+                getattr(settings, "sample_request_require_project", False)
             ),
         )
     except Exception as e:
@@ -1054,6 +1065,11 @@ def _update_general_settings_impl(settings_data: SystemSettingUpdate, db: Sessio
         and bool(update_data["cost_price_verification_enabled"])
         != bool(getattr(settings, "cost_price_verification_enabled", False))
     )
+
+    # NOT NULL booleans: an explicit null would 500 at commit, so it reads as "off".
+    for column in ("sample_request_require_project",):
+        if column in update_data and update_data[column] is None:
+            update_data[column] = False
 
     for key, value in update_data.items():
         setattr(settings, key, value)
