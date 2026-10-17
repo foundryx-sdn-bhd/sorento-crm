@@ -12,6 +12,8 @@ import CustomerForm from '../../components/CustomerForm';
 import { useCustomerTabs, type CustomerTab } from '../../components/CustomerDetail';
 import { CustomerAsksTab } from '../../components/CustomerAsksTab';
 import { CustomerBranchesTab } from '../../components/CustomerBranchesTab';
+import BillingDocumentsView from '@/app/(protected)/finance/billing-documents/components/BillingDocumentsView';
+import { CustomerOutstandingMeta } from '@/app/(protected)/finance/billing-documents/components/CustomerOutstandingMeta';
 
 export default function EditCustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -37,6 +39,7 @@ export default function EditCustomerPage({ params }: { params: Promise<{ id: str
         />
       </Container>
       <Container>
+        <CustomerOutstandingMeta customerId={id} className="mb-4" />
         {/* Same tabs, same order as the customer's view page (view = edit). */}
         <Tabs value={tab} onValueChange={(v) => setTab(v as CustomerTab)}>
           <TabsList variant="line" className="mb-5">
@@ -60,6 +63,9 @@ export default function EditCustomerPage({ params }: { params: Promise<{ id: str
           </TabsContent>
           <TabsContent value="asks">
             {tab === 'asks' && <CustomerAsksTab customerId={id} />}
+          </TabsContent>
+          <TabsContent value="billing">
+            {tab === 'billing' && <BillingDocumentsView customerId={id} />}
           </TabsContent>
         </Tabs>
       </Container>

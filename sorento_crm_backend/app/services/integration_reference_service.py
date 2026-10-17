@@ -77,6 +77,9 @@ SUPPORTED_ENTITY_TYPES = {
     # Finance S0 (#1309, contract 2.6): `finance.billing_documents`. The one entity type
     # whose table is not in `public`; see `_module_table`.
     "billing_documents",
+    # AC-BILLING S5 (contract 2.10): a debtor ref -> the customer it was pushed for. The key
+    # that makes the first push `created`; the entity is the customer's row.
+    "ar_outstanding",
 }
 
 # Tables where a row serves every company (`company_id` NULL). Moved here from
@@ -129,6 +132,10 @@ def _module_table(entity_type: str):
 
         return BillingDocument.__table__
     return None
+
+
+#: Types whose reference points at another type's rows (a debtor ref names the customer).
+_TABLE_OF = {"ar_outstanding": "customers"}
 
 
 def _require_supported(entity_type: str) -> str:
@@ -357,7 +364,7 @@ class IntegrationReferenceService:
     def _entity_exists(self, entity_type: str, entity_id: str) -> bool:
         # entity_type is interpolated only after passing the allowlist; the id
         # is always a bound parameter.
-        table = _require_supported(entity_type)
+        table = _TABLE_OF.get(_require_supported(entity_type), entity_type)
         module_table = _module_table(entity_type)
         if module_table is not None:
             # Through the Table, never the bare name: the table lives in a module schema that

@@ -5,7 +5,7 @@ Status: **S0 merged on main via PR #1314 (fcbfa379); S1 built, in review on PR #
 `fin_0002_billing_demand_class` on `fin_0001_billing_documents`). Round 3 (27 Sep): the
 owner's round 2 answers are folded in (section 0.1): Q5 No, Q14 the sales order type, Q15 the
 invoice's own agent, Q16 the Roles screen. Section 3.4 and UAC S1-4, S1-5, S1-9, S1-10 are
-rewritten to the sales order type grouping.** S2 to S4 not started.
+rewritten to the sales order type grouping.** S1 merged (#1321). Lane AC-BILLING (17 Oct, full track): S2 to S4 plus outstanding per invoice and per customer (owner 15 Oct, overrides section 7), design card approved 18 Oct (`CARD-ac-billing-17oct.md`); S2, S3 and S5 built on PR #1770 (reviewed, security-reviewed, browser pass PASS), owner hand test pending; S4 and the live checks wait for AutoCount access after 25 Oct; schema reference `REF-autocount-billing-schema.md`.
 Track: full (new module and schema, migration, new permissions, a new external ingest entity).
 Domain: finance. Classification: **MODULE `finance`** (installable per tenant: another AutoCount
 customer would turn it on; `app_modules_catalog` row + `require_module_enabled_with_api_key`).
@@ -550,6 +550,8 @@ rulings changed.
 | **S3** | Billing on the SO record and the customer record. | S3-1 to S3-3 | S2 | You leave the SO to find its invoice -> the SO and customer show theirs. |
 | **S4** (round 2: start date on the shared service, tally from 2024) | History backfill runbook and the tally against the PDF. | S4-1 to S4-3 | S0, NDA, shared-service sink | The basis has only new documents -> history from the shared service's start date (1 Jan 2023 planned) in the CRM, 2024 onwards tallied. |
 
+| **S5** (lane AC-BILLING, owner 15 Oct) | Outstanding per invoice and per customer, read-only: migration `fin_0003_billing_outstanding`, ingest entity `ar_outstanding` (contract 2.10, cross-repo plan section 14), `customers.ar_outstanding` / `ar_as_of` written, shown on the list, record, customer and SO pages. Card `CARD-ac-billing-17oct.md`. | S5-1 to S5-10 | S0, S2 | Nobody in the CRM sees what a customer owes -> per invoice and per customer, as AutoCount states it. |
+
 S1 and S2 can run in parallel lanes after S0 (different files: reports kernel vs finance pages).
 Per the lane rule (CLAUDE.md "Lane merge discipline"), S0 to S3 land as commits on one feature
 lane unless the owner splits S1 out to ride with #1269's follow-ups. S0 is briefed to build now
@@ -590,6 +592,8 @@ S2 blocking S3. S0's ticket can open now; S1's waits on Q14 and Q15.
 
 ## 7. Not built, and the trigger for each
 
+- **Superseded in part by the owner, 15 Oct:** outstanding per invoice and per customer is now S5
+  (amount and due date only). Receipts, knock-offs and ageing stay below.
 - **Receipts and payments (AutoCount AR Payment / Official Receipt), outstanding per invoice, paid
   status:** the owner asks for collections or a customer's balance in the CRM. Then a
   `finance.receipts` table and a knock-off table.

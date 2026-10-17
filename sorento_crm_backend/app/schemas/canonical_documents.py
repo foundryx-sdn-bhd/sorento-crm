@@ -27,7 +27,7 @@ what a customer is charged.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Annotated, Any, Optional
 
@@ -532,6 +532,68 @@ class CanonicalBillingDocument(_Canonical):
         if value is not None and value.tzinfo is not None:
             return value.astimezone(timezone.utc).replace(tzinfo=None)
         return value
+
+
+class CanonicalArOutstandingDocument(BaseModel):
+    """One open item of a debtor in an `ar_outstanding` record (contract 2.10): the billing
+    document it belongs to (its 2.6 `source_ref`) and what is still owed on it. A credit note's
+    unapplied amount is negative."""
+
+    model_config = INGEST_MODEL_CONFIG
+
+    @model_validator(mode="before")
+    @classmethod
+    def _note_unknown(cls, data):
+        note_unknown_fields(cls, data)
+        return data
+
+    source_ref: str = Field(..., min_length=1, max_length=255)
+    outstanding: _Money
+    due_date: Optional[date] = None
+
+
+class CanonicalArOutstanding(_Canonical):
+    """One debtor's whole outstanding position (contract 2.10, AC-BILLING S5).
+
+    `source_ref` is `{database}:debtor:{AutoKey}`. `total_outstanding` is AutoCount's own
+    figure for the debtor in MYR; `documents` lists every open item, so a stored billing
+    document of the customer that is not listed is paid. `as_of` is when AutoCount was read
+    (like `source_modified_at`: an aware value is converted to naive UTC).
+    """
+
+    customer_ref: Optional[str] = Field(None, max_length=255)
+    customer_code: Optional[str] = Field(None, max_length=64)
+    as_of: datetime
+    total_outstanding: _Money
+    # SEC5: a cap on the cardinality, the same as every other document.
+    documents: list[CanonicalArOutstandingDocument] = Field(default_factory=list, max_length=5000)
+
+    @field_validator("as_of")
+    @classmethod
+    def _naive_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is not None:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+
+def ar_outstanding_errors(payload: CanonicalArOutstanding) -> dict[str, str]:
+    """The cross-field rules, keyed by the field they concern (see `billing_document_errors`)."""
+    errors: dict[str, str] = {}
+    if not payload.customer_ref and not payload.customer_code:
+        errors["customer_ref"] = "customer_ref or customer_code is required"
+    # as_of is naive UTC; a clock a day ahead is tolerated, a reading from the future is not
+    # (it would win the stale guard against every honest push after it).
+    if payload.as_of > datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1):
+        errors["as_of"] = "as_of cannot be in the future"
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for document in payload.documents:
+        if document.source_ref in seen:
+            duplicates.add(document.source_ref)
+        seen.add(document.source_ref)
+    if duplicates:
+        errors["documents"] = f"duplicate document source_ref: {', '.join(sorted(duplicates))}"
+    return errors
 
 
 def billing_document_errors(payload: CanonicalBillingDocument) -> dict[str, str]:

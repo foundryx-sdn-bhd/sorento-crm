@@ -45,6 +45,13 @@ vi.mock('../../components/CustomerAsksTab', () => ({
   CustomerAsksTab: ({ customerId }: { customerId: string }) => <div>asks of {customerId}</div>,
 }));
 
+vi.mock('@/app/(protected)/finance/billing-documents/components/CustomerOutstandingMeta', () => ({
+  CustomerOutstandingMeta: () => null,
+}));
+vi.mock('@/app/(protected)/finance/billing-documents/components/BillingDocumentsView', () => ({
+  default: () => null,
+}));
+
 import EditCustomerPage from './page';
 
 describe('EditCustomerPage - tabs', () => {

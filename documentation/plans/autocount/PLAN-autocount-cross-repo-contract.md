@@ -764,3 +764,69 @@ yesterday and today (Malaysia time); backfill by DocDate one day per call from 1
 branches daily and before the backfill; the deletion sweep over a trailing DocDate window
 (45 days, scout Q9); push each record verbatim with the envelope above; the per-entity pull /
 push switch (ruling Q5).
+
+## 14. ar_outstanding (contract 2.10) and the billing pull
+
+17 Oct 2026, lane AC-BILLING (PR #1770). Card: `documentation/plans/finance/CARD-ac-billing-17oct.md`;
+UAC `finance-billing-documents-27sep-acceptance-criteria.md` S5; AutoCount schema reference
+`documentation/plans/finance/REF-autocount-billing-schema.md`. The CRM side is built in this lane; the
+shared service's billing presets and AR sweep are not (they need SELECT on the billing and AR tables,
+after 25 Oct). Owner 15 Oct: outstanding per invoice and per customer, read-only; crew answers 17 Oct
+Q1 (a) AutoCount's own debtor figure, Q3 (a) a per-debtor snapshot, Q4 (a) exact DO-line hop, Q5 (a)
+amount and due date only (no receipts, knock-offs or ageing).
+
+### 14.1 Doors
+
+| Call | Slug | Body |
+| --- | --- | --- |
+| `POST /api/v1/external/ingest/ar_outstanding` (`?dry_run=true` optional) | `finance.billing_documents.edit` | `{"companyCode": "SRT", "records": [...]}` |
+| `POST /api/v1/external/read/ar_outstanding` | `finance.billing_documents.view` | `{"companyCode": "SRT", "source_refs": [...]}` |
+
+No deletions door: a debtor with nothing open is pushed with `total_outstanding: 0` and `documents: []`.
+`GET /api/v1/external/contract` answers `"version": "2.10"`.
+
+### 14.2 Record (one per debtor, the whole truth for that debtor)
+
+```json
+{
+  "source_ref": "SRT_DB:debtor:1234",
+  "customer_ref": "SRT_DB:1234", "customer_code": "300-R009",
+  "as_of": "2026-10-26T09:00:00",
+  "total_outstanding": 15230.40,
+  "documents": [
+    {"source_ref": "SRT_DB:IV:88213", "outstanding": 1100.00, "due_date": "2026-11-25"},
+    {"source_ref": "SRT_DB:CN:4410", "outstanding": -200.00, "due_date": null}
+  ]
+}
+```
+
+- `source_ref` `{db}:debtor:{Debtor.AutoKey}`; `customer_ref` / `customer_code` resolve the customer
+  (ref, then code) inside the anchor company; unresolved is `failed` with `errors.customer_ref`, never created.
+- `total_outstanding`: AutoCount's own figure for the debtor in MYR (Q1 (a)), written to
+  `customers.ar_outstanding`; `as_of` to `customers.ar_as_of`.
+- `documents`: every OPEN AR item of the debtor whose AR row comes from an IV, CS, DN (`Outstanding`) or a
+  CN (unapplied `NetTotal - KnockOffAmt`, sent negative), keyed by the billing document's 2.6 ref
+  `{db}:{IV|CS|CN|DN}:{DocKey}`. AR entries keyed straight into AR are in the total, not in the list.
+- A stored billing document of that customer with a non-zero outstanding that the push does not list is set
+  to 0 (paid). A listed ref not in the CRM (or not that customer's) is skipped: warning `documents_unknown`.
+- Stale guard on `as_of` against the stored `ar_as_of`: older is `unchanged` + `stale_ignored`; identical is
+  `unchanged`. A first push for the debtor ref is `created`, later ones `updated`.
+
+### 14.3 What the shared service must add
+
+- **Billing presets (sink 2.6, section 12).** Four SQL presets (IV, CS, CN, DN) on the `_linked_preset`
+  pattern, `key_columns=("DocKey",)`, watermark `LastModified`, `doc_date_column="DocDate"`, `from_date`
+  2023-01-01; header and line mapping per the schema reference sections 2-3; the billing line cut (keep
+  non-zero `SubTotal`, drop pure text lines); line fingerprint `COUNT(*), SUM(Qty), SUM(SubTotal), SUM(Tax),
+  MAX(DtlKey), COUNT(FromDocDtlKey)` (+ `SUM(TransferedQty)` on IVDTL / CSDTL) in the header and the sweep;
+  push IV and CS before CN and DN; reconcile vanishings to `/billing_documents/deletions`.
+- **Line source refs.** `FromDocType='SO'`: the SO line's own ref `{db}:{SO.DocKey}:{SODTL.DtlKey}`.
+  `'DO'`: `{book}:DO:{DocKey}:{DtlKey}` with the DO feed's book (section 13), so the CRM finds its own DO
+  line exactly by `(book, doc_key, dtl_key)` and takes that line's sales order line. The hop is decided when the invoice is pushed, so the DO
+  backfill must reach a day before that day's invoices are pushed; an invoice pushed before its DO stays
+  unlinked until the invoice is pushed again. `'IV'` (CN lines):
+  `{db}:IV:{DocKey}:{DtlKey}`. NULL `FromDocDtlKey`: send `from_doc_type` / `from_doc_no`, no ref.
+- **AR sweep (sink 2.10).** Over `ARInvoice`, `ARDN`, `ARCN` per `DebtorCode`; a per-debtor fingerprint
+  `SUM(Outstanding), COUNT(open), MAX(LastModified)` picks the debtors to push (a knock-off may not bump any
+  `LastModified`); hourly, plus a daily full pass. AR row -> billing ref by `SourceType` / `SourceKey` if
+  those columns exist, else `DocNo` + `DebtorCode` (to confirm on access).

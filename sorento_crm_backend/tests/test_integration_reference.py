@@ -155,6 +155,8 @@ class TestEntityTypeAllowlist:
             "brands",
             # Finance S0 (#1309): billing document headers, in the `finance` schema.
             "billing_documents",
+            # AC-BILLING S5 (contract 2.10): a debtor ref, pointing at the customer's row.
+            "ar_outstanding",
         }
 
     def test_every_supported_type_names_a_real_table(self, db):
@@ -173,7 +175,11 @@ class TestEntityTypeAllowlist:
         module_types = {t for t in SUPPORTED_ENTITY_TYPES if _module_table(t) is not None}
         assert module_types == {"billing_documents"}
         assert _module_table("billing_documents").fullname == "finance.billing_documents"
-        assert SUPPORTED_ENTITY_TYPES - module_types <= existing
+        from app.services.integration_reference_service import _TABLE_OF
+
+        # A type that points at another type's rows is checked as that type's table.
+        assert SUPPORTED_ENTITY_TYPES - module_types - set(_TABLE_OF) <= existing
+        assert set(_TABLE_OF.values()) <= existing
 
     def test_unknown_entity_type_is_rejected_on_link(self, svc):
         with pytest.raises(UnsupportedEntityType):

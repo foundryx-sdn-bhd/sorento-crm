@@ -117,6 +117,12 @@ class BillingDocument(CompanyScopedMixin, Base):
     # PROJECT TEAM blocks of the invoiced basis. Decided at ingest by `classify_document`,
     # the ladder the SO feed shares; NULL when nothing classifies (the report's `(blank)`).
     demand_class = Column(String(32), nullable=True)
+    # AutoCount's open balance (AC-BILLING S5, contract 2.10), written only by the
+    # `ar_outstanding` push. NULL is "not synced or not posted to GL" and is shown blank,
+    # never 0; a credit note's unapplied amount is negative.
+    outstanding = Column(Numeric(15, 2), nullable=True)
+    due_date = Column(Date, nullable=True)
+    outstanding_as_of = Column(DateTime(timezone=False), nullable=True)
     source_system = Column(
         String(50), nullable=False, default="autocount", server_default="autocount"
     )

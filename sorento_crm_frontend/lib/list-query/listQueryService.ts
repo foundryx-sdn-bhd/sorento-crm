@@ -9,7 +9,8 @@ export type ListQueryResourceKey =
   | 'workflow_form_submissions'
   | 'commercial_activities'
   | 'commercial_activity_tasks'
-  | 'commercial_project_tasks';
+  | 'commercial_project_tasks'
+  | 'finance_billing_documents';
 
 export type ListQueryFilterCondition = {
   field_key: string;

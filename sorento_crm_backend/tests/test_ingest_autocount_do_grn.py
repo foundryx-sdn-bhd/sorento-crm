@@ -438,7 +438,7 @@ def test_contract_lists_2_7_entities(env):
     """AC-AG014."""
     body = env.client.get("/api/v1/external/contract").json()
     # 2.8 (AC-CANCEL-CRM) kept every 2.7 entity.
-    assert body["version"] == "2.9"
+    assert body["version"] == "2.10"
     for entity in ("delivery_orders", "goods_receive_notes", "branches"):
         assert entity in body["entities"]
 

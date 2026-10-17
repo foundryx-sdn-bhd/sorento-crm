@@ -489,7 +489,7 @@ def test_xp_can_name_an_spo_line(env):
 # ======================================================================= contract
 def test_contract_2_8_lists_the_cancel_entities(env):
     body = env.client.get("/api/v1/external/contract").json()
-    assert body["version"] == "2.9"
+    assert body["version"] == "2.10"
     assert {"cancel_sales_orders", "cancel_purchase_orders", "consignments",
             "consignment_returns"} <= set(body["entities"])
 

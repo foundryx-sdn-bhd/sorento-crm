@@ -42,6 +42,7 @@ import {
   Package,
   Users as PeopleIcon,
   Plug,
+  Receipt,
   Settings,
   Share2,
   Shield,
@@ -272,6 +273,16 @@ export const MENU_SIDEBAR: MenuConfig = [
         permission: 'marketing.campaigns.view',
       },
     ],
+  },
+
+  { heading: 'FINANCE' },
+  {
+    // PLAN-finance-billing-documents-27sep S2: AutoCount billing documents, read only.
+    title: 'Billing Documents',
+    icon: Receipt,
+    path: '/finance/billing-documents',
+    permission: 'finance.billing_documents.view',
+    moduleKey: 'finance',
   },
 
   { heading: 'SUPPLY CHAIN' },
@@ -2136,6 +2147,14 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
         permission: 'projects.types.view',
       },
     ],
+  },
+  {
+    // PLAN-finance-billing-documents-27sep S2: AutoCount billing documents, read only.
+    title: 'Billing Documents',
+    icon: Receipt,
+    path: '/finance/billing-documents',
+    permission: 'finance.billing_documents.view',
+    moduleKey: 'finance',
   },
   {
     title: 'Marketing Management',

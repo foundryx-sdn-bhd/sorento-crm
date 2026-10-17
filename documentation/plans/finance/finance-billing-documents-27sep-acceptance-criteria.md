@@ -213,9 +213,9 @@ Phase 1 against a mock, then Phase 2 wiring, per the pipeline.
   `SearchableSelect` or `SearchableMultiSelect`, each optional one `clearable`; Date is the
   standard date range; query strings are built with `buildDataGridParams`. The Export button
   shows only with `finance.billing_documents.export` (and view).
-- **S2-4 [BE]** (J6) Given `GET /api/v1/finance/billing-documents`, then it pages, sorts and
-  searches through the list-query registry (resource `finance_billing_documents`), is scoped to
-  the caller's company, and answers 403 without the view slug.
+- **S2-4 [BE]** (J6) Given `GET /api/v1/finance/billing-documents`, a dedicated route, then it
+  pages, sorts and searches, is scoped to the caller's company, and answers 403 without the view
+  slug. The list-query registry resource `finance_billing_documents` serves the export.
 - **S2-5 [FE]** (J7) Given a row click, then `/finance/billing-documents/{id}` opens with a
   `PageHeader` (number, type badge, status badge), a meta strip (source AutoCount, last synced,
   document date), `RecordNavigation` prev and next, and line tabs Details, Lines, Related.
@@ -261,6 +261,40 @@ Mostly shared-service work; the CRM side is a runbook and a measurement.
 - **S4-3 [E2E]** (J5) The Yearly comparison on Basis = Invoiced matches the AutoCount PDF within
   RM 1 per cell for those months, per team block, from 2024 onwards (2023 is loaded but not
   tallied), or the residual is explained cell by cell.
+
+## S5: outstanding per invoice and per customer (owner 15 Oct, read-only)
+
+Added by lane AC-BILLING (`CARD-ac-billing-17oct.md`). Written to the card's recommendations on Q1 to
+Q5; approved by the owner 18 Oct (Q1 to Q5 all (a)).
+
+- **S5-1 [BE]** Given `POST /api/v1/external/ingest/ar_outstanding` with one debtor record whose
+  `documents` name two stored invoices of that customer, then both get `outstanding`, `due_date` and
+  `outstanding_as_of` = `as_of`, the customer gets `ar_outstanding` = `total_outstanding` and
+  `ar_as_of` = `as_of`, and the verdict is `updated`.
+- **S5-2 [BE]** Given a stored invoice of that customer with a non-zero outstanding that the next push
+  for the customer does not list, then its outstanding becomes 0 (paid); a document of ANOTHER customer
+  is never touched.
+- **S5-3 [BE]** Given a listed document ref that is not in the CRM (or belongs to another customer or
+  company), then nothing is created, the rest of the record applies, and the verdict carries the count
+  under `warnings` (`documents_unknown`).
+- **S5-4 [BE]** Given a push whose `as_of` is older than the customer's stored `ar_as_of`, then nothing
+  is written and the verdict is `unchanged` with `stale_ignored`; an identical push is `unchanged`.
+- **S5-5 [BE]** Given an unknown customer (`customer_ref` then `customer_code` do not resolve in the
+  anchor company), then the record fails with `errors.customer_ref`; no customer is created.
+- **S5-6 [BE]** The door needs `finance.billing_documents.edit`; read-back
+  `POST /api/v1/external/read/ar_outstanding` needs `.view`; `GET /api/v1/external/contract` answers
+  `2.10` and lists `ar_outstanding` with its fields.
+- **S5-7 [BE]** A document never covered by a push keeps `outstanding` NULL (shown blank, never 0); a
+  cancelled document is shown with no outstanding.
+- **S5-8 [FE]** The billing list shows Outstanding and Due date columns and an "Open only" filter;
+  the record shows outstanding, due date and as-of in the meta strip; the customer record shows
+  "Outstanding RM x as of <date>" (or "Not synced") and its Billing documents tab shows the column; the
+  SO record's Invoices section shows it. All of it only with `finance.billing_documents.view`.
+- **S5-9 [BE]** Given a customer with `ar_outstanding` written by S5-1 and a credit limit, then the
+  project SO draft's `credit_exposure` finding uses it (the existing check,
+  `project_so_draft_service.py:1805`), no longer the "not been ingested yet" text.
+- **S5-10 [E2E]** After 25 Oct, for three real debtors, the CRM's total and per-invoice outstanding
+  equal AutoCount's Outstanding AR Invoice report on the same day (recorded in the S4 runbook).
 
 ## Measured
 
