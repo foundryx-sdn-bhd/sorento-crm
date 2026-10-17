@@ -393,3 +393,22 @@ price tier before finding any product, five run results, now fail), attachment 6
   8/8. Held-out, same gold, runs 1/2/3: follow-ups 83 / 85 / 81 to 84 / 86 / 82; every other slice is unchanged.
 - Open from the card: the leak failure on DO item cp0-d9971420da (asker linkage vs the grader's leak check) is not
   yet investigated.
+
+## Round 34 and the replay guard (17 Oct)
+
+- Round 34 (owner CP0 c04/c19: a certification scheme is an index, like a spec or an attachment type). SPAN is a
+  listed Certificate scheme on the dev copy (`chatbot_prompt_vars.py:432`; 41 active certificates). A certificate ask
+  naming a listed scheme wants that scheme's certificates.
+  - The file envelope carries no scheme, so the gold lists the scheme's files: crew `cert_schemes.py`, every file of an
+    active certificate of that scheme, matched by file hash because a re-upload shares it.
+  - The grader's `scheme` check fails a sent file outside that list.
+  - Schemes are exact (crew, 17 Oct): IKRAM and IKRAM QA Scheme 1 are separate closed-list items, and a prefix rule
+    would be word matching. Superseded revisions count.
+  - "If the parser picks both items for a bare IKRAM, the gold accepts either" is not built: in 12 runs of the only
+    IKRAM item the parser picked no scheme. Trigger: the first run whose parse holds both schemes.
+  - 12 items change (7 TRAIN, 5 held-out). Held-out attachment is unchanged. On #1755's S7 TRAIN rows the attachment
+    gap goes from -6.2 to +1.2 points: main's earlier passes sent certificates of another scheme.
+- Replay guard (crew GO, after 585 turns were committed into `sorento_eval_base` through a raw call):
+  - `_replay_one` and `_live_one` refuse, before any DB use, a session factory `_rolled_back` did not yield.
+  - The mark is cleared when the block exits.
+  - The L1 replay runs the engine with `offload=False`, so a worker setting cannot move a turn outside the rollback.
