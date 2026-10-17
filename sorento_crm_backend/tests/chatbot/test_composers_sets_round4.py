@@ -43,7 +43,7 @@ def test_u1_stock_leg_page_two_is_the_same_miss_list(session_factory, monkeypatc
     chat = make_chat(session_factory, monkeypatch, stub_parser, stub_access, world, mode="detailed")
     first = chat.say("any wash basin has stock", _set_ask())
     second = chat.say("more", _more_verdict())
-    assert second.startswith("Here's what you want: wash basins with stock (55, showing 51 to 55)"), second[:200]
+    assert second.startswith("Here's what you want: wash basins (55, showing 51 to 55)"), second[:200]
     one, two = _bullets(first), _bullets(second)
     assert len(one) == 50 and len(two) == 5 and not set(one) & set(two)
     assert (set(one) | set(two)) == world.codes
@@ -65,11 +65,13 @@ def test_u1_incoming_leg_page_two_is_the_same_miss_list(session_factory, monkeyp
     )
     first = chat.say("any wash basin has incoming", ask)
     second = chat.say("more", _more_verdict() | {"domain_hint": "incoming", "intent_hint": "check_incoming"})
-    assert "(55, showing 51 to 55)" in second.split("\n\n")[0], second[:200]
-    assert "incoming" in second.split("\n\n")[0]
+    assert second.split("\n\n")[0].startswith("Here's what you want: wash basins (55, showing 51 to 55)"), second[:200]
+    assert "incoming" not in second.split("\n\n")[0]
     one, two = _bullets(first), _bullets(second)
     assert len(one) == 50 and not set(one) & set(two) and (set(one) | set(two)) == world.codes
-    assert "But no incoming matched these." in second
+    miss = re.search(r"But no [^.]+ matched these\.", first)
+    assert miss and "incoming" in miss.group(0), first[-200:]
+    assert miss.group(0) in second
     offer = re.search(r"Would you like me to escalate to [^?]+ team\?$", first.rstrip())
     assert offer, first[-160:]
     assert second.rstrip().endswith(offer.group(0)), second[-160:]
@@ -244,16 +246,32 @@ def test_u1_more_after_the_last_miss_page_says_that_is_all(session_factory, monk
     for _ in range(2):
         again = chat.say("more", _more_verdict())
         assert "That is all 55." in again, again[:300]
+        assert again.startswith("Here's what you want: wash basins (55)"), again[:200]
+        assert "with stock" not in again.split("\n\n")[0]
+        assert "But no stock matched these." in again
+        assert again.index("That is all 55.") < again.index("But no stock matched these.")
         assert not _bullets(again), again
         assert "showing 1 to 50" not in again and 'Reply "more"' not in again
 
 
-def test_u1_page_one_header_carries_the_leg_like_page_two(session_factory, monkeypatch, stub_parser, stub_access, world):
+def test_u1_miss_list_headers_never_carry_the_leg(session_factory, monkeypatch, stub_parser, stub_access, world):
+    """55 products with NO stock: "with stock (55 ...)" would be a false count (card R4)."""
     _seed_zero_stock(world)
     chat = make_chat(session_factory, monkeypatch, stub_parser, stub_access, world, mode="detailed")
     _set_gate(monkeypatch, False)
     off = chat.say("any wash basin has stock", _set_ask())
     assert off.startswith("Here's what you want: wash basins (55)\n"), off[:120]
     _set_gate(monkeypatch, True)
-    on = chat.say("any wash basin has stock", _set_ask())
-    assert on.startswith("Here's what you want: wash basins with stock (55, showing 1 to 50)\n"), on[:160]
+    one = chat.say("any wash basin has stock", _set_ask())
+    two = chat.say("more", _more_verdict())
+    end = chat.say("more", _more_verdict())
+    heads = [one.split("\n")[0], two.split("\n")[0]]
+    assert heads == [
+        "Here's what you want: wash basins (55, showing 1 to 50)",
+        "Here's what you want: wash basins (55, showing 51 to 55)",
+    ], heads
+    assert end.startswith("Here's what you want: wash basins (55)"), end[:160]
+    for page in (one, two, end):
+        assert "with stock" not in page.split("\n\n")[0], page[:160]
+        assert "But no stock matched these." in page, page[-200:]
+    assert end.index("That is all 55.") < end.index("But no stock matched these.")
