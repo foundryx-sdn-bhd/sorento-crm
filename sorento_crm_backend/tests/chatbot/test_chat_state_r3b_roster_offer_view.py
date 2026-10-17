@@ -292,3 +292,18 @@ def test_r3b_s1_the_offer_turns_own_after_view_shows_the_offer_as_the_next_parse
     assert "escalate" in ((a.reply or {}).get("text") or "").lower()
     after = _mem_state(seam, a)["after"]["open_question"]
     assert after.get("offer") == "hand_over" and after.get("owed") == ["yes_no"], after
+
+
+@pytest.mark.parametrize("kind,et,labels,team,domain", [
+    ("product_pick", "product", [("MWCX8609-RL-P", "MWCX8609-RL-P"), ("MWC7609-RL-P", "MWC7609-RL-P")], "purchasing", "product_attachment"),
+    ("tier_pick", "access_level", TIERS, "marketing_promotion", "promotion"),
+    ("customer_pick", "customer", [("SMT - I (MCH)", "C0003"), ("YOO LIVING HOUSE (SRT, MCH)", "C0001")], "sales", "order"),
+], ids=["product", "tier", "customer"])
+def test_r3b_guard_a_stamped_roster_never_picked_from_shows_no_offer(kind, et, labels, team, domain):
+    opts = _options(et, labels)
+    pending = ask(kind, opts, team=team, asked_at_turn=1,
+                  payload={"domain": domain, "escalate_offered": True, "offered_at_turn": 2})
+    focus = Focus(domains=[domain], last_list=[{"position": o["position"], "label": o["label"], "code": o["code"]} for o in opts])
+    oq = _view(State(focus=focus, pending=pending, turn_no=3), pending)["open_question"]
+    assert oq["owed"] == ["pick"], oq
+    assert "offer" not in oq and "hand_over_to" not in oq, oq
