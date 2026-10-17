@@ -1,6 +1,6 @@
 # PLAN: Available stock status, embedded in every process (STOCK-STATUS)
 
-Status: Mock round 4 (owner feedback 17 Oct 07:10-07:13: dynamic Group by, location search, no separators, documents open, outstanding + approved only, where it appears); waiting on owner OK of the mock (lane STOCK-STATUS, size L, standard track; build only after the owner OKs the mock)
+Status: Phase 3 passed (lane STOCK-STATUS, size L, standard track; owner OK of mock round 4 at 17 Oct 07:55; reviewer CLEAN after one fix round; security review S1 fixed). In hand test on the crew copy, then the owner's merge
 
 ## Owner request (17 Oct)
 
@@ -94,8 +94,9 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
 ### Rules (round 3: owner answers + crew's masked rows of 17 Oct applied)
 
 - R1. One panel, one product. Rows = every location of the company carrying any nonzero figure,
-  **active or not in the CRM** (Q6 b: AutoCount lists and counts them), minus the locations the
-  viewer's stock visibility policy excludes (`app/services/stock_visibility.py:364`). A location the
+  **active or not in the CRM** (Q6 b: AutoCount lists and counts them). Built: no visibility policy
+  narrows them; `stock_visibility.py` governs what the chatbot tells contacts, not what staff see, so
+  the company scope alone applies. A location the
   CRM marks inactive (`warehouses.is_active`, `app/models/inventory.py:38`) carries a small "Inactive
   in CRM" tag and counts in every total like any other. A location with all zeros is hidden
   (AutoCount's report does the same). This departs from `location_stock_for_product`, which reads
@@ -193,8 +194,10 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
 
 - Product with no stock row anywhere: panel shows the empty state "No stock, orders or incoming
   for this item", not a blank table.
-- SO line with no warehouse (`sales_order_lines.warehouse_id` nullable, `order.py:758`): one
-  "No location" row, so the total still matches.
+- SO line with no warehouse (`sales_order_lines.warehouse_id` nullable, `order.py:758`): built as
+  LEFT OUT (deviation from the sketch's "No location" row). AutoCount's report is per location, so a
+  line with none is not on it either; the panel stays equal to AutoCount, which is the check crew
+  runs. Trigger to revisit: a real SO line reaching the CRM with no location.
 - SPO past its ETA: still counted (`spo_supply.py:9-22`), the doc row shows days late.
 - Location inactive in the CRM but holding stock: listed, tagged "Inactive in CRM", counted (R1,
   Q6 b). SRTWB1515 per AutoCount's screenshot: REJ100% 1, JB SHOWR 1, PJ-SR 1, CON 1 (all four inactive
@@ -278,10 +281,14 @@ characters as crew sent them.
 | Loading plan | Stock status tab in the product row dialog | 5 |
 | Sample request | each line's expand, **follow-up once PR #1718 (SR-CORE) merges** | 5b |
 
-Sample request hook: #1718's detail page already expands every line to `OrderInquiryStockGrid` (its PR
-body), the component this lane turns into the panel. Follow-up after both merge: check the panel
-renders there, and add the item chip to the form's Item Code column if the owner wants it before
-expanding a line. No code in this lane depends on #1718.
+Sample request hook (planned, not built: #1718 merged to main as b303169f during this lane).
+`OrderInquiryStockGrid` was NOT turned into the panel: `RequestReserveDialog` still uses it for the
+reserve flow, so the OI line expand swapped to `StockStatusPanel` at its own call site instead. The
+follow-up is therefore a one-line swap at
+`project-sales/sample-requests/components/SampleRequestDetail.tsx:290`
+(`<OrderInquiryStockGrid productId={line.product_id} location="BRW" />` becomes
+`<StockStatusPanel productId={line.product_id} showOpenFullPage />`), plus its test, plus the item chip
+on the form's Item Code column only if the owner asks. Its own small-fix lane.
 
 ### Questions
 
@@ -299,8 +306,24 @@ expanding a line. No code in this lane depends on #1718.
   `demand.py` rule, so the panel's SO comes from the AutoCount-shaped
   `open_so_qty_by_product_warehouse` instead, R4), the stock-detail SO / SPO readers plus a PO reader
   (documents), the R3 Incoming PL reader (NOT `PL_UNALLOCATED_SQL`) and a project grouping; SO adds
-  the Transferable F cut (R4) and treats 2030-01-01 as no date (R5). Gate: open question
-  between `inventory.stock.view` and the board's `projects.projects.view`; decided in the plan
-  before Phase 2.
+  the Transferable F cut (R4) and treats 2030-01-01 as no date (R5). Gate (built, after security
+  review S1): any of `projects.projects.view`, `scm.reorder.run`, `scm.dashboard.view`, the screens
+  that embed it. `inventory.stock.view` alone is refused: the panel names customers, suppliers and
+  their documents, which stock viewers do not otherwise see. The menu entry uses the same three.
 - FE: `StockStatusPanel` (CellStockTable-based) + `StockStatusChip` (QuotationStockChip pattern),
   mounted at the four embed points and the stand-alone page.
+
+## 5. As built (17 Oct)
+
+- BE `app/services/stock_status_service.py`, `app/api/v1/inventory/stock_status.py`
+  (`GET /api/v1/inventory/stock-status`, `GET .../summary` for list chips, 200 ids max). Incoming PL is
+  netted against the SPO column's own rows (open, allocated less received), by link, else by container
+  for an unlinked row only (reviewer B1).
+- FE `components/stock-status/` (panel, chip, batched summary loader), stand-alone page
+  `inventory-management/stock-status`, embeds at the four points of the table above.
+- R7: a document number is a link only for a viewer holding that page's menu permission (SO / PO
+  `scm.dashboard.view`, SPO `procurement.spo_allocations.view`, PL `procurement.packing_lists.view`),
+  else plain text.
+- Below 992 wide, By location reads as cards (mock frame 1 at 375).
+- Follow-ups: Sample Request swap (above); the fulfilment board and loading plan count SO the
+  `demand.py` way, which differs from this panel by design (R4).

@@ -285,6 +285,12 @@ def test_incoming_pl_nets_only_the_spo_rows_the_spo_column_counts(scm_app):
     linked = _shipment(db, w)
     _pl_line(db, linked, p, 40)
     _spo(db, w, p, bb, 40, shipment=linked, line_status="closed")
+    # An open SPO linked to another shipment still at sea is on THAT shipment, even when its
+    # container number matches this packing list's.
+    other = _shipment(db, w, container="MSKU7654321")
+    _spo(db, w, p, bb, 25, shipment=other, container="OOLU1112223")
+    same_box = _shipment(db, w, container="OOLU1112223")
+    _pl_line(db, same_box, p, 25)
     # Partly received SPO: only its open balance is carried (what the SPO column counts).
     part = _shipment(db, w)
     _pl_line(db, part, p, 30)
@@ -296,8 +302,10 @@ def test_incoming_pl_nets_only_the_spo_rows_the_spo_column_counts(scm_app):
     assert by_no[reused.shipment_number]["counted"] == 60
     assert by_no[linked.shipment_number]["counted"] == 40
     assert (by_no[part.shipment_number]["on_spo"], by_no[part.shipment_number]["counted"]) == (20, 10)
-    assert body["totals"]["spo_qty"] == 20
-    assert body["totals"]["incoming_pl"] == 60 + 40 + 10
+    assert by_no[same_box.shipment_number]["counted"] == 25
+    assert other.shipment_number not in by_no                # no PL line of its own
+    assert body["totals"]["spo_qty"] == 20 + 25
+    assert body["totals"]["incoming_pl"] == 60 + 40 + 10 + 25
     assert all("inbound_shipment_id" not in s for s in body["spos"])
 
 

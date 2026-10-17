@@ -36,21 +36,34 @@ import {
   soColumns,
   sumLocations,
 } from './stockStatusMath';
-import type { StockStatus, StockStatusIncomingPl, StockStatusLocation } from './stockStatus.types';
+import type {
+  StockStatus,
+  StockStatusIncomingPl,
+  StockStatusLocation,
+} from './stockStatus.types';
 
 // Every grid here passes `listingKey={null}`: the panel is embedded in many screens, its
 // columns are fixed (or are data, in SO totals), and a per-user column-preferences read per
 // embed would buy nothing.
 
 /** A quantity the AutoCount way: thousands separated, negatives red, zero muted. */
-export function Qty({ value, signed = false }: { value: number; signed?: boolean }) {
+export function Qty({
+  value,
+  signed = false,
+}: {
+  value: number;
+  signed?: boolean;
+}) {
   if (!value) return <span className="text-muted-foreground">0</span>;
-  const text = Math.abs(value).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const text = Math.abs(value).toLocaleString('en-US', {
+    maximumFractionDigits: 2,
+  });
   if (value < 0) return <span className="text-destructive">-{text}</span>;
   return <span>{signed ? `+${text}` : text}</span>;
 }
 
-const date = (value: string | null) => (value ? formatDateInMalaysia(value) : null);
+const date = (value: string | null) =>
+  value ? formatDateInMalaysia(value) : null;
 
 /** The permission each document's CRM page is reached by (the menu's gate on that page). */
 const PAGE_PERMISSION: Record<LocationDocument['kind'] | 'PL', string> = {
@@ -61,7 +74,15 @@ const PAGE_PERMISSION: Record<LocationDocument['kind'] | 'PL', string> = {
 };
 
 /** A document number: a link to its page, or plain text for a viewer who cannot open it (R7). */
-function DocNumber({ kind, href, number }: { kind: keyof typeof PAGE_PERMISSION; href: string; number: string }) {
+function DocNumber({
+  kind,
+  href,
+  number,
+}: {
+  kind: keyof typeof PAGE_PERMISSION;
+  href: string;
+  number: string;
+}) {
   const { permissionSet } = usePermissions();
   if (!permissionSet.has(PAGE_PERMISSION[kind])) {
     return (
@@ -91,7 +112,12 @@ export interface StockStatusPanelProps {
   className?: string;
 }
 
-export function StockStatusPanel({ productId, lineIds = [], showOpenFullPage = false, className }: StockStatusPanelProps) {
+export function StockStatusPanel({
+  productId,
+  lineIds = [],
+  showOpenFullPage = false,
+  className,
+}: StockStatusPanelProps) {
   const horizons = React.useMemo(() => horizonOptions(), []);
   const [horizon, setHorizon] = React.useState<string>('all');
   const soDueBy = horizons.find((h) => h.key === horizon)?.value ?? null;
@@ -108,7 +134,10 @@ export function StockStatusPanel({ productId, lineIds = [], showOpenFullPage = f
   };
 
   return (
-    <div className={cn('flex min-w-0 flex-col gap-3', className)} data-testid="stock-status-panel">
+    <div
+      className={cn('flex min-w-0 flex-col gap-3', className)}
+      data-testid="stock-status-panel"
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-muted-foreground">SO due by</span>
         <Tabs value={horizon} onValueChange={setHorizon}>
@@ -143,18 +172,28 @@ export function StockStatusPanel({ productId, lineIds = [], showOpenFullPage = f
         <SectionSkeleton rows={4} />
       ) : query.error || !query.data ? (
         <ListLoadFailure error={query.error} onRetry={() => query.refetch()} />
-      ) : query.data.locations.length === 0 && query.data.incoming_pl.length === 0 ? (
-        <div className="rounded-md border px-4 py-8 text-center" data-testid="stock-status-empty">
-          <p className="font-medium">No stock, orders or incoming for this item</p>
+      ) : query.data.locations.length === 0 &&
+        query.data.incoming_pl.length === 0 ? (
+        <div
+          className="rounded-md border px-4 py-8 text-center"
+          data-testid="stock-status-empty"
+        >
+          <p className="font-medium">
+            No stock, orders or incoming for this item
+          </p>
           <p className="text-sm text-muted-foreground">
-            Nothing on hand at any location, no open SO, PO, SPO or packing list.
+            Nothing on hand at any location, no open SO, PO, SPO or packing
+            list.
           </p>
         </div>
       ) : (
         <>
           {query.data.as_of && (
             <p className="text-xs text-muted-foreground">
-              On hand as of <span className="font-medium text-foreground">{formatDateTimeInMalaysia(query.data.as_of)}</span>
+              On hand as of{' '}
+              <span className="font-medium text-foreground">
+                {formatDateTimeInMalaysia(query.data.as_of)}
+              </span>
             </p>
           )}
           <Tabs value={tab} onValueChange={setTab}>
@@ -189,10 +228,19 @@ interface LocationsViewProps {
   onExpandedChange: React.Dispatch<React.SetStateAction<ExpandedState>>;
 }
 
-function LocationsView({ data, search, lineIds, expanded, onExpandedChange: setExpanded }: LocationsViewProps) {
+function LocationsView({
+  data,
+  search,
+  lineIds,
+  expanded,
+  onExpandedChange: setExpanded,
+}: LocationsViewProps) {
   const isMobile = useIsMobile();
   const [plOpen, setPlOpen] = React.useState(false);
-  const shown = React.useMemo(() => data.locations.filter((l) => matchesLocation(l, search)), [data, search]);
+  const shown = React.useMemo(
+    () => data.locations.filter((l) => matchesLocation(l, search)),
+    [data, search],
+  );
   const sums = sumLocations(shown);
   const filtered = search.trim() !== '';
 
@@ -205,14 +253,20 @@ function LocationsView({ data, search, lineIds, expanded, onExpandedChange: setE
           row.getIsExpanded() ? (
             <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
           ) : (
-            <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
+            <ChevronRight
+              className="size-4 text-muted-foreground"
+              aria-hidden
+            />
           ),
         size: 36,
         enableResizing: false,
         meta: {
           headerTitle: 'Expand',
           expandedContent: (loc: StockStatusLocation) => (
-            <DocumentsGrid docs={documentsForLocation(data, loc.warehouse_id)} lineIds={lineIds} />
+            <DocumentsGrid
+              docs={documentsForLocation(data, loc.warehouse_id)}
+              lineIds={lineIds}
+            />
           ),
         },
       },
@@ -220,8 +274,13 @@ function LocationsView({ data, search, lineIds, expanded, onExpandedChange: setE
         id: 'location',
         header: 'Location',
         cell: ({ row }) => (
-          <span className="flex min-w-0 items-center gap-1.5" title={locationTitle(row.original)}>
-            <span className="truncate font-medium">{row.original.warehouse_code}</span>
+          <span
+            className="flex min-w-0 items-center gap-1.5"
+            title={locationTitle(row.original)}
+          >
+            <span className="truncate font-medium">
+              {row.original.warehouse_code}
+            </span>
             {!row.original.is_active && (
               <Badge variant="secondary" appearance="light" size="xs">
                 Inactive in CRM
@@ -230,7 +289,11 @@ function LocationsView({ data, search, lineIds, expanded, onExpandedChange: setE
           </span>
         ),
         footer: () => (
-          <span className="font-semibold">{filtered ? `Shown, ${shown.length} of ${data.locations.length}` : 'Total'}</span>
+          <span className="font-semibold">
+            {filtered
+              ? `Shown, ${shown.length} of ${data.locations.length}`
+              : 'Total'}
+          </span>
         ),
         size: 190,
         meta: { headerTitle: 'Location' },
@@ -242,18 +305,36 @@ function LocationsView({ data, search, lineIds, expanded, onExpandedChange: setE
         id: 'incoming_pl',
         header: () => <span className="block text-end">Incoming PL</span>,
         cell: () => (
-<span className="block text-end text-muted-foreground">-</span>
+          <span className="block text-end text-muted-foreground">-</span>
         ),
         footer: () => (
-          <span className="block text-end font-semibold">{filtered ? '-' : <Qty value={data.totals.incoming_pl} />}</span>
+          <span className="block text-end font-semibold">
+            {filtered ? '-' : <Qty value={data.totals.incoming_pl} />}
+          </span>
         ),
         size: 110,
         meta: { headerTitle: 'Incoming PL' },
       },
       numberColumn('spo_qty', 'SPO', (l) => l.spo_qty, sums.spo_qty),
-      numberColumn('forecast', 'Forecast', (l) => l.forecast, sums.forecast, true),
+      numberColumn(
+        'forecast',
+        'Forecast',
+        (l) => l.forecast,
+        sums.forecast,
+        true,
+      ),
     ],
-    [data, lineIds, filtered, shown.length, sums.on_hand, sums.so_qty, sums.po_qty, sums.spo_qty, sums.forecast],
+    [
+      data,
+      lineIds,
+      filtered,
+      shown.length,
+      sums.on_hand,
+      sums.so_qty,
+      sums.po_qty,
+      sums.spo_qty,
+      sums.forecast,
+    ],
   );
 
   return (
@@ -279,17 +360,26 @@ function LocationsView({ data, search, lineIds, expanded, onExpandedChange: setE
           sortable={false}
           expanded={expanded}
           onExpandedChange={setExpanded}
-          onRowClick={(l) => setExpanded((prev) => toggle(prev, l.warehouse_id))}
+          onRowClick={(l) =>
+            setExpanded((prev) => toggle(prev, l.warehouse_id))
+          }
           scrollerMaxHeight={false}
         />
       )}
-      <div className="rounded-md border text-sm" data-testid="stock-status-summary">
+      <div
+        className="rounded-md border text-sm"
+        data-testid="stock-status-summary"
+      >
         {filtered && (
           <SummaryLine label="All locations">
-            <span className="text-muted-foreground">On hand</span> <Qty value={data.totals.on_hand} />
-            <span className="ms-3 text-muted-foreground">SO</span> <Qty value={-data.totals.so_qty} />
-            <span className="ms-3 text-muted-foreground">PO</span> <Qty value={data.totals.po_qty} />
-            <span className="ms-3 text-muted-foreground">SPO</span> <Qty value={data.totals.spo_qty} />
+            <span className="text-muted-foreground">On hand</span>{' '}
+            <Qty value={data.totals.on_hand} />
+            <span className="ms-3 text-muted-foreground">SO</span>{' '}
+            <Qty value={-data.totals.so_qty} />
+            <span className="ms-3 text-muted-foreground">PO</span>{' '}
+            <Qty value={data.totals.po_qty} />
+            <span className="ms-3 text-muted-foreground">SPO</span>{' '}
+            <Qty value={data.totals.spo_qty} />
             <span className="ms-3 text-muted-foreground">Forecast</span>{' '}
             <b>
               <Qty value={data.totals.forecast} />
@@ -302,9 +392,15 @@ function LocationsView({ data, search, lineIds, expanded, onExpandedChange: setE
           onClick={() => setPlOpen((v) => !v)}
           aria-expanded={plOpen}
         >
-          {plOpen ? <ChevronDown className="size-4" aria-hidden /> : <ChevronRight className="size-4" aria-hidden />}
+          {plOpen ? (
+            <ChevronDown className="size-4" aria-hidden />
+          ) : (
+            <ChevronRight className="size-4" aria-hidden />
+          )}
           <span className="font-medium">Incoming PL</span>
-          <span className="text-muted-foreground">item level, on no SPO yet</span>
+          <span className="text-muted-foreground">
+            item level, on no SPO yet
+          </span>
           <span className="ms-auto font-semibold">
             <Qty value={data.totals.incoming_pl} signed />
           </span>
@@ -320,7 +416,9 @@ function LocationsView({ data, search, lineIds, expanded, onExpandedChange: setE
 
 function locationTitle(l: StockStatusLocation): string {
   const code = l.warehouse_code ?? '';
-  return l.warehouse_name && l.warehouse_name !== code ? `${code}\n${l.warehouse_name}` : code;
+  return l.warehouse_name && l.warehouse_name !== code
+    ? `${code}\n${l.warehouse_name}`
+    : code;
 }
 
 /** First cards shown on a phone before "+ n more locations" (mock round 4, frame 1 at 375). */
@@ -337,7 +435,15 @@ interface LocationCardsProps {
 }
 
 /** The phone layout of By location: one card per location, then a Total card. */
-function LocationCards({ data, shown, filtered, search, lineIds, expanded, onToggle }: LocationCardsProps) {
+function LocationCards({
+  data,
+  shown,
+  filtered,
+  search,
+  lineIds,
+  expanded,
+  onToggle,
+}: LocationCardsProps) {
   const [all, setAll] = React.useState(false);
   const isOpen = (id: string) => expanded === true || Boolean(expanded[id]);
   // A search, or a location opened from it, shows every match.
@@ -372,11 +478,19 @@ function LocationCards({ data, shown, filtered, search, lineIds, expanded, onTog
                 <Qty value={l.forecast} />
               </span>
             </span>
-            <CardFigures onHand={l.on_hand} so={l.so_qty} po={l.po_qty} spo={l.spo_qty} />
+            <CardFigures
+              onHand={l.on_hand}
+              so={l.so_qty}
+              po={l.po_qty}
+              spo={l.spo_qty}
+            />
           </button>
           {isOpen(l.warehouse_id) && (
             <div className="border-t px-1">
-              <DocumentsGrid docs={documentsForLocation(data, l.warehouse_id)} lineIds={lineIds} />
+              <DocumentsGrid
+                docs={documentsForLocation(data, l.warehouse_id)}
+                lineIds={lineIds}
+              />
             </div>
           )}
         </div>
@@ -391,21 +505,43 @@ function LocationCards({ data, shown, filtered, search, lineIds, expanded, onTog
         </button>
       )}
       {shown.length > 0 && (
-        <div className="flex flex-col gap-1 rounded-md border bg-muted/40 px-3 py-2" data-testid="stock-status-total-card">
+        <div
+          className="flex flex-col gap-1 rounded-md border bg-muted/40 px-3 py-2"
+          data-testid="stock-status-total-card"
+        >
           <span className="flex items-center font-semibold">
-            <span>{filtered ? `Shown, ${shown.length} of ${data.locations.length}` : 'Total'}</span>
+            <span>
+              {filtered
+                ? `Shown, ${shown.length} of ${data.locations.length}`
+                : 'Total'}
+            </span>
             <span className="ms-auto tabular-nums">
               <Qty value={sums.forecast} />
             </span>
           </span>
-          <CardFigures onHand={sums.on_hand} so={sums.so_qty} po={sums.po_qty} spo={sums.spo_qty} />
+          <CardFigures
+            onHand={sums.on_hand}
+            so={sums.so_qty}
+            po={sums.po_qty}
+            spo={sums.spo_qty}
+          />
         </div>
       )}
     </div>
   );
 }
 
-function CardFigures({ onHand, so, po, spo }: { onHand: number; so: number; po: number; spo: number }) {
+function CardFigures({
+  onHand,
+  so,
+  po,
+  spo,
+}: {
+  onHand: number;
+  so: number;
+  po: number;
+  spo: number;
+}) {
   const figure = (label: string, value: number) => (
     <span className="flex flex-col">
       <span className="text-xs text-muted-foreground">{label}</span>
@@ -424,9 +560,22 @@ function CardFigures({ onHand, so, po, spo }: { onHand: number; so: number; po: 
   );
 }
 
-function SummaryLine({ label, strong = false, children }: { label: string; strong?: boolean; children: React.ReactNode }) {
+function SummaryLine({
+  label,
+  strong = false,
+  children,
+}: {
+  label: string;
+  strong?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <div className={cn('flex flex-wrap items-center gap-1 border-t px-3 py-2 first:border-t-0', strong && 'font-semibold')}>
+    <div
+      className={cn(
+        'flex flex-wrap items-center gap-1 border-t px-3 py-2 first:border-t-0',
+        strong && 'font-semibold',
+      )}
+    >
       <span>{label}</span>
       <span className="ms-auto text-end">{children}</span>
     </div>
@@ -444,7 +593,9 @@ function numberColumn(
     id,
     header: () => <span className="block text-end">{title}</span>,
     cell: ({ row }) => (
-      <span className={cn('block text-end tabular-nums', strong && 'font-semibold')}>
+      <span
+        className={cn('block text-end tabular-nums', strong && 'font-semibold')}
+      >
         <Qty value={of(row.original)} />
       </span>
     ),
@@ -465,7 +616,10 @@ function toggle(prev: ExpandedState, id: string): ExpandedState {
   return current;
 }
 
-const KIND_VARIANT: Record<LocationDocument['kind'], 'destructive' | 'primary' | 'success'> = {
+const KIND_VARIANT: Record<
+  LocationDocument['kind'],
+  'destructive' | 'primary' | 'success'
+> = {
   SO: 'destructive',
   PO: 'primary',
   SPO: 'success',
@@ -486,7 +640,11 @@ function DocumentsGrid({ docs, lineIds, locationCodes }: DocumentsGridProps) {
         id: 'kind',
         header: 'Type',
         cell: ({ row }) => (
-          <Badge variant={KIND_VARIANT[row.original.kind]} appearance="light" size="sm">
+          <Badge
+            variant={KIND_VARIANT[row.original.kind]}
+            appearance="light"
+            size="sm"
+          >
             {row.original.kind}
           </Badge>
         ),
@@ -498,7 +656,11 @@ function DocumentsGrid({ docs, lineIds, locationCodes }: DocumentsGridProps) {
         header: 'Doc no',
         cell: ({ row }) => (
           <span className="flex min-w-0 items-center gap-1.5">
-            <DocNumber kind={row.original.kind} href={row.original.href} number={row.original.number} />
+            <DocNumber
+              kind={row.original.kind}
+              href={row.original.href}
+              number={row.original.number}
+            />
             {row.original.lineId && mine.has(row.original.lineId) && (
               <Badge variant="info" appearance="light" size="xs">
                 This line
@@ -646,7 +808,10 @@ function IncomingPlGrid({ rows }: { rows: StockStatusIncomingPl[] }) {
         id: 'container',
         header: 'Container',
         cell: ({ row }) => (
-          <span className="truncate" title={row.original.container_number ?? undefined}>
+          <span
+            className="truncate"
+            title={row.original.container_number ?? undefined}
+          >
             {row.original.container_number ?? '-'}
           </span>
         ),
@@ -676,14 +841,20 @@ function IncomingPlGrid({ rows }: { rows: StockStatusIncomingPl[] }) {
         emptyTitle="No packing list on the way"
         paginate={false}
         sortable={false}
-        rowClassName={(r) => (r.counted === 0 ? 'text-muted-foreground' : undefined)}
+        rowClassName={(r) =>
+          r.counted === 0 ? 'text-muted-foreground' : undefined
+        }
         scrollerMaxHeight={false}
       />
     </div>
   );
 }
 
-function plNumber(id: string, title: string, of: (r: StockStatusIncomingPl) => number): ColumnDef<StockStatusIncomingPl> {
+function plNumber(
+  id: string,
+  title: string,
+  of: (r: StockStatusIncomingPl) => number,
+): ColumnDef<StockStatusIncomingPl> {
   return {
     id,
     header: () => <span className="block text-end">{title}</span>,
@@ -701,10 +872,16 @@ function SoTotalsView({ data, search }: { data: StockStatus; search: string }) {
   const [by, setBy] = React.useState<GroupBy>('project');
   const [expanded, setExpanded] = React.useState<ExpandedState>({});
   const codes = React.useMemo(
-    () => Object.fromEntries(data.locations.map((l) => [l.warehouse_id, l.warehouse_code ?? ''])),
+    () =>
+      Object.fromEntries(
+        data.locations.map((l) => [l.warehouse_id, l.warehouse_code ?? '']),
+      ),
     [data],
   );
-  const cols = React.useMemo(() => soColumns(data.locations, search), [data, search]);
+  const cols = React.useMemo(
+    () => soColumns(data.locations, search),
+    [data, search],
+  );
   const filtered = search.trim() !== '';
   const groups = React.useMemo(() => {
     const visible = new Set(cols.map((c) => c.warehouse_id));
@@ -715,7 +892,8 @@ function SoTotalsView({ data, search }: { data: StockStatus; search: string }) {
   }, [data, cols, by]);
   const withSo = data.locations.filter((l) => l.so_qty > 0).length;
   const shownTotal = cols.reduce((t, c) => t + c.so_qty, 0);
-  const groupLabel = GROUP_BY_OPTIONS.find((o) => o.value === by)?.label ?? 'Project';
+  const groupLabel =
+    GROUP_BY_OPTIONS.find((o) => o.value === by)?.label ?? 'Project';
 
   const columns = React.useMemo<ColumnDef<SoGroup>[]>(
     () => [
@@ -726,7 +904,10 @@ function SoTotalsView({ data, search }: { data: StockStatus; search: string }) {
           row.getIsExpanded() ? (
             <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
           ) : (
-            <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
+            <ChevronRight
+              className="size-4 text-muted-foreground"
+              aria-hidden
+            />
           ),
         size: 36,
         enableResizing: false,
@@ -734,7 +915,10 @@ function SoTotalsView({ data, search }: { data: StockStatus; search: string }) {
           headerTitle: 'Expand',
           expandedContent: (g: SoGroup) => (
             <DocumentsGrid
-              docs={documentsForLocation({ sales_orders: g.rows, purchase_orders: [], spos: [] }, null)}
+              docs={documentsForLocation(
+                { sales_orders: g.rows, purchase_orders: [], spos: [] },
+                null,
+              )}
               lineIds={[]}
               locationCodes={codes}
             />
@@ -750,19 +934,27 @@ function SoTotalsView({ data, search }: { data: StockStatus; search: string }) {
               {row.original.label}
             </span>
             {row.original.secondary && (
-              <span className="truncate text-xs text-muted-foreground">{row.original.secondary}</span>
+              <span className="truncate text-xs text-muted-foreground">
+                {row.original.secondary}
+              </span>
             )}
           </span>
         ),
         footer: () => (
-          <span className="font-semibold">{filtered ? `Shown, ${cols.length} of ${withSo} locations with SO` : 'Total'}</span>
+          <span className="font-semibold">
+            {filtered
+              ? `Shown, ${cols.length} of ${withSo} locations with SO`
+              : 'Total'}
+          </span>
         ),
         size: 220,
         meta: { headerTitle: groupLabel },
       },
       ...cols.map<ColumnDef<SoGroup>>((c) => ({
         id: `wh-${c.warehouse_id}`,
-        header: () => <span className="block truncate text-end">{c.warehouse_code}</span>,
+        header: () => (
+          <span className="block truncate text-end">{c.warehouse_code}</span>
+        ),
         cell: ({ row }) => (
           <span className="block text-end tabular-nums">
             <Qty value={-(row.original.byWarehouse[c.warehouse_id] ?? 0)} />
@@ -814,7 +1006,11 @@ function SoTotalsView({ data, search }: { data: StockStatus; search: string }) {
         rows={groups}
         getRowId={(g) => g.key}
         listingKey={null}
-        emptyTitle={filtered ? `No SO at locations matching ${search.trim()}` : 'No open SO for this item'}
+        emptyTitle={
+          filtered
+            ? `No SO at locations matching ${search.trim()}`
+            : 'No open SO for this item'
+        }
         paginate={false}
         sortable={false}
         expanded={expanded}

@@ -31,8 +31,8 @@ round 4, owner OK 17 Oct 07:55. AutoCount is the truth; the panel only reads.
   warehouse. SPO rows per counted row: spo number + line, supplier code + name, issue date, arrival,
   container number, qty, warehouse. The rows of a type sum to that type's total.
 - AC-10 `as_of` = the newest stock write for the product (as the location-stock dialog reports).
-- AC-11 Access: 200 for a holder of any of `inventory.stock.view`, `projects.projects.view`,
-  `scm.reorder.run`, `scm.dashboard.view`; 403 otherwise; 404 for a product id that is not a uuid or
+- AC-11 Access: 200 for a holder of any of `projects.projects.view`, `scm.reorder.run`,
+  `scm.dashboard.view`; 403 otherwise, `inventory.stock.view` alone included (security S1); 404 for a product id that is not a uuid or
   not in the caller's company. Another company's warehouses never appear.
 - AC-12 Read-only: no write of any kind.
 
