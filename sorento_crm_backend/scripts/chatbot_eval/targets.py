@@ -661,6 +661,12 @@ def _followup(row, item):
     return first + _followup_checks(row, item, kind, gold) + [c for c in needless if c not in first]
 
 
+def _word_tokens(text: Any) -> list[str]:
+    """Whole words of a string: lower case, split on non-alphanumerics and between letter and digit runs ("300mm" is
+    "300", "mm"; "SRTWB3001" is "srtwb", "3001")."""
+    return re.findall(r"[a-z]+|\d+", str(text).lower())
+
+
 def _words_of(*xs: Any) -> set[str]:
     """Lower-case words of the strings among `xs` (a bool or number is no phrase)."""
     return {w for x in xs if isinstance(x, str) for w in re.findall(r"[a-z0-9]+", x.lower())}
@@ -801,13 +807,16 @@ def _followup_checks(row, item, kind, gold):
                            if isinstance(e, dict)} | {_val(b) for b in before.get("brands") or []}
             if fv in held_before:
                 held = set()
-            # carried: the whole phrase in one string, or every word in the strings of ONE argument of ONE call; words
-            # pooled across different arguments or tools never count
+            # carried: every filter word is a WHOLE word of ONE argument of ONE call, or the squashed phrase is one word or
+            # consecutive words of one string ("ptrap", "p trap"); no substring match ("300" is not in "3006"), no pooling
+            ftoks = _word_tokens(_val(flt.get("value")))
+
             def carries(value: Any) -> bool:
-                strs = [_squash(x) for x in _strings(value)]
-                return bool(_squash(flt.get("value"))) and (
-                    any(_squash(flt.get("value")) in x for x in strs)
-                    or (bool(fwords) and all(any(_squash(w) in x for x in strs) for w in fwords)))
+                strs = [_word_tokens(x) for x in _strings(value)]
+                pool = {w for toks in strs for w in toks}
+                phrase = "".join(ftoks)
+                return bool(ftoks) and (all(w in pool for w in ftoks) or any(
+                    "".join(toks[i:j]) == phrase for toks in strs for i in range(len(toks)) for j in range(i + 1, len(toks) + 1)))
 
             carried = any(carries(v) for t in _tools(row) for v in (t.get("args") or {}).values())
             words_held = set()
