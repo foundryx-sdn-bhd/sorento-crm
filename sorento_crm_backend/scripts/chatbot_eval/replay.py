@@ -115,6 +115,7 @@ def _rolled_back(session_factory: Callable[[], Any]) -> Iterator[Callable[[], An
         opened.append(s)
         return s
 
+    factory._rolled_back = True   # type: ignore[attr-defined]   # _replay_one refuses a factory without this mark
     try:
         yield factory
     finally:
@@ -278,6 +279,8 @@ def _tools(trace: list[dict[str, Any]]) -> list[list[str]]:
 
 def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | None = None,
                 vocab_box: list[Any] | None = None) -> dict[str, Any]:
+    if not getattr(factory, "_rolled_back", False):
+        raise RuntimeError("_replay_one needs a factory from _rolled_back; call replay_rows")
     from app.models.chatbot_turn import ChatbotTurn
     from app.services.chatbot import engine
     from app.services.chatbot.contracts import Envelope
