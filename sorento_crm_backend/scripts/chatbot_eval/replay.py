@@ -281,7 +281,7 @@ def _tools(trace: list[dict[str, Any]]) -> list[list[str]]:
 def _require_rolled_back(factory: Callable[[], Any]) -> None:
     """Refuse, before any DB use, a factory that `_rolled_back` did not yield (or has since closed)."""
     if not getattr(factory, "_rolled_back", False):
-        raise RuntimeError("_replay_one needs a factory from _rolled_back; call replay_rows")
+        raise RuntimeError("a replay needs a factory from _rolled_back; call replay_rows or live_rows")
 
 
 def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | None = None,
