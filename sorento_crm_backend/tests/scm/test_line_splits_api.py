@@ -159,6 +159,32 @@ def test_get_shape_ordering_and_base_rules(api):
     assert l200["splits"] == []
 
 
+def test_get_returns_so_date_from_the_core_sales_order_and_keeps_every_other_field(api):
+    """v4 AC-A12: the SO DATE column reads `so_date`, the ISO order date of the core SO."""
+    s = _seed(api)
+    s.core_so.order_date = date(2026, 9, 3)
+    s.db.commit()
+    out = _get(s)
+    assert out["so_date"] == "2026-09-03"
+    for key in ("pso_id", "so_number", "customer", "project", "lines"):
+        assert key in out, key
+    assert out["so_number"] == s.core_so.so_number
+    assert {x["line_no"] for x in out["lines"]} == {100, 200, 300, 400, 500}
+    for key in ("line_id", "line_no", "item_code", "location", "base_qty", "base_date",
+                "now_qty", "now_date", "pending_change", "acting", "split_state",
+                "delivered_qty", "splits"):
+        assert key in out["lines"][0], key
+
+
+def test_get_so_date_is_null_when_the_core_order_has_no_date(api):
+    s = _seed(api)
+    s.core_so.order_date = None
+    s.db.commit()
+    out = _get(s)
+    assert "so_date" in out, "the field is always present, null when unknown"
+    assert out["so_date"] is None
+
+
 def test_get_a_saved_split_keeps_the_base_it_was_made_against(api):
     s = _seed(api)
     r = _put(s, [_valid_200(s)])
