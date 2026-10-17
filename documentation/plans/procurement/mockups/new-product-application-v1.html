@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New product application v1</title>
+<!-- NEW-PRODUCT-APP mock v1 (17 Oct). Built only from existing components; every callout names its component and repo path. FE = sorento_crm_frontend/. Illustrative data only (public repo). -->
+<style>
+:root{--fg:#09090b;--muted:#71717a;--border:#e4e4e7;--muted-bg:#f4f4f5;--primary:#1b84ff;--destructive:#dc2626;--callout:#e11d74;
+  --font:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:#f4f4f5;color:var(--fg);font:14px/1.45 var(--font)}
+.doc{max-width:1760px;margin:0 auto;padding:24px 16px 64px}
+.doc>h1{font-size:22px;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 8px;max-width:980px}
+h2.ft{font-size:15px;margin:32px 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.layout{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.scroll{overflow-x:auto;max-width:100%}
+.frame{background:#fff;border:1px solid var(--border);border-radius:12px;position:relative;overflow:hidden}
+.w1280{width:1280px}.w375{width:375px;flex:none}
+.notes{flex:1 1 360px;min-width:300px;max-width:620px}
+.notes ol{margin:0;padding:0;list-style:none}
+.notes li{display:flex;gap:10px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.notes li b{display:block;margin-bottom:2px}
+.ref{display:block;color:var(--muted);font-size:12px;margin-top:4px;font-family:ui-monospace,Menlo,monospace;word-break:break-word}
+.co{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:22px;height:22px;padding:0 3px;border-radius:50%;background:var(--callout);color:#fff;font-size:12px;font-weight:700;box-shadow:0 0 0 2px #fff}
+.pin{position:absolute;z-index:5;right:-8px;top:-8px}.rel{position:relative}
+.muted{color:var(--muted)}.xs{font-size:12px}.b{font-weight:600}
+.shell{display:flex}.side{width:232px;flex:none;border-right:1px solid var(--border);padding:16px 12px;background:#fcfcfd;font-size:13px}
+.side .brand{font-weight:700;font-size:16px;margin:0 8px 18px}.side .grp{color:var(--muted);font-size:11px;text-transform:uppercase;margin:14px 8px 6px}
+.side .it{padding:6px 8px;border-radius:6px}.side .it.on{background:#e9f3ff;color:var(--primary);font-weight:600}
+.main{flex:1;min-width:0}.topbar{height:52px;border-bottom:1px solid var(--border)}.content{padding:20px 28px 28px}
+.phdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.phdr h1{font-size:20px;font-weight:600;margin:0}
+.crumb{font-size:12px;color:var(--muted)}
+.card{border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.card.b2{border-width:2px}
+.dtitle{text-align:center;font-size:20px;font-weight:600;border-bottom:1px solid var(--border);padding-bottom:16px;margin:8px 0 24px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px 40px}.span2{grid-column:span 2}
+.grid1{display:grid;grid-template-columns:1fr;gap:16px}
+.f label{display:block;font-size:14px;font-weight:500;margin-bottom:6px}.req{color:var(--destructive)}
+.inp{border:1px solid var(--border);border-radius:6px;padding:7px 10px;min-height:36px;display:flex;justify-content:space-between;align-items:center;gap:6px;background:#fff;font-size:14px}
+.inp.ph{color:var(--muted)}.inp.ro{background:var(--muted-bg)}.inp.ta{min-height:64px;align-items:flex-start}
+.meta{font-size:12px;color:var(--muted)}
+.chk{display:inline-flex;align-items:center;gap:6px;margin-right:18px;font-size:14px}
+.box{width:16px;height:16px;border:1px solid #a1a1aa;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+.box.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.rad{width:16px;height:16px;border:1px solid #a1a1aa;border-radius:50%;display:inline-block}.rad.on{border:5px solid var(--primary)}
+.badge2{display:inline-flex;border-radius:6px;background:var(--muted-bg);padding:1px 8px;font-size:12px;font-weight:500}
+.pill{display:inline-flex;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:600;background:#f1f5f9;color:#334155}
+table.t{border-collapse:collapse;width:100%;table-layout:fixed;font-size:13px}
+table.t th{background:#fafafa;color:var(--muted);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+table.t td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+table.lt th{background:#f4f4f5;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.cellinp{border:1px solid var(--border);border-radius:6px;padding:4px 8px;min-height:32px;font-size:13px;background:#fff}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--primary);background:var(--primary);color:#fff;border-radius:6px;padding:7px 14px;font:500 13px var(--font);white-space:nowrap}
+.btn.out{background:#fff;color:var(--fg);border-color:var(--border)}.btn.ghost{background:transparent;border-color:transparent;color:var(--fg)}
+.btn.sm{padding:4px 10px;font-size:12px}.btn.red{background:#fff;color:var(--destructive);border-color:#fca5a5}
+.dd{border:1px solid var(--border);border-radius:6px;margin-top:4px;box-shadow:0 2px 6px rgba(0,0,0,.08);font-size:13px;background:#fff}
+.dd div{padding:6px 10px}.dd div.hl{background:var(--muted-bg)}
+.trash{color:var(--destructive)}
+</style>
+</head>
+<body>
+<style>
+.ok{background:#dcfce7;color:#166534}.warn{background:#fef3c7;color:#92400e}.blue{background:#dbeafe;color:#1e40af}.grey{background:#f1f5f9;color:#475569}
+.banner{border:1px solid #fcd34d;background:#fffbeb;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px}
+.banner.red{border-color:#fca5a5;background:#fef2f2}
+.wide{min-width:1500px}
+.kv{display:grid;grid-template-columns:210px 1fr;gap:8px 16px;font-size:14px}.kv .k{color:var(--muted)}
+.menu{border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1);background:#fff;width:300px;font-size:13px;padding:4px}
+.menu div{padding:7px 10px;border-radius:6px}.menu div.hl{background:#e9f3ff;color:var(--primary);font-weight:600}
+</style>
+<div class="doc">
+<h1>New Product Application, mock v1</h1>
+<p class="sub">Lane NEW-PRODUCT-APP, 17 Oct. Built on the card's recommendations (Q1 staff only, Q2 one approval step with lock and Revise, Q3 inquiry link optional, Q4 many lines, Q5 description, item group and UOM required). Every callout names the existing component and repo path it is built from. FE = sorento_crm_frontend/. Data is illustrative: no real customers, people or codes (public repo); the real dev examples come from the crew-data-request.</p>
+<p class="sub">Layout follows the Purchase Request / Sponsorship Form / Stock Inquiry / Sample Request document card: header fields in a 2-column grid, then the product line table, then the footer buttons. View and edit are the same card.</p>
+
+<!-- ============ FRAME 1: STOCK INQUIRY ENTRY ============ -->
+<h2 class="ft">1. Stock inquiry detail (status Responded): the entry point</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Procurement Management</div><div class="it on">Stock Inquiries</div><div class="it">New Product Applications</div></div>
+  <div class="main"><div class="topbar"></div><div class="content">
+    <div class="phdr rel"><div><h1>Stock Inquiry - SI26-0412</h1><div class="crumb">Created: 14/10/2026 &middot; <span class="pill ok">Responded</span></div></div>
+      <div style="display:flex;gap:8px;align-items:flex-start"><span class="btn out sm">&lsaquo;</span><span class="btn out sm">&rsaquo;</span><div class="rel"><span class="btn out sm">&#9881;</span><span class="co pin">1</span>
+        <div class="menu" style="position:absolute;right:0;top:34px;z-index:4"><div>Update &amp; Reply</div><div>Download PDF</div><div>Copy view link</div><div class="hl">&#10010; Create new product application</div><div>Void</div></div></div></div></div>
+    <div class="card" style="padding:20px 24px;margin-top:150px">
+      <div class="kv">
+        <div class="k">Product code</div><div><b>XY-1234-MB</b> <span class="badge2">Not in the product list</span></div>
+        <div class="k">Item description</div><div>Basin mixer, matt black, single lever</div>
+        <div class="k">Project / customer</div><div>Residensi Example, Tower B / EXAMPLE DEVELOPER SDN BHD</div>
+        <div class="k">Quantity</div><div>40</div>
+        <div class="k">Purchasing response</div><div>Supplier can make in matt black, 45 days, MOQ 30. Need new code.</div>
+        <div class="k rel">New product applications<span class="co pin" style="right:auto;left:150px">2</span></div><div class="muted">None yet</div>
+      </div>
+    </div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">1</span><div><b>Gear item "Create new product application"</b> only on a Responded inquiry, only for holders of procurement.new_product_applications.create. Opens the New form with <code>?stock_inquiry_id=</code>; the form copies text from the inquiry (rule 1). No automatic match of the customer text to a debtor.<span class="ref">app/(protected)/procurement-management/stock-inquiries/components/StockInquiryDetail.tsx:413-586 (DetailActionsMenu gear), components/common/DetailActionsMenu.tsx</span></div></li>
+  <li><span class="co">2</span><div><b>"New product applications" row</b> in the inquiry's field list: "None yet" (explicit empty state), or one line per application: number (link), status pill, opened codes. Read by query on <code>new_product_applications.stock_inquiry_id</code>; no new column on stock_inquiries.<span class="ref">StockInquiryDetail.tsx:1082-1225 (field rows), lib/status-pill.ts</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 2: NEW FORM ============ -->
+<h2 class="ft">2. Staff, create a New Product Application, pre-filled from SI26-0412 (1280 wide)</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Procurement Management</div><div class="it">Stock Inquiries</div><div class="it on">New Product Applications</div></div>
+  <div class="main"><div class="topbar"></div><div class="content">
+    <div class="phdr rel"><div><h1>New Product Application</h1><div class="crumb">Procurement Management / New Product Applications</div></div><span class="btn out sm">Cancel</span><span class="co pin" style="right:auto;left:260px;top:0">3</span></div>
+    <div class="card b2 rel" style="max-width:1024px;margin:0 auto;padding:24px 40px 32px"><span class="co pin">4</span>
+      <div style="display:flex;gap:8px"><span class="badge2">New Product Application</span><span class="pill grey">Draft</span></div>
+      <div class="dtitle">New Product Application</div>
+      <div class="grid2">
+        <div class="f"><label>Applicant</label><div class="inp ro">(signed-in user)</div></div>
+        <div class="f"><label>Date</label><div class="inp ro">17/10/2026</div></div>
+        <div class="f rel"><span class="co pin">5</span><label>Stock inquiry</label><div class="inp">SI26-0412 - XY-1234-MB<span>&times;</span></div></div>
+        <div class="f"><label>Needed by</label><div class="inp">30/11/2026</div></div>
+        <div class="f span2 rel"><span class="co pin">6</span><label>Customer</label><div class="inp">EXAMPLE DEVELOPER SDN BHD<span>&times;</span></div><div class="meta" style="margin-top:2px"><span class="badge2">No debtor code</span> typed name copied from the inquiry; pick the debtor to replace it</div></div>
+        <div class="f span2"><label>Project name</label><div class="inp">Residensi Example, Tower B</div></div>
+        <div class="f span2"><label>Reason / remark</label><div class="inp ta">Customer wants the matt black finish of the existing chrome mixer for 40 units.</div></div>
+      </div>
+
+      <div class="rel" style="display:flex;justify-content:space-between;align-items:center;margin:28px 0 10px"><span class="co pin" style="right:auto;left:90px;top:-4px">7</span>
+        <p class="b" style="margin:0">Line items</p><span class="btn out sm">+ Add row</span></div>
+      <div class="card" style="overflow-x:auto">
+      <table class="t lt wide"><thead><tr><th style="width:44px">No.</th><th style="width:150px">Proposed code</th><th style="width:220px">Description <span class="req">*</span></th><th style="width:170px">Item group <span class="req">*</span></th><th style="width:100px">Base UOM <span class="req">*</span></th><th style="width:130px">Brand</th><th style="width:130px">Item type</th><th style="width:170px">Supplier</th><th style="width:130px">Supplier model no</th><th style="width:100px">Cost (MYR)</th><th style="width:100px">Selling (MYR)</th><th style="width:90px">Exp. qty</th><th style="width:160px">Further description / remark</th><th style="width:40px"></th></tr></thead><tbody>
+        <tr><td class="muted">1</td><td><div class="cellinp">XY-1234-MB</div></td><td><div class="cellinp">Basin mixer, matt black, single lever</div></td><td><div class="cellinp ph muted">Search item group</div></td><td><div class="cellinp">UNIT &times;</div></td><td><div class="cellinp">Example Brand &times;</div></td><td><div class="cellinp ph muted">Search</div></td><td><div class="cellinp">EXAMPLE SUPPLIER CO &times;</div></td><td><div class="cellinp">XY1234</div></td><td><div class="cellinp">185.00 &times;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp">40 &times;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td class="trash">&#128465;</td></tr>
+        <tr><td class="muted">2</td><td><div class="cellinp">XY-1234-BG</div></td><td><div class="cellinp">Basin mixer, brushed gold, single lever</div></td><td><div class="cellinp">Basin Mixer &times;</div></td><td><div class="cellinp">UNIT &times;</div></td><td><div class="cellinp">Example Brand &times;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp">EXAMPLE SUPPLIER CO &times;</div></td><td><div class="cellinp">XY1234G</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td><div class="cellinp muted">&nbsp;</div></td><td class="trash">&#128465;</td></tr>
+      </tbody></table></div>
+      <div class="banner red rel" style="margin-top:12px"><span class="co pin">8</span>Line 1: choose an item group.</div>
+    </div>
+    <div class="rel" style="max-width:1024px;margin:20px auto 0;display:flex;justify-content:flex-end;gap:12px"><span class="co pin" style="right:auto;left:-28px;top:4px">9</span><span class="btn out">Cancel</span><span class="btn out">Save as draft</span><span class="btn">Submit</span></div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">3</span><div><b>PageHeader "New Product Application" + outline Cancel</b>, as New Sample Request / New Purchase Request.<span class="ref">app/(protected)/project-sales/sample-requests/new/page.tsx; procurement-management/purchase-requests/new/page.tsx</span></div></li>
+  <li><span class="co">4</span><div><b>One document card</b> border-2, type badge + status pill, centred title, 2-column grid (1 column on a phone). The detail page renders the same card read-only, so create, edit and view are one layout.<span class="ref">PurchaseRequestDocumentEditCard.tsx:295-329; SampleRequestDetail.tsx:497-530 (Card border-2, grid sm:grid-cols-2)</span></div></li>
+  <li><span class="co">5</span><div><b>Stock inquiry = SearchableSelect, clearable</b> over the company's stock inquiries, label "SI26-0412 - product code". Pre-set when started from the inquiry; optional (Q3).<span class="ref">components/common/SearchableSelect.tsx (fetchOptions, clearable)</span></div></li>
+  <li><span class="co">6</span><div><b>Customer = the PR / SF / SR searchable customer box</b>: debtors with code underneath, free text allowed ("No debtor code" badge). The inquiry's customer text arrives as typed text, never matched.<span class="ref">procurement-management/purchase-requests/components/RequestCustomerField.tsx (AsyncCombobox + lookupCustomersForRequest)</span></div></li>
+  <li><span class="co">7</span><div><b>Line items = the PR / SR line table</b> "Line items" + outline "Add row", delete icon per row. Item group, Base UOM, Brand, Item type and Supplier are SearchableSelect (clearable); the price and qty boxes are number inputs that can be emptied (the &times; clears to empty, never 0). The table scrolls sideways inside its card; the page never does.<span class="ref">components/common/SampleRequestLines.tsx; PurchaseRequestForm.tsx:929-969; selects: master-data-management/shared/hooks/use-product-category-select-query.ts, use-uom-select-query.ts, use-brand-select-query.ts, services/supplierSelectService.ts; item types: NEW select endpoint (none exists, card rule 3)</span></div></li>
+  <li><span class="co">8</span><div><b>Submit refusals</b> one sentence per missing field, naming the line; the draft is saved regardless, so nothing is lost and the form is never stuck.<span class="ref">extractApiError in lib/api-client; SampleRequestForm.tsx submit path</span></div></li>
+  <li><span class="co">9</span><div><b>Footer buttons</b> Cancel, Save as draft, Submit (the Sample Request pair).<span class="ref">SampleRequestForm.tsx footer; PurchaseRequestForm.tsx:980-1057</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 3: DETAIL APPROVED / PURCHASING ============ -->
+<h2 class="ft">3. Detail, Approved (locked): purchasing links the opened codes</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Procurement Management</div><div class="it">Stock Inquiries</div><div class="it on">New Product Applications</div></div>
+  <div class="main"><div class="topbar"></div><div class="content">
+    <div class="phdr rel"><div><h1>New Product Application - NPA-000001</h1><div class="crumb">Submitted: 17/10/2026 &middot; <span class="pill blue">Approved</span> &middot; 1 of 2 lines done</div></div>
+      <div style="display:flex;gap:8px" class="rel"><span class="co pin" style="right:auto;left:-26px;top:2px">10</span><span class="btn out sm">&lsaquo;</span><span class="btn out sm">&rsaquo;</span><span class="btn out">Revise</span><span class="btn out sm">&#9881;</span></div></div>
+    <div class="banner rel"><span class="co pin">11</span>Approved by (approver) on 17/10/2026. Locked: press Revise to change it (it goes back to Draft and needs approval again).</div>
+    <div class="card b2" style="max-width:1100px;margin:0 auto;padding:24px 32px 28px">
+      <div style="display:flex;gap:8px"><span class="badge2">New Product Application</span><span class="pill blue">Approved</span></div>
+      <div class="dtitle">New Product Application</div>
+      <div class="grid2">
+        <div class="f"><label class="muted">Applicant</label><b>(applicant)</b></div>
+        <div class="f"><label class="muted">Stock inquiry</label><b style="color:var(--primary)">SI26-0412</b></div>
+        <div class="f"><label class="muted">Customer</label><b>EXAMPLE DEVELOPER SDN BHD</b> <span class="badge2">No debtor code</span></div>
+        <div class="f"><label class="muted">Needed by</label><b>30/11/2026</b></div>
+      </div>
+      <div class="rel" style="margin:24px 0 10px"><span class="co pin" style="right:auto;left:90px;top:-4px">12</span><p class="b" style="margin:0">Line items</p></div>
+      <div class="card" style="overflow-x:auto">
+      <table class="t lt" style="min-width:1000px"><thead><tr><th style="width:40px">No.</th><th style="width:130px">Proposed code</th><th style="width:220px">Description</th><th style="width:120px">Item group</th><th style="width:70px">UOM</th><th style="width:150px">Supplier</th><th style="width:80px">Cost</th><th style="width:250px">Opened as</th></tr></thead><tbody>
+        <tr><td class="muted">1</td><td>XY-1234-MB</td><td>Basin mixer, matt black, single lever</td><td>Basin Mixer</td><td>UNIT</td><td>EXAMPLE SUPPLIER CO</td><td>185.00</td><td><span class="pill ok">Opened</span> <b style="color:var(--primary)">XY1234MB</b><div class="meta">(purchaser), 18/10/2026 &middot; <u>Undo</u></div></td></tr>
+        <tr class="rel"><td class="muted">2</td><td>XY-1234-BG</td><td>Basin mixer, brushed gold, single lever</td><td>Basin Mixer</td><td>UNIT</td><td>EXAMPLE SUPPLIER CO</td><td class="muted">-</td><td><span class="co pin">13</span><div style="display:flex;gap:6px"><span class="btn sm">Link product</span><span class="btn out sm">Not opening</span></div>
+          <div class="cellinp" style="margin-top:6px">xy1234g</div><div class="dd"><div class="muted">xy1234g is not in the product list yet. It appears after AutoCount sends it.</div></div></td></tr>
+      </tbody></table></div>
+    </div>
+    <div style="max-width:1100px;margin:16px auto 0" class="rel"><span class="co pin">14</span><div class="card" style="padding:14px 18px"><b>Revisions</b> <span class="muted xs">R0 only</span> &nbsp; <b style="margin-left:24px">Audit trail</b> <span class="muted xs">Submitted, Approved, Line 1 linked to XY1234MB</span></div></div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">10</span><div><b>DetailActions header</b>: prev/next pager, the one primary action for this viewer and status, gear (Copy link; Cancel application while no line is opened; Delete draft with countdown on a Draft). Submitted shows Approve / Reject to approvers; Approved shows Revise to applicant and approvers until a line is opened.<span class="ref">components/common/DetailActions.tsx, DetailActionsMenu.tsx, RecordNavigation.tsx; hooks/useDeferredAction.ts (countdown delete); SampleRequestDetail.tsx:408-488</span></div></li>
+  <li><span class="co">11</span><div><b>Lock banner</b> (amber, not an error). Rejected shows the red reason banner instead; a revised record shows the revision banner.<span class="ref">components/common/RejectionReasonBanner.tsx, RevisionBanner.tsx</span></div></li>
+  <li><span class="co">12</span><div><b>Lines read-only + "Opened as" column</b>: Opened (linked product code, click opens the product), Not opening (reason), or the two purchasing buttons. The application header shows "1 of 2 lines done"; it turns Completed by itself when every line is done.<span class="ref">PanelDataGrid / the same line table as frame 2 in read mode; lib/status-pill.ts</span></div></li>
+  <li><span class="co">13</span><div><b>Link product</b> (holders of open_code): the Sample Request product search (dashes, spaces and case ignored, lists only, a person picks). A code AutoCount has not sent yet shows the not-yet sentence and the line just stays open. <b>Not opening</b> asks a reason (dialog). Undo on either until Completed.<span class="ref">components/common/SampleRequestLines.tsx product box; BE services/sample_request_service.py:538 search_products (reused); reason dialog as RejectionReason dialog in StockInquiryDetail.tsx</span></div></li>
+  <li><span class="co">14</span><div><b>Every section renders</b> with an explicit empty state: revisions (R0 only) and the audit trail.<span class="ref">components/common/RevisionTimeline.tsx, components/audit/AuditTrail</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 4: LIST ============ -->
+<h2 class="ft">4. List (DataGrid)</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Procurement Management</div><div class="it">Stock Inquiries</div><div class="it on">New Product Applications</div></div>
+  <div class="main"><div class="topbar"></div><div class="content">
+    <div class="phdr rel"><div><h1>New Product Applications</h1></div><span class="btn">+ New</span><span class="co pin" style="right:auto;left:300px;top:0">15</span></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px"><div class="inp ph" style="width:280px">Search number, code, description</div><div class="inp" style="width:170px">Status: All</div><div class="inp" style="width:170px">Applicant: All</div></div>
+    <div class="card" style="overflow:hidden"><table class="t"><thead><tr><th style="width:120px">Number</th><th style="width:110px">Status</th><th style="width:110px">Inquiry</th><th style="width:200px">Customer</th><th>First line</th><th style="width:70px">Lines</th><th style="width:110px">Done</th><th style="width:110px">Date</th></tr></thead><tbody>
+      <tr><td>NPA-000003</td><td><span class="pill warn">Submitted</span></td><td>SI26-0420</td><td class="muted">-</td><td>Shower set, gunmetal</td><td>1</td><td>0 / 1</td><td>17/10/2026</td></tr>
+      <tr><td>NPA-000002</td><td><span class="pill ok">Completed</span></td><td class="muted">-</td><td>EXAMPLE TRADING</td><td>Kitchen sink 860, black</td><td>3</td><td>3 / 3</td><td>16/10/2026</td></tr>
+      <tr><td>NPA-000001</td><td><span class="pill blue">Approved</span></td><td>SI26-0412</td><td>EXAMPLE DEVELOPER SDN BHD</td><td>Basin mixer, matt black</td><td>2</td><td>1 / 2</td><td>17/10/2026</td></tr>
+    </tbody></table></div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">15</span><div><b>List = DataGrid + search + Status / Applicant filters + New</b>, rowHref to the detail, fixed layout with resizable columns, truncate + title on long text. Listing key procurement.new_product_applications.view. Empty state "No applications yet".<span class="ref">app/(protected)/project-sales/sample-requests/components/SampleRequestsList.tsx; lib/api-client buildDataGridParams; BE services/list_query_registry.py</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 5: PHONE ============ -->
+<h2 class="ft">5. Detail on a phone (375 wide)</h2>
+<div class="layout">
+<div class="frame w375"><div style="padding:16px 12px 24px">
+  <div class="b" style="font-size:17px">New Product Application - NPA-000001</div>
+  <div class="meta" style="margin:4px 0 10px"><span class="pill blue">Approved</span> &middot; 1 of 2 lines done</div>
+  <div style="display:flex;gap:8px;margin-bottom:12px"><span class="btn out" style="flex:1;justify-content:center">Revise</span><span class="btn out sm">&#9881;</span></div>
+  <div class="card b2 rel" style="padding:14px"><span class="co pin">16</span>
+    <div class="grid1"><div class="f"><label class="muted">Stock inquiry</label><b>SI26-0412</b></div><div class="f"><label class="muted">Customer</label><b>EXAMPLE DEVELOPER SDN BHD</b></div></div>
+    <p class="b" style="margin:16px 0 8px">Line items</p>
+    <div style="overflow-x:auto"><table class="t lt" style="width:640px"><thead><tr><th style="width:36px">No.</th><th style="width:150px">Proposed code</th><th style="width:200px">Description</th><th style="width:220px">Opened as</th></tr></thead><tbody>
+      <tr><td>1</td><td>XY-1234-MB</td><td>Basin mixer, matt black</td><td><span class="pill ok">Opened</span> XY1234MB</td></tr>
+      <tr><td>2</td><td>XY-1234-BG</td><td>Basin mixer, brushed gold</td><td><span class="btn sm">Link product</span></td></tr>
+    </tbody></table></div>
+  </div>
+</div></div>
+<div class="notes"><ol>
+  <li><span class="co">16</span><div><b>375 px</b>: one-column card, the line table scrolls sideways inside its own box, header buttons wrap. Nothing clipped, no page-level sideways scroll.<span class="ref">SampleRequestDetail.tsx (flex-col sm:flex-row header, overflow-x-auto line table)</span></div></li>
+</ol></div>
+</div>
+
+<h2 class="ft">Element -> component map (backend)</h2>
+<div class="card" style="padding:16px 20px;max-width:1200px"><table class="t"><thead><tr><th style="width:320px">Piece</th><th>Built from</th></tr></thead><tbody>
+<tr><td>Tables new_product_applications + _lines (company scoped)</td><td>alembic migration modelled on alembic/versions/sr_0001_sample_requests.py; CompanyScopedMixin (models/base.py:112)</td></tr>
+<tr><td>Statuses Draft / Submitted / Approved / Completed / Rejected / Cancelled</td><td>status engine entity, like modules/projects/status_entities.py _register_sample_request; moves checked as sample_request_service._edge_exists</td></tr>
+<tr><td>Number NPA-000001</td><td>the Sample Request request_no numbering</td></tr>
+<tr><td>Revise (snapshot + revision_no)</td><td>portal_form_revisions rows + revision_no, as PortalRevisionService.revise (services/portal_revision_service.py:1502); X-Revision-No fence services/revision_fence.py</td></tr>
+<tr><td>Product search for Link product</td><td>services/sample_request_service.py:538 search_products (lifted to a shared helper, not copied)</td></tr>
+<tr><td>Notifications</td><td>the in-app + email path SR uses (sample_request_service._record)</td></tr>
+<tr><td>Permissions view / create / approve / open_code</td><td>app/rbac/permission_registry.py + migration grant to admin roles, as sr_0001</td></tr>
+<tr><td>Delete draft countdown</td><td>form_action_dispatch / useDeferredAction, as SR</td></tr>
+</tbody></table></div>
+</div>
+</body>
+</html>
