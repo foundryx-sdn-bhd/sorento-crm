@@ -92,7 +92,7 @@ dates, c = partial deliveries, d = what is outstanding; `-1280` and `-375`).
 | Job | Today |
 | --- | --- |
 | A. Create a PO | 3 pages (project, PO record, PO document review) + 2 dialogs (Upload: 2 fields, Record: 7 fields), 10 clicks, 3 sign-offs (Confirm, Approve, Countersign) (a01-a09) |
-| B. Change one delivery date | Not possible on the schedule: dates are column headers, clicking does nothing; History sheet read-only (b04-b07). Only route seen: the delivery date on every draft SO line on that phase, one SO at a time; published SOs locked (b08). Or upload a revision: 5-field dialog (b02), review, confirm |
+| B. Change one delivery date | Not possible on the schedule: dates are column headers, clicking does nothing; History sheet read-only (b04-b07). Only route seen: the delivery date on every draft SO line for that area, one SO at a time; published SOs locked (b08). Or upload a revision: 5-field dialog (b02), review, confirm |
 | C. Partial deliveries | Shown nowhere: SO lines have Qty, UOM, Unit price, Amount, Delivery (date); no delivered figure (c04). Build drafts: 2 dialogs, 3 fields (c02, c03) |
 | D. Ordered / scheduled / delivered / outstanding per item | 7 screens, about 15 clicks; ordered and scheduled found on two different pages, compared by eye; delivered and outstanding not obtainable (d01-d04) |
 
@@ -141,6 +141,8 @@ component map, existing components only).
   Recommendation (a).
 - Q5. Build: (a) keep the split-by choice in one dialog; (b) always split by delivery date, no
   dialog. Recommendation (a).
+
+UAC draft: `pm-simplify-17oct-acceptance-criteria.md`. UI word for a schedule row is "Area" (24 Sep ruling J6); "phase" below is the code name (`delivery_phases`).
 
 Track (once approved): full track. Q2 changes a business rule (behaviour card), and the merged
 PO page is well over 300 lines; no migration expected.
