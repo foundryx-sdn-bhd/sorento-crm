@@ -125,3 +125,100 @@ def test_r3b_a_hand_over_kind_renders_as_today():
                 team="purchasing", expects="yes_no", asked_at_turn=2, payload={})
     oq = _view(State(focus=Focus(), pending=offer, turn_no=3), offer)["open_question"]
     assert oq.get("offer") == "team_pick" and oq.get("hand_over_to") == "purchasing", oq
+
+
+# --------------------------------------------------------------------------- #
+# Review round: the offer shows only when the LAST reply made it
+# --------------------------------------------------------------------------- #
+
+FRESH = [
+    ("did_you_mean_cp0_2d60b19a93", "product_pick", "product",
+     [("MWCX8609-RL-P", "MWCX8609-RL-P"), ("MWCX8609-RL-S10", "MWCX8609-RL-S10"), ("MWC7609-RL-P", "MWC7609-RL-P")],
+     "purchasing_certification", "product_attachment"),
+    ("did_you_mean_cp0_12e64c3f37", "product_pick", "product",
+     [("MWB7630", "MWB7630"), ("MWC7630-SH-P", "MWC7630-SH-P"), ("MWC7630-SH-S10", "MWC7630-SH-S10")],
+     "purchasing", "incoming"),
+    ("did_you_mean_es_33ba35d807", "product_pick", "product",
+     [("SRTWF12C-NEW", "SRTWF12C-NEW"), ("SRTWF12C", "SRTWF12C"), ("SRTWF12C-BL", "SRTWF12C-BL")],
+     "purchasing", "incoming"),
+    ("did_you_mean_zh_srtwc", "product_pick", "product",
+     [("SRTWC286-SH", "SRTWC286-SH"), ("SRTWC286-SH-150", "SRTWC286-SH-150")], "purchasing", "inventory"),
+]
+
+
+@pytest.mark.parametrize("kind,et,labels,team,domain", [r[1:] for r in FRESH], ids=[r[0] for r in FRESH])
+def test_r3b_review_a_fresh_did_you_mean_roster_stamped_from_birth_still_shows_the_pick_owed(kind, et, labels, team, domain):
+    opts = _options(et, labels)
+    pending = ask(kind, opts, team=team, asked_at_turn=2, payload={"domain": domain, "escalate_offered": True})
+    focus = Focus(domains=[domain], last_list=[{"position": o["position"], "label": o["label"], "code": o["code"]} for o in opts])
+    v = _view(State(focus=focus, pending=pending, turn_no=3), pending)
+    assert v["open_question"]["owed"] == ["pick"], v["open_question"]
+    assert [i["position"] for i in v["last_list"]] == [o["position"] for o in opts]
+    assert "offer" not in v["open_question"] or v["open_question"]["owed"] == ["pick"]
+
+
+def test_r3b_review_the_rendered_last_list_of_a_stamped_answered_roster_lists_its_items():
+    state, pending, opts = _state("product_pick", "product", ROSTERS[0][3], "purchasing", 4, "incoming")
+    text = chat_state.render(_view(state, pending))
+    line = next(l for l in text.splitlines() if l.startswith("- last list"))
+    assert "the open question's options" not in line, line
+    assert "MWC7630-SH-P" in line and "MSS6917-GM" in line, line
+
+
+# ---- stale flag after a later pick that found stock (driven as turns through the seam) ----
+
+from tests.chatbot._r9_engine_console import OWNER_FAMILY, _present_response  # noqa: E402
+from tests.chatbot.test_chat_state_seam import Seam, _emit, _mem_state, _op, _roster_state, seam  # noqa: E402,F401
+from tests.chatbot.test_engine import stub_access  # noqa: E402,F401
+
+
+def _pick(n: int, text: str):
+    return _emit(domain_hint="inventory", intent_hint="check_stock", reference_positions=[n],
+                 open_question_answer={"mode": "pick", "picked": [n], "items": [], "qty_for_all": None},
+                 state_changes=[_op("pick", position=n)])
+
+
+def _stock_found(seam_, monkeypatch):
+    from app.services.ai_assistant_service import MCPRuntimeClient
+
+    present = _present_response()
+    codes = {pid: c for c, pid in seam_.uuid_of.items()}
+
+    def fake(client, name, args):
+        seam_.tool_calls.append((name, args))
+        if name != "crm_inventory_stock_balance_list":
+            return json.dumps({"answers": []})
+        summary = [{"product_id": pid, "product_code": codes[pid], "total_on_hand": 40,
+                    "locations": [{"warehouse_code": "BRW", "quantity_on_hand": 40}]}
+                   for pid in args.get("product_ids") or [] if pid in codes]
+        return present(name, json.dumps({
+            "data": [], "pagination": {"total": len(summary), "page": 1, "limit": 50},
+            "stock_visibility": {"mode": "compact", "warehouse_codes": None, "source": "contact"},
+            "stock_summary": summary, "last_updated_at": "2026-09-29T01:00:00"}))
+
+    monkeypatch.setattr(MCPRuntimeClient, "call_tool", fake)
+
+
+import json  # noqa: E402
+
+STALE = [("first_then_second", OWNER_FAMILY[:3], 1, 2), ("second_then_third", OWNER_FAMILY[:3], 2, 3),
+         ("third_then_first", OWNER_FAMILY[:4], 3, 1)]
+
+
+@pytest.mark.parametrize("codes,miss,found", [c[1:] for c in STALE], ids=[c[0] for c in STALE])
+def test_r3b_review_a_later_pick_that_found_stock_leaves_no_offer_in_the_next_state(seam, monkeypatch, codes, miss, found):
+    from app.services.chatbot import turn_runtime
+    from tests.chatbot.test_escalation_agent_carry import _seed_escalation_team
+
+    monkeypatch.setattr(turn_runtime, "_stock_availability_only", lambda *a, **k: False)
+
+    _seed_escalation_team(seam.session_factory, agent_code="incoming_stock_enquiries", team_code="purchasing",
+                          team_label="Packing List", members=[("Lucas", []), ("Jereen", [])])
+    a = seam.say(str(miss), _pick(miss, str(miss)), previous=_roster_state(seam, codes))
+    assert "escalate" in ((a.reply or {}).get("text") or "").lower(), (a.reply, "turn A must offer the hand-over")
+    _stock_found(seam, monkeypatch)
+    b = seam.say(str(found), _pick(found, str(found)))
+    assert "escalate" not in ((b.reply or {}).get("text") or "").lower(), (b.reply, "turn B must find stock")
+    c = seam.say("ok", _emit(domain_hint="inventory", intent_hint="check_stock", state_changes=[_op("keep")]))
+    shown = _mem_state(seam, c)["shown"]
+    assert "hand_over" not in shown and '"offer"' not in shown, shown
