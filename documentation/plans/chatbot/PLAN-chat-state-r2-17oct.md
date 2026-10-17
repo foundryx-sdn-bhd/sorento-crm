@@ -67,3 +67,25 @@ passes both arms: no TRAIN signal for the held-out 62.5%), refine 1/1 of 5, swit
 - Merge origin/main 63f4fe47c (#1747 squash e9ef7b416 + #1762): add/add conflicts resolved 3-way against the r1 commit
   the branch already held (f3b0c5dc2); the merge adds only #1762's eval tooling and the import-boundary allowlist
   lines, no chatbot runtime change, so the r2-2 gate stands.
+- Live TRAIN r2 (18 Oct, $1.485, 84 calls/run): lane d6be413990 + v168 (id 20d8165c) 72/84 x3 vs main x3 69/84
+  (round-1 main runs, same pin): paired +3 [-1, +8], not significant. and_x 16/14, pick 21/20, switch 24/23,
+  answer 10/10, escalation 1/1, refine 0/1 of 5. Worse: cp0-75e516bd40 (refine). Refine root cause next ($0).
+
+## Round 3 (18 Oct): refine root cause on the r2 live rows ($0; scratchpad evalrun2/rootcause-r2r2.md)
+
+No refine failure is a parse failure; r2-B now emits the named spec (fcd44fe521, 253d58ba8b).
+- **R3-A HELD-QTY-NOT-FETCHED (this lane; cp0 b5eb30e1b9 + f14dc9c818, train2 ~4 UNVERIFIED):** r2-A carries the held
+  quantity onto `focus.products` rows only (chat_state.py:821-825), but the fetch reads only the open task's
+  `requested_quantities` or this turn's entity quantities (turn_runtime.py `_spec_quantities`), so a refine / keep still
+  asks "How many units?". r2-A's tests stop at `apply_changes`, which is why they went green while the carry was dead.
+  Fix: the quantities apply carried become the fetch's last source, by own code, with r2 round 2's limits (clear wins,
+  own code only, never onto a new subject). Tests go through the fetch seam, >= 8 phrasings (TRAIN + fresh paraphrases).
+- **QTY-ONTO-REFINED-SET (253d58ba8b, 665ba3e897): owner ruling.** A refine of a held product with a stated quantity
+  lands on 19-20 family codes; the grader wants no "how many" ask, reviewer S-A2 says a quantity fills only its own code.
+- **SPEC-OVER-HELD-NO-MEMBER (#1755, fcd44fe521; train2 up to 19 incl. 10 size refines):** no family member has the
+  value -> `narrow_held_family` returns the verdict unchanged (held_family.py:86-88) and the turn widens to the catalogue;
+  a numeric size never narrows (string `spec_value` only, held_family.py:71). Gold ruling first, then #1755.
+- **Grader (EVAL-BENCH):** cp0-75e516bd40 flipped only because r2-C turns CLOSED LISTS on and #1755 card R2
+  (grounding.py:795-806) puts "Water Closet" for the typed "toilet"; same lookup (47 ids) and reply as main, the grader
+  reads words only (targets.py:807-847). G-HELD-BEFORE targets.py:823-828. train2: 7 refines while the bot's own
+  "How many units for each?" is owed, which `spec_refine` (targets.py:521) fails.
