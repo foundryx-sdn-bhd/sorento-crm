@@ -1699,6 +1699,20 @@ def _apply_crossdomain_render(
     block = render.get("_xdBlock")
     if not isinstance(block, Mapping) or block.get("any") is not True or not block.get("block"):
         return text
+    from app.services.chatbot import composers
+
+    note = block.get("only_other_note")
+    if (
+        not answered
+        and composers.enabled()
+        and isinstance(note, str)
+        and block["block"].startswith(note + "\n\n")
+        and all(c.lower() in text.lower() for c in block.get("only_other_codes") or ())
+    ):
+        # CHAT-COMPOSER: the miss text already names these codes as missing, so the block's
+        # own "No incoming for X." line would say it twice. A miss text without the codes
+        # (an entitlement miss) keeps the line.
+        block = {**block, "block": block["block"][len(note) + 2 :]}
     variables: dict[str, Any] = {"last_result_set": [True]} if answered else {}
     sealed = {"reply": {"text": text, "session_patch": {"user_response": text, "variables": variables}}}
     merged = tail_compose.crossdomain_compose(

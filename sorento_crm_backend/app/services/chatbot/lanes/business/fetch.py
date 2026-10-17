@@ -2780,6 +2780,11 @@ _LOCALIZED_TOOLS = frozenset(
 
 def _field_label(loc: Localizer, f: Any) -> str:
     """The printed label of a field: translated when the localizer knows it, else as sent."""
+    from app.services.chatbot import composers
+
+    if isinstance(f, dict) and "label" in f and composers.enabled():
+        # CHAT-COMPOSER: one label for the same key across incoming views.
+        f = {**f, "label": composers_format.label(f)}
     label = jsc.js_string(jsc.get(f, "label", jsc.UNDEFINED))
     return loc.label(f) if isinstance(f, dict) and "label" in f else label
 

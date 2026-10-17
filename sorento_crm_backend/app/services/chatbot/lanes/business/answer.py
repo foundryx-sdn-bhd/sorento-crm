@@ -1021,8 +1021,8 @@ def crossdomain_render(
         for it in rows:
             if id(it) in seen_rows:
                 continue
-            if gate_on and origin_incoming:
-                # CHAT-COMPOSER: the numbered stock block, as the product-code answer prints it.
+            if gate_on:
+                # CHAT-COMPOSER: the numbered block, as the product-code answer prints it.
                 if not jsc.get(it, "fields"):
                     continue
                 blocks.append(composers_stock.block(len(xd_rows) + 1, it))
@@ -1146,7 +1146,8 @@ def crossdomain_render(
         nothing_note = " ".join(sentences)
 
     body = (lead + "\n\n" + "\n\n".join(blocks) + silent_note) if blocks else ""
-    if body and only_other_note:
+    note_printed = bool(body and only_other_note)
+    if note_printed:
         body = f"{only_other_note}\n\n{body}"
     if nothing_note:
         body = f"{body}\n\n{nothing_note}" if body else nothing_note
@@ -1159,7 +1160,15 @@ def crossdomain_render(
         "origin": zs.get("origin_domain") or None,
         "probed_rows": len(items),
         "rendered_rows": len(blocks),
-        **({"rendered_codes": [c for c in xd_rows if c]} if gate_on and origin_incoming else {}),
+        **(
+            {
+                "rendered_codes": [c for c in xd_rows if c],
+                # `answer_bridge._apply_crossdomain_render` drops this line on a total miss.
+                **({"only_other_note": only_other_note, "only_other_codes": only_other} if note_printed else {}),
+            }
+            if gate_on
+            else {}
+        ),
         # A7: the codes with NOTHING on either side, and the sentence built for them - so
         # `run_crossdomain` can try a NEXT ladder rung (e.g. purchase_order) for exactly
         # these codes and, if that rung answers, swap this sentence for its own without
@@ -1438,7 +1447,13 @@ def _crossdomain_rung_text(rows: list[dict[str, Any]]) -> str:
         lines.append(f"*Outstanding:* {_fmt_xd_value(row.get('qty'))}")
         po_date = row.get("po_date")
         if po_date not in (None, ""):
-            lines.append(f"*PO date:* {_fmt_xd_value(po_date)}")
+            from app.services.chatbot import composers
+            from app.services.chatbot.composers import format as composers_format
+
+            if composers.enabled() and composers_format.date(po_date):
+                lines.append(f"*PO date:* {composers_format.date(po_date)}")
+            else:
+                lines.append(f"*PO date:* {_fmt_xd_value(po_date)}")
         location = row.get("location")
         if location not in (None, ""):
             lines.append(f"*Location:* {_fmt_xd_value(location)}")

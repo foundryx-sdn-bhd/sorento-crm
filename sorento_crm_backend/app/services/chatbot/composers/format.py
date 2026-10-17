@@ -18,6 +18,23 @@ ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 # would change what a customer is sent.
 EM_DASH = "\u2014"
 
+# A whole-string date, as a SQL `Date` column serialises. Anchored at both ends: text that
+# merely starts or ends with a date ("2026-09-27 to 2026-10-01", "SRT-2026-09-27") is not one.
+DATE_ONLY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_DATE_PREFIX_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?")
+_DMY_RE = re.compile(r"\d{2}/\d{2}/\d{4}")
+
+
+def date(v: Any) -> str | None:
+    """`dd/mm/yyyy` from `YYYY-MM-DD` with or without a time part (components read verbatim,
+    no timezone shift); an already `dd/mm/yyyy` string passes; anything else is None."""
+    if not isinstance(v, str):
+        return None
+    if _DMY_RE.fullmatch(v):
+        return v
+    match = _DATE_PREFIX_RE.fullmatch(v)
+    return f"{match.group(3)}/{match.group(2)}/{match.group(1)}" if match else None
+
 
 def timestamp(iso: Any) -> str | None:
     """`new Date(iso)` then local `getDate()`/`getMonth()`/... - components, verbatim.
@@ -51,6 +68,11 @@ def value(v: Any) -> str:
     if isinstance(v, bool):
         return "Yes" if v else "No"
     if isinstance(v, str):
+        if DATE_ONLY_RE.fullmatch(v):
+            from app.services.chatbot import composers
+
+            if composers.enabled():
+                return date(v) or v
         # DO-ASK-SIMPLIFY tester pass 2: a value's own '*' (a product code "*REPLACE")
         # would pair with the next label's bold marker and leave a stray '*' in WhatsApp.
         # It prints as the look-alike U+2217, which WhatsApp does not read as formatting.
@@ -72,3 +94,13 @@ def value(v: Any) -> str:
 def label_line(label: str, v: Any) -> str:
     """One `*Label:* value` field line."""
     return f"*{label}:* {value(v)}"
+
+
+def label(f: Any) -> str:
+    """The printed label of a field, by its KEY where two tools name one thing differently."""
+    key = f.get("key") if isinstance(f, dict) else None
+    if key == "shipping_container_number":
+        return "Container"
+    if key == "estimated_arrival_date":
+        return "ETA"
+    return jsc.js_string(jsc.get(f, "label", jsc.UNDEFINED))

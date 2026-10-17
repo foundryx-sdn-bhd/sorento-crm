@@ -34,7 +34,7 @@ def block(n: int, item: Any) -> str:
     """A staff stock row numbered `n`, the way `fetch._item_line` prints it in English."""
     field_lines = "\n".join(
         fmt.label_line(
-            jsc.js_string(jsc.get(f, "label", jsc.UNDEFINED)),
+            fmt.label(f),
             jsc.get(f, "granted_value") if jsc.get(f, "granted_value") is not None else jsc.get(f, "value"),
         )
         for f in (jsc.get(item, "fields") or [])
