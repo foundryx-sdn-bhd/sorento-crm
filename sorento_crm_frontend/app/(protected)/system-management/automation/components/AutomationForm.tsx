@@ -73,6 +73,7 @@ export default function AutomationForm({ open, onOpenChange, automation, onSaved
   const [runTime, setRunTime] = useState<string>('09:00');
   const [timezone, setTimezone] = useState<string>('Asia/Kuala_Lumpur');
   const [conditionsJson, setConditionsJson] = useState<RuleGroup | null>(null);
+  const [ruleHasBadNumber, setRuleHasBadNumber] = useState(false);
   const [ruleProblems, setRuleProblems] = useState<string[]>([]);
 
   const triggers = useTriggerCatalog();
@@ -134,6 +135,7 @@ export default function AutomationForm({ open, onOpenChange, automation, onSaved
       setRunTime('09:00');
       setTimezone('Asia/Kuala_Lumpur');
       setConditionsJson(null);
+      setRuleHasBadNumber(false);
       setRuleProblems([]);
     }
   }, [open, automation, triggerSpecs.length]);
@@ -171,6 +173,7 @@ export default function AutomationForm({ open, onOpenChange, automation, onSaved
   const handleTriggerChange = (t: string) => {
     setTriggerType(t);
     setConditionsJson(null);
+    setRuleHasBadNumber(false);
     setRuleProblems([]);
     // Each trigger carries its own sensible X (7 for promotions, 30 for
     // certificates), so adopt the new trigger's default instead of carrying the
@@ -191,6 +194,8 @@ export default function AutomationForm({ open, onOpenChange, automation, onSaved
       setDaysChecked(true);
       return;
     }
+    // A rule number that cannot be read keeps its sentence on the box; nothing is sent.
+    if (factSources.length > 0 && ruleHasBadNumber) return;
     if (!name.trim()) {
       toast.error('Name is required');
       return;
@@ -368,6 +373,7 @@ export default function AutomationForm({ open, onOpenChange, automation, onSaved
               <RuleBuilder
                 key={triggerType}
                 sources={factSources}
+                onBadNumberChange={setRuleHasBadNumber}
                 value={conditionsJson}
                 onChange={setConditionsJson}
               />

@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
 import { numberFieldError } from '@/lib/number-field';
+import { ruleTreeHasBadNumber } from './ruleTreeBadNumber';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -169,11 +170,13 @@ export interface RuleBuilderProps {
   value: RuleGroup | null;
   /** Fires on every edit with the serialized tree - null when empty. */
   onChange: (group: RuleGroup | null) => void;
+  /** Told after each edit whether a number box holds text that cannot be read as a number. */
+  onBadNumberChange?: (bad: boolean) => void;
   disabled?: boolean;
 }
 
 /** Public component: fetches facts for `sources`, then renders the builder. */
-export function RuleBuilder({ sources, value, onChange, disabled = false }: RuleBuilderProps) {
+export function RuleBuilder({ sources, value, onChange, onBadNumberChange, disabled = false }: RuleBuilderProps) {
   const { data: facts, isLoading, isError, error } = useRuleFacts(sources);
 
   if (sources.length === 0) return null;
@@ -203,18 +206,20 @@ export function RuleBuilder({ sources, value, onChange, disabled = false }: Rule
     );
   }
 
-  return <RuleBuilderInner facts={facts} value={value} onChange={onChange} disabled={disabled} />;
+  return <RuleBuilderInner facts={facts} value={value} onChange={onChange} onBadNumberChange={onBadNumberChange} disabled={disabled} />;
 }
 
 function RuleBuilderInner({
   facts,
   value,
   onChange,
+  onBadNumberChange,
   disabled = false,
 }: {
   facts: RuleFactItem[];
   value: RuleGroup | null;
   onChange: (group: RuleGroup | null) => void;
+  onBadNumberChange?: (bad: boolean) => void;
   disabled?: boolean;
 }) {
   const keyRef = useRef(0);
@@ -259,7 +264,9 @@ function RuleBuilderInner({
 
   const update = (next: DraftGroup) => {
     setRoot(next);
-    onChange(next.rules.length === 0 ? null : (toWire(next) as RuleGroup));
+    const wire = next.rules.length === 0 ? null : (toWire(next) as RuleGroup);
+    onBadNumberChange?.(ruleTreeHasBadNumber(wire, facts));
+    onChange(wire);
   };
 
   return (

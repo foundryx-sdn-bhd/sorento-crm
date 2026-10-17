@@ -156,6 +156,8 @@ export function ProductPickerDialog({
 }) {
   const [draft, setDraft] = useState<ProductSelection>(value);
   const { data: ruleFacts } = useRuleFacts(['product']);
+  const [tab, setTab] = useState('rule');
+  const [ruleRefused, setRuleRefused] = useState(false);
   const {
     value: search,
     setValue: setSearch,
@@ -330,7 +332,7 @@ export function ProductPickerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="rule">
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList variant="default">
             <TabsTrigger value="rule">By rule</TabsTrigger>
             <TabsTrigger value="manual">By hand</TabsTrigger>
@@ -543,13 +545,25 @@ export function ProductPickerDialog({
           </p>
         )}
 
+        {ruleRefused && ruleTreeHasBadNumber(draft.conditions, ruleFacts) && (
+          <p role="alert" className="text-xs text-destructive">
+            Fix the number in the rule before using these products.
+          </p>
+        )}
+
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
             onClick={() => {
-              if (ruleTreeHasBadNumber(draft.conditions, ruleFacts)) return;
+              if (ruleTreeHasBadNumber(draft.conditions, ruleFacts)) {
+                // Back to the rule, where the box carries its sentence.
+                setTab('rule');
+                setRuleRefused(true);
+                return;
+              }
+              setRuleRefused(false);
               onSave(draft);
               onOpenChange(false);
             }}
