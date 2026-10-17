@@ -393,3 +393,15 @@ def test_summary_refuses_more_than_200_ids_and_ignores_ids_that_are_not_uuids(sc
     r = TestClient(app).get(SUMMARY_URL, params={"product_ids": f"nope,{p.id}"})
     assert r.status_code == 200
     assert [s["product_id"] for s in r.json()] == [str(p.id)]
+
+
+def test_stock_viewers_alone_are_refused_the_customer_and_supplier_documents(scm_app):
+    """Security review S1: `inventory.stock.view` opened stock balances only, never SO
+    customers or PO suppliers, so it does not open this panel (nor its summary)."""
+    app, db, gcu, gcuk = scm_app
+    w = World(db)
+    p = w.product("A")
+    grant_permission(db, "guest", "inventory.stock.view")
+    as_user(app, gcu, gcuk, seed_user(db, "guest"))
+    assert TestClient(app).get(URL, params={"product_id": str(p.id)}).status_code == 403
+    assert TestClient(app).get(SUMMARY_URL, params={"product_ids": str(p.id)}).status_code == 403

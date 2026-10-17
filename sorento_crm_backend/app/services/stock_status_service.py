@@ -191,7 +191,8 @@ def summaries(db: Session, product_ids: list[str]) -> list[dict[str, Any]]:
 
     One read for a whole page of a list, where the full panel per row would be hundreds of
     queries. Ids that are not uuids are skipped; an item the caller's company does not hold
-    is simply absent. Only warehouses the caller can see are counted, exactly as the panel.
+    is simply absent. `Stock` and `SalesOrderLine` rows are company-scoped themselves, so only
+    the caller's company is counted, as in the panel.
     """
     ids = [pid for pid in dict.fromkeys(product_ids) if is_uuid(pid)]
     if not ids:

@@ -438,7 +438,9 @@ export const MENU_SIDEBAR: MenuConfig = [
       {
         title: 'Stock status',
         path: '/inventory-management/stock-status',
-        permission: 'inventory.stock.view',
+        // The API's own gate (`app/api/v1/inventory/stock_status.py`): the panel shows SO
+        // customers and PO suppliers, which `inventory.stock.view` alone never granted.
+        permissionsAny: ['projects.projects.view', 'scm.reorder.run', 'scm.dashboard.view'],
       },
       {
         title: 'Stock Batches',
@@ -1971,7 +1973,9 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
       {
         title: 'Stock status',
         path: '/inventory-management/stock-status',
-        permission: 'inventory.stock.view',
+        // The API's own gate (`app/api/v1/inventory/stock_status.py`): the panel shows SO
+        // customers and PO suppliers, which `inventory.stock.view` alone never granted.
+        permissionsAny: ['projects.projects.view', 'scm.reorder.run', 'scm.dashboard.view'],
       },
       {
         title: 'Stock Batches',

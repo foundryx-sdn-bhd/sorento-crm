@@ -1,8 +1,9 @@
 """GET /api/v1/inventory/stock-status - AutoCount's Available Stock Status for one item.
 
 Read-only. Served to every screen that embeds the panel, so any one of their read permissions
-opens it: the stand-alone Inventory page, order inquiries and the fulfilment board
-(`projects.projects.view`), the loading plan (`scm.reorder.run`) and the SCM dashboard.
+opens it: order inquiries and the fulfilment board (`projects.projects.view`), the loading plan
+(`scm.reorder.run`) and the SCM dashboard (`scm.dashboard.view`); the stand-alone Inventory page
+is shown to the same three.
 """
 from datetime import date
 from typing import Optional
@@ -17,8 +18,11 @@ from app.services.stock_status_service import MAX_SUMMARY_IDS, stock_status, sum
 
 router = APIRouter()
 
+#: Security review S1: NOT `inventory.stock.view`. That slug opens stock balances only, and
+#: this read returns SO customers and PO/SPO suppliers, which it never granted (an integration
+#: holding only the stock-balance read could otherwise collect every open order's customer).
+#: These three already open those documents on their own screens.
 READ_PERMISSIONS = [
-    "inventory.stock.view",
     "projects.projects.view",
     "scm.reorder.run",
     "scm.dashboard.view",
