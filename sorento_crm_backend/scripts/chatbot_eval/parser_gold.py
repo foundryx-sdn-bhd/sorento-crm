@@ -8,7 +8,8 @@ usage (cwd = the backend dir of the checkout under test):
       by --max-usd and only a provider key ending with --require-key-last4 may spend)
 
 Imports only the stdlib at module level and `app.*` inside functions, like replay.py. Output rows carry ids,
-the pass flag, the reasons, the spend and the parse's own routing fields (no message text).
+the pass flag, the reasons, the spend and the parse's own routing fields; each row's entities carry `raw`,
+a span of the gold message (synthetic and committed, so it holds no real customer text).
 """
 from __future__ import annotations
 
