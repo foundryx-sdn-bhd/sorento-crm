@@ -893,3 +893,22 @@ def test_s7_if_the_hygiene_read_raises_the_turn_completes_and_keyed_rows_are_dro
     out = _order_keep(seam, _two_customer_state(gid, _code_of(seam, gid), bad))
     assert out.error is None, out.error
     assert [c for c in seam.state["focus"]["customers"] if c.get("uuid")] == []
+
+
+def test_r8_a_reference_to_the_held_subject_never_reaches_the_resolver_as_entities(seam):
+    prev = _held_srt1(seam)
+    stray = [
+        entity("that one", "customer", canonical_code=None, hint_confident=False, confident=False),
+        entity("that one", "form", canonical_code=None, hint_confident=False, confident=False),
+    ]
+    out = seam.say(
+        "that one",
+        _emit(domain_hint="inventory", intent_hint="check_stock", entities=stray, state_changes=[_op("keep")]),
+        previous=prev,
+    )
+    assert seam.stock_ids(seam.turn_calls[-1]) == [seam.uuid_of["SRT1"]], seam.turn_calls[-1]
+    reply = (out.reply or {}).get("text") or ""
+    assert "this (" not in reply and "that one" not in reply.lower(), reply
+    assert seam.state["open_question"] is None or seam.state["open_question"].get("kind") != "pick_one"
+    assert [e for e in out.ctx["parse"]["output"]["entities"] if e.get("raw") == "that one"] == []
+    assert [p["canonical_code"] for p in seam.state["focus"]["products"]] == ["SRT1"]

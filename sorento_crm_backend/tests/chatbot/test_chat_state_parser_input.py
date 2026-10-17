@@ -355,3 +355,13 @@ def test_r6_nit_resolve_config_reads_the_prompt_once_so_gate_and_text_come_from_
     monkeypatch.setattr(parser_mod, "get_prompt", counting)
     _resolve(monkeypatch, session_factory, f"Rules {{{{current_date}}}}\n{HEADING_LINE}\n")
     assert len(reads) == 1, f"the prompt was read {len(reads)} times"
+
+
+def test_r8_the_prompt_says_a_reference_to_the_held_subject_is_keep_and_never_an_entity():
+    import re
+
+    from app.services.chatbot.head.chat_state_prompt import STATE_SECTION
+
+    text = " ".join(STATE_SECTION.split())
+    assert re.search(r"(refer|point)[^.]*held[^.]*`keep`", text) or re.search(r"`keep`[^.]*(refer|point)[^.]*held", text), text
+    assert re.search(r"never[^.]*(as|an) entit", text), text
