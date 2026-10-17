@@ -11,6 +11,14 @@ from typing import Any
 
 from app.services.chatbot import jsc
 
+UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def is_uuid(v: Any) -> bool:
+    """A UUID-shaped token: an id, never a name a customer reads."""
+    return isinstance(v, str) and bool(UUID_RE.fullmatch(v.strip()))
+
+
 ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 
 # The JS renders an empty value and an object joiner with an EM DASH, and the access note

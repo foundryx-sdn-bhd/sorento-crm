@@ -12,7 +12,7 @@ def miss_line(misses: list[str]) -> str:
     if composers.enabled():
         from app.services.chatbot.composers import misses as composers_misses
 
-        return composers_misses.not_found(misses).text
+        return composers_misses.not_found(misses).text if any(not fmt.is_uuid(m) for m in misses) else ""
     return f"Couldn't find: {', '.join(misses)}."
 
 
@@ -24,6 +24,8 @@ def dealer_block(item: Any) -> str:
     """An answered dealer item: its title, then the discontinued marker and each
     `Alternative:` line, as `fetch._item_line` prints it unnumbered in English."""
     line = jsc.nullish_str(jsc.get(item, "title")).strip()
+    if fmt.is_uuid(line):
+        line = ""
     flags = jsc.get(item, "flags")
     if jsc.truthy(flags):
         if jsc.truthy(jsc.get(flags, "discontinued")):
@@ -35,15 +37,14 @@ def dealer_block(item: Any) -> str:
 
 def block(n: int, item: Any) -> str:
     """A staff stock row numbered `n`, the way `fetch._item_line` prints it in English."""
-    field_lines = "\n".join(
-        fmt.label_line(
-            fmt.label(f),
-            jsc.get(f, "granted_value") if jsc.get(f, "granted_value") is not None else jsc.get(f, "value"),
-        )
-        for f in (jsc.get(item, "fields") or [])
-    )
+    def shown(f: Any) -> Any:
+        v = jsc.get(f, "granted_value") if jsc.get(f, "granted_value") is not None else jsc.get(f, "value")
+        return None if fmt.is_uuid(v) else v
+
+    field_lines = "\n".join(fmt.label_line(fmt.label(f), shown(f)) for f in (jsc.get(item, "fields") or []))
     if not field_lines:
-        field_lines = jsc.nullish_str(jsc.get(item, "title")).strip()
+        title = jsc.nullish_str(jsc.get(item, "title")).strip()
+        field_lines = "" if fmt.is_uuid(title) else title
     line = f"{n}. {field_lines}"
     flags = jsc.get(item, "flags")
     if jsc.truthy(flags):

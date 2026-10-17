@@ -357,15 +357,6 @@ LABELS: dict[str, dict[str, str]] = {
     '{header} I found {count}, please type a little more of the name.': {"ms": '{header} Saya menemui {count}, sila taip lebih sedikit daripada nama itu.', "zh": '{header}我找到 {count} 个，请多输入一些名称。'},
     'and {n} others, reply with the full code.': {"ms": 'dan {n} lagi, balas dengan kod penuh.', "zh": '还有 {n} 个，请回复完整代码。'},
     "Couldn't find {names}.": {"ms": 'Tidak dapat menemui {names}.', "zh": '找不到 {names}。'},
-    "But no stock matched these.": {"ms": 'Tiada stok yang sepadan.', "zh": '没有匹配的库存。'},
-    "But no product matched these.": {"ms": 'Tiada produk yang sepadan.', "zh": '没有匹配的产品。'},
-    "But no SPO line matched these.": {"ms": 'Tiada baris SPO yang sepadan.', "zh": '没有匹配的 SPO 行。'},
-    "No {what} on record for {product}.": {"ms": 'Tiada {what} dalam rekod untuk {product}.', "zh": '{product} 没有{what}记录。'},
-    # CHAT-COMPOSER S6: an asked spec or price with no value, one line per product. `{noun}` is a
-    # lower-case spec word, so it never takes the official-type wording of the key above.
-    "No {noun} on record for {product}.": {"ms": 'Tiada {noun} direkodkan untuk {product}.', "zh": '没有 {product} 的{noun}记录。'},
-    "No list price on record for {product}.": {"ms": 'Tiada harga senarai direkodkan untuk {product}.', "zh": '没有 {product} 的标价记录。'},
-    "No dimensions on record for {product}.": {"ms": 'Tiada dimensi direkodkan untuk {product}.', "zh": '没有 {product} 的尺寸记录。'},
     'I have {names}.': {"ms": 'Saya ada {names}.', "zh": '我已记下 {names}。'},
     'What would you like me to know?': {"ms": 'Apa yang anda mahu saya tahu?', "zh": '您想让我了解什么？'},
     "Sorry, we don't support direct goods receive & SPO at the moment. You may ask about incoming stock for a specific product or container": {"ms": 'Maaf, kami belum menyokong penerimaan barang terus & SPO buat masa ini. Anda boleh bertanya tentang stok masuk bagi produk atau kontena tertentu', "zh": '抱歉，我们目前暂不支持直接收货和 SPO 查询。您可以询问特定产品或货柜的到货库存'},
@@ -582,13 +573,39 @@ def refer_sentences(localizer: Any = None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(found))
 
 
+#: CHAT-COMPOSER: the catalogue entries only the lane's gate-on sentences use. Kept apart from `LABELS`
+#: so a gate-off table never holds them; `defaults()` and `resolve()` add them when the gate is on.
+#: `{noun}` is a lower-case spec word, so it never takes the official-type wording of `{what}`.
+LANE_LABELS: dict[str, dict[str, str]] = {
+    "But no stock matched these.": {"ms": 'Tiada stok yang sepadan.', "zh": '没有匹配的库存。'},
+    "But no product matched these.": {"ms": 'Tiada produk yang sepadan.', "zh": '没有匹配的产品。'},
+    "But no SPO line matched these.": {"ms": 'Tiada baris SPO yang sepadan.', "zh": '没有匹配的 SPO 行。'},
+    "No {what} on record for {product}.": {"ms": 'Tiada {what} dalam rekod untuk {product}.', "zh": '{product} 没有{what}记录。'},
+    "No {noun} on record for {product}.": {"ms": 'Tiada {noun} direkodkan untuk {product}.', "zh": '没有 {product} 的{noun}记录。'},
+    "No list price on record for {product}.": {"ms": 'Tiada harga senarai direkodkan untuk {product}.', "zh": '没有 {product} 的标价记录。'},
+    "No dimensions on record for {product}.": {"ms": 'Tiada dimensi direkodkan untuk {product}.', "zh": '没有 {product} 的尺寸记录。'},
+}
+
+
+#: CHAT-COMPOSER: the catalogue keys the lane added. They belong to gate-on sentences only, so with
+#: the gate off the table neither seeds nor uses them (ms/zh replies stay as main prints them).
+LANE_KEYS = frozenset(LANE_LABELS)
+
+
+def _lane_on() -> bool:
+    from app.services.chatbot import composers
+
+    return composers.enabled()
+
+
 def defaults(lang: str) -> dict[str, str]:
     """English -> `lang` for every catalog entry whose translation keeps the English tokens."""
     if lang == "en":
         return {}
+    entries = {**LABELS, **LANE_LABELS} if _lane_on() else LABELS
     return {
         english: entry[lang]
-        for english, entry in LABELS.items()
+        for english, entry in entries.items()
         if lang in entry and tokens_match(english, entry[lang])
     }
 
@@ -853,6 +870,8 @@ class Localizer:
 
     def __init__(self, language: str, table: dict[str, str]) -> None:
         self.language = language
+        if not _lane_on():
+            table = {k: v for k, v in table.items() if k not in LANE_KEYS}
         self.table = table
         # `{token}` entries as (whole-string regex over the English shape, target).
         self._templates: list[tuple[re.Pattern[str], str, int, bool]] = []  # most fixed text wins
@@ -1052,7 +1071,7 @@ def resolve(db: Any, lang: str, *, dry_run: bool = False) -> Localizer:
                 .filter(
                     TranslationMemory.source_lang == "en",
                     TranslationMemory.target_lang == lang,
-                    TranslationMemory.source_text.in_(list(LABELS)),
+                    TranslationMemory.source_text.in_(list(LABELS) + (list(LANE_LABELS) if _lane_on() else [])),
                 )
                 .all()
             )

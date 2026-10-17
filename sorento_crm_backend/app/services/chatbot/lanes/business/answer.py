@@ -3780,7 +3780,7 @@ def not_found_error_message(
             )
             if entity_type == "customer" and composers.enabled():
                 # CHAT-COMPOSER (R3): a customer is named by its group, with no "(+N more)".
-                group_words = customer_header_words([(b, customer_group_of(b)) for b in order])
+                group_words = customer_header_words([(b, customer_group_of(b)) for b in named_codes])
                 if group_words:
                     rendered, extra = group_words, ""
             # ATTACHMENT-MULTI R5: "• attachment type:", never the raw `attachment_type` key.
@@ -4331,6 +4331,7 @@ def not_found_error_message(
                         if jsc.get(c, "entity_type") == "product"
                         and jsc.truthy(jsc.get(c, "uuid"))
                         and jsc.truthy(jsc.get(c, "code"))
+                        and not _ms_is_uuid(jsc.get(c, "code"))
                     ]
                     if what and codes:
                         f4_lines = [composers_format.missing_line(what, code) for code in codes]
@@ -4370,6 +4371,8 @@ def not_found_error_message(
                         and jsc.truthy(jsc.get(c, "code"))
                     }
                     product_raws = [stored_by_key.get(_type_norm(x), x) for x in product_raws]
+                    if composers.enabled():
+                        product_raws = [x for x in product_raws if not _ms_is_uuid(x)]
                     prod_text = (
                         f"product {' and '.join(jsc.js_string(x) for x in product_raws)}"
                         if product_raws

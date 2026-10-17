@@ -7589,21 +7589,27 @@ def _stock_ask_reply(
         composers.enabled()
         and domains != ["inventory"]
         and entities
-        and not any(e.get("current_message") is True for e in entities)
+        and all(e.get("current_message") is False for e in entities)
         and not (verdict.get("domain_in_message") is True and verdict.get("domain_hint") == "inventory")
     )
+    removed = False
+    if carried_leg:
+        from app.services.chatbot.composers import misses as composers_misses
+
+        # The bare question, in English or as the catalogue words it, wherever it sits.
+        asked_forms = composers_misses.bare_question_forms()
+        paragraphs = getattr(answer, "text", "").split("\n\n")
+        kept = [p for p in paragraphs if p.strip() not in asked_forms]
+        removed = len(kept) != len(paragraphs)
+        if removed:
+            answer = dataclasses_replace(answer, text="\n\n".join(kept))
+    # A task is dropped only with its question: never a question without its task.
     state_out.focus.tasks = (
         tuple(t for t in reply.tasks if not (t.kind == "stock_qty" and t.opened_at_turn == turn_no))
-        if carried_leg
+        if removed
         else reply.tasks
     )
     if domains != ["inventory"]:
-        if carried_leg:
-            from app.services.chatbot.composers import misses as composers_misses
-
-            lead = f"{composers_misses.BARE_QUANTITY_QUESTION}\n\n"
-            if getattr(answer, "text", "").startswith(lead):
-                return dataclasses_replace(answer, text=answer.text[len(lead) :])
         return answer
     block_seen = any(
         isinstance(envelope, dict) and envelope.get("stock_availability")
@@ -7639,7 +7645,9 @@ def _stock_ask_reply(
 
     parts = _stock_answer_lines(envelopes, full=composers.enabled())
     if misses:
-        parts.append(composers_stock.miss_line(misses))
+        miss_line = composers_stock.miss_line(misses)
+        if miss_line:
+            parts.append(miss_line)
     if text:
         parts.append(text)
     question = (

@@ -2,7 +2,7 @@
 rule for when the bare quantity question rides with an answer."""
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Iterable
 
 from app.services.chatbot.composers import Reply
 
@@ -15,6 +15,9 @@ BARE_QUANTITY_QUESTION = "How many units do you need?"
 
 
 def not_found_text(names: list[str], *, join: Callable[[list[str]], str] | None = None) -> str:
+    from app.services.chatbot.composers.format import is_uuid
+
+    names = [n for n in names if not is_uuid(n)]  # an id is not a name
     joined = join(names) if join else ", ".join(names)
     return f"Couldn't find {joined}."
 
@@ -30,3 +33,28 @@ def domain_word(key: str) -> str:
 def quantity_question_rides(domains: list[str]) -> bool:
     """The bare quantity question belongs to a stock-only reply."""
     return list(domains) == ["inventory"]
+
+
+def bare_question_forms() -> frozenset[str]:
+    """The bare quantity question as it can be printed: English and each catalogued translation."""
+    from app.services.chatbot.label_catalog import LABELS
+
+    entry = LABELS.get(BARE_QUANTITY_QUESTION) or {}
+    return frozenset({BARE_QUANTITY_QUESTION, *[v for v in entry.values() if isinstance(v, str)]})
+
+
+#: The two phrases the miss writers print when they state the absence (`build_breakdown_msg`'s
+#: "But no X matched these", `build_suggest_offer`'s "No X found for Y"). A line carrying one
+#: of them AND a code is a statement that the code has nothing.
+ABSENCE_PHRASES = ("matched these", " found for ")
+
+
+def states_absence(text: str, codes: "Iterable[str]") -> bool:
+    """Does `text` itself say that every one of `codes` has nothing (not merely name it)?"""
+    wanted = [c.lower() for c in codes if c]
+    if not wanted:
+        return False
+    lines = [ln.lower() for ln in text.splitlines()]
+    states = [ln for ln in lines if any(p in ln for p in ABSENCE_PHRASES)]
+    body = "\n".join(lines)
+    return bool(states) and all(c in body for c in wanted)
