@@ -92,3 +92,25 @@ No refine failure is a parse failure; r2-B now emits the named spec (fcd44fe521,
   (grounding.py:795-806) puts "Water Closet" for the typed "toilet"; same lookup (47 ids) and reply as main, the grader
   reads words only (targets.py:807-847). G-HELD-BEFORE targets.py:823-828. train2: 7 refines while the bot's own
   "How many units for each?" is owed, which `spec_refine` (targets.py:521) fails.
+
+### train2 baseline (crew (a), 18 Oct, x1 each, eval-sets grade_sets.py with main's targets.py)
+Real 49 lane / 50 main of 58; synthetic 29 / 21 of 53 (refine 10 / 0 of 28, answer 19 / 21 with 3 lane `unknown`).
+Main baseline for reuse: scratchpad evalrun3/s_main1.jsonl (crew-note on #1772). Root cause: evalrun3/rootcause-train2.md.
+- **R3-B STATE-VIEW-ROSTER-OFFER (this lane, 9 TRAIN items: cp0-12e64c3f37, cp0-b2f537d9b6, cp0-2d60b19a93,
+  es-33ba35d807, es-bf24a3e2e3, es-s2bd9aaeea, es-safcbef216, es-s6fd301ccd):** after a roster pick the lookup misses and
+  the reply offers a hand-over; the engine keeps the roster as the stored question with the team and `escalate_offered`
+  (answer_bridge.py:2091-2139, engine.py:8677-8681) and accepts a later "yes", but the State view adds `offer` /
+  `hand_over_to` only for the hand-over kinds (chat_state.py:197-205), so the next parser sees `pick_one, owed [pick]`.
+  Card R5 / UAC C3 (the question closes) + C8 (the last list stays pickable). Fix in the view only; the store stays.
+- Held, not fixed (class bar >= 2, singletons across 11 runs): HELD-FILTERS-NOT-FETCHED (es-s2bd9aaeea: `promo_filter`
+  builds from this turn's entities only, turn_runtime.py:582-646); CANCEL-CLEARS-NAMED (es-3e53ca255a:
+  `task_close_clears_products` empties a product the message names, apply.py:3530-3538).
+- To #1755: SIZE-AS-CODE (3 refines; candidates.py:263-283 substring match, no numeric spec line), near-code
+  es-e1f8fae46c. To EVAL-BENCH: 3 OWED-QTY refines (targets.py:536-543); answered roster read as a fresh question
+  (targets.py:1166, :784, `_oq_sig` 272-276).
+
+### Round 3 proof
+- R3-A: red 3007a7bf2c (16 failed / 6 guards pass); fix dbc0557644 (22 passed; chat_state suites 274); kill-proof:
+  the 3 fix files reverted 16 failed / 6 passed, restored 22 passed. L1 replay vs ba6c344e9e: 0/1506 + 0/585.
+  PR gate red on ba6c344e (run 39052575920) was exactly these 16 red tests; ci re-run 39053431961 on dbc0557644.
+- R3-B: red 85b1cba598 (37 failed / 10 guards pass).
