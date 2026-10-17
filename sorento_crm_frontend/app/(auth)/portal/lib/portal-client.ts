@@ -1216,6 +1216,8 @@ export const AI_EXTRACT_FORM_KEYS: Record<PortalLandingKind, string> = {
   price_tag_request: 'portal.price_tag_request',
   // Never read: the sample request form offers no AI extract.
   sample_request: 'portal.sample_request',
+  // Never read: the application form offers no AI extract.
+  new_product_application: 'portal.new_product_application',
   // Never read: the opportunity form offers no AI extract. Present because the map is keyed
   // by every landing kind.
   sales_opportunity: 'portal.sales_opportunity',

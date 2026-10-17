@@ -56,6 +56,10 @@ const KIND_FIELDS: Record<PortalLandingKind, LandingField[]> = {
     { key: 'customer_name', label: 'Customer', type: 'text' },
     { key: 'project_title', label: 'Project', type: 'text' },
   ],
+  new_product_application: [
+    { key: 'customer_name', label: 'Customer', type: 'text' },
+    { key: 'project_title', label: 'Project', type: 'text' },
+  ],
   sales_opportunity: [
     { key: 'title', label: 'Title', type: 'text' },
     { key: 'customer_name', label: 'Customer or prospect', type: 'text' },
