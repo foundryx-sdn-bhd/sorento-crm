@@ -227,3 +227,33 @@ def test_r2_set_page_offer_gate_states(monkeypatch):
     on = _page_with_brands()
     assert "Other brands with stock: Bravat, Cabana. Name one to see them." in on
     assert "79" not in on and "57" not in on
+
+
+# --------------------------------------------------------------------------- #
+# Round 5: the end of a zero-qualifying list, and the page one header
+# --------------------------------------------------------------------------- #
+
+
+def test_u1_more_after_the_last_miss_page_says_that_is_all(session_factory, monkeypatch, stub_parser, stub_access, world):
+    _set_gate(monkeypatch, True)
+    _seed_zero_stock(world)
+    chat = make_chat(session_factory, monkeypatch, stub_parser, stub_access, world, mode="detailed")
+    chat.say("any wash basin has stock", _set_ask())
+    second = chat.say("more", _more_verdict())
+    assert "showing 51 to 55)" in second.split("\n\n")[0]
+    for _ in range(2):
+        again = chat.say("more", _more_verdict())
+        assert "That is all 55." in again, again[:300]
+        assert not _bullets(again), again
+        assert "showing 1 to 50" not in again and 'Reply "more"' not in again
+
+
+def test_u1_page_one_header_carries_the_leg_like_page_two(session_factory, monkeypatch, stub_parser, stub_access, world):
+    _seed_zero_stock(world)
+    chat = make_chat(session_factory, monkeypatch, stub_parser, stub_access, world, mode="detailed")
+    _set_gate(monkeypatch, False)
+    off = chat.say("any wash basin has stock", _set_ask())
+    assert off.startswith("Here's what you want: wash basins (55)\n"), off[:120]
+    _set_gate(monkeypatch, True)
+    on = chat.say("any wash basin has stock", _set_ask())
+    assert on.startswith("Here's what you want: wash basins with stock (55, showing 1 to 50)\n"), on[:160]
