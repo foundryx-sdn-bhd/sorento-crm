@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useDroppable, useDraggable, useDndContext } from '@dnd-kit/core';
 import {
   ChevronRight,
@@ -45,10 +45,12 @@ import { Star, StarOff } from 'lucide-react';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { SectionSkeleton } from '@/components/common/SectionSkeleton';
+import { findPathIds, folderAfterDelete } from './drivePath';
 
 interface DirectoryTreeSidebarProps {
   selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  /** `replace` rewrites the current history entry instead of adding a Back step. */
+  onSelect: (id: string | null, opts?: { replace?: boolean }) => void;
   /** When set, folder menu includes adjusting access levels for all attachments in the folder subtree. */
   onAdjustFolderAccessLevels?: (directoryId: string) => void;
   /** When provided, the header shows a button to collapse the whole Folders panel. */
@@ -173,22 +175,6 @@ function filterTreeBySearch(
   return { filtered, matchedAncestors };
 }
 
-function findPathToFolder(
-  nodes: AttachmentDirectoryTreeNode[],
-  targetId: string,
-  path: string[] = []
-): string[] | null {
-  for (const node of nodes) {
-    const currentPath = [...path, node.id];
-    if (node.id === targetId) return currentPath;
-    if (node.children) {
-      const found = findPathToFolder(node.children, targetId, currentPath);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
 const ATTACHMENT_DIRECTORIES_PATH = '/resource-management/attachment-directories';
 
 function DirectoryRow({
@@ -243,13 +229,21 @@ function DirectoryRow({
     data: { type: 'folder', directoryId: node.id, folderName: node.name },
   });
 
+  const rowRef = useRef<HTMLElement | null>(null);
   const setRowRef = useCallback(
     (el: HTMLElement | null) => {
+      rowRef.current = el;
       setDropRef(el);
       setDragRef(el);
     },
     [setDropRef, setDragRef]
   );
+
+  // The open folder's row scrolls into view, e.g. after a reload into a folder deep in a
+  // long tree; 'nearest' leaves a row that is already visible where it is.
+  useEffect(() => {
+    if (isSelected) rowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [isSelected]);
 
   return (
     <div className="flex flex-col">
@@ -443,7 +437,7 @@ export default function DirectoryTreeSidebar({
 
   const pathToSelected = useMemo(() => {
     if (!selectedId) return new Set<string>();
-    const path = findPathToFolder(tree, selectedId);
+    const path = findPathIds(tree, selectedId);
     if (!path) return new Set<string>();
     const ids = new Set<string>();
     for (let i = 0; i < path.length - 1; i++) ids.add(path[i]);
@@ -532,7 +526,10 @@ export default function DirectoryTreeSidebar({
       onSuccess: () => {
         setDeleteDialogOpen(false);
         setDeleteTarget(null);
-        if (selectedId === deleteTarget.id) onSelect(null);
+        // Deleting the open folder (or an ancestor of it) moves up to the deleted folder's
+        // parent and REPLACES the history entry, so Back never lands on the deleted folder.
+        const next = folderAfterDelete(tree, selectedId, deleteTarget.id);
+        if (next !== undefined) onSelect(next, { replace: true });
       },
     });
   };
