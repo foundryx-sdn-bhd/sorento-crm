@@ -2336,3 +2336,72 @@ def test_r29e_a_chinese_price_question_is_not_a_how_many():
     r = row2(message="any promo for SRTA100", reply="SRTA100 多少钱？RM 90")
     res = grade_turn(r, item("scope", fact="promotion"))
     assert res["checks"].get("no_qty_ask") is True and "qty_ask_ok" not in res["checks"], res["checks"]
+
+
+# round 30: rootcause G-CODE and G-BLIND (a switch on the held subject, a filter phrase across entities)
+R30_HELD = ["SRTWCFT150-OP", "SRTWCFT151-OP"]
+
+
+def _r30_switch(gold_codes, held, **gold):
+    mem = [prod(c, f"{i}{i}{i}{i}{i}{i}{i}{i}-aaaa-4aaa-8aaa-aaaaaaaaaaaa") for i, c in enumerate(held, 1)]
+    r = row2(mem_before=mem, mem_after=mem, state_products=mem, tools=[TOOL_A])
+    return grade_turn(r, item("followup", "switch", subject_after=list(gold_codes), **gold))
+
+
+def test_r30_a_fact_switch_on_the_products_already_held_is_a_change():
+    res = _r30_switch(R30_HELD, R30_HELD)
+    assert res["checks"]["changed"] is True, res["checks"]
+    assert res["passed"] is True, (res["reason"], res["checks"])
+
+
+def test_r30_a_new_code_that_memory_never_took_up_is_still_no_change():
+    res = _r30_switch(["SRTNEW1"], ["SRTOLD1"])
+    assert res["checks"]["changed"] is False, res["checks"]
+
+
+R30_REFINE_GOLD = dict(subject_after=["SRTWC100"])
+R30_REPLY_SMART = "Here's what you want: intelligent / smart toilet water closets (47)\n\n1. *Product Code:* SRTWC100"
+
+
+def _r30_refine(reply, flt, entities, *, extra=None, omitted=False):
+    tool = {"name": "crm_master_products_list", "args": {"product_ids": [UA]}, "envelope": {"items": [{"code": "SRTWC100"}]}}
+    verdict = {"entities": entities, "reference_positions": []}
+    r = row2(message="Check intelligent toilet models", verdict=verdict, apply_omitted=omitted, mem_before=[prod("SRTWC100", UA)],
+             mem_after=[prod("SRTWC100", UA)], mem_extra=extra or {}, tools=[tool], prev_bot="Older list: SRTWC100.", reply=reply)
+    return grade_turn(r, item("followup", "refine", filter=flt, **R30_REFINE_GOLD))
+
+
+SMART_ENTITIES = [{"raw": "toilet", "hint": "category"},
+                  {"raw": "intelligent", "hint": "specification", "spec_key": "is_smart", "spec_value": True}]
+SMART_EXTRA = {"specification": [{"spec_key": "is_smart", "spec_value": True, "raw": "intelligent"}]}
+
+
+def test_r30_a_filter_phrase_split_across_a_category_and_a_specification_entity_is_applied():
+    res = _r30_refine(R30_REPLY_SMART, {"key": "spec", "value": "intelligent toilet"}, SMART_ENTITIES, extra=SMART_EXTRA)
+    assert res["checks"].get("filter") is True and res["checks"].get("applied") is True, res["checks"]
+
+
+def test_r30_a_filter_phrase_with_only_one_of_its_words_read_is_not_credited():
+    res = _r30_refine(R30_REPLY_SMART, {"key": "spec", "value": "intelligent toilet"}, [{"raw": "toilet", "hint": "category"}])
+    assert res["checks"].get("filter") is False, res["checks"]
+
+
+def test_r30_an_omitted_apply_payload_takes_the_filter_words_from_the_sets_own_header():
+    res = _r30_refine("Here's what you want: P trap water closets (217)\n1. *Product Code:* SRTWC100",
+                      {"key": "spec", "value": "p_trap"}, [], omitted=True)
+    assert res["checks"].get("filter") is True and res["checks"].get("applied") is True, res["checks"]
+
+
+def test_r30_a_header_that_does_not_name_the_filter_gives_no_credit():
+    res = _r30_refine("Here's what you want: water closets (217)\n1. *Product Code:* SRTWC100",
+                      {"key": "spec", "value": "p_trap"}, [], omitted=True)
+    assert res["checks"].get("filter") is not True and res["checks"].get("applied") is not True, res["checks"]
+
+
+def test_r30_an_ambiguous_gold_code_allows_a_picker_after_an_and_x_turn():
+    q = {"kind": "product_pick", "expects": "choice", "payload": {}, "asked_at_turn": 2,
+         "options": [{"label": "SRTWC286A", "code": "SRTWC286A"}, {"label": "SRTWC286B", "code": "SRTWC286B"}]}
+    r = row2(oq={"before": None, "after": q, "writer": "engine"}, mem_before=[prod("SRTOLD1", UB)], mem_after=[prod("SRTWC286A", UA)],
+             tools=[TOOL_A])
+    res = grade_turn(r, item("followup", "and_x", fact="inventory", subject_after=["SRTWC286"], ambiguous=True))
+    assert "no_picker" not in res["checks"], res["checks"]
