@@ -499,6 +499,22 @@ describe('SalesOpportunityDetail', () => {
     expect(payload.lines).toEqual([{ product_id: 'p1', qty: 2, unit_price: null }]);
   });
 
+  it('NUMBER-FIELDS: a cleared Expected amount keeps Save enabled, says why on press and sends nothing', async () => {
+    render(<SalesOpportunityDetail id="opp-1" />);
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    fireEvent.change(screen.getByLabelText('Expected amount'), { target: { value: '' } });
+
+    const saveButton = screen.getByRole('button', { name: /^save$/i });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+    expect(await screen.findByText(/^Enter a number/)).toBeInTheDocument();
+    expect(save.mutateAsync).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('ZZT Deal');
+
+    fireEvent.change(screen.getByLabelText('Expected amount'), { target: { value: '12' } });
+    expect(screen.queryByText(/^Enter a number/)).not.toBeInTheDocument();
+  });
+
   it('fix B2: Cancel leaves the record unchanged and exits edit mode', () => {
     render(<SalesOpportunityDetail id="opp-1" />);
     fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));

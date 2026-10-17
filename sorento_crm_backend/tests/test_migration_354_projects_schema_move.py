@@ -82,6 +82,9 @@ BORN_AFTER_THE_MOVE = frozenset({
     # frozen Stock Debt view and its rows, born straight into `projects` (ADR-0011).
     "stock_debt_snapshots",
     "stock_debt_snapshot_rows",
+    # SR-CORE (#1718, migration sr_0001_sample_requests): born straight into `projects`.
+    "sample_requests",
+    "sample_request_lines",
 })
 
 MIGRATION = (

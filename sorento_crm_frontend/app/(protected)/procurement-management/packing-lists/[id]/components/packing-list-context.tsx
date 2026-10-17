@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { toast } from '@/lib/toast';
+import { numberFieldError, parseNumberDraft, type NumberFieldRules } from '@/lib/number-field';
 import { useHasPermission } from '@/hooks/usePermissions';
 import {
   usePackingList,
@@ -68,7 +69,37 @@ export interface DraftLine {
   remarks: string;
 }
 
+/**
+ * The rules for the numbers typed on the Lines grid. A blank optional figure clears the
+ * column (null); quantity shipped is required. A cartons count is required on a line that
+ * already exists (the column cannot be cleared) and may stay blank on a new one, where the
+ * server starts it at 1.
+ */
+const LINE_NUMBER_RULES: Partial<Record<keyof DraftLine, NumberFieldRules>> = {
+  quantity_shipped: { min: 0, integer: true },
+  cartons_count: { min: 0, integer: true },
+  pcs_per_carton: { min: 0, optional: true },
+  carton_length_cm: { min: 0, optional: true },
+  carton_width_cm: { min: 0, optional: true },
+  carton_height_cm: { min: 0, optional: true },
+  net_weight_per_carton: { min: 0, optional: true },
+  gross_weight_per_carton: { min: 0, optional: true },
+  unit_cost: { min: 0, optional: true },
+  cbm: { min: 0, optional: true },
+};
+
+export const FREE_DAYS_RULES: NumberFieldRules = { min: 0, integer: true, optional: true };
+
+export function lineNumberError(line: DraftLine, name: keyof DraftLine): string | undefined {
+  const rules = LINE_NUMBER_RULES[name];
+  if (!rules) return undefined;
+  const optional = rules.optional || (name === 'cartons_count' && !line.id);
+  return numberFieldError(line[name] as string, { ...rules, optional });
+}
+
 interface PackingListContextValue {
+  /** Set by a Save that was refused on a number; the fields then show their message live. */
+  numbersChecked: boolean;
   packingListId: string;
   packingList: PackingListDetail | undefined;
   isLoading: boolean;
@@ -143,6 +174,7 @@ export function PackingListProvider({
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [draftLines, setDraftLines] = useState<DraftLine[]>([]);
   const [saving, setSaving] = useState(false);
+  const [numbersChecked, setNumbersChecked] = useState(false);
 
   const supplierNameById = useMemo(() => {
     const byId = new Map<string, string>();
@@ -172,6 +204,7 @@ export function PackingListProvider({
 
   const beginEdit = () => {
     if (!packingList) return;
+    setNumbersChecked(false);
     // Read from the server's answer every time. A draft left over from a cancelled edit
     // would silently re-apply a value the operator backed out of.
     const record = packingList as unknown as Record<string, unknown>;
@@ -226,6 +259,7 @@ export function PackingListProvider({
   };
 
   const cancelEdit = () => {
+    setNumbersChecked(false);
     setEditing(false);
     setDraft({});
     setDraftLines([]);
@@ -295,6 +329,15 @@ export function PackingListProvider({
       toast.error('Every line needs a product. Pick one, or remove the line.');
       return;
     }
+    setNumbersChecked(true);
+    const badNumber =
+      draftLines.some((line) =>
+        (Object.keys(LINE_NUMBER_RULES) as (keyof DraftLine)[]).some((name) => lineNumberError(line, name)),
+      ) || numberFieldError(draft.free_days_available, FREE_DAYS_RULES);
+    if (badNumber) {
+      toast.error('Some numbers need fixing before this can be saved.');
+      return;
+    }
     setSaving(true);
     // Only what the operator can actually type. `total_items_shipped` is derived from the
     // lines by the backend, and sending our own would let the two disagree.
@@ -303,16 +346,10 @@ export function PackingListProvider({
     // operator just deleted came straight back on the next read, reading as a save that did
     // not work.
     const orNull = (value: string | undefined) => (value ?? '').trim() || null;
-    // Never the JS literal NaN: `JSON.stringify(NaN)` silently becomes the JSON `null`, and a
-    // field the backend declares as a plain (non-Optional) number then 422s on it - the
-    // operator sees "[object Object]" for a blank they never even touched. Anything that does
-    // not parse is treated the same as blank: nothing was stated.
-    const orUndefined = (value: string) => {
-      const trimmed = (value ?? '').trim();
-      if (trimmed === '') return undefined;
-      const n = Number(trimmed);
-      return Number.isNaN(n) ? undefined : n;
-    };
+    // A cleared optional figure is NULL, never an omitted key: the backend PUT is `exclude_unset`,
+    // so an omitted key means "unchanged" and the value the operator deleted came back. By here
+    // every figure has passed the check above, so a non-blank one parses.
+    const orNullNumber = (value: string) => parseNumberDraft(value);
     const payload: Partial<PackingListFormData> = {
       shipment_number: orNull(draft.shipment_number),
       supplier_id: orNull(draft.supplier_id),
@@ -340,22 +377,22 @@ export function PackingListProvider({
         // Required and non-nullable on the line schema, so garbage text falls back to 0
         // rather than sending NaN-turned-null and 422ing on a line the operator never meant
         // to touch.
-        quantity_shipped: orUndefined(line.quantity_shipped) ?? 0,
+        quantity_shipped: parseNumberDraft(line.quantity_shipped) as number,
         supplier_id: line.supplier_id || undefined,
         uom_id: line.uom_id || undefined,
         // The unit the price is in. Sent back untouched - a payload that carried the cost
         // and dropped this handed the backend a number with no meaning.
         currency: line.currency || undefined,
-        cartons_count: orUndefined(line.cartons_count),
-        cbm: orUndefined(line.cbm),
+        cartons_count: parseNumberDraft(line.cartons_count) ?? undefined,
+        cbm: orNullNumber(line.cbm),
         material: line.material.trim() || undefined,
-        pcs_per_carton: orUndefined(line.pcs_per_carton),
-        carton_length_cm: orUndefined(line.carton_length_cm),
-        carton_width_cm: orUndefined(line.carton_width_cm),
-        carton_height_cm: orUndefined(line.carton_height_cm),
-        net_weight_per_carton: orUndefined(line.net_weight_per_carton),
-        gross_weight_per_carton: orUndefined(line.gross_weight_per_carton),
-        unit_cost: orUndefined(line.unit_cost),
+        pcs_per_carton: orNullNumber(line.pcs_per_carton),
+        carton_length_cm: orNullNumber(line.carton_length_cm),
+        carton_width_cm: orNullNumber(line.carton_width_cm),
+        carton_height_cm: orNullNumber(line.carton_height_cm),
+        net_weight_per_carton: orNullNumber(line.net_weight_per_carton),
+        gross_weight_per_carton: orNullNumber(line.gross_weight_per_carton),
+        unit_cost: orNullNumber(line.unit_cost),
         // NULL for a cleared field, never `undefined` - same reasoning as `orNull` above.
         // The line PUT is an existing-row upsert keyed on presence (`_upsert_shipment_lines`
         // in the backend), so an omitted key is "unchanged" but an explicit null clears it;
@@ -397,6 +434,7 @@ export function PackingListProvider({
     checkpoints,
     sourceInvoices,
     sourceInvoicesFailed,
+    numbersChecked,
     editing,
     saving,
     draft,

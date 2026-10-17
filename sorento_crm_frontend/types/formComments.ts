@@ -3,7 +3,8 @@ export type FormCommentKind =
   | 'complaint'
   | 'stock_inquiry'
   | 'purchase_request'
-  | 'sponsorship_form';
+  | 'sponsorship_form'
+  | 'sample_request';
 
 export interface FormCommentAttachment {
   attachmentId: string;

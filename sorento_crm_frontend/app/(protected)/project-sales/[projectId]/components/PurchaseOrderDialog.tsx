@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -76,6 +78,8 @@ export function PurchaseOrderDialog({
   const [issuerId, setIssuerId] = React.useState('');
   const [poDate, setPoDate] = React.useState('');
   const [amount, setAmount] = React.useState('');
+  const [showErrors, setShowErrors] = React.useState(false);
+  const amountError = numberFieldError(amount, { min: 0, optional: true });
   const [notes, setNotes] = React.useState('');
 
   const pending = create.isPending;
@@ -105,6 +109,10 @@ export function PurchaseOrderDialog({
         <form
           onSubmit={async (event) => {
             event.preventDefault();
+            if (amountError) {
+              setShowErrors(true);
+              return;
+            }
             await create.mutateAsync({
               po_number: poNumber.trim(),
               po_source: source as PoSource,
@@ -191,12 +199,12 @@ export function PurchaseOrderDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor="po-amount">PO amount (RM)</Label>
-              <Input
+              <NumberInput
                 id="po-amount"
-                type="number"
                 step="0.01"
                 min="0"
                 value={amount}
+                error={showErrors ? amountError : undefined}
                 onChange={(event) => setAmount(event.target.value)}
                 placeholder="Only needed when you are not entering lines"
               />

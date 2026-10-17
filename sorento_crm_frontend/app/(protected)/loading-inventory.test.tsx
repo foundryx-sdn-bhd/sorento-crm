@@ -297,7 +297,8 @@ describe('every DataGrid list segment has a loading.tsx (M5-01)', () => {
     // purchase-request form precedent) and `[documentId]/(view)/lines` (bodyOnly, see
     // BODY_ONLY_SEGMENTS). Their `loading.tsx` files came in RELEASE-FIX-PROD-EDGE. Total: 159.
     // CONTACT-TAGS (#1736): `user-management/contact-tags` is a new DataGrid list segment with its own `loading.tsx`, found by the walk. Total: 160.
-    expect(requiredSegmentNames.length).toBe(160);
+    // SR-CORE (#1718): `project-sales/sample-requests` is a new DataGrid list segment with its own `loading.tsx` (ListPageSkeleton), found by the walk; the loading.tsx came in RELEASE-FIX-1017. Total: 161.
+    expect(requiredSegmentNames.length).toBe(161);
 
     for (const name of requiredSegmentNames) {
       const dir = path.join(PROTECTED_ROOT, name);

@@ -19,6 +19,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -27,6 +29,24 @@ import { FormDescription } from '@/components/ui/form';
 import { useCreateBrand, useUpdateBrand, useBrand } from '../hooks/useBrands';
 import { useContactAccessTypes } from '@/app/(protected)/user-management/contact-access-types/hooks/useContactAccessTypes';
 import type { BrandFormData, Brand } from '../types/brand.types';
+
+// Typed as text; blank is refused here, never turned into 0. Typed number in and out so the
+// form's field types stay what they were.
+const chatbotWeightSchema = z
+  .unknown()
+  .superRefine((value, ctx) => {
+    const n = parseNumberDraft(value as string | number | null | undefined);
+    const message =
+      n === null
+        ? numberFieldError(value as string | number | null | undefined, { min: 0, max: 9999 })
+        : n < 0
+          ? 'Enter 0 or more'
+          : n > 9999
+            ? 'Enter 9999 or less'
+            : undefined;
+    if (message) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+  })
+  .transform((value) => parseNumberDraft(value as string | number | null | undefined) as number) as unknown as z.ZodType<number, z.ZodTypeDef, number>;
 
 const BrandFormSchema = z.object({
   brand_code: z.string().min(1, 'Brand code is required').max(50),
@@ -38,7 +58,7 @@ const BrandFormSchema = z.object({
   // raises an Order Inquiry (PLAN-brand-flows-to-purchasing.md).
   flows_to_purchasing: z.boolean(),
   // The chatbot's brand preference: higher weights are answered first (0 = none).
-  chatbot_weight: z.coerce.number().min(0, 'Enter 0 or more').max(9999, 'Enter 9999 or less'),
+  chatbot_weight: chatbotWeightSchema,
   // "Customers can ask for this brand" (S0, D3, fix round 3 D4): default true;
   // false for the placeholder brands OTHERS and NO LOGO, which record the
   // absence of a brand rather than name a real one.
@@ -283,8 +303,7 @@ export default function BrandFormDialog({
                 <FormItem>
                   <FormLabel>Chatbot brand weight</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={0}
                       max={9999}
                       step={0.1}

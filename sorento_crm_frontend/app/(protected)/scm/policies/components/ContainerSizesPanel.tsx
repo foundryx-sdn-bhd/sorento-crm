@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,6 +28,7 @@ import {
   updateContainerSize,
   type ContainerSize,
 } from '../../services/fulfilmentService';
+import { numberFieldError } from '@/lib/number-field';
 import { fmtTrimmedDecimal } from '../../lib/format';
 
 /**
@@ -50,6 +52,13 @@ interface Draft {
   label: string;
   cbm: string;
   is_default: boolean;
+  /** Set once Save was pressed with a bad volume: the message then follows the field live. */
+  showErrors?: boolean;
+}
+
+/** A loadable volume must be a number above zero. */
+function cbmError(raw: string) {
+  return numberFieldError(raw, { min: 0, minExclusive: true });
 }
 
 const EMPTY: Draft = { id: null, code: '', label: '', cbm: '', is_default: false };
@@ -90,7 +99,8 @@ export function ContainerSizesPanel() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const valid = !!draft && draft.code.trim().length > 0 && Number(draft.cbm) > 0;
+  const hasCode = !!draft && draft.code.trim().length > 0;
+  const cbmMessage = draft ? cbmError(draft.cbm) : undefined;
 
   return (
     <div className="space-y-3">
@@ -195,12 +205,12 @@ export function ContainerSizesPanel() {
             </div>
             <div>
               <Label htmlFor="container-cbm">Loadable volume (cbm)</Label>
-              <Input
+              <NumberInput
                 id="container-cbm"
-                type="number"
                 min={0}
                 step="0.1"
                 value={draft?.cbm ?? ''}
+                error={draft?.showErrors ? cbmMessage : undefined}
                 onChange={(e) => setDraft((d) => (d ? { ...d, cbm: e.target.value } : d))}
               />
             </div>
@@ -222,8 +232,15 @@ export function ContainerSizesPanel() {
               Cancel
             </Button>
             <Button
-              onClick={() => draft && save.mutate(draft)}
-              disabled={!valid || save.isPending}
+              onClick={() => {
+                if (!draft) return;
+                if (cbmMessage) {
+                  setDraft({ ...draft, showErrors: true });
+                  return;
+                }
+                save.mutate(draft);
+              }}
+              disabled={!hasCode || save.isPending}
             >
               Save container size
             </Button>

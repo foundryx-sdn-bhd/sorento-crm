@@ -8,6 +8,8 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -82,12 +84,26 @@ export default function EmailThemeForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedDraft, sampleCode]);
 
+  // Blank means "use the theme default", so only a typed value out of range is wrong.
+  const sizeErrors = draft
+    ? {
+        logo_height: numberFieldError(draft.logo_height, { min: 20, max: 80, optional: true }),
+        button_radius: numberFieldError(draft.button_radius, { min: 0, max: 32, optional: true }),
+        card_radius: numberFieldError(draft.card_radius, { min: 0, max: 24, optional: true }),
+      }
+    : null;
+  const [checked, setChecked] = useState(false);
+
   function patch(fields: Partial<ThemeDraft>) {
     setDraft((prev) => (prev ? { ...prev, ...fields } : prev));
   }
 
   async function handleSave() {
     if (!draft) return;
+    if (sizeErrors && Object.values(sizeErrors).some(Boolean)) {
+      setChecked(true);
+      return;
+    }
     try {
       const saved = await saveMut.mutateAsync(draftToPayload(draft));
       setDraft(toDraft(saved.theme));
@@ -143,14 +159,14 @@ export default function EmailThemeForm() {
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="theme-logo-height">Logo height (px)</Label>
-                    <Input
+                    <NumberInput
                       id="theme-logo-height"
-                      type="number"
                       min={20}
                       max={80}
                       value={draft.logo_height}
                       onChange={(e) => patch({ logo_height: e.target.value })}
                       placeholder={String(defaults.logo_height)}
+                      error={checked ? sizeErrors?.logo_height : undefined}
                     />
                   </div>
                   <div className="space-y-1">
@@ -209,14 +225,14 @@ export default function EmailThemeForm() {
                   />
                   <div className="space-y-1">
                     <Label htmlFor="theme-button-radius">Corner radius (px)</Label>
-                    <Input
+                    <NumberInput
                       id="theme-button-radius"
-                      type="number"
                       min={0}
                       max={32}
                       value={draft.button_radius}
                       onChange={(e) => patch({ button_radius: e.target.value })}
                       placeholder={String(defaults.button_radius)}
+                      error={checked ? sizeErrors?.button_radius : undefined}
                     />
                   </div>
                   <div className="space-y-1">
@@ -321,14 +337,14 @@ export default function EmailThemeForm() {
                 <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label htmlFor="theme-card-radius">Corner radius (px)</Label>
-                    <Input
+                    <NumberInput
                       id="theme-card-radius"
-                      type="number"
                       min={0}
                       max={24}
                       value={draft.card_radius}
                       onChange={(e) => patch({ card_radius: e.target.value })}
                       placeholder={String(defaults.card_radius)}
+                      error={checked ? sizeErrors?.card_radius : undefined}
                     />
                   </div>
                 </CardContent>

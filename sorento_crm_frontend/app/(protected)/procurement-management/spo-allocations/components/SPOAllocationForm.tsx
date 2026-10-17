@@ -15,6 +15,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProductCombobox } from './ProductCombobox';
 import { WarehouseCombobox } from './WarehouseCombobox';
@@ -248,7 +249,14 @@ export default function SPOAllocationForm({
                   <FormItem>
                     <FormLabel>Allocated Quantity *</FormLabel>
                     <FormControl>
-                      <Input type="number" min={1} {...field} onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)} />
+                      <NumberInput
+                        min={1}
+                        name={field.name}
+                        ref={field.ref}
+                        onBlur={field.onBlur}
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

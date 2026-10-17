@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sortable, SortableItem, SortableItemHandle } from '@/components/ui/sortable';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { numberFieldError } from '@/lib/number-field';
 import { PredicateBuilder } from './PredicateBuilder';
 import { isWildcard, type Predicate } from './predicateTypes';
 import {
@@ -105,6 +106,19 @@ export default function ContactCsRoutingRules({ contactId }: { contactId: string
   }, [rules]);
 
   const handleSave = async () => {
+    // A numeric predicate holding bad input shows its sentence under the box; nothing is sent.
+    const hasBadNumber = rules.some((r) =>
+      r.match_conditions.some(
+        (p) =>
+          fields.find((f) => f.field === p.field)?.type === 'numeric' &&
+          p.value.trim() !== '' &&
+          numberFieldError(p.value) !== undefined,
+      ),
+    );
+    if (hasBadNumber) {
+      toast.error('Fix the highlighted number before saving');
+      return;
+    }
     setSaving(true);
     try {
       const saved = await saveRoutingRules(contactId, rules);

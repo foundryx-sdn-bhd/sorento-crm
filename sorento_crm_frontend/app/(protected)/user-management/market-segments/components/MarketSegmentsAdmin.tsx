@@ -19,6 +19,8 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -73,7 +75,12 @@ export default function MarketSegmentsAdmin() {
     portal_form_types: [] as string[],
   });
 
+  // Set by a Save that found the sort order wrong; the sentence then follows the typing.
+  const [sortChecked, setSortChecked] = useState(false);
+  const sortError = numberFieldError(form.sort_order, { integer: true, optional: true });
+
   function resetForm() {
+    setSortChecked(false);
     setForm({
       code: '',
       name: '',
@@ -93,6 +100,7 @@ export default function MarketSegmentsAdmin() {
 
   function openEdit(row: MarketSegment) {
     setEditing(row);
+    setSortChecked(false);
     setForm({
       code: row.code,
       name: row.name,
@@ -107,7 +115,10 @@ export default function MarketSegmentsAdmin() {
 
   function save() {
     const sort = form.sort_order === '' ? undefined : Number(form.sort_order);
-    if (form.sort_order !== '' && Number.isNaN(Number(form.sort_order))) return;
+    if (sortError) {
+      setSortChecked(true);
+      return;
+    }
     if (editing) {
       update.mutate(
         {
@@ -399,16 +410,11 @@ export default function MarketSegmentsAdmin() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="segment-sort">Sort order (optional)</Label>
-              <Input
+              <NumberInput
                 id="segment-sort"
-                type="number"
                 value={form.sort_order}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    sort_order: e.target.value === '' ? '' : Number(e.target.value),
-                  }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, sort_order: e.target.value }))}
+                error={sortChecked ? sortError : undefined}
                 placeholder="0"
               />
             </div>

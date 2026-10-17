@@ -11,7 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -57,6 +58,7 @@ export function PortalRevisionConfigDialog({
     if (!open || !config) return;
     setIsEnabled(Boolean(config.is_enabled));
     setMaxRevisions(config.max_revisions == null ? '' : String(config.max_revisions));
+    setMaxChecked(false);
     setAllowedStatuses(config.allowed_statuses ?? []);
     setRestartStageCode(config.restart_stage_code ?? INHERIT);
   }, [open, config]);
@@ -91,12 +93,15 @@ export function PortalRevisionConfigDialog({
     [sourceType],
   );
 
-  const maxInvalid =
-    maxRevisions.trim() !== '' &&
-    (!/^\d+$/.test(maxRevisions.trim()) || Number(maxRevisions) > 50);
+  // Blank inherits the global; a typed value must be a whole number from 0 to 50.
+  const [maxChecked, setMaxChecked] = useState(false);
+  const maxError = numberFieldError(maxRevisions, { min: 0, max: 50, integer: true, optional: true });
 
   const handleSave = async () => {
-    if (maxInvalid) return;
+    if (maxError) {
+      setMaxChecked(true);
+      return;
+    }
     await onSave({
       is_enabled: isEnabled,
       max_revisions: maxRevisions.trim() === '' ? null : Number(maxRevisions.trim()),
@@ -126,13 +131,15 @@ export function PortalRevisionConfigDialog({
 
           <div className="space-y-2">
             <Label htmlFor="portal-revision-max">Max revisions</Label>
-            <Input
+            <NumberInput
               id="portal-revision-max"
               inputMode="numeric"
+              min={0}
+              max={50}
               value={maxRevisions}
               onChange={(e) => setMaxRevisions(e.target.value)}
               placeholder="Inherit global"
-              aria-invalid={maxInvalid}
+              error={maxChecked ? maxError : undefined}
             />
           </div>
 
@@ -164,7 +171,7 @@ export function PortalRevisionConfigDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={isSaving || maxInvalid}>
+          <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? 'Saving…' : 'Save revision policy'}
           </Button>
         </DialogFooter>

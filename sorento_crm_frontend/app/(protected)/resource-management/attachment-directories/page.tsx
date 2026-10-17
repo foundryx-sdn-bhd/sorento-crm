@@ -8,14 +8,7 @@ export const metadata: Metadata = {
   description: 'Manage folders and attachments.',
 };
 
-export default async function AttachmentDirectoriesPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ directoryId?: string }>;
-}) {
-  const resolvedSearchParams = await searchParams;
-  const initialDirectoryId = resolvedSearchParams?.directoryId || null;
-
+export default function AttachmentDirectoriesPage() {
   return (
     <>
       <Container>
@@ -23,7 +16,7 @@ export default async function AttachmentDirectoriesPage({
       </Container>
 
       <Container className="flex flex-col h-[calc(100vh-12rem)] min-h-[480px] overflow-hidden">
-        <AttachmentDirectoriesView initialDirectoryId={initialDirectoryId} />
+        <AttachmentDirectoriesView />
       </Container>
     </>
   );

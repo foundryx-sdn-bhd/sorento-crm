@@ -21,7 +21,8 @@ import {
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridTable } from '@/components/ui/data-grid-table';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -63,8 +64,9 @@ export default function PortalRevisionsSettingsPage() {
   const saveGlobals = useSavePortalRevisionGlobals();
   const updateConfig = useUpdatePortalRevisionConfig();
 
-  const maxInvalid =
-    !/^\d+$/.test(maxRevisions.trim()) || Number(maxRevisions.trim()) > 50;
+  // Save stays live; a click on a wrong number says what is wrong instead of doing nothing.
+  const [maxChecked, setMaxChecked] = useState(false);
+  const maxError = numberFieldError(maxRevisions, { min: 0, max: 50, integer: true });
 
   const columns = useMemo<ColumnDef<PortalRevisionConfig>[]>(
     () => [
@@ -206,12 +208,14 @@ export default function PortalRevisionsSettingsPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="portal-max-revisions">Max revisions</Label>
-            <Input
+            <NumberInput
               id="portal-max-revisions"
               inputMode="numeric"
+              min={0}
+              max={50}
               value={maxRevisions}
               onChange={(e) => setMaxRevisions(e.target.value)}
-              aria-invalid={maxInvalid}
+              error={maxChecked ? maxError : undefined}
               disabled={!canEdit}
               className="max-w-40"
             />
@@ -225,19 +229,24 @@ export default function PortalRevisionsSettingsPage() {
               onClick={() => {
                 setEnabled(settings.portalRevisionsEnabled ?? true);
                 setMaxRevisions(String(settings.portalMaxRevisions ?? 2));
+                setMaxChecked(false);
               }}
             >
               Reset
             </Button>
             <Button
               type="button"
-              disabled={saveGlobals.isPending || maxInvalid}
-              onClick={() =>
+              disabled={saveGlobals.isPending}
+              onClick={() => {
+                if (maxError) {
+                  setMaxChecked(true);
+                  return;
+                }
                 saveGlobals.mutate({
                   portal_revisions_enabled: enabled,
                   portal_max_revisions: Number(maxRevisions.trim()),
-                })
-              }
+                });
+              }}
             >
               {saveGlobals.isPending ? 'Saving…' : 'Save Settings'}
             </Button>

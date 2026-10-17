@@ -44,6 +44,40 @@ def get_collection(db: Session, collection_id: str) -> Collection:
     return row
 
 
+def _validate_conditions(conditions: Optional[dict]) -> None:
+    """Refuse only bad number values (non-finite or unreadable) in a number fact's rule.
+    Blank or empty shapes the builder has always saved are left alone."""
+    if not conditions or not conditions.get("rules"):
+        return
+    from app.rule_engine.schemas import _blank, _numeric
+    from app.rule_engine.registry import fact_map
+    from app.services.dealer_kit.product_facts import SOURCE, register_product_facts
+
+    register_product_facts()
+    facts = fact_map([SOURCE])
+
+    def walk(node: object) -> None:
+        if not isinstance(node, dict):
+            return
+        # Only a group has children; a condition that carries "rules" is still a condition.
+        if node.get("kind") == "group" or ("kind" not in node and "fact" not in node):
+            for rule in node.get("rules") or []:
+                walk(rule)
+            return
+        fact = facts.get(node.get("fact"))
+        if fact is None or fact.type != "number" or node.get("valueKind") == "fact":
+            return
+        value = node.get("value")
+        members = value if isinstance(value, list) else [value]
+        for member in members:
+            if not _blank(member) and not _numeric(member):
+                raise AppException(
+                    status_code=422, message=f"'{fact.label}' needs a numeric value."
+                )
+
+    walk(conditions)
+
+
 def create_collection(
     db: Session,
     *,
@@ -65,6 +99,7 @@ def create_collection(
     if scope == LIBRARY and not (name or "").strip():
         raise AppException(status_code=422, message="A reusable collection needs a name")
 
+    _validate_conditions(conditions)
     row = Collection(
         scope=scope,
         page_id=page_id,
@@ -83,6 +118,8 @@ def create_collection(
 
 def update_collection(db: Session, collection_id: str, **changes) -> Collection:
     row = get_collection(db, collection_id)
+    if "conditions_json" in changes:
+        _validate_conditions(changes["conditions_json"])
     for field in (
         "name",
         "conditions_json",

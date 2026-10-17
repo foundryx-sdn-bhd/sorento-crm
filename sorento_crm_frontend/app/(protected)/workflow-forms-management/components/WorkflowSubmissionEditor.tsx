@@ -40,7 +40,11 @@ import {
 } from '../services/workflowFormsService';
 import type { WorkflowFormSchema } from '../types/workflowForms.types';
 import { normalizeWorkflowFormSchema } from '../utils/workflowFormSchema';
-import { WorkflowHeaderFieldsForm, WorkflowLineGroupsEditor } from './WorkflowDynamicFields';
+import {
+  WorkflowHeaderFieldsForm,
+  WorkflowLineGroupsEditor,
+  workflowNumbersInvalid,
+} from './WorkflowDynamicFields';
 import {
   getOrigin,
   workflowNewPrefilledUrl,
@@ -71,6 +75,7 @@ export function NewWorkflowSubmission({
   const [header, setHeader] = useState<Record<string, unknown>>({});
   const [lines, setLines] = useState<LineRow[]>([]);
   const [duplicateLoading, setDuplicateLoading] = useState(false);
+  const [showNumberErrors, setShowNumberErrors] = useState(false);
   const duplicateAppliedRef = useRef<string | null>(null);
 
   const dupKey =
@@ -162,6 +167,10 @@ export function NewWorkflowSubmission({
 
   const submit = () => {
     if (!definitionId) return;
+    if (schema && workflowNumbersInvalid(schema, header, lines)) {
+      setShowNumberErrors(true);
+      return;
+    }
     createMut.mutate(
       {
         definition_id: definitionId,
@@ -222,8 +231,18 @@ export function NewWorkflowSubmission({
           ) : null}
           {schema ? (
             <>
-              <WorkflowHeaderFieldsForm schema={schema} data={header} onChange={setHeader} />
-              <WorkflowLineGroupsEditor schema={schema} lines={lines} onChange={setLines} />
+              <WorkflowHeaderFieldsForm
+                schema={schema}
+                data={header}
+                onChange={setHeader}
+                showNumberErrors={showNumberErrors}
+              />
+              <WorkflowLineGroupsEditor
+                schema={schema}
+                lines={lines}
+                onChange={setLines}
+                showNumberErrors={showNumberErrors}
+              />
               <Button onClick={submit} disabled={createMut.isPending || duplicateLoading}>
                 Create
               </Button>
@@ -265,6 +284,7 @@ export function WorkflowSubmissionDetail({ submissionId }: { submissionId: strin
 
   const [header, setHeader] = useState<Record<string, unknown>>({});
   const [lines, setLines] = useState<LineRow[]>([]);
+  const [showNumberErrors, setShowNumberErrors] = useState(false);
   const [transitionOpen, setTransitionOpen] = useState(false);
   const [pickedTransition, setPickedTransition] = useState<{ id: string; label: string } | null>(null);
   const [remark, setRemark] = useState('');
@@ -304,6 +324,10 @@ export function WorkflowSubmissionDetail({ submissionId }: { submissionId: strin
   }, [schema, sub?.current_state_code]);
 
   const save = () => {
+    if (schema && workflowNumbersInvalid(schema, header, lines)) {
+      setShowNumberErrors(true);
+      return;
+    }
     updateMut.mutate(
       { header_data: header, lines },
       { onSuccess: () => refetch() },
@@ -470,12 +494,14 @@ export function WorkflowSubmissionDetail({ submissionId }: { submissionId: strin
                 data={header}
                 onChange={setHeader}
                 disabled={terminal || !canEdit}
+                showNumberErrors={showNumberErrors}
               />
               <WorkflowLineGroupsEditor
                 schema={schema}
                 lines={lines}
                 onChange={setLines}
                 disabled={terminal || !canEdit}
+                showNumberErrors={showNumberErrors}
               />
             </>
           )}

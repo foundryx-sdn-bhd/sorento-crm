@@ -8,6 +8,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.models.sample_request import SampleRequest
 from app.models.projects import (
     Project,
     ProjectLead,
@@ -21,6 +22,7 @@ PROJECT_ENTITY_TYPE = "project"
 PROJECT_TASK_ENTITY_TYPE = "project_task"
 PROJECT_LEAD_ENTITY_TYPE = "project_lead"
 QUOTATION_ENTITY_TYPE = "quotation"
+SAMPLE_REQUEST_ENTITY_TYPE = "sample_request"
 
 
 def _project_scope(record: Project) -> Optional[str]:
@@ -53,6 +55,7 @@ def register() -> None:
     _register_project_task()
     _register_project_lead()
     _register_quotation()
+    _register_sample_request()
 
 
 def _register_project() -> None:
@@ -219,5 +222,36 @@ def _register_quotation() -> None:
             status_attr="approval_status_id",
             record_label_attr="document_no",
             required_flags=["is_initial"],
+        )
+    )
+
+
+def _count_sample_requests(db: Session, status_id: str) -> int:
+    return db.query(SampleRequest).filter(SampleRequest.status_id == status_id).count()
+
+
+def _migrate_sample_requests(db: Session, from_status_id: str, to_status_id: str) -> int:
+    return (
+        db.query(SampleRequest)
+        .filter(SampleRequest.status_id == from_status_id)
+        .update({SampleRequest.status_id: to_status_id}, synchronize_session=False)
+    )
+
+
+def _register_sample_request() -> None:
+    """Entity #5 (SR-CORE): the consignment requisition flow. One graph per install, so no
+    ``scope_resolver``; an admin edits the labels, and SR-STOCK inserts its states between
+    Processing and Customer confirmed."""
+    register_status_entity(
+        StatusEntity(
+            entity_type=SAMPLE_REQUEST_ENTITY_TYPE,
+            label="Sample Request",
+            module=MODULE_KEY,
+            count_records=_count_sample_requests,
+            migrate_records=_migrate_sample_requests,
+            model=SampleRequest,
+            status_attr="status_id",
+            record_label_attr="request_no",
+            required_flags=["is_initial", "is_terminal"],
         )
     )

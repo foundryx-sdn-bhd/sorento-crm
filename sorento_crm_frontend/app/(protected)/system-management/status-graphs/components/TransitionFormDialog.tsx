@@ -11,6 +11,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useCreateTransition, useUpdateTransition } from '../hooks/useStatusGraphs';
@@ -46,7 +48,9 @@ export default function TransitionFormDialog({
   const [fromId, setFromId] = useState('');
   const [toId, setToId] = useState('');
   const [label, setLabel] = useState('');
-  const [sortOrder, setSortOrder] = useState(0);
+  const [sortOrder, setSortOrder] = useState<number | null>(0);
+  const [checked, setChecked] = useState(false);
+  const sortError = numberFieldError(sortOrder, { integer: true });
 
   const createMutation = useCreateTransition(entityType, scopeId);
   const updateMutation = useUpdateTransition(entityType, scopeId);
@@ -54,6 +58,7 @@ export default function TransitionFormDialog({
 
   useEffect(() => {
     if (!open) return;
+    setChecked(false);
     setFromId(transition?.from_status_id ?? '');
     setToId(transition?.to_status_id ?? '');
     setLabel(transition?.label ?? '');
@@ -62,11 +67,15 @@ export default function TransitionFormDialog({
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
+    if (sortError) {
+      setChecked(true);
+      return;
+    }
     const done = { onSuccess: () => onOpenChange(false) };
     if (transition) {
       // From/to are the edge's identity; changing them means a different edge.
       updateMutation.mutate(
-        { id: transition.id, body: { label: label.trim(), sort_order: Number(sortOrder) || 0 } },
+        { id: transition.id, body: { label: label.trim(), sort_order: Number(sortOrder) } },
         done,
       );
     } else {
@@ -76,7 +85,7 @@ export default function TransitionFormDialog({
           from_status_id: fromId,
           to_status_id: toId,
           label: label.trim(),
-          sort_order: Number(sortOrder) || 0,
+          sort_order: Number(sortOrder),
           trigger_mode: 'manual',
         },
         done,
@@ -153,11 +162,11 @@ export default function TransitionFormDialog({
 
           <div className="grid gap-2">
             <Label htmlFor="transition-order">Order</Label>
-            <Input
+            <NumberInput
               id="transition-order"
-              type="number"
               value={sortOrder}
-              onChange={(e) => setSortOrder(Number(e.target.value))}
+              onValueChange={setSortOrder}
+              error={checked ? sortError : undefined}
             />
           </div>
 

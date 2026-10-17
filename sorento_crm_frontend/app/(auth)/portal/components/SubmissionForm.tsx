@@ -51,6 +51,8 @@ import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { SectionSkeleton } from '@/components/common/SectionSkeleton';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -429,6 +431,10 @@ interface Props {
 
 export function SubmissionForm({ kind, submissionId, slug }: Props) {
   const router = useRouter();
+  // Read inside the load effect through a ref: its identity must not re-run the seed and wipe
+  // what the visitor has typed.
+  const routerRef = useRef(router);
+  routerRef.current = router;
   const [loading, setLoading] = useState(Boolean(submissionId));
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -457,6 +463,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // failed the sponsorship-only check below, so the "Unit price" cell itself can show
   // the inline message - same shape `invalidFields` gives every other required field.
   const [invalidLineIndex, setInvalidLineIndex] = useState<number | null>(null);
+  // Set once a Save / Submit found a wrong line quantity; line rows then show their sentence.
+  const [showNumberErrors, setShowNumberErrors] = useState(false);
   const [staffPreviewOpen, setStaffPreviewOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
   const [neighbours, setNeighbours] =
@@ -795,7 +803,7 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         }
       } catch (e) {
         if (e instanceof PortalUnauthorizedError) {
-          router.replace(
+          routerRef.current.replace(
             portalVerifyPath({
               slug,
               reason: 'expired',
@@ -808,7 +816,7 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         // Logged in as a different contact than the form's owner - send them to
         // the owner's confirm-identity card (deep-link slug), keep their token.
         if (e instanceof PortalOwnerMismatchError) {
-          router.replace(
+          routerRef.current.replace(
             portalVerifyPath({
               slug,
               reason: 'expired',
@@ -830,7 +838,6 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   }, [
     fieldDefs,
     kind,
-    router,
     showLines,
     submissionId,
     defaultsFromContact,
@@ -904,6 +911,13 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   };
 
   const handleSaveDraft = async () => {
+    // A draft may be incomplete, but a typed number that is wrong is never saved.
+    const badHeaderNumbers = collectMissingRequired().filter((m) => m.badNumber);
+    if (badHeaderNumbers.length > 0) {
+      reportMissingRequired(badHeaderNumbers);
+      return;
+    }
+    if (lineQuantitiesInvalid()) return;
     setSaving(true);
     try {
       // A retry after create succeeded but the attachment flush after it
@@ -932,8 +946,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
 
   /** Required fields still empty. Shared by submit and revise so the two can
    *  never disagree about what a complete form is. */
-  const collectMissingRequired = (): { name: string; label: string }[] => {
-    const missing: { name: string; label: string }[] = [];
+  const collectMissingRequired = (): { name: string; label: string; badNumber?: boolean }[] => {
+    const missing: { name: string; label: string; badNumber?: boolean }[] = [];
     for (const f of fieldDefs) {
       const isRequired =
         f.required || (f.requiredWhen ? f.requiredWhen(contact) : false);
@@ -944,6 +958,14 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         : !(typeof v === 'string' && v.trim().length > 0);
       if (empty) missing.push({ name: f.name, label: f.label });
     }
+    for (const f of fieldDefs) {
+      if (f.widget !== 'number' || (f.showWhen && !f.showWhen(fields))) continue;
+      const v = fields[f.name];
+      if (typeof v === 'string' && v.trim() && numberFieldError(v, { min: 0 })) {
+        // Typed but wrong: told on the field itself, not listed as missing.
+        missing.push({ name: f.name, label: f.label, badNumber: true });
+      }
+    }
     if (
       kind === 'complaint' &&
       complaintLines.filter((l) => (l.product_code || '').trim()).length === 0
@@ -953,18 +975,46 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
     return missing;
   };
 
+  const isUnreadable = (v: string | null | undefined): boolean =>
+    typeof v === 'string' && v.trim() !== '' && parseNumberDraft(v) === null;
+
+  /** A line quantity, unit price or total that is typed but wrong (negative, bad input). Blank stays allowed. */
+  const lineQuantitiesInvalid = (): boolean => {
+    const bad =
+      products.some(
+        (l) =>
+          numberFieldError(l.quantity, { min: 0, optional: true }) ||
+          // A negative unit price keeps its own "Unit price is required" refusal on submit.
+          (isUnreadable(l.unit_price) && numberFieldError(l.unit_price, { min: 0, optional: true })) ||
+          numberFieldError(l.total, { min: 0, optional: true }),
+      ) ||
+      complaintLines.some((l) => numberFieldError(l.quantity, { min: 0, optional: true }));
+    if (bad) {
+      setShowNumberErrors(true);
+      toast.error('Fix the quantity on the highlighted line.');
+    }
+    return bad;
+  };
+
   const reportMissingRequired = (
-    missing: { name: string; label: string }[],
+    all: { name: string; label: string; badNumber?: boolean }[],
   ) => {
-    setInvalidFields(new Set(missing.map((m) => m.name)));
-    toast.error(
-      `Missing ${missing.length} required field${missing.length === 1 ? '' : 's'}: ${missing
-        .map((m) => m.label)
-        .join(', ')}`,
-    );
+    const missing = all.filter((m) => !m.badNumber);
+    const badNumbers = all.filter((m) => m.badNumber);
+    setInvalidFields(new Set(all.map((m) => m.name)));
+    if (missing.length > 0) {
+      toast.error(
+        `Missing ${missing.length} required field${missing.length === 1 ? '' : 's'}: ${missing
+          .map((m) => m.label)
+          .join(', ')}`,
+      );
+    }
+    if (badNumbers.length > 0) {
+      toast.error(`Fix the number in: ${badNumbers.map((m) => m.label).join(', ')}`);
+    }
     setTimeout(() => {
       const node = document.querySelector(
-        `[data-field-name="${missing[0].name}"]`,
+        `[data-field-name="${all[0].name}"]`,
       ) as HTMLElement | null;
       node?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
     }, 50);
@@ -1013,6 +1063,10 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
     if (missing.length > 0) {
       setConfirmOpen(false);
       reportMissingRequired(missing);
+      return;
+    }
+    if (lineQuantitiesInvalid()) {
+      setConfirmOpen(false);
       return;
     }
     const missingPrice = findMissingSponsorshipUnitPrice();
@@ -1104,6 +1158,7 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
       reportMissingRequired(missing);
       return;
     }
+    if (lineQuantitiesInvalid()) return;
     const missingPrice = findMissingSponsorshipUnitPrice();
     if (missingPrice) {
       setInvalidLineIndex(missingPrice.rawIndex);
@@ -1755,6 +1810,7 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           frozenFields={frozenFields}
           statusBadge={statusBadge}
           onProductItemSelected={handleProductItemSelected}
+          invalidFields={invalidFields}
           resolveContactOption={resolveContactOption}
         />
       ) : kind === 'complaint' ? (
@@ -1774,6 +1830,7 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           contact={contact}
           complaintLines={complaintLines}
           setComplaintLines={setComplaintLines}
+          showNumberErrors={showNumberErrors}
         />
       ) : (
         <PurchaseRequestFormSection
@@ -1857,11 +1914,15 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
                           />
                         </td>
                         <td className="px-2 py-2">
-                          <Input
-                            type="number"
+                          <NumberInput
                             inputMode="numeric"
                             min="0"
                             value={line.quantity ?? ''}
+                            error={
+                              showNumberErrors
+                                ? numberFieldError(line.quantity, { min: 0, optional: true })
+                                : undefined
+                            }
                             onChange={(e) =>
                               setProducts((prev) =>
                                 prev.map((p, i) =>
@@ -1877,12 +1938,16 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
                         {kind === 'sponsorship_form' && (
                           <>
                             <td className="px-2 py-2">
-                              <Input
-                                type="number"
+                              <NumberInput
                                 inputMode="decimal"
                                 min="0"
                                 step="0.01"
                                 value={line.unit_price ?? ''}
+                                error={
+                                  showNumberErrors
+                                    ? numberFieldError(line.unit_price, { min: 0, optional: true })
+                                    : undefined
+                                }
                                 onChange={(e) => {
                                   setProducts((prev) =>
                                     prev.map((p, i) =>
@@ -1913,12 +1978,16 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
                               )}
                             </td>
                             <td className="px-2 py-2">
-                              <Input
-                                type="number"
+                              <NumberInput
                                 inputMode="decimal"
                                 min="0"
                                 step="0.01"
                                 value={line.total ?? computedTotal}
+                                error={
+                                  showNumberErrors
+                                    ? numberFieldError(line.total, { min: 0, optional: true })
+                                    : undefined
+                                }
                                 onChange={(e) =>
                                   setProducts((prev) =>
                                     prev.map((p, i) =>
@@ -2446,6 +2515,7 @@ interface SectionProps {
   }) => void;
   invalidFields?: Set<string>;
   complaintLines?: ComplaintLine[];
+  showNumberErrors?: boolean;
   setComplaintLines?: Dispatch<SetStateAction<ComplaintLine[]>>;
   /** Needed for `FieldDef.requiredWhen`: some fields are mandatory per CONTACT (AC-F4). */
   contact?: PortalContact | null;
@@ -2467,6 +2537,7 @@ function StockInquiryFormSection({
   frozenFields,
   statusBadge,
   onProductItemSelected,
+  invalidFields,
   resolveContactOption,
 }: SectionProps) {
   const fieldByName = useMemo(() => {
@@ -2555,6 +2626,11 @@ function StockInquiryFormSection({
             value={fields.quantity ?? ''}
             onChange={(v) => setFieldValue('quantity', v)}
             disabled={!isEditable}
+            numberError={
+              invalidFields?.has('quantity')
+                ? numberFieldError(String(fields.quantity ?? ''), { min: 0 })
+                : undefined
+            }
           />
         </InquiryFormTableRow>
         <InquiryFormTableRow label="Delivery date">
@@ -2597,11 +2673,13 @@ function ComplaintLinesTable({
   setLines,
   disabled,
   invalid,
+  showNumberErrors,
 }: {
   lines: ComplaintLine[];
   setLines: Dispatch<SetStateAction<ComplaintLine[]>>;
   disabled?: boolean;
   invalid?: boolean;
+  showNumberErrors?: boolean;
 }) {
   const updateRow = (index: number, patch: Partial<ComplaintLine>) =>
     setLines((prev) =>
@@ -2685,13 +2763,17 @@ function ComplaintLinesTable({
                   />
                 </td>
                 <td className="px-2 py-2">
-                  <Input
-                    type="number"
+                  <NumberInput
                     inputMode="numeric"
                     min="0"
                     value={line.quantity}
                     onChange={(e) =>
                       updateRow(index, { quantity: e.target.value })
+                    }
+                    error={
+                      showNumberErrors
+                        ? numberFieldError(line.quantity, { min: 0, optional: true })
+                        : undefined
                     }
                     placeholder="Qty"
                     disabled={disabled}
@@ -2740,6 +2822,7 @@ function ComplaintFormSection({
   invalidFields,
   complaintLines,
   setComplaintLines,
+  showNumberErrors,
   contact,
 }: SectionProps) {
   return (
@@ -2777,6 +2860,7 @@ function ComplaintFormSection({
                 setLines={setComplaintLines}
                 disabled={!isEditable}
                 invalid={invalidFields?.has('product_lines')}
+                showNumberErrors={showNumberErrors}
               />
             </div>
           )}
@@ -2890,6 +2974,10 @@ function FieldInput({
   const isRequired =
     field.required ||
     (field.requiredWhen ? field.requiredWhen(contact ?? null) : false);
+  const numberError =
+    invalid && field.widget === 'number'
+      ? numberFieldError(typeof value === 'string' ? value : '', { min: 0, optional: !isRequired })
+      : undefined;
   return (
     <div className="space-y-1.5 min-w-0" data-field-name={field.name}>
       <Label htmlFor={field.name} className="min-w-0">
@@ -2912,11 +3000,12 @@ function FieldInput({
           onDOItemsChange={onDOItemsChange}
           onDOProductsConfirmed={onDOProductsConfirmed}
           disabled={disabled}
+          numberError={numberError}
           contactOption={contactOption}
           displayValue={displayValue}
         />
       </div>
-      {invalid && (
+      {invalid && field.widget !== 'number' && (
         <p className="text-xs text-destructive">{field.label} is required.</p>
       )}
     </div>
@@ -2932,6 +3021,7 @@ function FieldControl({
   onDOItemsChange,
   onDOProductsConfirmed,
   disabled,
+  numberError,
   contactOption,
   displayValue,
 }: {
@@ -2947,6 +3037,8 @@ function FieldControl({
   }) => void;
   contactOption?: SearchableSelectOption;
   disabled?: boolean;
+  /** The sentence under a `number` widget once a submit found it wrong. */
+  numberError?: string;
   /** Human-readable text for an id-valued picker (`FieldDef.displayFromDetail`). */
   displayValue?: string;
 }) {
@@ -2978,15 +3070,15 @@ function FieldControl({
       );
     case 'number':
       return (
-        <Input
+        <NumberInput
           id={field.name}
-          type="number"
           inputMode="numeric"
           min={0}
           value={stringValue}
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.placeholder}
           disabled={disabled}
+          error={numberError}
         />
       );
     case 'lookup-select':

@@ -18,10 +18,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
 import { TriangleAlert } from 'lucide-react';
+import { numberFieldError } from '@/lib/number-field';
 import { fmtDate } from '../../lib/format';
 import {
   getCurrencyRates,
@@ -48,6 +50,13 @@ interface Draft {
   note: string;
   /** True when the currency already has a row, so the dialog can say which it is. */
   existing: boolean;
+  /** Set once Save was pressed with a bad rate: the message then follows the field live. */
+  showErrors?: boolean;
+}
+
+/** A rate must be a number above zero (a zero rate prices the currency at nothing). */
+function rateError(raw: string) {
+  return numberFieldError(raw, { min: 0, minExclusive: true });
 }
 
 export function CurrencyRatesPanel() {
@@ -80,7 +89,8 @@ export function CurrencyRatesPanel() {
 
   const base = rates.data?.base_currency ?? '';
   const missing = rates.data?.missing ?? [];
-  const valid = !!draft && draft.currency.trim().length > 0 && Number(draft.rate) > 0;
+  const hasCurrency = !!draft && draft.currency.trim().length > 0;
+  const rateMessage = draft ? rateError(draft.rate) : undefined;
 
   return (
     <div className="space-y-3">
@@ -215,13 +225,13 @@ export function CurrencyRatesPanel() {
             </div>
             <div>
               <Label htmlFor="fx-rate">Rate to {base || 'base'}</Label>
-              <Input
+              <NumberInput
                 id="fx-rate"
-                type="number"
                 min={0}
                 step="0.0001"
                 value={draft?.rate ?? ''}
                 placeholder="4.4"
+                error={draft?.showErrors ? rateMessage : undefined}
                 onChange={(e) => setDraft((d) => (d ? { ...d, rate: e.target.value } : d))}
               />
             </div>
@@ -249,8 +259,15 @@ export function CurrencyRatesPanel() {
               Cancel
             </Button>
             <Button
-              onClick={() => draft && save.mutate(draft)}
-              disabled={!valid || save.isPending}
+              onClick={() => {
+                if (!draft) return;
+                if (rateMessage) {
+                  setDraft({ ...draft, showErrors: true });
+                  return;
+                }
+                save.mutate(draft);
+              }}
+              disabled={!hasCurrency || save.isPending}
             >
               Save currency rate
             </Button>

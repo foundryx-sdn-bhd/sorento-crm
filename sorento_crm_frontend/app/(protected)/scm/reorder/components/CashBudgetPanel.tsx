@@ -2,11 +2,11 @@
 
 import { CircleDollarSign, Wallet } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider, SliderThumb } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 import { fmtInt, fmtMoney } from '../../lib/format';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import type { FundingResult } from '../lib/reorderCashAllocation';
 
 /** One compact readout figure (label above, value below). */
@@ -76,15 +76,15 @@ export function CashBudgetPanel({
           <Label htmlFor="cash-budget" className="mb-1 block text-xs">
             Budget (RM)
           </Label>
-          <Input
+          <LiveNumberInput
             id="cash-budget"
-            type="number"
             inputMode="numeric"
             min={0}
             max={sliderMax}
             step={step}
+            rules={{ min: 0, max: sliderMax }}
             value={budget}
-            onChange={(e) => onBudgetChange(clamp(Number(e.target.value) || 0))}
+            onCommit={onBudgetChange}
             className="w-36 tabular-nums"
           />
         </div>

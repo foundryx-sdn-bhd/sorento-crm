@@ -13,7 +13,7 @@ So the cases worth pinning here are the ones that would let that regress:
   project, rather than going blank (an inner join to Project is what made it blank);
 * every filter narrows, including the two that are the screen's own controls;
 * the sort set is CLOSED, nulls sort LAST in both directions, and the order is total;
-* the workbook is one sheet per delivery MONTH with the client's own heading row.
+* the workbook is ONE sheet (every delivery month on it) with the client's own heading row.
 """
 from __future__ import annotations
 
@@ -1492,7 +1492,9 @@ def test_sorting_by_agent_is_accepted(api):
 # -------------------------------------------------------------------- export
 
 
-def test_the_workbook_is_one_sheet_per_delivery_month_with_their_heading_row(api):
+def test_the_workbook_is_one_sheet_for_every_delivery_month_with_their_heading_row(api):
+    """Owner, 16 Oct 2026: "our OI excel cannot split by month, this applies to all places
+    where OI excel is printed". January, March and the undated row share ONE sheet."""
     client, _db, _company_id, _seeded = api
 
     response = client.get(f"{LIST}/export")
@@ -1500,8 +1502,8 @@ def test_the_workbook_is_one_sheet_per_delivery_month_with_their_heading_row(api
     assert response.status_code == 200, response.text
     assert "attachment;" in response.headers["content-disposition"]
     book = openpyxl.load_workbook(io.BytesIO(response.content))
-    assert book.sheetnames == ["JAN 26", "MAR 26", "NO DATE"]
-    sheet = book["JAN 26"]
+    assert book.sheetnames == ["ORDER INQUIRY"]
+    sheet = book["ORDER INQUIRY"]
     assert sheet.cell(row=1, column=1).value == "ORDER INQUIRY"
     assert [cell.value for cell in sheet[2][:9]] == [
         "SO DATE",
@@ -1515,7 +1517,13 @@ def test_the_workbook_is_one_sheet_per_delivery_month_with_their_heading_row(api
         "PO NO ",
     ]
     assert sheet.cell(row=2, column=10).value == "LOCATION"
-    assert sheet.max_row == 3
+    assert sheet.max_row == 2 + 3
+    delivery_dates = [
+        sheet.cell(row=r, column=6).value for r in range(3, sheet.max_row + 1)
+    ]
+    assert {
+        value.date() if hasattr(value, "date") else value for value in delivery_dates
+    } == {date(2026, 1, 19), date(2026, 3, 2), None}
 
 
 def test_the_workbooks_supplier_is_the_source_pos_on_a_via_spo_row(api):
@@ -1547,7 +1555,8 @@ def test_the_workbook_honours_the_filters_the_screen_is_showing(api):
     response = client.get(f"{LIST}/export", params={"delivery_month": "2026-03"})
 
     book = openpyxl.load_workbook(io.BytesIO(response.content))
-    assert book.sheetnames == ["MAR 26"]
+    assert book.sheetnames == ["ORDER INQUIRY"]
+    assert book["ORDER INQUIRY"].max_row == 2 + 1
 
 
 def test_total_qty_totals_the_supplier_and_item_run_not_the_item_across_suppliers(api):
@@ -1583,7 +1592,7 @@ def test_total_qty_totals_the_supplier_and_item_run_not_the_item_across_supplier
     response = client.get(f"{LIST}/export", params={"delivery_month": "2026-05"})
 
     book = openpyxl.load_workbook(io.BytesIO(response.content))
-    sheet = book["MAY 26"]
+    sheet = book["ORDER INQUIRY"]
     body = [[cell.value for cell in row[:9]] for row in sheet.iter_rows(min_row=3)]
     assert [(row[7], row[2], row[3], row[4]) for row in body] == [
         (supplier_a.supplier_name, abc, 10.0, None),

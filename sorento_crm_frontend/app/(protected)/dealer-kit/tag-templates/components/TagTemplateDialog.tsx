@@ -20,6 +20,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import {
@@ -44,8 +46,9 @@ export function TagTemplateDialog({
 
   const [name, setName] = useState('');
   const [family, setFamily] = useState<TagTemplateFamily>('ala_carte');
-  const [widthMm, setWidthMm] = useState(DEFAULT_TAG_SIZE.width_mm);
-  const [heightMm, setHeightMm] = useState(DEFAULT_TAG_SIZE.height_mm);
+  const [widthMm, setWidthMm] = useState<number | null>(DEFAULT_TAG_SIZE.width_mm);
+  const [heightMm, setHeightMm] = useState<number | null>(DEFAULT_TAG_SIZE.height_mm);
+  const [checked, setChecked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,19 +59,27 @@ export function TagTemplateDialog({
       setWidthMm(DEFAULT_TAG_SIZE.width_mm);
       setHeightMm(DEFAULT_TAG_SIZE.height_mm);
       setError(null);
+      setChecked(false);
     }
   }, [open]);
 
-  const canSubmit = name.trim().length > 0 && widthMm > 0 && heightMm > 0 && !saving;
+  const canSubmit = name.trim().length > 0 && !saving;
+  const widthError = checked ? numberFieldError(widthMm, { min: 10 }) : undefined;
+  const heightError = checked ? numberFieldError(heightMm, { min: 10 }) : undefined;
 
   const submit = async () => {
     setError(null);
+    setChecked(true);
+    if (numberFieldError(widthMm, { min: 10 }) || numberFieldError(heightMm, { min: 10 })) return;
     setSaving(true);
     try {
       const template = await createTemplate({
         name: name.trim(),
         family,
-        print_size: { width_mm: widthMm, height_mm: heightMm },
+        print_size: {
+          width_mm: parseNumberDraft(widthMm) as number,
+          height_mm: parseNumberDraft(heightMm) as number,
+        },
       });
       toast.success(`Created template "${template.name}"`);
       onCreated?.();
@@ -118,22 +129,22 @@ export function TagTemplateDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">
               <Label htmlFor="tt-width">Width (mm)</Label>
-              <Input
+              <NumberInput
                 id="tt-width"
-                type="number"
                 value={widthMm}
                 min={10}
-                onChange={(e) => setWidthMm(parseFloat(e.target.value) || 0)}
+                onValueChange={setWidthMm}
+                error={widthError}
               />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="tt-height">Height (mm)</Label>
-              <Input
+              <NumberInput
                 id="tt-height"
-                type="number"
                 value={heightMm}
                 min={10}
-                onChange={(e) => setHeightMm(parseFloat(e.target.value) || 0)}
+                onValueChange={setHeightMm}
+                error={heightError}
               />
             </div>
           </div>

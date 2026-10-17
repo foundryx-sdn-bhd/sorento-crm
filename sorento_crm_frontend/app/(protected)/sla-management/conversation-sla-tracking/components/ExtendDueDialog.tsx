@@ -12,6 +12,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { formatDateTime, parseDateTimeAsUTC } from '@/lib/helpers';
@@ -60,6 +62,9 @@ export default function ExtendDueDialog({
   const [days, setDays] = useState('1');
   const [targetDate, setTargetDate] = useState('');
   const [reason, setReason] = useState('');
+  // Set by an Extend click that found the days wrong; the sentence then follows the typing.
+  const [daysChecked, setDaysChecked] = useState(false);
+  const daysError = numberFieldError(days, { min: 1, integer: true });
 
   const [preview, setPreview] = useState<ExtendSLAPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -75,6 +80,7 @@ export default function ExtendDueDialog({
       setDays('1');
       setTargetDate('');
       setReason('');
+      setDaysChecked(false);
       setPreview(null);
       setPreviewError(null);
       setPreviewLoading(false);
@@ -128,9 +134,16 @@ export default function ExtendDueDialog({
 
   const reasonTrimmed = reason.trim();
   const canSubmit =
-    !!activeInput && !!reasonTrimmed && !previewLoading && !extendMutation.isPending;
+    (mode === 'days' || !!activeInput) &&
+    !!reasonTrimmed &&
+    !previewLoading &&
+    !extendMutation.isPending;
 
   const handleSubmit = () => {
+    if (mode === 'days' && daysError) {
+      setDaysChecked(true);
+      return;
+    }
     if (!activeInput || !reasonTrimmed) return;
     extendMutation.mutate(
       { id: trackingId, ...activeInput, reason: reasonTrimmed },
@@ -205,13 +218,13 @@ export default function ExtendDueDialog({
           {mode === 'days' ? (
             <div className="space-y-1.5">
               <Label htmlFor="extend-days">Additional working days</Label>
-              <Input
+              <NumberInput
                 id="extend-days"
-                type="number"
                 min={1}
                 step={1}
                 value={days}
                 onChange={(e) => setDays(e.target.value)}
+                error={daysChecked ? daysError : undefined}
                 autoFocus
               />
             </div>

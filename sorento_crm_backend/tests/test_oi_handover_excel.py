@@ -100,6 +100,14 @@ def test_confirm_handover_attaches_the_oi_excel(api, monkeypatch, stored):
     assert excel[0]["optional"] is True
     [upload] = [u for u in stored if u["key"] == excel[0]["storage_key"]]
     assert fixture["row"].item_code in _cells(upload["bytes"])  # this OI's own rows (B2)
+    import io
+
+    import openpyxl
+
+    from app.services.order_inquiry_worklist_service import EXPORT_TITLE
+
+    # Owner, 16 Oct 2026: the OI Excel is never split by month, the Confirm attachment included.
+    assert openpyxl.load_workbook(io.BytesIO(upload["bytes"])).sheetnames == [EXPORT_TITLE]
 
 
 def test_confirm_handover_still_sends_when_the_excel_cannot_be_stored(api, monkeypatch):
