@@ -45,10 +45,12 @@ import { Star, StarOff } from 'lucide-react';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { SectionSkeleton } from '@/components/common/SectionSkeleton';
+import { folderAfterDelete } from './drivePath';
 
 interface DirectoryTreeSidebarProps {
   selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  /** `replace` rewrites the current history entry instead of adding a Back step. */
+  onSelect: (id: string | null, opts?: { replace?: boolean }) => void;
   /** When set, folder menu includes adjusting access levels for all attachments in the folder subtree. */
   onAdjustFolderAccessLevels?: (directoryId: string) => void;
   /** When provided, the header shows a button to collapse the whole Folders panel. */
@@ -532,7 +534,10 @@ export default function DirectoryTreeSidebar({
       onSuccess: () => {
         setDeleteDialogOpen(false);
         setDeleteTarget(null);
-        if (selectedId === deleteTarget.id) onSelect(null);
+        // Deleting the open folder (or an ancestor of it) moves up to the deleted folder's
+        // parent and REPLACES the history entry, so Back never lands on the deleted folder.
+        const next = folderAfterDelete(tree, selectedId, deleteTarget.id);
+        if (next !== undefined) onSelect(next, { replace: true });
       },
     });
   };
