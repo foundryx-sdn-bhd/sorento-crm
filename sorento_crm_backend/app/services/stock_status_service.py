@@ -166,6 +166,62 @@ def stock_status(db: Session, product_id: str, so_due_by: Optional[date] = None)
     }
 
 
+def so_outstanding_clauses() -> tuple:
+    """AutoCount's outstanding SO (R4), one definition for the panel and the item chips.
+
+    Open lines of open orders still owing, and never an order AutoCount marks Transferable =
+    F (not approved for the queue, Q7); NULL ("never said") counts like T. A line CS marked
+    `covered` counts and `qty_required` plays no part: AutoCount knows neither.
+    """
+    return (
+        SalesOrderLine.warehouse_id.isnot(None),
+        SalesOrderLine.line_status == "open",
+        SalesOrder.status == "open",
+        SalesOrder.is_transferable.isnot(False),
+        SalesOrderLine.qty_ordered > SalesOrderLine.qty_delivered,
+    )
+
+
+#: The most item ids one summary call answers; a page of a list is far below it.
+MAX_SUMMARY_IDS = 200
+
+
+def summaries(db: Session, product_ids: list[str]) -> list[dict[str, Any]]:
+    """On hand and SO per item, on the panel's own rules, for a list's item chips.
+
+    One read for a whole page of a list, where the full panel per row would be hundreds of
+    queries. Ids that are not uuids are skipped; an item the caller's company does not hold
+    is simply absent. Only warehouses the caller can see are counted, exactly as the panel.
+    """
+    ids = [pid for pid in dict.fromkeys(product_ids) if is_uuid(pid)]
+    if not ids:
+        return []
+    known = [str(pid) for (pid,) in db.query(Product.id).filter(Product.id.in_(ids)).all()]
+    if not known:
+        return []
+    on_hand: dict[str, float] = defaultdict(float)
+    for pid, qty in (
+        db.query(Stock.product_id, Stock.quantity_on_hand)
+        .join(Warehouse, Warehouse.id == Stock.warehouse_id)
+        .filter(Stock.product_id.in_(known))
+        .all()
+    ):
+        on_hand[str(pid)] += _num(qty)
+    so_qty: dict[str, float] = defaultdict(float)
+    for pid, ordered, delivered in (
+        db.query(SalesOrderLine.product_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered)
+        .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
+        .join(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
+        .filter(SalesOrderLine.product_id.in_(known), *so_outstanding_clauses())
+        .all()
+    ):
+        so_qty[str(pid)] += _num(ordered) - _num(delivered)
+    return [
+        {"product_id": pid, "on_hand": on_hand.get(pid, 0.0), "so_qty": so_qty.get(pid, 0.0)}
+        for pid in ids if pid in known
+    ]
+
+
 def _sales_order_rows(db: Session, product_id: str, so_due_by: Optional[date]) -> list[dict]:
     """Counted SO lines (R4, R5): AutoCount's outstanding, Transferable F left out."""
     rows = (
@@ -187,15 +243,7 @@ def _sales_order_rows(db: Session, product_id: str, so_due_by: Optional[date]) -
         )
         .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
         .outerjoin(SalesAgent, SalesAgent.id == SalesOrder.sales_agent_id)
-        .filter(
-            SalesOrderLine.product_id == product_id,
-            SalesOrderLine.warehouse_id.isnot(None),
-            SalesOrderLine.line_status == "open",
-            SalesOrder.status == "open",
-            # AutoCount's approval for the queue (Q7): F is out, NULL ("never said") counts.
-            SalesOrder.is_transferable.isnot(False),
-            SalesOrderLine.qty_ordered > SalesOrderLine.qty_delivered,
-        )
+        .filter(SalesOrderLine.product_id == product_id, *so_outstanding_clauses())
         .all()
     )
     out = []

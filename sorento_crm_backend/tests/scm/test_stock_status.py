@@ -357,3 +357,39 @@ def test_another_companys_warehouse_never_appears(scm_app):
     assert _row(body, mine) is not None
     assert _row(body, theirs) is None
     assert body["totals"]["on_hand"] == 3
+
+
+# ---------------------------------------------------------------- summary (item chips in lists)
+SUMMARY_URL = "/api/v1/inventory/stock-status/summary"
+
+
+def test_summary_gives_each_item_its_on_hand_and_so_on_the_panels_rules_in_one_call(scm_app):
+    app, db, w, p = _setup(scm_app)
+    q = w.product("B")
+    bb = _wh(db, "BB")
+    con = _wh(db, "CON", active=False)
+    _on_hand(db, p, bb, 10)
+    _on_hand(db, p, con, 1)                       # inactive still counts
+    _so(db, p, bb, 30)
+    _so(db, p, bb, 7, transferable=False)         # F out
+    _so(db, p, bb, 4, purchasing_status="covered")
+    _on_hand(db, q, bb, 2)
+
+    r = TestClient(app).get(SUMMARY_URL, params={"product_ids": f"{p.id},{q.id}"})
+
+    assert r.status_code == 200, r.text
+    by_id = {s["product_id"]: s for s in r.json()}
+    assert by_id[str(p.id)] == {"product_id": str(p.id), "on_hand": 11, "so_qty": 34}
+    assert by_id[str(q.id)] == {"product_id": str(q.id), "on_hand": 2, "so_qty": 0}
+    # The same figures the panel prints for the item.
+    panel = _get(app, p)["totals"]
+    assert (panel["on_hand"], panel["so_qty"]) == (11, 34)
+
+
+def test_summary_refuses_more_than_200_ids_and_ignores_ids_that_are_not_uuids(scm_app):
+    app, db, w, p = _setup(scm_app)
+    too_many = ",".join(str(uuid.uuid4()) for _ in range(201))
+    assert TestClient(app).get(SUMMARY_URL, params={"product_ids": too_many}).status_code == 422
+    r = TestClient(app).get(SUMMARY_URL, params={"product_ids": f"nope,{p.id}"})
+    assert r.status_code == 200
+    assert [s["product_id"] for s in r.json()] == [str(p.id)]
