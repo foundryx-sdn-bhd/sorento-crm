@@ -269,3 +269,28 @@ refused page fall through (`page_refused...` red).
 L1 (lands G1 and `ranged`, which L2 / L3 reuse) -> L5 (LC only) -> L3 (backend only) -> L2 (MCP + route + backend; MCP
 deploys first) -> L4 only on a crew rule. Open: OL-1 L4 drop (KL3) or build the resolver page (section 4); OL-2 DL2 page-2
 header; OL-3 L2's call line in `_answer_pending` beside #1721.
+
+## Review round 1 (18 Oct, head 4def98907): lead rulings for the fix round (override anything above)
+
+Reviewer (Opus) NOT READY on B1; security-reviewer PASS with one should-fix.
+
+- LD4 (B1, applies OL-4 "never a false count"). "Capped" is decided on PRODUCT ROWS per typed token, the unit the resolver
+  caps, never on distinct codes: a token's list is capped when its product uuids reach the cap the resolver applied to
+  it, `max(1, PREFIX_LIMIT // n_types)` where `n_types` = distinct entity types the resolver returned for that token
+  (`entity_resolver.py:5541-5551`, the per-type balanced cap), so twins across companies (20 rows = 10 codes,
+  `entity_resolver.py:2058-2067`) and a two-type token (10 product rows) both count as capped; the exact hit + siblings
+  case (`:5501-5516`, up to 21 rows) is capped at 20+. If the per-token entity types are not visible where L1 decides,
+  fall back to `product uuids >= PREFIX_LIMIT // 2` and say so in the commit.
+- LD3 amended: the narrow sentence states the number of codes actually listed, never the literal 20:
+  `Those are the first {n} matches. Send more of the code to narrow it.` (ms/zh with `{n}`). The literal "20" is false
+  under twins (crew FYI, same rule).
+- LD5 (S2). After a cut L1 code list the cards are numbered, so a bare number picks that card: `with_set_count_from_text`
+  skips a `code_list` carry exactly as it skips `report_groups`.
+- LD6 (security should-fix, this slice adds the `ref_page` key). The runner sets `ref_staff = is_staff_profile(profile)`
+  both ways (never trusts the verdict) and drops any `ref_page` the verdict supplies; only the carry-derived page turn
+  sets it. A `ref_page` turn with no db returns the error fragment (never falls through).
+- S3: `card_page` and `lookup_purchase_*` share one line-query helper, ordered by product code then line id.
+- Ungated semantic key: `outstanding_group_offset` is added to the lane semantic input only gate on.
+- Test gaps to close (tester, red first): B1 twins + two-type token; LD3 `{n}`; LD5 bare number picks card 2; S1 a gone
+  card through `run_fetch` returns the error fragment (K2); K3 a DO block longer than the SO block; LD6 a non-staff
+  verdict with `ref_staff: true` and a verdict-supplied `ref_page` are both refused.
