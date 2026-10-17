@@ -46,3 +46,35 @@ def test_guard_a_product_follow_up_with_an_unrelated_order_grades_as_before():
              mem_extra={"order": [unrelated]}, tools=[{"name": "crm_inventory_list", "args": {"product_ids": [UA]}}])
     g = item("followup", "and_x", variant="new_fact", fact="inventory", subject_after=["SRTA100"])
     check(grade_turn(r, g), True)
+
+
+# ---------------------------------------------------------------- precedence pins (kill-proof)
+def _check_names(res):
+    return {k for k, v in res["checks"].items() if v is False}
+
+
+def test_pin_products_win_over_a_held_order_never_a_union():
+    r = row2(message="and the status of the order?", reply=f"{ORD} is confirmed.", domains=("order",),
+             mem_before=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], mem_extra={"order": [HELD]},
+             tools=[{"name": "crm_orders_list", "args": {"status": "open"}}])
+    res = grade_turn(r, item("followup", "switch", fact="order", subject_after=[ORD]))
+    assert not res["passed"], res
+    assert "subject" in _check_names(res) or "new_subject" in _check_names(res), res["checks"]
+
+
+def test_pin_a_held_order_beats_the_lookups_own_strings():
+    looked = [{"tool": "t", "entities": ["SRTB200"], "product_codes": ["SRTB200"]}]
+    check(grade_turn(_order_row({"order": [HELD]}, looked=looked), item("followup", "and_x", **GOLD)), True)
+
+
+def test_pin_a_malformed_order_entry_does_not_crash_and_is_no_subject():
+    for bad in ({"raw": None}, {"raw": ""}, {"hint": "customer_order"}):
+        res = grade_turn(_order_row({"order": [bad]}), item("followup", "and_x", **GOLD))
+        assert res["checks"]["subject"] is False, res["checks"]
+
+
+def test_pin_and_x_new_item_takes_a_held_order_as_the_new_subject():
+    gold = dict(variant="new_item", fact="order", fact_label="order_status", subject_after=[ORD])
+    res = grade_turn(_order_row({"order": [HELD]}), item("followup", "and_x", **gold))
+    check(res, True)
+    assert res["checks"]["new_subject"] is True, res["checks"]
