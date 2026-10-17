@@ -601,13 +601,73 @@ def _set_named_count(semantic_input: Any) -> int | None:
     return named_count(jsc.get(semantic_input, "top_n"))
 
 
+def _set_page(
+    *,
+    e: dict[str, Any],
+    msg: str,
+    rows_start: int,
+    rows_end: int,
+    row_ends: list[int],
+    footer: str,
+    other_brands: str,
+    shown: int,
+    offset: int,
+    total: int,
+    build_header: Any,
+    cap: int,
+) -> tuple[str | None, dict[str, int], list[Any] | None]:
+    """CHAT-COMPOSER: one set page as ONE WhatsApp message. The page ends at the last whole
+    product block that keeps the reply (header, rows, the "more" line, other brands, footer)
+    within `sets.MESSAGE_MAX_CHARS`; the header states the range actually listed and the "more"
+    line the products the next page will show. Returns `(reply, window, answers)`; `reply` is
+    None when nothing differs from the plain page (no line, no cut)."""
+    from app.services.chatbot.composers import sets as composers_sets
+
+    items = e.get("items") or []
+    pre, post = msg[:rows_start], msg[rows_end:]
+
+    def assemble(k: int | None) -> tuple[str, int]:
+        cut = k is not None and row_ends and k < len(row_ends)
+        rows = msg[rows_start : row_ends[k - 1]] if cut else msg[rows_start:rows_end]
+        listed = items[:k] if cut else items
+        n = min(shown, _rendered_product_count(listed) if _rendered_product_count(listed) is not None else shown)
+        core = (pre + rows + post).strip()
+        has_footer = bool(footer) and core.endswith(footer)
+        parts = [core[: -len(footer)].strip() if has_footer else core]
+        more = composers_sets.next_count(total, offset, n, cap)
+        if more:
+            parts.append(composers_sets.more_line(more))
+        if other_brands:
+            parts.append(other_brands)
+        if has_footer:
+            parts.append(footer)
+        return build_header(n) + "\n\n" + "\n\n".join(p for p in parts if p), n
+
+    full, n_full = assemble(None)
+    k = len(row_ends)
+    text, n = full, n_full
+    while len(text) > composers_sets.MESSAGE_MAX_CHARS and k > 1:
+        k -= 1
+        text, n = assemble(k)
+    window = {
+        "first": offset + 1,
+        "last": offset + n,
+        "total": total,
+        "next": composers_sets.next_count(total, offset, n, cap),
+    }
+    answers = list(items[:k]) if row_ends and k < len(row_ends) else None
+    unchanged = text == f"{build_header(n_full)}\n\n{msg.strip()}" and answers is None
+    return (None if unchanged else text), window, answers
+
+
 def _set_list_size(semantic_input: Any) -> int:
     """How many products of a counted set one reply lists: the named count, never past
     `answer.SET_LIST_MAX`. Deferred import: `answer.py` imports from this module."""
     from app.services.chatbot.lanes.business import answer as answer_mod
 
-    named = _set_named_count(semantic_input)
-    return min(named, answer_mod.SET_LIST_MAX) if named else answer_mod.SET_LIST_MAX
+    from app.services.chatbot.composers import sets as composers_sets
+
+    return composers_sets.page_size(_set_named_count(semantic_input), answer_mod.SET_LIST_MAX)
 
 
 def _names_the_ask(attribute: str) -> bool:
@@ -3491,6 +3551,8 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     # MESSAGE, never from the STATE - `answers` below is untouched, so a positional pick
     # still resolves against the same page rows. And ONLY the numbered list goes: the
     # multi-company note reads `e.items` for attribution and must keep seeing the real rows.
+    rows_start = len(msg)  # CHAT-COMPOSER: where this set's rows begin (page cut below)
+    row_ends: list[int] = []
     if set_predicate is not None and stock_ask_render:
         # Fix round 8 on PR #833: a dealer on availability only, still owing a quantity,
         # reads the set's products by code (the availability item's own title, as the
@@ -3514,6 +3576,8 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 continue
             printed_status.add(item_text)
         msg += item_text + "\n\n"
+        row_ends.append(len(msg))
+    rows_end = len(msg)
     if dealer_incoming and jsc.truthy(e.get("closing")):
         # The presenter's dealer closing is the refer line (`presenters.py`, `closing`);
         # printed through `turn/refer.py` so the turn is marked for Customer asks
@@ -3611,6 +3675,8 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     # would render with no leading count/attribute line at all.
     predicate = ctx.get("predicate") if isinstance(ctx.get("predicate"), dict) else None
     set_header: str | None = None
+    set_window: dict[str, int] | None = None
+    page_items: list[Any] | None = None
     if predicate is not None:
         from app.services.chatbot.lanes.business import answer as answer_mod
 
@@ -3677,12 +3743,43 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         )
         body = msg.strip()
         footer = f"_{loc.text(f'Data last updated: {ts}')}_" if ts else ""
-        if other_brands:
-            if footer and body.endswith(footer):
-                body = f"{body[: -len(footer)].strip()}\n\n{other_brands}\n\n{footer}"
-            else:
-                body = f"{body}\n\n{other_brands}"
-        msg = f"{header}\n\n{body}"
+        from app.services.chatbot import composers
+
+        paged_msg = None
+        if composers.enabled() and shown > 0:
+            paged_msg, set_window, page_items = _set_page(
+                e=e,
+                msg=msg,
+                rows_start=rows_start,
+                rows_end=rows_end,
+                row_ends=row_ends,
+                footer=footer,
+                other_brands=other_brands,
+                shown=shown,
+                offset=offset,
+                total=qualifying_total,
+                build_header=lambda n: answer_mod.build_set_header(
+                    qualifying_total,
+                    n,
+                    set_noun,
+                    require,
+                    description=jsc.get(predicate, "description"),
+                    not_understood=jsc.get(predicate, "unrecognized_terms"),
+                    offset=offset,
+                    previous_total=jsc.get(predicate, "previous_total"),
+                ),
+                cap=answer_mod.SET_LIST_MAX,
+            )
+        if paged_msg is not None:
+            msg = paged_msg
+            set_header = msg.split("\n\n", 1)[0]
+        else:
+            if other_brands:
+                if footer and body.endswith(footer):
+                    body = f"{body[: -len(footer)].strip()}\n\n{other_brands}\n\n{footer}"
+                else:
+                    body = f"{body}\n\n{other_brands}"
+            msg = f"{header}\n\n{body}"
 
     final_response = msg.strip()
     if so_bucket_refusal:
@@ -3704,8 +3801,10 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # numbered 2 on screen (review, should-fix 4). Flattened in RENDER order, which is
         # the only order the customer can be talking about. Ungrouped, this is `items`
         # unchanged, so nothing else moves.
-        "answers": _rendered_answers(e) if groups_render else e.get("items"),
+        "answers": _rendered_answers(e) if groups_render else (page_items if page_items is not None else e.get("items")),
     }
+    if set_window is not None:
+        out["set_window"] = set_window
     # Spread-in, not defaulted: a reply with no summary keeps EXACTLY the keys it has today.
     if qs_render:
         out["summary_items"] = e["summary_items"]

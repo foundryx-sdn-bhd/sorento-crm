@@ -54,6 +54,8 @@ class Section:
     figures: list[dict[str, Any]] = field(default_factory=list)
     files: list[dict[str, Any]] = field(default_factory=list)
     miss: list[Any] = field(default_factory=list)
+    # CHAT-COMPOSER: the printed number of the first row (a set page 2+ starts past 1).
+    first: int = 1
 
 
 @dataclass
@@ -568,7 +570,17 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         miss = env.get("miss") or []
         env_files = env.get("files") or []
 
-        sections.append(Section(domain=domain, entities=entities, figures=figures, files=env_files, miss=miss))
+        window = env.get("set_window") if composers_on else None
+        sections.append(
+            Section(
+                domain=domain,
+                entities=entities,
+                figures=figures,
+                files=env_files,
+                miss=miss,
+                first=int(window["first"]) if isinstance(window, dict) and window.get("first") else 1,
+            )
+        )
 
         rows_text: list[str] = []
         n = 0

@@ -116,7 +116,9 @@ def last_list_after(previous: Any, *, question: Any, sections: Any) -> list[dict
     rows: list[dict[str, Any]] = []
     if with_rows:
         rows = [
-            _row_item(i, fig) for i, fig in enumerate(with_rows[0].figures, start=1) if isinstance(fig, dict)
+            _row_item(i, fig)
+            for i, fig in enumerate(with_rows[0].figures, start=getattr(with_rows[0], "first", 1) or 1)
+            if isinstance(fig, dict)
         ]
     merged = {item["position"]: item for item in rows}
     merged.update({item["position"]: item for item in options})

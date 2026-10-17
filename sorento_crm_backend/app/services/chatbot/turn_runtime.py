@@ -1359,6 +1359,39 @@ def with_set_count_from_text(
     return {**base, "top_n": count, "reference_positions": []}
 
 
+def with_set_more(verdict: dict[str, Any], *, carried: Any) -> dict[str, Any]:
+    """CHAT-COMPOSER: a "more" pages the set the LAST reply listed. Read off parser fields only:
+    `continuation` true, a pageable carry (`0 < shown < total`, not offer-only), and nothing of the
+    message's own (no entity of this message, no attribute, no ask, no named count, no
+    affirmative). Then the verdict asks for one full page of the carried set, exactly as
+    "another N" does; anything else is returned unchanged (and parsed as any other message)."""
+    from app.services.chatbot import composers
+    from app.services.chatbot.lanes.business import answer as answer_mod
+
+    if not composers.enabled() or verdict.get("continuation") is not True:
+        return verdict
+    key = carried.get("set_key") if isinstance(carried, dict) else None
+    if not isinstance(key, dict) or key.get("offer_only"):
+        return verdict
+    shown, total = int(key.get("shown") or 0), int(key.get("total") or 0)
+    if not 0 < shown < total:
+        return verdict
+    if (
+        verdict.get("requested_attributes")
+        or verdict.get("asks")
+        or verdict.get("sub_asks")
+        or verdict.get("is_affirmative") is True
+        or named_count(verdict.get("top_n")) is not None
+    ):
+        return verdict
+    entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
+    echoed = [e for e in entities if e.get("current_message") is True]
+    if echoed and verdict.get("entity_op") != "reuse":
+        return verdict
+    base = {**verdict, "entities": [e for e in verdict.get("entities") or [] if e not in echoed]} if echoed else verdict
+    return {**base, "top_n": answer_mod.SET_LIST_MAX, "reference_positions": [], SET_CONTINUE_KEY: True}
+
+
 #: The verdict keys that say WHAT was asked, kept with an open clarify so its answer
 #: re-runs that ask (round 4 R5).
 _CLARIFY_ASK_KEYS = (
@@ -4537,7 +4570,9 @@ def page_the_set(
         if pid:
             ids_by_code.setdefault(c.get("product_code") or pid, []).append(pid)
     codes = list(ids_by_code)
-    limit = answer_mod.SET_LIST_MAX if not size else min(int(size), answer_mod.SET_LIST_MAX)
+    from app.services.chatbot.composers import sets as composers_sets
+
+    limit = composers_sets.page_size(int(size) if size else None, answer_mod.SET_LIST_MAX)
     # "another N" continues from where the last list stopped.
     offset = max(0, int(key.get("shown") or 0))
     page_codes = codes[offset : offset + limit]
@@ -5663,6 +5698,8 @@ def envelope_of(
         # says contract 7's registered sentence.
         # CHAT-COMPOSER (gate on): the presenter's intro sentence, so compose reads it as data.
         **({"lane_intro": fetched.get("response_intro")} if _composers_on() else {}),
+        # CHAT-COMPOSER (gate on): the page the set reply listed, as data for the carry and numbering.
+        **({"set_window": fetched["set_window"]} if _composers_on() and fetched.get("set_window") else {}),
         "lane_text": _lane_text_without_withheld_header(
             denial_text if refused else fetched.get("response"),
             fetched.get("set_header"),

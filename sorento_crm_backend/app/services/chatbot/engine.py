@@ -4811,6 +4811,8 @@ def _run_stages_body(  # noqa: PLR0915
         verdict = turn_runtime.with_brand_from_offer(
             verdict, latest_user_message, carried=state_in.focus.set_page
         )
+    # CHAT-COMPOSER: a "more" pages the set the last reply listed, on a state-led turn too.
+    verdict = turn_runtime.with_set_more(verdict, carried=state_in.focus.set_page)
     # ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): an echo of a row
     # the focus already holds settled is the carry restated, not an axis to rewrite with
     # an unsettled copy.
@@ -7021,9 +7023,19 @@ def _run_stages_body(  # noqa: PLR0915
                 # has cert ZZQ9917") is listed by the reply and stays carried, so the
                 # follow-up count continues it; only the missed code is named beside it.
                 # `miss_on_typed_product` is the one computation beside the resolve outcome.
+                # CHAT-COMPOSER: a page cut to one message listed fewer than the limit; the carry
+                # moves past what was actually printed.
+                window = envelopes[0].get("set_window") if envelopes else None
+                window_last = (
+                    int(window["last"]) if isinstance(window, dict) and window.get("last") else None
+                )
                 if paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
+                    if window_last is not None and isinstance(state_out.focus.set_page, dict):
+                        key = state_out.focus.set_page.get("set_key")
+                        if isinstance(key, dict) and int(key.get("shown") or 0) > window_last:
+                            state_out.focus.set_page = {"set_key": {**key, "shown": window_last}}
                     # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local
                     # copy, 7 Oct 2026): the rows the page LISTED are the subject now.
                     # The page turn never ran the resolver, so nothing settled the focus
@@ -7050,7 +7062,9 @@ def _run_stages_body(  # noqa: PLR0915
                             envelopes[0].get("access_levels_used") if envelopes else None
                         ),
                         shown=(
-                            business_answer.SET_LIST_MAX
+                            window_last
+                            if window_last is not None
+                            else business_answer.SET_LIST_MAX
                             if listed_to_the_limit
                             else min(asked, business_answer.SET_LIST_MAX)
                         ),

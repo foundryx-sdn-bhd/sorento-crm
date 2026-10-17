@@ -577,6 +577,8 @@ def refer_sentences(localizer: Any = None) -> tuple[str, ...]:
 #: so a gate-off table never holds them; `defaults()` and `resolve()` add them when the gate is on.
 #: `{noun}` is a lower-case spec word, so it never takes the official-type wording of `{what}`.
 LANE_LABELS: dict[str, dict[str, str]] = {
+    'Reply "more" to see the next {n}.': {"ms": 'Balas "more" untuk lihat {n} seterusnya.', "zh": '回复 "more" 查看接下来的 {n} 个。'},
+    "That is all {total}.": {"ms": "Itu sahaja, {total}.", "zh": "就这些，共 {total} 个。"},
     "But no stock matched these.": {"ms": 'Tiada stok yang sepadan.', "zh": '没有匹配的库存。'},
     "But no product matched these.": {"ms": 'Tiada produk yang sepadan.', "zh": '没有匹配的产品。'},
     "But no SPO line matched these.": {"ms": 'Tiada baris SPO yang sepadan.', "zh": '没有匹配的 SPO 行。'},
@@ -669,6 +671,7 @@ INLINE = frozenset(
         "But no product matched these.",
         "But no SPO line matched these.",
         "No {what} on record for {product}.",
+        "That is all {total}.",
         'What would you like me to know?',
         "Sorry, we don't support direct goods receive & SPO at the moment. You may ask about incoming stock for a specific product or container",
         'Do you mean customer {customer} or sales agent {agent}? Reply 1 for the customer, 2 for the sales agent.',
