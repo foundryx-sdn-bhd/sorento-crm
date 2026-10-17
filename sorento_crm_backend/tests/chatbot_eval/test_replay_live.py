@@ -807,3 +807,55 @@ def test_an_old_layout_prompt_with_exchanges_after_the_current_message_falls_bac
     block = live_env["parse_calls"][0]
     assert PRIOR_1 in block, "the exchanges after the current message were lost (truncated slice used)"
     assert "Recent exchanges" in block
+
+
+# ------------------------------------------------------------------ prompt pin (--prompt-version-id)
+PIN_ID = "00000000-0000-4000-8000-0000000000aa"
+PARSER_KEY = "chatbot_semantic_parser"
+
+
+def _cli_live(tmp_path, session_factory, row, monkeypatch, extra):
+    import app.database
+
+    monkeypatch.setattr(app.database, "SessionLocal", session_factory)
+    items = tmp_path / "items.jsonl"
+    items.write_text("".join(json.dumps(i) + "\n" for i in items_for(row)))
+    rec = tmp_path / "recorded.jsonl"
+    rec.write_text(json.dumps(row) + "\n")
+    out = tmp_path / "out.jsonl"
+    rc = replay_mod.main(["live", "--items", str(items), "--recorded", str(rec), "--out", str(out),
+                          "--max-calls", "10", "--max-usd", "5", "--require-key-last4", LAST4, *extra])
+    return rc, [json.loads(l) for l in out.read_text().splitlines()]
+
+
+def test_prompt_pin_cli_flag_puts_the_override_on_every_live_payload(tmp_path, session_factory, recorded, live_env,
+                                                                     monkeypatch):
+    rc, _rows = _cli_live(tmp_path, session_factory, recorded, monkeypatch, ["--prompt-version-id", PIN_ID])
+    assert rc == 0
+    extras = live_env["envelopes"][0].model_extra or {}
+    assert extras.get("prompt_overrides") == {PARSER_KEY: PIN_ID}
+
+
+def test_prompt_pin_cli_value_wins_over_a_recorded_override(tmp_path, session_factory, recorded, live_env, monkeypatch):
+    row = copy.deepcopy(recorded)
+    row["envelope"]["prompt_overrides"] = {PARSER_KEY: "recorded-version", "other_key": "x"}
+    rc, _rows = _cli_live(tmp_path, session_factory, row, monkeypatch, ["--prompt-version-id", PIN_ID])
+    assert rc == 0
+    extras = live_env["envelopes"][0].model_extra or {}
+    assert extras.get("prompt_overrides") == {PARSER_KEY: PIN_ID}
+
+
+def test_prompt_pin_absent_flag_leaves_no_prompt_overrides_key(tmp_path, session_factory, recorded, live_env,
+                                                              monkeypatch):
+    row = copy.deepcopy(recorded)
+    row["envelope"]["prompt_overrides"] = {PARSER_KEY: "recorded-version"}
+    rc, rows = _cli_live(tmp_path, session_factory, row, monkeypatch, [])
+    assert rc == 0
+    assert "prompt_overrides" not in (live_env["envelopes"][0].model_extra or {})
+    assert "prompt_version_id" not in rows[0]["provenance"]
+
+
+def test_prompt_pin_provenance_records_the_pinned_version_id(tmp_path, session_factory, recorded, live_env, monkeypatch):
+    rc, rows = _cli_live(tmp_path, session_factory, recorded, monkeypatch, ["--prompt-version-id", PIN_ID])
+    assert rc == 0
+    assert rows[0]["provenance"]["prompt_version_id"] == PIN_ID
