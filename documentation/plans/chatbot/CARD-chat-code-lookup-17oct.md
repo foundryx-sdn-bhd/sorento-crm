@@ -138,3 +138,10 @@ Request: the held-out code-lookup fails counted by failing check name (no items)
   writes none). Crew decision: default (a) grader gap, no bot change, if EVAL-BENCH finds the 11 held-out tokens in
   that turn's looked_up / uuid_codes; a token missing there comes back as a shape and gets a red-first fix. Never (c):
   did-you-mean stays (owner wants it).
+- Crew decision 18 Oct (under-asking, did-you-mean turned into an answer by round 1's "When exactly one near code is
+  plainly meant, pick it"): (c) prompt-only plus R2-4's true-tie refusal kept as is. Not (b): owner 16 Oct "no
+  fuzzy/edit-distance matching in code; the parser decides"; the trigram tie check stands only because it reuses the
+  D2 shortlist scores. R2-6 rewords head/code_lookup_prompt.py:21-22 so the parser picks a near code only when no
+  other listed code is as close, and otherwise leaves it for the did-you-mean; parser gold N=3 in BOTH directions
+  (ambiguous typos ask, clear typos and transpositions still answer). The #1755 vague clarify that suppresses the
+  did-you-mean goes to CHAT-CLOSED-LISTS.
