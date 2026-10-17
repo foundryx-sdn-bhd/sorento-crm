@@ -275,6 +275,10 @@ def po_ref_reply_text(result: PoRefLookup, ref: str) -> str:
     ref = ref.strip()
     cards = result.groups.get(po_ref_key(ref) or "") or []
     if not cards:
+        from app.services.chatbot import composers
+
+        if composers.enabled():
+            return f"Couldn't find PO ref {ref}."
         return f"I could not find PO ref {ref}."
     head = f"PO ref: {ref}" + (f"\nSales orders: {len(cards)}" if len(cards) > 1 else "")
     return "\n\n".join([head, *cards])
@@ -290,7 +294,9 @@ def reply_text(result: SoLookup, *, refusal: str, kind_word: str | None = None) 
     if result.missing:
         words = result.missing
         joined = words[0] if len(words) == 1 else ", ".join(words[:-1]) + " or " + words[-1]
-        parts.append(f"I could not find {joined}.")
+        from app.services.chatbot import composers
+
+        parts.append(f"Couldn't find {joined}." if composers.enabled() else f"I could not find {joined}.")
     return "\n\n".join(parts)
 
 

@@ -7579,8 +7579,30 @@ def _stock_ask_reply(
         ],
         demand_qty=verdict.get("demand_qty"),
     )
-    state_out.focus.tasks = reply.tasks
-    if [spec.domain for spec in fetch_plan.fetch] != ["inventory"]:
+    from app.services.chatbot import composers
+
+    domains = [spec.domain for spec in fetch_plan.fetch]
+    entities = [e for e in (verdict.get("entities") or []) if isinstance(e, dict)]
+    # CHAT-COMPOSER Q1: a stock leg carried from an earlier turn (no entity of this message)
+    # beside another domain's answer opens no quantity task and prints no bare question.
+    carried_leg = bool(
+        composers.enabled()
+        and domains != ["inventory"]
+        and entities
+        and not any(e.get("current_message") is True for e in entities)
+    )
+    state_out.focus.tasks = (
+        tuple(t for t in reply.tasks if not (t.kind == "stock_qty" and t.opened_at_turn == turn_no))
+        if carried_leg
+        else reply.tasks
+    )
+    if domains != ["inventory"]:
+        if carried_leg:
+            from app.services.chatbot.composers import misses as composers_misses
+
+            lead = f"{composers_misses.BARE_QUANTITY_QUESTION}\n\n"
+            if getattr(answer, "text", "").startswith(lead):
+                return dataclasses_replace(answer, text=answer.text[len(lead) :])
         return answer
     block_seen = any(
         isinstance(envelope, dict) and envelope.get("stock_availability")
@@ -7638,12 +7660,17 @@ def _dealer_names_the_miss(answer: Any, envelopes: list[dict[str, Any]]) -> Any:
     line). A reply without that line (a total miss, already named) is left as it is."""
     text = getattr(answer, "text", "") or ""
     misses = _unplaced_tokens(envelopes)
-    if not misses or not _COMPOSE_MISS.search(text):
+    # CHAT-COMPOSER: compose stamped the exact miss sentence it printed (gate on only).
+    stamped = getattr(answer, "miss_text", "") or ""
+    if stamped and not text.rstrip().endswith(stamped):
+        stamped = ""
+    if not misses or not (stamped or _COMPOSE_MISS.search(text)):
         return answer
     from app.services.chatbot.turn import refer
     from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
-    blocks = _COMPOSE_MISS.sub("", text).rstrip().split("\n\n")
+    stripped = text.rstrip()[: -len(stamped)] if stamped else _COMPOSE_MISS.sub("", text)
+    blocks = stripped.rstrip().split("\n\n")
     from app.services.chatbot.composers import stock as composers_stock
 
     line = composers_stock.miss_line(misses)

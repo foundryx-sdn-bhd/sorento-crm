@@ -2799,7 +2799,9 @@ def not_understood_line(words: Any) -> str:
     quoted = _and_list([f'"{t}"' for t in terms])
     # Fix round 9 on PR #833 (owner: "no explanations"): the "did not match" line of the
     # one reply structure, never how the search was run.
-    return f"Couldn't find: {quoted}."
+    from app.services.chatbot import composers
+
+    return f"Couldn't find {quoted}." if composers.enabled() else f"Couldn't find: {quoted}."
 
 
 #: The one opener of every described-set answer, hit or miss (fix round 12 on PR #833, owner
@@ -2844,7 +2846,9 @@ def what_you_want_reply(asked: str, lines: list[str], *, missing: str = "", leg:
     what did not match, one short escalate offer. Fix round 9 on PR #833."""
     head = "\n".join([f"Here's what you want: {asked}", *lines])
     if missing:
-        tail = f"Couldn't find: {missing}."
+        from app.services.chatbot import composers
+
+        tail = f"Couldn't find {missing}." if composers.enabled() else f"Couldn't find: {missing}."
     elif lines and leg:
         tail = f"But no {leg} matched these."
     else:
@@ -3918,7 +3922,11 @@ def not_found_error_message(
             if found_lines:
                 parts.append("Here's what you want:\n" + "\n".join(found_lines))
             if nf:
-                parts.append(f"Couldn't find: {', '.join(nf)}.")
+                from app.services.chatbot import composers
+
+                parts.append(
+                    f"Couldn't find {', '.join(nf)}." if composers.enabled() else f"Couldn't find: {', '.join(nf)}."
+                )
             # A WINDOWED MISS NAMES ITS DATES THE WAY THE HEADER DOES, AND OFFERS THE WIDEN.
             # A DO list needs a range of at most 31 days for every contact (owner, 4 Oct 2026,
             # `do_ask.range_reply`), so the invite asks for another month or dates rather
@@ -3948,9 +3956,18 @@ def not_found_error_message(
                 )
             else:
                 esc_ask = _esc_offer()
+            from app.services.chatbot import composers
+            from app.services.chatbot.composers import misses as composers_misses
+
+            # CHAT-COMPOSER: a table name (master_products, inventory) reads as a customer word.
+            miss_noun = (
+                composers_misses.domain_word(domain_word)
+                if composers.enabled() and domain_word in composers_misses.MISS_WORD
+                else _plain_words(domain_word)
+            )
             miss_sentence = (
                 # R7 (round 4): "But no purchase order matched", never the domain key.
-                f"But no{active_inactive} {_plain_words(domain_word)}{miss_window}{access} matched these{co_suffix}."
+                f"But no{active_inactive} {miss_noun}{miss_window}{access} matched these{co_suffix}."
             )
             if esc_ask:
                 miss_sentence = f"{miss_sentence} {esc_ask}"
@@ -4613,6 +4630,10 @@ def _unsuggested_line(tokens: list[str]) -> str:
     if not tokens:
         return ""
     names = tokens[0] if len(tokens) == 1 else ", ".join(tokens[:-1]) + " or " + tokens[-1]
+    from app.services.chatbot import composers
+
+    if composers.enabled():
+        return f"\n\nCouldn't find {names}."
     return f"\n\nI could not find {names}."
 
 

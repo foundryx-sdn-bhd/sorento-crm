@@ -9,8 +9,11 @@ from app.services.chatbot.composers import format as fmt
 
 def miss_line(misses: list[str]) -> str:
     """The line naming codes nothing placed. Gate on drops the colon (one dealer wording)."""
-    names = ", ".join(misses)
-    return f"Couldn't find {names}." if composers.enabled() else f"Couldn't find: {names}."
+    if composers.enabled():
+        from app.services.chatbot.composers import misses as composers_misses
+
+        return composers_misses.not_found(misses).text
+    return f"Couldn't find: {', '.join(misses)}."
 
 
 def none_for(word: str, codes: list[str]) -> str:

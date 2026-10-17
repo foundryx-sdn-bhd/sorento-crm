@@ -68,6 +68,9 @@ class Answer:
     files: list[dict[str, Any]] = field(default_factory=list)
     actions: list[dict[str, Any]] = field(default_factory=list)
     text: str = ""
+    # CHAT-COMPOSER: the unplaced-token sentence printed in `text` (gate on only), so the
+    # dealer ETA path strips exactly those bytes. "" gate off.
+    miss_text: str = ""
 
 
 def _codes_without_rows(entities: list[Any], figures: list[dict[str, Any]]) -> list[str]:
@@ -397,6 +400,7 @@ def _did_you_mean_per_code(
     ctx: Any,
     *,
     lane_asked: bool,
+    miss_out: list[str] | None = None,
 ) -> tuple[str, Any, bool]:
     """MULTI-CODE-DYM: the reply's unplaced tokens, each as it would be answered alone.
 
@@ -414,6 +418,19 @@ def _did_you_mean_per_code(
     was listed (when none was, the miss offer arm offers the escalation instead).
     """
     localizer = getattr(ctx, "localizer", None) or IDENTITY
+
+    def unplaced_line(names: list[str]) -> str:
+        from app.services.chatbot import composers
+
+        if composers.enabled():
+            from app.services.chatbot.composers import misses
+
+            line = misses.not_found_text(names, join=lambda n: _join_words(n, localizer))
+            if miss_out is not None:
+                miss_out.append(line)
+            return line
+        return f"I could not find {_join_words(names, localizer)}."
+
     suggestions: dict[str, dict[str, Any]] = {}
     for env in envelopes:
         carried = env.get("unresolved_suggestions")
@@ -459,7 +476,7 @@ def _did_you_mean_per_code(
             plain.append(token)
     if not paragraphs:
         if plain:
-            text += "\n" + f"I could not find {_join_words(plain, localizer)}."
+            text += "\n" + unplaced_line(plain)
         return text, None, False
 
     domain, team = None, None
@@ -483,7 +500,7 @@ def _did_you_mean_per_code(
         closing = f"{lead_in}."
     # The codes with no suggestion follow the lists, above the one closing line - the
     # all-miss reply's own order (`answer._unsuggested_line`).
-    unsuggested = f"\n\nI could not find {_join_words(plain, localizer)}." if plain else ""
+    unsuggested = f"\n\n{unplaced_line(plain)}" if plain else ""
     text += "\n\n" + "\n\n".join(paragraphs) + unsuggested + "\n" + closing
 
     if lane_asked:
@@ -795,6 +812,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
     lane_question = _lane_question(envelopes, getattr(state, "turn_no", None))
     dym_question = None
     dym_listed = False
+    miss_lines: list[str] = []
     if unplaced and (text.strip() or spared_unplaced):
         # MULTI-CODE-DYM (owner, 4 Oct 2026, "treat each product code individually"): a
         # token with a did-you-mean gets the one it gets when asked alone; the rest keep
@@ -809,6 +827,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             policy,
             ctx,
             lane_asked=lane_question is not None or asked_this_turn,
+            miss_out=miss_lines,
         )
         text = text.lstrip("\n")
 
@@ -982,7 +1001,14 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             text += "\n\n" + _ATTACHED_SENTENCE
 
     return Answer(
-        sections=sections, question=question, offer=offer, canned=[], files=files, actions=actions, text=text
+        sections=sections,
+        question=question,
+        offer=offer,
+        canned=[],
+        files=files,
+        actions=actions,
+        text=text,
+        miss_text=miss_lines[-1] if miss_lines else "",
     )
 
 

@@ -6,6 +6,21 @@ dialogue, `turn.compose` or lanes, so `turn/` can import it without a cycle
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.services.chatbot.turn.pending import Pending
+
+
+@dataclass(frozen=True)
+class Reply:
+    """A composed sentence plus the question or offer it carries, as data."""
+
+    text: str
+    question: "Pending | None" = None
+    offer: Any = None
+
 
 def enabled() -> bool:
     """The lane's one gate, read at call time so a monkeypatch takes effect. Off = main's text."""
