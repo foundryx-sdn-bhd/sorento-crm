@@ -150,8 +150,69 @@ def test_a_word_alone_is_never_read_for_a_code_inside_a_longer_code(db):
     ]
 
 
-def test_numeric_and_boolean_keys_are_left_to_the_parser(db):
+def test_a_boolean_key_is_left_to_the_parser_and_a_numeric_key_word_lists_its_number(db):
     _registry(db, "width_mm", "Width", [], {"_self": ["width"]}, data_type="numeric")
     _registry(db, "has_massage", "Massage jets", [], {"true": ["jacuzzi"]}, data_type="boolean")
 
-    assert _lines(db, "width 600 jacuzzi") == []
+    assert _lines(db, "width 600 jacuzzi") == [candidates.HEADER, '- "width 600": spec width_mm = 600']
+
+
+# --- the registry's real shapes (crew CP0 cards, masked; synthetic codes) ------------------------
+
+
+def _seed_real_shapes(db) -> None:
+    # The seed's class row: an open vocabulary, its words keyed by class label (allowed_values []).
+    _registry(db, "class", "Product class", [], {
+        "Water Closet": ["water closet", "wc", "toilet"], "Bathroom Furniture": ["cabinet", "vanity"],
+    })
+    _registry(db, "product_type", "Product type", ["kitchen_tap", "basin_tap"])
+    _registry(db, "spout_type", "Spout", ["double_flexible", "fixed"])
+    _registry(db, "piece_count", "Pieces in the set", [], {"_self": ["in 1", "piece set"]}, data_type="numeric")
+
+
+def test_c06_shape_a_class_word_keyed_by_label_is_a_product_type_candidate(db):
+    _seed_real_shapes(db)
+
+    assert _lines(db, "Any model WC with 300mm available ?")[1] == (
+        '- "wc": product type Water Closet (class = Water Closet)'
+    )
+
+
+def test_c07_shape_a_count_said_in_words_names_the_numeric_key_and_its_number(db):
+    _seed_real_shapes(db)
+
+    assert '- "4 in 1": spec piece_count = 4' in _lines(db, "What model 4 in 1 bathroom furniture set have ready stock")
+
+
+def test_a_numeric_key_word_without_a_number_names_the_key_only(db):
+    _seed_real_shapes(db)
+
+    assert '- "piece set": spec piece_count (a number)' in _lines(db, "which piece set got stock")
+
+
+def test_c27_shape_a_mistyped_product_type_is_listed_near_the_type(db):
+    _seed_real_shapes(db)
+
+    lines = _lines(db, "any double flexible kitchan tap in chrome color")
+    assert '- "double flexible": spec spout_type = double_flexible (Double flexible)' in lines
+    assert '- "kitchan tap": near product type Kitchen tap (product_type = kitchen_tap)' in lines
+
+
+def test_class_labels_on_file_are_product_types_even_without_words(db):
+    _registry(db, "class", "Product class", [], {})
+    cat = ProductCategory(
+        id=str(uuid.uuid4()), category_code=unique_code("CAT")[:50], category_name="ZZT cat",
+        company_id=DEFAULT_COMPANY_ID, class_label="Bathtub",
+    )
+    db.add(cat)
+    db.flush()
+
+    assert _lines(db, "bathtub 1700") == [candidates.HEADER, '- "bathtub": product type Bathtub (class = Bathtub)']
+
+
+def test_a_word_inside_a_longer_phrase_on_file_is_not_listed_on_its_own(db):
+    _registry(db, "spout_type", "Spout", ["double_flexible", "flexible"])
+
+    assert _lines(db, "double flexible tap") == [
+        candidates.HEADER, '- "double flexible": spec spout_type = double_flexible (Double flexible)',
+    ]
