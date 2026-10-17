@@ -1,6 +1,6 @@
 # PLAN: split one SO line into delivery tranches in Order Inquiries (OI-LINE-SPLIT)
 
-Status: Mock v3 (owner hand test of #1749 FAIL 17 Oct ~12:40 MYT: the split screen must be ONE Excel-like sheet, splits stacked DOWNWARD under their line; mock v3 filed as crew ask, build waits for the owner's OK). Before that: PR #1749 head c3a4b4acd: CI green, reviewer READY, security ready. Track: full (L): migration, new
+Status: Mock v4 (owner hand test of #1749 FAIL 17 Oct ~12:40 MYT: the split screen must be ONE Excel-like sheet, splits stacked DOWNWARD under their line; v3 filed, owner 13:50 asked for drag and drop inside it; v4 filed as crew ask, build waits for the owner's OK). Before that: PR #1749 head c3a4b4acd: CI green, reviewer READY, security ready. Track: full (L): migration, new
 endpoint with RBAC, engine change. Lead pattern: tester red tests, one coder (Opus: tangled engine in
 a 13k-line service), reviewer + security-reviewer, browser pass 1280/375. Stacked on #1748
 (OI Excel one sheet; merged into this branch at c1f8f57d8).
@@ -166,3 +166,12 @@ NULL (the base the split was made against, same on every row of one origin), `cr
   mock section 6 (drag none vs grip; AutoCount line column visible; new row = what is left; SO DATE and
   S/O NO columns kept). Dev DB facts (read-only): SO417636 = 292 lines, 29 products, one location
   BRW-BB; CSK14B AutoCount lines 32, 480 (old 417), 608 (old 192), 752 (old 504), 4768 (751 @ 01/01/2030).
+- 17 Oct 13:50 owner on v3: "After i split ady can i like drag and drop the rows to allocate ... some qty to
+  14 then remaining qty go to other date, somewhere like 20/11" = Q1 drag YES. Mock v4: a grip on every
+  split row (and on a REMAIN line for the whole line) plus a draggable "N left" chip in BALANCE; drop on
+  another line of the same item and location = that line's date (AutoCount's current one inside Confirm)
+  and AutoCount line; "New date" and "Cancel" drop rows open under the item while dragging; other items
+  fade. One <tbody> per line = one droppable. Reuses the built @dnd-kit wiring (LineSplitDialog.tsx:675-683
+  sensors, :835-895 DndContext + SPLIT_AUTOSCROLL + DragOverlay; useDraggable/useDroppable as
+  LineSplitGrid.tsx:177/:251) and moveSplit (lineSplitModel.ts:164). Q2-Q4 taken as recommended (a).
+  New Q5: a drop moves the whole row/chip with no "how many" box (rec) vs keep LineSplitMoveBox.
