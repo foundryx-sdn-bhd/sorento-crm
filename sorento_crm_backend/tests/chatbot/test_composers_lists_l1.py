@@ -331,7 +331,8 @@ def test_capped_page_two_header_and_end(monkeypatch):
     assert text.splitlines()[0] == "Here's what you want: matching products (showing 10 to 20)"
     assert NARROW in text
     assert _numbers(text) == list(range(10, 21))
-    assert text.index(NARROW) > text.index(f"20. *Product Code:* {_code(19)}")
+    lines = [ln for ln in text.strip().split("\n") if ln]
+    assert lines[-1] == FOOT and lines[-2] == NARROW, lines[-3:]
     assert "That is all" not in text
     assert 'Reply "more"' not in text
 
