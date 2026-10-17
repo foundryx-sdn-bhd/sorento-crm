@@ -27,6 +27,9 @@ Every criterion runs with the lane gate ON (parser prompt carrying the lane mark
 - U2.1 A code that exists only in `product_sets` is shortlisted and resolves for product info and stock.
 - U2.2 A set code plus an attribute ("SRTWC8608-RL P-TRAP") answers the set variant the parser picks (SRTWC8608-P-RL),
   no question, no unrelated suggestions.
+- U2.3 The reply names the set code asked; a set answer carries no price (product-sets rule, `entity_resolver.py:898`).
+- U2.4 A set is listed only when every member is visible to the contact (company and brand scope); gate off: today's
+  forced miss, unchanged.
 
 ## R3 dropped (owner, 17 Oct)
 
