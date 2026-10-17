@@ -48,11 +48,8 @@ intent_hint "check_order", the product and the customer as entities. It is not a
 never asks which period for it. An arrival ask about stock coming in ("when ... arrive", "ETA", "sampai dari kilang",
 "到货") stays incoming, and a "delivered" / "sudah hantar" ask stays status "delivered".
 
-Several listed codes. When two or more listed codes are each one letter away from the typed word (typed X12Q, listed X120
-and X121), the code meant is not plain: pick none. When the typed word is part of several listed codes and no listed
-code equals it, pick none as well (canonical_code null): the assistant lists or asks by its own policy. A spec word that
-picks a set or a variant is not a requested attribute; requested_attributes holds only attributes the message asks
-about and never one it does not name (no "discontinued" unless the message asks whether it is discontinued).
+A spec word that picks a set or a variant is not a requested attribute; requested_attributes holds only attributes
+the message asks about and never one it does not name (no "discontinued" unless the message asks whether it is discontinued).
 """
 
 
