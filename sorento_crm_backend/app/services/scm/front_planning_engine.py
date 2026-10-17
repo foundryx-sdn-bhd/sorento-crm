@@ -76,6 +76,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 #: `debt_month` and the view's own column key are the same string, and two spellings of one
 #: key is how a lightbox comes to open on a month the cell did not mean.
 from app.services.scm import ladder_steps
+from app.services.scm import spo_supply
 from app.services.scm.supply_assignment import month_key
 
 ZERO = Decimal("0")
@@ -381,7 +382,12 @@ def date_text(value: date) -> str:
 
     Public beside `qty_text`: the board writes sentences about the same documents this
     module does, and a second spelling of a date is a second vocabulary.
+
+    A masked delay (`spo_supply.MaskedEta`) is spelled as the published ETA it stands for.
     """
+    value = spo_supply.shown_date(value)
+    if value is None:
+        return "an unstated date"
     return f"{value.day} {_MONTHS[value.month - 1]} {value.year}"
 
 

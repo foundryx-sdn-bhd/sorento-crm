@@ -91,6 +91,7 @@ from app.services.project_supply_service import (
 from app.services.scm import ladder_steps
 from app.services.scm import priority
 from app.services.scm import sales_agent_service
+from app.services.scm import spo_supply
 from app.services.scm import supply_assignment
 from app.services.scm.supply_origin import buy_origin_by_product
 from app.services.scm.planning_predicate import (
@@ -322,8 +323,26 @@ def _parse_iso_date(value: Optional[str]) -> Optional[date]:
         return None
 
 
+def _shown(value: Any) -> Any:
+    """The response as its viewer may read it: a masked delay becomes the published ETA.
+
+    `spo_supply.MaskedEta` already PRINTS as the published date, but a response model
+    serialises a date by its value, which is the delay.
+    """
+    if isinstance(value, spo_supply.MaskedEta):
+        return value.published
+    if isinstance(value, dict):
+        return {key: _shown(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_shown(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_shown(item) for item in value)
+    return value
+
+
 def _date_words(when: Optional[date]) -> str:
     """A date as it is said out loud: `3 Sep 2026`. Never ISO inside a sentence."""
+    when = spo_supply.shown_date(when)
     if when is None:
         return "an unstated date"
     return f"{when.day} {_MONTHS[when.month - 1]} {when.year}"
@@ -618,7 +637,15 @@ class FulfilmentBoardService:
 
     # ----------------------------------------------------------------- public
 
-    def build(
+    def build(self, so_numbers: Sequence[str], **kwargs: Any) -> Dict[str, Any]:
+        """`_build`, with every masked delay printed as its published ETA."""
+        return _shown(self._build(so_numbers, **kwargs))
+
+    def stock_detail(self, product_id: str, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        """`_stock_detail`, with every masked delay printed as its published ETA."""
+        return _shown(self._stock_detail(product_id, *args, **kwargs))
+
+    def _build(
         self,
         so_numbers: Sequence[str],
         *,
@@ -918,7 +945,7 @@ class FulfilmentBoardService:
 
     # ----------------------------------------------------- the stock drill-down
 
-    def stock_detail(
+    def _stock_detail(
         self,
         product_id: str,
         warehouse_id: Optional[str] = None,
@@ -3099,7 +3126,9 @@ class FulfilmentBoardService:
             )
             if order is None:
                 continue
-            supply = ProjectSupplyService(self.db)
+            supply = ProjectSupplyService(
+                self.db, reveal_eta_delay=self.supply.reveal_eta_delay
+            )
             lines = supply.lines_of(pso_id)
             wanted = {str(row.project_line_id) for row in rows}
             replacing = {str(line.id) for line in lines if str(line.id) in wanted}

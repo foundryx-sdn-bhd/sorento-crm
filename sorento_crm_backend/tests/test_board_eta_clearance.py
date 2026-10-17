@@ -232,3 +232,50 @@ def test_a_covered_lines_live_suggestion_hides_the_delay_without_view_clearance(
 
         assert COVERED_DELAYED.isoformat() not in text
         assert _human(COVERED_DELAYED) not in text
+
+
+def _proposals(body):
+    return [
+        (
+            contribution["so_number"],
+            contribution["qty_proposed_reserve"],
+            contribution["qty_proposed_incoming"],
+            contribution["qty_proposed_buy"],
+        )
+        for contribution in body["contributions"]
+    ]
+
+
+@pytest.mark.usefixtures("ladder_steps_on")
+def test_both_viewers_get_the_same_proposal_because_the_engine_plans_on_the_delay():
+    """Crew answer (b), 17 Oct 2026: only the PRINTED date depends on the viewer.
+
+    Published 25 Aug is before the line's 3 Sep required date, the delay to 10 Sep is after
+    it, and the 15 on the water is the whole of what the line owes. Planned on the published
+    date the water would read as timely for one viewer and late for the other, and that
+    viewer's suggestion would be refused by the Save.
+    """
+    from app.models.procurement import InboundShipment
+
+    with blank_session() as db:
+        product = _product(db, f"ZZT-{_uid()[:6]}")
+        warehouse = _warehouse(db, f"ZZT-{_uid()[:6]}"[:20])
+        _stock(db, product, warehouse, on_hand=0)
+        spo = _incoming(
+            db, product, warehouse,
+            spo_number="ZZT-SPO-ETA3", allocated=15, received=0, arrives=PUBLISHED,
+        )
+        db.get(InboundShipment, spo.inbound_shipment_id).eta_delay_date = DELAYED
+        order = _order(db, so_number=f"ZZT-SO-{_uid()[:8]}", order_date=date(2026, 1, 1))
+        _line(db, order, product, qty="15", required_date=date(2026, 9, 3), warehouse=warehouse)
+        db.flush()
+
+        allowed = _board(db, order, [VIEW, CLEARANCE_PERMISSION])
+        denied = _board(db, order, [VIEW])
+
+        assert _proposals(allowed.json()) == _proposals(denied.json())
+        assert _proposals(denied.json())[0][2] == "0"
+        # The sentences are worded with the date each viewer may see.
+        assert _human(DELAYED) in allowed.text
+        assert _human(DELAYED) not in denied.text
+        assert _human(PUBLISHED) in denied.text
