@@ -502,6 +502,21 @@ def _files_sent(row: dict[str, Any]) -> int:
     return sum(len(t["envelope"].get("attachments") or []) for t in _tools(row) if isinstance(t.get("envelope"), dict))
 
 
+def _reply_answers(row: dict[str, Any], slice_name: str = "") -> bool:
+    """The reply carries an answer outside its how-many sentences and numbered option lines."""
+    reply = reply_text(row)
+    lines = [x.strip() for line in reply.split("\n")   # a numbered line is kept whole: its "1. " is not a sentence end
+             for x in ([line] if NUMBERED_LINE_RE.match(line) else SENTENCE_RE.split(line))
+             if x and x.strip() and not QUANTITY_ASK_RE.search(x)]
+    # the bot's quantity slots ("1. CODE - 10") and menu options ("1. Office") are part of the question: a numbered
+    # line is an answer only with an answer block or a code-led value
+    numbered = [x for x in lines if NUMBERED_LINE_RE.match(x)]
+    plain = "\n".join(x for x in lines if not NUMBERED_LINE_RE.match(x))
+    return (any(ANSWER_BLOCK_RE.search(x) or CODE_LED_VALUE_RE.match(x) for x in numbered)
+            or bool(re.search(r"\d", CODE_RE.sub(" ", plain))) or bool(SET_CODE_ROW_RE.search(plain))
+            or (slice_name == "spec" and bool(SPEC_LISTED_RE.search("\n".join(lines)))) or _files_sent(row) > 0)
+
+
 def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None,
                     slice_name: str = "") -> tuple[str, bool, str] | None:
     """Owner ruling (round 29): a how-many question ("how many", "berapa", or a quantity owed after the turn) fails only
@@ -523,16 +538,7 @@ def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None,
                   or bool(label and label not in KNOWN_FACT_LABELS) or slice_name == "attachment"
                   or (slice_name == "spec" and not STOCK_WORDS_RE.search(user_message(row))))
     if answer_ask:
-        lines = [x.strip() for line in reply.split("\n")   # a numbered line is kept whole: its "1. " is not a sentence end
-                 for x in ([line] if NUMBERED_LINE_RE.match(line) else SENTENCE_RE.split(line))
-                 if x and x.strip() and not QUANTITY_ASK_RE.search(x)]
-        # the bot's quantity slots ("1. CODE - 10") and menu options ("1. Office") are part of the question: a numbered
-        # line is an answer only with an answer block or a code-led value
-        numbered = [x for x in lines if NUMBERED_LINE_RE.match(x)]
-        plain = "\n".join(x for x in lines if not NUMBERED_LINE_RE.match(x))
-        answered = (any(ANSWER_BLOCK_RE.search(x) or CODE_LED_VALUE_RE.match(x) for x in numbered)
-                    or bool(re.search(r"\d", CODE_RE.sub(" ", plain))) or bool(SET_CODE_ROW_RE.search(plain))
-                    or (slice_name == "spec" and bool(SPEC_LISTED_RE.search("\n".join(lines)))) or _files_sent(row) > 0)
+        answered = _reply_answers(row, slice_name)
         if not answered:
             return ("no_qty_ask", False, "The bot asked how many instead of giving the answer.")
     return ("qty_ask_ok", True, "The bot asked how many instead of giving the answer.")
@@ -1116,7 +1122,7 @@ def _sibling_picker_ok(row: dict[str, Any], item: dict[str, Any], checks: list[t
     gold = item.get("gold") or {}
     raw = gold.get("code") or next(iter(gold.get("subject_after") or []), None)   # an and-x item names its code as the subject
     code = _key(raw)
-    if (not code or gold.get("code_unresolved") or _asking(row)
+    if (not code or gold.get("code_unresolved") or not _reply_answers(row, item.get("slice") or "")
             or any(ok is False for name, ok, _ in checks if name != "no_picker")):
         return False
     after = _oq(row)[1]
