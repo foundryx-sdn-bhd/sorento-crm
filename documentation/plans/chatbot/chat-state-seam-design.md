@@ -128,7 +128,9 @@ Verdict edits (deterministic):
 - (a) No `answer` op and no roster pick: `question.without_phantom_answer(verdict, open_question=None,
   positions_read_elsewhere=..., focus_has_product=False)` (question.py:152) drops `open_question_answer` and
   `reference_positions` (ideation media menu and top-selling positions exempt as today). With `answer`: untouched.
-- (b) Entities kept only for kinds named in a `set`, every kind on `new_subject`, and the answered slot's kind on
+- (b) REVERTED 17 Oct (lead ruling after the live diagnostic): current-message entities and stated scalars always
+  apply as stated; ops govern only the carry of held parts. Original text: entities kept only for kinds named in a
+  `set`, every kind on `new_subject`, and the answered slot's kind on
   `answer` (R5; the kind is the open question option's entity_type, needed for the label match decide.py:139).
   Scalar fields of axes not set are nulled, so the carried focus value is the lane default (`outstanding_carry`
   :3437-3445, `_spec_window`).

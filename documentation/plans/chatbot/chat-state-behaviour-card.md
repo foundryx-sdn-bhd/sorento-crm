@@ -116,5 +116,10 @@ owner's own probes and prod incidents already in crew reports. Crew can attach m
 - Lead ruling 17 Oct (applying R16 to the reviewer's B2): a domain switch is a follow-up, so the held period carries
   unless the parser says `skip` / `clear` period; a period the message states replaces it even without a `set` op.
   A dry-run mock emission turns the state path on only when it carries the `state_changes` key.
+- Lead ruling 17 Oct (live diagnostic of owner CP0 c13/c05, PR #1747 comment): VALUES come from the parse fields:
+  a current-message entity or a stated scalar applies as stated, with or without a `set` op; ops decide only what of
+  the HELD state carries. Round 8's drop of unnamed current-message entities is reverted (it dropped a stated
+  "video"); a reference to the held subject is kept out by the prompt rule and the drop of current_message:false
+  entities.
 - Crew, 16 Oct ~23:10: the default is ONE named constant `ask` in code, one place, pinned by a test; storage and UI
   come later behind the clarify-policy work (#1570). An owner change of default is a one-line change.
