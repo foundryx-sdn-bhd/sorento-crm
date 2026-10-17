@@ -692,9 +692,22 @@ def apply_changes(
     switch_to = _message_domains(out)
     held = list(focus.domains or [])
     if "switch_domain" in ops or (held and switch_to and not any(d in held for d in switch_to)):
+        held_values = {
+            "channel": ("sales_channel", focus.sales_channel),
+            "status": ("status", focus.status),
+            "document": ("document", focus.document),
+            "sort": ("sort_by", (focus.sort or {}).get("by")),
+        }
         _drop_domain_bound(focus)
         if switch_to:
             focus.domains = list(switch_to)
+        # A parse field that merely restates a value just dropped does not bring it back
+        # (value comparison only; a different value or an explicit `set` still applies).
+        for axis_name, (field, value) in held_values.items():
+            if value and axis_name not in set_axes and out.get(field) == value:
+                out[field] = [] if field == "document" else None
+                if field == "sort_by":
+                    out["sort_dir"] = None
     for change in changes:
         axis = change.get("axis")
         if change["op"] == "clear":
