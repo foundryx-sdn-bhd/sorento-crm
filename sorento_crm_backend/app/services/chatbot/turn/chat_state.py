@@ -345,6 +345,21 @@ def _held_quantity(focus: Focus) -> tuple[dict[str, Any], Any]:
     return by_code, (next(iter(values)) if len(values) == 1 else None)
 
 
+#: The verdict key carrying the held quantities that reach this turn's stock fetch.
+CARRIED_QUANTITY_KEY = "_carried_quantity"
+
+
+def carry_onto_family(verdict: dict[str, Any], codes: list[str]) -> dict[str, Any]:
+    """A refine of the same held subject landing on several family codes: the one held
+    quantity rides onto each (owner: "don't re-ask what the user gave"). No-op when
+    `apply_changes` carried no shared quantity."""
+    carry = verdict.get(CARRIED_QUANTITY_KEY)
+    if not isinstance(carry, dict) or carry.get("shared") is None:
+        return verdict
+    by_code = {**(carry.get("by_code") or {}), **{str(c).casefold(): carry["shared"] for c in codes}}
+    return {**verdict, CARRIED_QUANTITY_KEY: {**carry, "by_code": by_code}}
+
+
 def _clear_axis(focus: Focus, axis: str) -> None:
     if axis == "channel":
         focus.sales_channel = None
@@ -574,7 +589,15 @@ def apply_changes(
     if log["shown"] is None:
         # Nothing shown, nothing to carry: a first ask runs exactly as it does without the key.
         return Applied(True, state, {k: v for k, v in verdict.items() if k != "state_changes"}, log)
-    if not isinstance(changes, list) or not changes:
+    if isinstance(changes, list) and not changes:
+        # Nothing declared (a retyped code, a bare re-ask): the state is not led, but the held
+        # quantity still joins by the product's own code at the fetch; nothing else moves.
+        rejected = _reject(state, verdict, log, [{"op": None, "reason": "no changes declared"}])
+        by_code, shared = _held_quantity(state.focus)
+        if by_code and verdict.get("demand_qty") is None:
+            rejected.verdict[CARRIED_QUANTITY_KEY] = {"by_code": dict(by_code), "shared": shared}
+        return rejected
+    if not isinstance(changes, list):
         return _reject(state, verdict, log, [{"op": None, "reason": "no changes declared"}])
 
     axes = set(FIXED_AXES) | set(kinds) | set(CLEAR_ONLY_AXES) | {k for k, v in (state.focus.extra or {}).items() if v}
@@ -811,9 +834,15 @@ def apply_changes(
     # The quantity of the answered check (or of the held row) carries onto the refined, kept
     # or swapped item when the message states none; a stated quantity wins.
     qty_by_code, shared_qty = _held_quantity(state.focus)
-    if shared_qty is not None and out.get("demand_qty") is None and not new_subject and not (
+    qty_open = out.get("demand_qty") is None and not new_subject and not (
         any(c.get("op") == "clear" and c.get("axis") == "quantity" for c in changes if isinstance(c, dict))
-    ):
+    )
+    if qty_open and qty_by_code:
+        # What the stock fetch joins by the product's own code (`turn_runtime._carried_quantities`,
+        # its last source); `shared` rides onto the family codes a refine lands on
+        # (`carry_onto_family`). The decision is made here and nowhere else.
+        out[CARRIED_QUANTITY_KEY] = {"by_code": dict(qty_by_code), "shared": shared_qty}
+    if shared_qty is not None and qty_open:
         mine = [e for e in entities if e.get("hint") == "product"]
         # Only an explicit one-for-one swap moves the quantity to another code.
         if "product" in set_axes and len(held_products) == 1 and len(mine) == 1 and mine[0].get("quantity") is None:

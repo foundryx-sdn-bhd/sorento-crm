@@ -4880,6 +4880,7 @@ def _run_stages_body(  # noqa: PLR0915
             logger.warning("chatbot: held family narrowing failed; the turn goes on without it", exc_info=True)
             family_note = None
         if family_note:
+            verdict = chat_state.carry_onto_family(verdict, family_note.get("matched") or [])
             turn_trace.add("held_family", family_note)
     if parser_config.closed_lists:
         # SCHEME-INDEX: a listed scheme about products indexes their certificates, never

@@ -3428,6 +3428,29 @@ def _spec_quantities(
     return {**out, "requested_quantities": quantities} if quantities else out
 
 
+def _carried_quantities(out: dict[str, Any], carried: Any, entities: list[dict[str, Any]]) -> dict[str, Any]:
+    """The LAST quantity source: what the State carried this turn (`chat_state.apply_changes`
+    decided it), joined to the placed uuid by the product's own code. A uuid the task or this
+    message already gave a quantity keeps it."""
+    by_code = carried.get("by_code") if isinstance(carried, dict) else None
+    if not by_code:
+        return out
+    keyed = {_token_key(str(code)): qty for code, qty in by_code.items()}
+    quantities = dict(out.get("requested_quantities") or {})
+    for e in entities:
+        uuid = e.get("uuid") if isinstance(e, dict) else None
+        if not isinstance(uuid, str) or not uuid or uuid in quantities:
+            continue
+        for name in ("code", "canonical_code", "raw"):
+            code = e.get(name)
+            if isinstance(code, str) and code.strip() and _token_key(code) in keyed:
+                value = _int(keyed[_token_key(code)])
+                if value is not None:
+                    quantities[uuid] = value
+                break
+    return {**out, "requested_quantities": quantities} if quantities else out
+
+
 def outstanding_carry(
     out: dict[str, Any], focus: Focus, answered: dict[str, Any]
 ) -> dict[str, Any]:
@@ -3916,6 +3939,9 @@ def make_tool_runner(
         # product, resolved to uuids here - `lanes/business/fetch.py` reads it
         # straight off the lane input.
         lane_out = _spec_quantities(lane_out, spec, entities)
+        from app.services.chatbot.turn.chat_state import CARRIED_QUANTITY_KEY
+
+        lane_out = _carried_quantities(lane_out, verdict.get(CARRIED_QUANTITY_KEY), entities)
         lane_ctx = {**lane_ctx, "parse": {**(lane_ctx.get("parse") or {}), "output": lane_out}}
         # R2: start from the resolver's own gate (gate_reason, require_specific,
         # customer_probe_entities, company_team, gate_debug, ...) - `compatible_entities`
