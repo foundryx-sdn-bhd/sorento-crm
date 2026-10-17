@@ -78,3 +78,37 @@ def test_guard_pin_an_unresolved_gold_without_a_code_and_a_picker():
     res = grade_turn(r, item("code_lookup", code_unresolved=True, fact="inventory"))
     # pinned today: with no gold code the picker still counts as needless
     assert res["checks"]["no_picker"] is False, res["checks"]
+
+
+# 33b: on real rows the engine records replied.facts asking=product_pick and sections=0 for BOTH pickers
+def _real_shape(r):
+    r = _with_oq(r, r["trace"][-1].get("open_question", {}).get("after") or SIBLINGS_WITH_SELF, asking="product_pick")
+    for rec in r["trace"]:
+        if rec.get("stage") == "replied":
+            rec["facts"]["sections"] = 0
+    return r
+
+
+def test_red_real_shape_sibling_picker_after_a_full_code_lookup_answer_passes():
+    reply = "SRTA100: 40 pcs in stock.\nRelated products:\n1. SRTA100\n2. SRTA100-GM"
+    r = _real_shape(_lookup(SIBLINGS_WITH_SELF, reply=reply))
+    assert any(x.get("stage") == "replied" and x["facts"]["asking"] == "product_pick" for x in r["trace"])
+    res = grade_turn(r, item("code_lookup", **GOLD_CL))
+    assert res["checks"]["no_picker"] is not False, res["checks"]
+    assert res["passed"] is True, (res["reason"], res["checks"])
+
+
+def test_red_real_shape_sibling_picker_after_a_full_and_x_answer_passes():
+    r = _and_x(SIBLINGS_WITH_SELF)
+    r["response"] = {"reply": {"text": "SRTA100: no incoming.\nStock: 12 pcs.\nRelated products:\n1. SRTA100\n2. SRTA100-GM"}}
+    r = _real_shape(r)
+    assert any(x.get("stage") == "replied" and x["facts"]["asking"] == "product_pick" for x in r["trace"])
+    res = grade_turn(r, item("followup", "and_x", **AND_X))
+    assert res["checks"]["no_picker"] is not False, res["checks"]
+    assert res["passed"] is True, (res["reason"], res["checks"])
+
+
+def test_guard_real_shape_did_you_mean_with_sibling_options_and_no_answer_still_fails():
+    r = _real_shape(_lookup(SIBLINGS, reply="Did you mean:\n1. SRTA100-BL\n2. SRTA100-GM"))
+    res = grade_turn(r, item("code_lookup", **GOLD_CL))
+    assert res["checks"]["no_picker"] is False and res["passed"] is False, res["checks"]
