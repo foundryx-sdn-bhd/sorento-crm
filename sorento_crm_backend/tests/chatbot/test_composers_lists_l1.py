@@ -1,6 +1,6 @@
 """CHAT-COMPOSER Lists slice red tests, L1: the code-lookup list (a multi-match answered as cards).
 
-Spec: `documentation/plans/chatbot/chat-composer-seam-design-lists.md` section 1 (L1), LD1, LD3 (capped),
+Spec: `documentation/plans/chatbot/chat-composer-seam-design-lists.md` section 1 (L1), LD1, LD7 (a code list needing more than one message never states a total),
 section 7. Gate on: the cards are cut on a card boundary to one message, the intro gains the range,
 the page ends with the "more" line, a carry of the matched product ids lets "more" print the rest.
 Gate off: today's bytes. No implementation exists when these are written.
@@ -113,7 +113,7 @@ def test_cut_to_one_message(monkeypatch):
     out = _run(13)
     text = out["response"]
     assert len(text) <= BUDGET, len(text)
-    assert text.splitlines()[0] == "Here are the matching products (13, showing 1 to 9)."
+    assert text.splitlines()[0] == "Here are the matching products (showing 1 to 9)."
     assert _numbers(text) == list(range(1, 10))
     assert text.endswith('Reply "more" to see the next 4.\n\n' + FOOT), text[-160:]
     assert len(out["answers"]) == 9
@@ -142,6 +142,7 @@ def test_window_carry_shape(monkeypatch):
         "total": 13,
         "shown": 9,
     }
+    assert "capped" not in win["carry"]
 
 
 def test_twins_ride_together(monkeypatch):
@@ -194,20 +195,20 @@ def test_order_list_is_not_a_code_list(monkeypatch):
 def test_ranged_helper():
     from app.services.chatbot.composers import sets
 
-    assert sets.RANGE == "({total}, showing {first} to {last})"
-    assert sets.ranged(INTRO, "(13, showing 1 to 9)") == "Here are the matching products (13, showing 1 to 9)."
-    assert sets.ranged("Stock details found for the requested products.", "(13, showing 1 to 9)") == (
-        "Stock details found for the requested products (13, showing 1 to 9)."
+    assert sets.RANGE_CAPPED == "(showing {first} to {last})"
+    assert sets.ranged(INTRO, "(showing 1 to 9)") == "Here are the matching products (showing 1 to 9)."
+    assert sets.ranged("Stock details found for the requested products.", "(showing 1 to 9)") == (
+        "Stock details found for the requested products (showing 1 to 9)."
     )
-    assert sets.ranged("以下是匹配的产品。", "（共 13 个，显示第 1 至 9 个）") == "以下是匹配的产品（共 13 个，显示第 1 至 9 个）。"
+    assert sets.ranged("以下是匹配的产品。", "（显示第 1 至 9 个）") == "以下是匹配的产品（显示第 1 至 9 个）。"
     assert sets.ranged("no full stop", "(1)") == "no full stop (1)"
 
 
 @pytest.mark.parametrize(
     "lang,first_line",
     [
-        ("zh", "以下是匹配的产品（共 13 个，显示第 1 至 9 个）。"),
-        ("ms", "Berikut ialah produk yang sepadan (13, menunjukkan 1 hingga 9)."),
+        ("zh", "以下是匹配的产品（显示第 1 至 9 个）。"),
+        ("ms", "Berikut ialah produk yang sepadan (menunjukkan 1 hingga 9)."),
     ],
 )
 def test_header_ms_zh(monkeypatch, lang, first_line):
@@ -219,11 +220,11 @@ def test_header_ms_zh(monkeypatch, lang, first_line):
 def test_range_key_gate_off_absent_from_defaults(monkeypatch):
     _set_gate(monkeypatch, False)
     for lang in ("ms", "zh"):
-        assert "({total}, showing {first} to {last})" not in defaults(lang)
+        assert "(showing {first} to {last})" not in defaults(lang)
     _set_gate(monkeypatch, True)
-    assert "({total}, showing {first} to {last})" in LANE_LABELS
+    assert "(showing {first} to {last})" in LANE_LABELS
     for lang in ("ms", "zh"):
-        assert "({total}, showing {first} to {last})" in defaults(lang)
+        assert "(showing {first} to {last})" in defaults(lang)
 
 
 # --------------------------------------------------------------------------- #
@@ -268,79 +269,75 @@ def test_page_the_set_code_list(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# LD3: a list holding the probe's cap (20 or more distinct codes) never prints a total
+# LD7: a code list that needs more than one message never states a total
 # --------------------------------------------------------------------------- #
 
 
-def test_nineteen_codes_are_not_capped(monkeypatch):
+@pytest.mark.parametrize("n", [13, 19, 20, 25])
+def test_a_cut_list_never_states_a_total(monkeypatch, n):
     _set_gate(monkeypatch, True)
-    out = _run(19)
-    assert out["response"].splitlines()[0] == "Here are the matching products (19, showing 1 to 9)."
-    assert not out["set_window"]["carry"].get("capped")
-
-
-def test_twenty_codes_are_capped_page_one(monkeypatch):
-    _set_gate(monkeypatch, True)
-    out = _run(20)
+    out = _run(n)
     text = out["response"]
     assert text.splitlines()[0] == "Here are the matching products (showing 1 to 9)."
-    assert "20" not in text.split("\n\n")[0]
-    assert 'Reply "more" to see the next 11.' in text
+    assert f"{n}," not in text.split("\n\n")[0]
+    assert f'Reply "more" to see the next {n - 9}.' in text
     carry = out["set_window"]["carry"]
-    assert carry["capped"] is True
-    assert carry["total"] == 20 and carry["shown"] == 9 and len(carry["code_ids"]) == 20
+    assert "capped" not in carry
+    assert carry["shown"] == 9 and len(carry["code_ids"]) == n
 
 
-def test_capped_carry_survives_page_the_set(monkeypatch):
+def test_a_code_list_carry_survives_page_the_set_total_less(monkeypatch):
     from app.services.chatbot import turn_runtime
 
     _set_gate(monkeypatch, True)
-    predicate, ids = turn_runtime.page_the_set(_NoDb(), _carry(9, n=20, capped=True))
+    predicate, ids = turn_runtime.page_the_set(_NoDb(), _carry(9, n=20))
     assert ids == [_uuid(_code(i)) for i in range(9, 20)]
     assert predicate["offset"] == 9
-    assert predicate["next_carry"]["set_key"]["capped"] is True
     assert predicate["next_carry"]["set_key"]["shown"] == 20
-    predicate, ids = turn_runtime.page_the_set(_NoDb(), _carry(20, n=20, capped=True))
+    assert "capped" not in predicate["next_carry"]["set_key"]
+    predicate, ids = turn_runtime.page_the_set(_NoDb(), _carry(20, n=20))
     assert ids == [] and predicate["exhausted"] is True
-    assert predicate["next_carry"]["set_key"]["capped"] is True
 
 
-def _capped_predicate(offset, **extra):
-    # ASSUMED key names (the doc fixes no predicate key for the capped flag): `capped` beside `code_list`.
+def _list_predicate(total, offset, **extra):
     return {
         "require": {},
-        "qualifying_total": 20,
+        "qualifying_total": total,
         "truncated": False,
         "unrecognized_terms": [],
         "class_labels": [],
         "set_noun": "matching products",
         "code_list": True,
-        "capped": True,
         "offset": offset,
         **extra,
     }
 
 
-def test_capped_page_two_header_and_end(monkeypatch):
+def _narrow(n):
+    return f"Those are the first {n} matches. Send more of the code to narrow it."
+
+
+@pytest.mark.parametrize("total", [13, 20])
+def test_page_two_header_and_end(monkeypatch, total):
     """Pages 2+ keep the Sets header with a total-less range; the last page ends with the narrow
-    sentence, never "That is all N."."""
+    sentence stating the codes listed, never "That is all N."."""
     _set_gate(monkeypatch, True)
-    items = [_card(_code(i), "d") for i in range(9, 20)]
-    out = _run(0, items=items, predicate=_capped_predicate(9))
+    items = [_card(_code(i), "d") for i in range(9, total)]
+    out = _run(0, items=items, predicate=_list_predicate(total, 9))
     text = out["response"]
-    assert text.splitlines()[0] == "Here's what you want: matching products (showing 10 to 20)"
-    assert NARROW in text
-    assert _numbers(text) == list(range(10, 21))
+    assert text.splitlines()[0] == f"Here's what you want: matching products (showing 10 to {total})"
+    assert _numbers(text) == list(range(10, total + 1))
     lines = [ln for ln in text.strip().split("\n") if ln]
-    assert lines[-1] == FOOT and lines[-2] == NARROW, lines[-3:]
+    assert lines[-1] == FOOT and lines[-2] == _narrow(total), lines[-3:]
     assert "That is all" not in text
     assert 'Reply "more"' not in text
 
 
-def test_capped_past_the_end_is_the_narrow_sentence_alone(monkeypatch):
+@pytest.mark.parametrize("total", [13, 20])
+def test_past_the_end_is_the_narrow_sentence_alone(monkeypatch, total):
     _set_gate(monkeypatch, True)
-    out = _run(0, items=[], predicate=_capped_predicate(20, exhausted=True))
-    assert out["response"].strip() == NARROW
+    out = _run(0, items=[], predicate=_list_predicate(total, total, exhausted=True))
+    assert out["response"].strip() == _narrow(total)
 
 
 def test_capped_sentence_catalogued_gate_on_only(monkeypatch):

@@ -96,7 +96,7 @@ def test_engine_arms_and_pages(session_factory, monkeypatch, stub_parser, stub_a
     chat = _l1_chat(session_factory, monkeypatch, stub_parser, stub_access, world)
     first = chat.say("ZZQ", _l1_ask())
     head = first.splitlines()[0]
-    m = re.search(r"\(13, showing 1 to (\d+)\)", head)
+    m = re.search(r"\(showing 1 to (\d+)\)", head)
     assert m, head
     k = int(m.group(1))
     assert 0 < k < 13 and len(first) <= BUDGET, (k, len(first))
@@ -106,19 +106,21 @@ def test_engine_arms_and_pages(session_factory, monkeypatch, stub_parser, stub_a
 
     carry = _stored_set_page(session_factory, chat.contact_id)
     key = carry["set_key"]
+    assert "capped" not in key
     assert key["code_list"] is True and key["total"] == 13 and key["shown"] == k and key["domain"] == "master_products"
     assert len(key["code_ids"]) == 13
 
     second = chat.say("more", _more_verdict("master_products", "check_product"))
-    assert second.startswith(f"Here's what you want: matching products (13, showing {k + 1} to 13)"), second[:200]
+    assert second.startswith(f"Here's what you want: matching products (showing {k + 1} to 13)"), second[:200]
     page_two = _codes(second)
     assert not set(page_one) & set(page_two)
     assert set(page_one) | set(page_two) == world.codes
-    assert 'Reply "more"' not in second
+    assert 'Reply "more"' not in second and "That is all" not in second
+    lines = [ln for ln in second.strip().split("\n") if ln]
+    assert lines[-2] == "Those are the first 13 matches. Send more of the code to narrow it.", lines[-3:]
 
     third = chat.say("more", _more_verdict("master_products", "check_product"))
-    assert third.startswith("Here's what you want: matching products (13). That is all 13."), third[:200]
-    assert not _codes(third)
+    assert third.strip() == "Those are the first 13 matches. Send more of the code to narrow it.", third[:200]
 
 
 def test_engine_gate_off_leaves_no_code_list_carry(session_factory, monkeypatch, stub_parser, stub_access, world):

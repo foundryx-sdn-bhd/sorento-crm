@@ -1,8 +1,8 @@
 """CHAT-COMPOSER Lists review round 1 red tests.
 
 Spec: `documentation/plans/chatbot/chat-composer-seam-design-lists.md`, "Review round 1" (LD4 to LD6, S1, K2, K3).
-B1/LD4: a code list is capped on PRODUCT ROWS per typed token (the unit the resolver caps), never on distinct
-codes. LD3 amended: the narrow sentence states the codes listed. LD5: a bare number picks a card. K2: a gone
+B1/LD4 was replaced by LD7 (review round 2): a code list that needs more than one message never states a total,
+whatever its shape (twins, a two-type token, few rows). LD3 amended: the narrow sentence states the codes listed. LD5: a bare number picks a card. K2: a gone
 card returns the error fragment. LD6: `ref_staff` comes from the profile and `ref_page` only from the carry.
 """
 from __future__ import annotations
@@ -39,44 +39,40 @@ def _twin_items(n_codes, desc="x" * 160):
     return [_card(_code(i), desc, company=co) for i in range(n_codes) for co in ("Sorento", "Mocha")]
 
 
-def test_twenty_product_rows_of_ten_twinned_codes_are_capped(monkeypatch):
+def _assert_total_less(out):
+    assert "set_window" in out, "the list must be cut to one message"
+    first = out["response"].splitlines()[0]
+    assert first.startswith("Here are the matching products (showing 1 to "), first
+    assert "capped" not in out["set_window"]["carry"]
+
+
+def test_twinned_codes_never_state_a_total(monkeypatch):
     _set_gate(monkeypatch, True)
     entities = [_ent(_code(i), k) for i in range(10) for k in (0, 1)]
     out = _run(0, items=_twin_items(10), entities=entities)
-    text = out["response"]
-    assert "set_window" in out, "20 rows must be cut to one message"
-    first = text.splitlines()[0]
-    assert "(showing 1 to " in first and "10," not in first, first
-    assert out["set_window"]["carry"]["capped"] is True
+    _assert_total_less(out)
     assert len(out["set_window"]["carry"]["code_ids"]) == 10
 
 
-def test_a_two_type_token_with_ten_product_rows_is_capped(monkeypatch):
-    """The resolver gave this token 10 products and 10 customers (cap 20 // 2 types = 10)."""
+def test_a_two_type_token_never_states_a_total(monkeypatch):
     _set_gate(monkeypatch, True)
     entities = [_ent(_code(i)) for i in range(10)] + [
         _ent(f"CUST{i:02d}", entity_type="customer") for i in range(10)
     ]
-    out = _run(10, desc="x" * 400, entities=entities)
-    assert "set_window" in out
-    assert "10," not in out["response"].splitlines()[0], out["response"].splitlines()[0]
-    assert out["set_window"]["carry"]["capped"] is True
+    _assert_total_less(_run(10, desc="x" * 400, entities=entities))
 
 
-def test_a_single_type_token_with_nine_product_rows_keeps_its_total(monkeypatch):
+def test_a_short_single_type_list_never_states_a_total_either(monkeypatch):
     _set_gate(monkeypatch, True)
     entities = [_ent(_code(i)) for i in range(9)]
-    out = _run(9, desc="x" * 430, entities=entities)
-    assert "set_window" in out, "9 long cards must be cut"
-    assert out["response"].splitlines()[0].startswith("Here are the matching products (9, showing 1 to ")
-    assert not out["set_window"]["carry"].get("capped")
+    _assert_total_less(_run(9, desc="x" * 430, entities=entities))
 
 
-def test_capped_twins_last_page_states_the_codes_listed(monkeypatch):
+def test_the_last_page_states_the_codes_listed(monkeypatch):
     _set_gate(monkeypatch, True)
     predicate = {
         "require": {}, "qualifying_total": 10, "truncated": False, "unrecognized_terms": [], "class_labels": [],
-        "set_noun": "matching products", "code_list": True, "capped": True, "offset": 9,
+        "set_noun": "matching products", "code_list": True, "offset": 9,
     }
     out = _run(0, items=[_card(_code(9), "d")], predicate=predicate)
     lines = [ln for ln in out["response"].strip().split("\n") if ln]
