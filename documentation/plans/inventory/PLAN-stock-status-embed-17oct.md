@@ -1,6 +1,6 @@
 # PLAN: Available stock status, embedded in every process (STOCK-STATUS)
 
-Status: Mock round 5 (owner hand test 17 Oct ~22:30: not accepted as built; extend the EXISTING Fulfilment Planning and OI stock tables in table form, no chips, popovers or cards). Mock v5 drawn (v5a and v5b), waiting on crew's real rows and the owner's pick; build only after the owner OKs (lane STOCK-STATUS, size L, standard track)
+Status: Mock round 6 (owner notes on v5, 18 Oct 05:36: no switch, no item strip, no UOM, no inactive tag, names instead of codes). Mock v6 = today's stock table with AutoCount's figures, every location, an Incoming PL row and PO rows in the drill-down; waiting on the owner; build only after the OK (lane STOCK-STATUS, size L, standard track)
 
 ## Owner request (17 Oct)
 
@@ -360,4 +360,14 @@ of stock in fulfilment planning and OI".
   rebuilt on the same table, keep or drop asked.
 - Data source unchanged: `stock_status_service` with the container-number and ETA-permission rulings.
 - Mock: `mockups/stock-status-v5.html`.
+
+## 7. Round 6 (owner notes on mock v5, 18 Oct 05:36)
+
+Owner: "Use name instead of code" (drill-down customer / supplier); "Dont complicate the exisitng views by adding these in"
+(item strip); "Dont complicate" (the inactive tag, UOM, the Planning | AutoCount switch); "Dont need all these details at
+header". So neither v5a nor v5b: today's CellStockTable exactly as it is, with only what his key columns need. On hand,
+SO qty, PO qty and SPO qty read AutoCount's figures (`stock_status_service`), with Available and Available for Project
+following as today; every location holding the item, the ones outside today's set in today's own "Other group" set; one
+Incoming PL row under the Total; PO rows and names in the documents drill-down. Mock: `mockups/stock-status-v6.html`.
+Open: the stand-alone page, keep or drop.
 
