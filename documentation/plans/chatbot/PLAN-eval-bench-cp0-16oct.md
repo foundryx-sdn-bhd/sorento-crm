@@ -383,8 +383,8 @@ price tier before finding any product, five run results, now fail), attachment 6
   - A bare code (no quantity) reuses the answer domain held before the turn (owner: resolve then reuse the answer).
   - Photo items are `media`: graded on the recorded turn, out of live runs and exports.
   - Cost asks are held (`cost_owner_pending`) until the owner rules who may see cost.
-  - Held-out code lookups at $0, runs 1/2/3: 76.0 / 75.3 / 74.7% to 78.1 / 78.8 / 79.5% (n 146 with the photo item;
-    145 without).
+  - Held-out code lookups at $0, runs 1/2/3: 76.0 / 75.3 / 74.7% to 78.6 / 79.3 / 80.0% (n 145; the photo item is
+    not graded live).
 - 33 grader (OWNER RULING 17 Oct): after a full answer to an exact code, a numbered picker of its sibling variants
   is right (`lanes/business/answer.py:4846-4848`), so `no_picker` passes. Sibling means every option starts with the
   gold code's family stem. Full means the reply carries an answer outside its option lines and every other check
