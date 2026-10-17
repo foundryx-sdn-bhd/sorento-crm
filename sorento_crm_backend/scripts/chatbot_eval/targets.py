@@ -478,69 +478,47 @@ def _menu_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tupl
 
 # the engine's stock reply lines (label_catalog.py: "Got stock.", "Only N got stock.", "No stock, ETA ...", "No stock found
 # for ...", "yes, we have stock") and their ms / zh renderings
-STOCK_ANSWER_RE = re.compile(r"\bgot stock\b|\bno stock\b|\bin stock\b|\bhave stock\b|\bstok ada\b|\btiada stok\b|有库存|没有库存", re.I)
-NON_STOCK_QUESTIONS = frozenset({"tier_pick", "team_pick", "member_offer", "company_pick", "kind_pick", "clarify"})
 STOCK_WORDS_RE = re.compile(r"\b(?:stock|in stock|available|availability|ada|ready stock|ready|how many left|berapa ada)\b", re.I)
 QUANTITY_ASK_RE = re.compile(r"how\s+many|berapa", re.I)
 
 
-def _stock_mode(row: dict[str, Any]) -> str | None:
-    """The contact's resolved Stock Visibility mode, as the stock tool's envelope reports it
-    (`stock_visibility.mode`: availability, compact, detailed); None when no tool result shows it."""
-    def find(x: Any) -> str | None:
-        if isinstance(x, dict):
-            vis = x.get("stock_visibility")
-            if isinstance(vis, dict) and isinstance(vis.get("mode"), str):
-                return vis["mode"]
-            return next((m for v in x.values() if (m := find(v))), None)
-        if isinstance(x, list):
-            return next((m for v in x if (m := find(v))), None)
-        return None
+FILES_PROMO_SPEC_FACTS = frozenset({"product_attachment", "promotion", "master_products"})
+FILES_PROMO_SPEC_LABELS = frozenset({"files", "promotions", "product_info"})
+SENTENCE_RE = re.compile(r"(?<=[.?!])\s+|\n")
 
-    sources: list[Any] = [t.get("envelope") for t in _tools(row)]
-    for t in row.get("tool_results") or []:
-        result = t.get("result") if isinstance(t, dict) else None
-        if isinstance(result, str):
-            try:
-                result = json.loads(result)
-            except ValueError:
-                continue
-        sources.append(result)
-    return next((m for src in sources if (m := find(src))), None)
+
+def _files_sent(row: dict[str, Any]) -> int:
+    announced = (_stage(row, "replied").get("facts") or {}).get("files")
+    if isinstance(announced, int):
+        return announced
+    return sum(len(t["envelope"].get("attachments") or []) for t in _tools(row) if isinstance(t.get("envelope"), dict))
 
 
 def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None,
-                    followup: bool = False) -> tuple[str, bool | None, str] | None:
-    """Crew policy: a quantity question ("how many", "berapa", or a quantity owed after the turn) is right only on a
-    stock ask for a contact whose Stock Visibility mode is "availability"; anywhere else it is needless. A stock ask whose
-    mode no tool result shows is unknown."""
+                    slice_name: str = "") -> tuple[str, bool, str] | None:
+    """Owner ruling (round 29): a how-many question ("how many", "berapa", or a quantity owed after the turn) fails only
+    when it takes the place of the answer to a files, promotion or spec-info ask. Such an ask is what the ANSWER KEY
+    says (a files / promotion / product-info fact, or an attribute), an attachment item, or a spec item whose message
+    has no stock word. No answer = once the how-many sentences are removed, no number outside a product code, no listed
+    entry and no file sent. Any other how-many (stock asks, asks of unknown type, answered asks) is fine."""
     after = _oq(row)[1]
     payload = after.get("payload") if isinstance(after, dict) and isinstance(after.get("payload"), dict) else {}
     owed = (list(after.get("owed") or []) if isinstance(after, dict) else []) + list(payload.get("owed") or [])
-    if not (QUANTITY_ASK_RE.search(reply_text(row)) or "quantity" in owed):
-        return ("no_qty_ask", True, "The bot asked how many although it was not needed.")
-    # a stock ask is what the ANSWER KEY says; with no fact in it, the user's own words; never what the bot planned
+    reply = reply_text(row)
+    if not (QUANTITY_ASK_RE.search(reply) or "quantity" in owed):
+        return ("no_qty_ask", True, "The bot asked how many instead of giving the answer.")
     g = gold or {}
-    if g.get("fact") or g.get("fact_label"):
-        stock_ask = g.get("fact") == "inventory" or _norm(g.get("fact_label")) == "stock"
-    else:   # the user's words, or a stock picker (product_pick with stock_pick) the turn was answering
-        before = _oq(row)[0]
-        picked_stock = isinstance(before, dict) and before.get("kind") == "product_pick" and bool(
-            (before.get("payload") or {}).get("stock_pick"))
-        # a follow-up on a stock answer: the domain held before the turn (memory focus.before.domains) is inventory, the
-        # bot's previous message reads as a stock answer, and no non-stock question (tier, team, menu) was open
-        on_stock = (followup and "inventory" in (_mem_focus(row, "before").get("domains") or [])
-                    and bool(STOCK_ANSWER_RE.search(str(row.get("prev_bot_message") or "")))
-                    and not (isinstance(before, dict) and before.get("kind") in NON_STOCK_QUESTIONS))
-        stock_ask = bool(STOCK_WORDS_RE.search(user_message(row))) or picked_stock or on_stock
-    if not stock_ask:
-        return ("no_qty_ask", False, "The bot asked how many although it was not needed.")
-    mode = _stock_mode(row)
-    if mode is None and not any("inventory" in str(t.get("name")) or "stock" in str(t.get("name")) for t in _tools(row)):
-        return ("no_qty_ask", False, "The bot asked how many although it was not needed.")   # no stock lookup behind it
-    if mode == "availability":   # an allowed how-many is named as such, not reported as "no quantity ask"
-        return ("qty_ask_ok", True, "The bot asked how many although it was not needed.")
-    return ("no_qty_ask", None if mode is None else False, "The bot asked how many although it was not needed.")
+    label = _norm(g.get("fact_label"))
+    answer_ask = (g.get("fact") in FILES_PROMO_SPEC_FACTS or label in FILES_PROMO_SPEC_LABELS
+                  or bool(label and label not in KNOWN_FACT_LABELS) or slice_name == "attachment"
+                  or (slice_name == "spec" and not STOCK_WORDS_RE.search(user_message(row))))
+    if answer_ask:
+        rest = "\n".join(x for x in SENTENCE_RE.split(reply) if not QUANTITY_ASK_RE.search(x))
+        answered = (bool(re.search(r"\d", CODE_RE.sub(" ", rest))) or bool(SET_NUMBERED_RE.search(rest))
+                    or bool(SET_CODE_ROW_RE.search(rest)) or _files_sent(row) > 0)
+        if not answered:
+            return ("no_qty_ask", False, "The bot asked how many instead of giving the answer.")
+    return ("qty_ask_ok", True, "The bot asked how many instead of giving the answer.")
 
 
 def _picker_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tuple[str, bool, str] | None:
@@ -560,11 +538,11 @@ def _picker_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tu
 
 
 def _needless(row: dict[str, Any], gold: dict[str, Any], menu: bool = True,
-              shown: bool = False, followup: bool = False) -> list[tuple[str, bool | None, str]]:
+              shown: bool = False, slice_name: str = "") -> list[tuple[str, bool | None, str]]:
     """The needless-question checks every item gets. `shown`: the answer already showed products, so a list left open
     after it is not a needless picker."""
     picker = None if shown else _picker_check(row, gold)
-    return [c for c in ((_menu_check(row, gold) if menu else None), _quantity_check(row, gold, followup), picker) if c]
+    return [c for c in ((_menu_check(row, gold) if menu else None), _quantity_check(row, gold, slice_name), picker) if c]
 
 
 def _result_items(row: dict[str, Any]) -> list[dict[str, Any]]:
@@ -599,6 +577,9 @@ def _attribute_answered(row: dict[str, Any], attr: str, code: Any) -> bool:
     for that attribute."""
     reply = reply_text(row)
     word = re.escape(attr)
+    between = re.search(rf"\b{word}\b((?:\s+[\w.-]+){{0,4}})\s*:?\s*\b{NONE_WORDS}", CODE_RE.sub(" ", reply), re.I)
+    if between and re.search(r"\d", between.group(1)):   # a number in the words after the attribute is a value
+        return True
     says_none = re.search(rf"\bno {word}\b|(?:don.?t|do not|does not|doesn.?t) have (?:the |a |any )?{word}\b"
                           rf"|\b{word}\b(?:\s+[\w-]+){{0,4}}\s*:?\s*\b{NONE_WORDS}", reply, re.I)
     if not says_none:   # a none statement takes the none branch only: a number elsewhere does not rescue it
@@ -618,7 +599,7 @@ def _code_lookup(row, item):
     checks = []
     if code:
         checks.append(("code", code in _resolved_codes(row), "The bot read a different code than the one asked."))
-    checks.extend(_needless(row, gold))
+    checks.extend(_needless(row, gold, slice_name="code_lookup"))
     label = _norm(gold.get("fact_label"))
     if label and label not in KNOWN_FACT_LABELS:   # an attribute ask (weight, ...): the reply needs a value for it
         checks.append(("attribute_value", _attribute_answered(row, label.replace("_", " "), gold.get("code")),
@@ -660,7 +641,7 @@ def _subject_check(want: set[str], after: set[str]) -> tuple[str, bool | None, s
 
 def _followup(row, item):
     kind, gold = item.get("kind"), item.get("gold") or {}
-    return _followup_checks(row, item, kind, gold) + _needless(row, gold, menu=kind in {"and_x", "switch"}, followup=True)
+    return _followup_checks(row, item, kind, gold) + _needless(row, gold, menu=kind in {"and_x", "switch"}, slice_name="followup")
 
 
 def _followup_checks(row, item, kind, gold):
@@ -868,7 +849,7 @@ def _spec(row, item):
     reply = reply_text(row)
     shown = bool(CODE_RE.search(reply)) and not COULD_NOT_FIND_RE.search(reply)   # at least one product, no dead end
     checks = [("spec_set", want <= got and bool(want or class_want), "The spec words were not grounded to the expected set."),
-              ("shown", shown, "The reply showed no product."), *_needless(row, {}, shown=shown)]
+              ("shown", shown, "The reply showed no product."), *_needless(row, {}, shown=shown, slice_name="spec")]
     if class_want:  # reported, not part of `passed`: the bot records class words as category entities
         checks.append(("class", all(any(set(v.split()) <= w for w in words) for v in class_want),
                        "The product class was read differently from the one asked."))
@@ -954,7 +935,7 @@ def _attachment(row, item):
     asked += [_type_word(x.get("canonical_code") or x.get("raw") if isinstance(x, dict) else x) for x in from_memory or [] if x]
     asked_ok = bool(asked) and all(_type_ok(a, accepted) for a in asked)
     checks = [("asked_type", asked_ok, "The asked type was read differently from the type requested."),
-              *_needless(row, gold)]
+              *_needless(row, gold, slice_name="attachment")]
     if gold.get("none_on_record"):
         checks.append(("none_on_record", not files and sent == 0,
                        "Files were sent although none exist on record."))
@@ -970,7 +951,7 @@ def _attachment(row, item):
 
 
 def _scope(row, item):
-    return _needless(row, item.get("gold") or {}, menu=False)
+    return _needless(row, item.get("gold") or {}, menu=False, slice_name="scope")
 
 
 _SLICES = {"code_lookup": _code_lookup, "followup": _followup, "spec": _spec, "attachment": _attachment, "scope": _scope}
@@ -991,7 +972,8 @@ def _set_list_check(row: dict[str, Any]) -> tuple[str, bool, str] | None:
     """A set reply (its first line ends with a count in parentheses) must list products, and a list cut short says how
     to see more (the header's "showing A to B" or a see-more cue). None when the reply is not a set reply."""
     reply = reply_text(row)
-    header = SET_HEADER_RE.search(reply.split("\n", 1)[0].strip())
+    line = re.search(r"^Here's what you want:[^\n]*", reply, re.M)   # a prefix line above it is allowed
+    header = SET_HEADER_RE.search(line.group(0).strip()) if line else None
     if not header or header.group("last"):   # the last page lists nothing by design
         return None
     entries = len(SET_NUMBERED_RE.findall(reply)) or len(SET_CODE_ROW_RE.findall(reply))
