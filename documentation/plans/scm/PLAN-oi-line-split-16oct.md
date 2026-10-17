@@ -1,6 +1,6 @@
 # PLAN: split one SO line into delivery tranches in Order Inquiries (OI-LINE-SPLIT)
 
-Status: Mock v4 (owner hand test of #1749 FAIL 17 Oct ~12:40 MYT: the split screen must be ONE Excel-like sheet, splits stacked DOWNWARD under their line; v3 filed, owner 13:50 asked for drag and drop inside it; v4 filed as crew ask, build waits for the owner's OK). Before that: PR #1749 head c3a4b4acd: CI green, reviewer READY, security ready. Track: full (L): migration, new
+Status: Build v4 (owner OK on mock v4 17 Oct 14:10, Q1 drag yes, Q2-Q4 (a), Q5 (a) no box; after the 17 Oct hand-test FAIL of the v2 grid). See "Build v4" at the bottom; UAC section A/F rewritten. Before that: PR #1749 head c3a4b4acd: CI green, reviewer READY, security ready. Track: full (L): migration, new
 endpoint with RBAC, engine change. Lead pattern: tester red tests, one coder (Opus: tangled engine in
 a 13k-line service), reviewer + security-reviewer, browser pass 1280/375. Stacked on #1748
 (OI Excel one sheet; merged into this branch at c1f8f57d8).
@@ -130,6 +130,49 @@ NULL (the base the split was made against, same on every row of one origin), `cr
    ORDER for 49; no splits = unchanged).
 4. FE phase 1 against a mock service, then vitest red (model + dialog: Save blocked on gap,
    keyboard move across lines records sits_on, failed save keeps values) and wiring.
+
+## Build v4 (owner OK 17 Oct 14:10)
+
+Frontend rebuild of the split screen only. Backend split model, totals, email and Excel stay; one
+additive GET field (`so_date`, the SO date for the SO DATE column, AC-A12) is the only backend change.
+Track: full (lane is L). security-reviewer: not needed for this round (no auth/RBAC/ingest change;
+the one GET field rides the existing VIEW gate), said in the PR.
+
+Files (PS = sorento_crm_frontend/app/(protected)/project-sales/, FP = PS/fulfilment-planning/):
+- New `FP/components/LineSplitSheet.tsx` (the table, AC-A2..A12, F) inside the existing
+  `FP/components/LineSplitDialog.tsx` shell (load, Save, close guard, history/undo, DndContext with
+  the existing sensors :675-683, `SPLIT_AUTOSCROLL`, `DragOverlay` :835-895).
+- Gone: `LineSplitGrid.tsx`, `LineSplitZoom.tsx`, `LineSplitMoveBox.tsx`, `LineSplitPhone.tsx` and
+  the tests that only cover them; `lineSplitParts.tsx` keeps `ChangePill`, `SitsOnSelect`
+  (relabelled per AC-A7), `QtyInput` where they still fit.
+- Model `FP/lib/lineSplitModel.ts` (pure, vitest): `addSplit` fills what is left and sits on New line
+  (AC-A5); `placeRest(lines, lineId, target)` for the chip (AC-A9); `targetDateOf(line)` = nowDate ??
+  baseDate; `setSitsOn` onto another line takes its date (AC-A7); `sortLines` (AC-A2); `readsRemain`
+  (only split equal to base on own line and date, any remark: AC-A4). Drops reuse `moveSplit` (:164)
+  with qty = all.
+- Backend: `so_date` on the GET payload (schema + service; pytest asserts it, response_model lesson).
+
+DOM contract (tests and the coder both follow it; `<no>` = the AutoCount line no the UI shows,
+`<n>` = 1-based split position in the line):
+- table `aria-label="Split delivery sheet"`; one `<tbody data-testid="split-line-<no>">` per line.
+- REMAIN cells: buttons `Split line <no> quantity`, `Split line <no> date`; REMAIN-line grip `Drag line <no>`.
+- split row: inputs `Quantity, line <no> split <n>`, `Date, line <no> split <n>`, select
+  `AutoCount line, line <no> split <n>`, `Remark, line <no> split <n>`; buttons
+  `Drag split <n> of line <no>` (grip, first cell of the row), `Remove split <n> of line <no>`.
+- balance cell `data-testid="balance-<no>"` text `0`, `<N> left`, `<N> over`; chip button
+  `Drag the <N> left of line <no>`; add button `Add a split to line <no>`.
+- while dragging: `data-testid="drop-new-date"`, `data-testid="drop-cancel"` rows; a faded line block
+  has `data-dimmed="true"`; the hovered one `data-over="true"`.
+- status line `role="status"`; Save button name `Save`; toast text `Moved <N> to <target>` with Undo.
+
+Slices (red-first each: `test(red):` commit of test files only, then the fix commit, then a kill note):
+1. Model deltas (vitest, `FP/lib/lineSplitModel*.test.ts`).
+2. Backend `so_date` (pytest, `tests/scm/test_line_splits_api.py`).
+3. Sheet without drag: AC-A1..A7, A10 (non-drag keys), A11, A12, B1, B5, F (vitest on the dialog).
+4. Drag: grip leftmost, chip, REMAIN-line grip, targets, fade, drop rows, overlay, AC-A9 drops,
+   toast Undo, keyboard drag (vitest, keyboard sensor as `LineSplitDialog.dnd.test.tsx`).
+Then reviewer, browser pass on crew's copy (1280 + 375, SO417636 owner case end to end), new
+hand-test script, `crew report --handtest`.
 
 ## Open
 

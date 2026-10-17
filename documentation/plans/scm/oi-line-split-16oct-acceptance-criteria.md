@@ -1,47 +1,74 @@
 # UAC: split SO lines into delivery splits (OI-LINE-SPLIT)
 
-Owner OK on mock v2, 16 Oct 2026 23:47 ("Ok proceed"): `documentation/mockups/OI-LINE-SPLIT/index.html`.
+Owner OK on mock v2, 16 Oct 2026 23:47; the split screen redone to mock v4 after the 17 Oct hand test
+(owner OK 14:10): `documentation/mockups/OI-LINE-SPLIT/index.html`. Sections B to E are unchanged.
 Plan: `PLAN-oi-line-split-16oct.md`. Words: a **split** is one part of an SO line (qty, delivery
 date or Cancel, remark, the line it sits on). Never "tranche" in UI or copy.
 
-## A. The whole-SO split view (Fulfilment planning)
+## A. The split sheet (Fulfilment planning), mock v4
 
-- AC-A1 "Split delivery…" on a board line (its action menu) opens one full-screen view for that
-  line's SO: every open SO line, grouped by item code + location, one row per
-  line, columns = every delivery date in the group (line dates and split dates, ascending), then
-  "New date" and "Cancel". A last row per group is "New line" (not in AutoCount yet).
-- AC-A2 A line's right-click menu on the board has "Split delivery…", and the AutoCount change
-  lightbox (WAS / NOW) has a "Split delivery" button; both open the same view with that line zoomed.
-- AC-A3 Each split is a card in (row = the line it sits on, column = its date). A card sitting on
-  another line than its own shows "from <its own line>". A row header shows: the line (qty on date,
-  line number when known), "Split N" when split, Gap N / Over N when it does not add up, what moved
-  out ("→ 236 to line 640") and in ("← 236 from line 560"), "Plan X · AutoCount Y".
-- AC-A4 Inside Confirm (the line has a pending AutoCount change), each row also shows what is left
-  to tell: "Explained" when AutoCount qty = qty planned on that line, "ORDER +N" when AutoCount has
-  more, "CANCEL BALANCE N" when less.
-- AC-A5 Drag a card (pointer, touch long-press, or keyboard) onto another cell of the SAME group: a
-  box asks how many (default all, Enter moves). All = the split moves; part = a new split is made
-  for the moved qty; landing on a cell that already holds a split of the same own line and same
-  sits-on line merges them. Cells of another item/location are not drop targets.
-- AC-A6 Dropping on "New date" asks for the date; on "Cancel" the qty becomes a cancel split (no
-  date, sits on its own line); on the "New line" row the split sits on "new line (not in AutoCount
-  yet)".
-- AC-A7 Keyboard on a focused card: Left/Right previous/next date, Up/Down previous/next line of
-  the group (Shift moves 10 instead of all), N new date, S split in two, C cancel, Delete back to
-  its own line and original date, Enter zooms and focuses its qty. Escape closes a box/menu.
-  Cmd/Ctrl+Z undoes the last change (also an Undo on the toast).
-- AC-A8 Clicking a row header (or Enter on it) opens the zoom pane on the right for that line:
-  prev/next line, a bar with one segment per split (draggable dividers move qty between
-  neighbours; Left/Right 1, Shift 10), and a table: Qty, Date (or Cancel), change pill, Sits on
-  (own line / other lines of the group / New line / Cancel), Remark, "⋯" menu; "+ Add split".
-- AC-A9 Change pill per split vs the line's original date: later = DELAY, earlier = ADVANCE, same
-  = REMAIN, cancel = CANCEL BALANCE.
+Owner hand test of #1749 FAILED the v2 grid (17 Oct ~12:40); owner OK on mock v4 17 Oct 14:10 ("Ok,
+make sure the sort handler is at the leftmost, go"), Q1 drag yes, Q2-Q4 (a), Q5 (a). Mock:
+`documentation/mockups/OI-LINE-SPLIT/index.html` (v4). This section replaces the v2 grid/zoom AC.
+
+- AC-A1 Entries unchanged: "Split delivery…" in a board line's action menu and right-click menu, the
+  AutoCount change lightbox button, the SO header button. Each opens ONE full-screen page for that
+  line's SO, scrolled to that line, the line flashed.
+- AC-A2 One table with every open line of the SO, sorted by item code, location, then base delivery
+  date (then line no). Columns in order: grip (LEFTMOST), LINE (AutoCount line no), SO DATE, S/O NO,
+  ITEM CODE, LOCATION, QTY (base), DELIVERY DATE (base) | CHANGE QUANTITY, CHANGE DATE, AUTOCOUNT
+  LINE, REMARK, BALANCE, remove. The first line of each item has a heavier top border.
+- AC-A3 A split line shows one row per split, stacked downward; LINE to DELIVERY DATE and BALANCE are
+  merged across its split rows (rowSpan). A split row: grip, qty, date (typed DD/MM/YYYY or calendar)
+  with its change pill, AutoCount line, remark, remove (x). Inside Confirm, a line with a pending
+  change also shows "AutoCount now <qty> · <date>" under its delivery date; a line AutoCount added
+  (base 0) shows QTY 0 and "Added in AutoCount: <qty> · <date>" and cannot be split or dragged. A line
+  other lines' splits sit on shows "+N from line M" for each.
+- AC-A4 A line that is not split reads REMAIN in CHANGE QUANTITY and CHANGE DATE, its remark editable.
+  Clicking a REMAIN cell, or typing a digit (either cell) or "/" (date cell) on it, turns the line
+  into one split row (base qty, base date, this line) with focus in that cell (the typed key in it).
+  When focus leaves a line whose only split equals its base on its own line and date, the line reads
+  REMAIN again, its remark kept. A zero-qty split is dropped when focus leaves its line and on Save.
+- AC-A5 "+ Split" in BALANCE, or Ctrl/Cmd+Enter in a split row, adds a split row under the line:
+  qty = what is left on the line (0 when nothing is), the line's base date, AutoCount line "New
+  line"; its qty gets focus, selected. The x button, or Ctrl/Cmd+Backspace in the row, removes a
+  split row at once (staged until Save; no confirm).
+- AC-A6 BALANCE of a split line: "0" with a tick when its splits add up; "N left" as a draggable chip
+  when short; "N over" in red when over. A line that is not split shows only "+ Split".
+- AC-A7 AUTOCOUNT LINE (SearchableSelect) options: "Line <no> (this line)", every other line of the
+  same item and location ("Line <no> · <its date>"), "New line", "Cancel". Picking another line also
+  sets the split's date to that line's date (AutoCount's current date, else its base date). Cancel:
+  the date cell reads CANCEL. Leaving Cancel takes the line's base date.
+- AC-A8 Drag (Q1): the grip of a split row, the grip of a REMAIN line (the whole line) and the "N left"
+  chip drag (mouse after 5 px, touch long-press, keyboard). While dragging: lines of other items or
+  locations fade and are not targets; the dragged line's own block is not a target; a "New date" and
+  a "Cancel this qty" drop row open under the item's last line; the overlay shows the qty, item,
+  "from line N" and the target ("→ 20/11/2026 · line 608", "→ New date", "→ Cancel this qty"); the
+  hovered line block is highlighted; the sheet autoscrolls slowly from a thin edge band.
+- AC-A9 A drop moves ALL of it at once, with no "how many" box (Q5 a). A split row: sits on the target
+  line and takes that line's date (as AC-A7); if a split of the same own line already sits there on
+  that date the two merge (qty added, remarks joined). The "N left" chip: a new split of N at the
+  target (merging the same way). A REMAIN line: the whole line moves. "New date": sits on "New line"
+  with an empty date, focused, and Save waits until a date is typed. "Cancel this qty": a cancel
+  split. A toast "Moved N to <target>" offers Undo. To move part, type the qty first, then drag what
+  is left (SO417636 CSK14B 480: type 14, drag "403 left" onto line 608 -> 403 @ 20/11/2026 on 608).
+- AC-A10 Keyboard: Tab / Shift+Tab move between cells; Enter or Down goes to the same column one row
+  down, Shift+Enter or Up one row up; on a grip or chip: Space picks up, Down / Up next / previous
+  target (the item's other lines in order, then New date, Cancel), Space or Enter drops, Escape puts
+  it back. Cmd/Ctrl+Z undoes the last change.
+- AC-A11 Change pill per split against its own line's base date: later DELAY, earlier ADVANCE, same
+  REMAIN, cancel CANCEL.
+- AC-A12 Header: "Split delivery", "<SO no> · <SO date> · <customer>", search by item code
+  (ListSearchInput), a "Split lines only" switch, Close, Save (the one CTA). Under it a status line:
+  "<n> lines · <n> products · <n> split", then for each line that does not add up or has a split
+  with no date: "<item> line <no>: N left | N over | date to fill" and "Show" (clears search and
+  filter, scrolls to the line, flashes it, focuses its first cell).
 
 ## B. Exact sums and Save
 
 - AC-B1 Every split line's splits must add up exactly to its base qty (Q2 b). A gap or over shows
-  live on the row header, in the zoom ("Gap 20" / "Over 20") and in the footer listing the lines;
-  Save is disabled while any line does not add up. A zero-qty split is removed on blur/Save.
+  live in BALANCE and in the status line (AC-A12); Save is disabled while any line does not add up
+  or a non-cancel split has no date. A zero-qty split is removed as AC-A4 says.
 - AC-B2 Base qty and date of a line = the qty and date before its pending AutoCount change when one
   is pending, else its current qty and date; a partly delivered line splits only its open qty. A
   saved split keeps the base it was made against.
@@ -56,7 +83,7 @@ date or Cancel, remark, the line it sits on). Never "tranche" in UI or copy.
 ## C. Links are explicit (Q3 a, Q4 b)
 
 - AC-C1 A split records its own (origin) line and the line it sits on. Sits-on is only ever set by
-  staff (drag, menu, select). Nothing auto-links by qty, date or name.
+  staff (a drop, the AUTOCOUNT LINE select). Nothing auto-links by qty, date or name.
 - AC-C2 If the line a split sits on is cancelled or deleted in AutoCount, the split falls back to
   "new line (not in AutoCount yet)"; nothing else changes.
 
@@ -88,6 +115,8 @@ date or Cancel, remark, the line it sits on). Never "tranche" in UI or copy.
 
 ## F. Phone 375
 
-- AC-F1 At 375px the view shows one line at a time (line chips at the top), each split a card with
-  qty stepper, date, sits on, remark, menu; Add split; footer with the gap warning and Save.
+- AC-F1 At 375px the same sheet: LINE, SO DATE, S/O NO and LOCATION are hidden (the line no shows under
+  the item code, the SO date and location in the title), ITEM CODE stays pinned left while the table
+  scrolls sideways. Grip and chip drag by touch long-press; the AUTOCOUNT LINE select does the same
+  as a drop.
 - AC-F2 Usable and not clipped at 375px and 1280px.
