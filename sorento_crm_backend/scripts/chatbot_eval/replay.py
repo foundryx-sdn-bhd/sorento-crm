@@ -960,8 +960,23 @@ def _revision_known(backend_dir: str, rev: str) -> bool:
         return False
 
 
+def _register_scope() -> None:
+    """Install the company/brand SELECT filter, as app.main and worker.py do: this process runs the engine itself."""
+    from app.services import company_scope
+
+    company_scope.register_company_scope_listeners()
+
+
 def _preflight(session_factory: Callable[[], Any]) -> int | None:
-    """Refuse (2) a replay DB that is not at this checkout's alembic head: a stale schema fails every turn quietly."""
+    """Refuse (2) a replay DB that is not at this checkout's alembic head: a stale schema fails every turn quietly.
+
+    Also refuses (2) when the scope listeners are not installed: unscoped reads would skew the bench quietly."""
+    from app.services import company_scope
+
+    if not company_scope._INSTALLED:
+        print("refused: the company scope listeners are not registered; the replay would read every company "
+              "and brand unscoped", file=sys.stderr)
+        return 2
     current, heads = _db_revisions(session_factory), _code_heads(os.getcwd())
     if current == heads:
         return None
@@ -987,6 +1002,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
     from app.database import SessionLocal
 
+    _register_scope()
     refused = _preflight(SessionLocal)
     if refused:
         return refused
@@ -1009,6 +1025,7 @@ def _cmd_live(args: argparse.Namespace) -> int:
         return 2
     from app.database import SessionLocal
 
+    _register_scope()
     refused = _preflight(SessionLocal)
     if refused:
         return refused
