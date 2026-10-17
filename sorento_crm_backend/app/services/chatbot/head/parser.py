@@ -16,6 +16,7 @@ signature enforces the discipline - nothing here takes a `Session`.
 from __future__ import annotations
 
 import copy
+import functools
 import json
 import logging
 from dataclasses import dataclass
@@ -810,6 +811,16 @@ def closed_lists_schema(items: list[str]) -> dict[str, Any]:
     return schema
 
 
+@functools.lru_cache(maxsize=8)
+def _closed_lists_state_schema(items: tuple[str, ...]) -> dict[str, Any]:
+    """The closed-lists schema plus `state_changes` (a version carrying both sections), built
+    once per item list and shared; callers must not mutate it."""
+    schema = closed_lists_schema(list(items))
+    schema["properties"]["state_changes"] = copy.deepcopy(_STATE_CHANGES_SCHEMA)
+    schema["required"] = [*schema["required"], "state_changes"]
+    return schema
+
+
 def resolve_config(
     db: Session, *, current_date: str, override_version_id: str | None = None
 ) -> ParserConfig:
@@ -843,12 +854,17 @@ def resolve_config(
     api_key = resolve_api_key(config, provider)
     if not api_key:
         raise ParserError(f"no API key configured for provider {provider!r}")
-    closed_lists = uses_closed_lists(db, override_version_id=override_version_id)
+    # Both gates read the same RAW template that was rendered above (one registry read).
+    from app.services.chatbot.head.closed_lists_prompt import gate_on
+
+    closed_lists = gate_on(raw_template)
+    state_block = HEADING in (raw_template or "")
     json_schema = None
     if closed_lists:
         from app.services.chatbot_prompt_vars import closed_list_enum
 
-        json_schema = closed_lists_schema(closed_list_enum(db))
+        items = closed_list_enum(db)
+        json_schema = _closed_lists_state_schema(tuple(items)) if state_block else closed_lists_schema(items)
     return ParserConfig(
         system_prompt=system_prompt,
         prompt_version=prompt_version,
@@ -856,7 +872,7 @@ def resolve_config(
         model=model,
         api_key=api_key,
         # CHAT-STATE: the literal on the prompt text (never on a message) opts the turn in.
-        state_block=HEADING in (raw_template or ""),
+        state_block=state_block,
         closed_lists=closed_lists,
         json_schema=json_schema,
     )
