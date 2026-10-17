@@ -154,7 +154,7 @@ export default function BillingDocumentsView({ customerId }: { customerId?: stri
           header: ({ column }) => <DataGridColumnHeader title="Customer" column={column} />,
           size: 220,
           cell: ({ row }) => (
-            <span className="block truncate" title={row.original.customer_name}>
+            <span className="block truncate" title={row.original.customer_name ?? ''}>
               {row.original.customer_name}
             </span>
           ),

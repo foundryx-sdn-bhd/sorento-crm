@@ -37,10 +37,6 @@ import {
  */
 type Tab = 'details' | 'lines' | 'related';
 
-function None() {
-  return <span className="text-muted-foreground">None</span>;
-}
-
 function EmptyPanel({ title, hint }: { title: string; hint?: string }) {
   return (
     <Card>
@@ -200,7 +196,7 @@ export default function BillingDocumentDetail({ id }: { id: string }) {
         id: 'total',
         header: 'Total',
         size: 120,
-        cell: ({ row }) => formatMoney2dp(row.original.total),
+        cell: ({ row }) => formatBillingAmount(row.original.total, row.original.currency_code),
         meta: { headerTitle: 'Total', headerClassName: 'text-right', cellClassName: 'text-right tabular-nums' },
       },
       ...(canSeeOutstanding
@@ -210,7 +206,10 @@ export default function BillingDocumentDetail({ id }: { id: string }) {
               header: 'Outstanding',
               size: 130,
               cell: ({ row }: { row: { original: BillingRelatedNote } }) => (
-                <OutstandingCell outstanding={row.original.outstanding} currencyCode="MYR" />
+                <OutstandingCell
+                  outstanding={row.original.outstanding}
+                  currencyCode={row.original.currency_code}
+                />
               ),
               meta: { headerTitle: 'Outstanding', headerClassName: 'text-right', cellClassName: 'text-right' },
             } as ColumnDef<BillingRelatedNote>,
@@ -344,19 +343,23 @@ export default function BillingDocumentDetail({ id }: { id: string }) {
                   </CardHeader>
                   <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <Field label="Customer">
-                      <Link
-                        href={`/order-management/customers/${doc.customer_id}`}
-                        className="text-primary hover:underline"
-                      >
-                        {doc.customer_name}
-                      </Link>
+                      {doc.customer_id ? (
+                        <Link
+                          href={`/order-management/customers/${doc.customer_id}`}
+                          className="text-primary hover:underline"
+                        >
+                          {doc.customer_name}
+                        </Link>
+                      ) : (
+                        doc.customer_name
+                      )}
                       <span className="ms-2 font-normal text-muted-foreground">{doc.debtor_code}</span>
                     </Field>
                     <Field label="Agent">
                       {doc.agent_code ? (
                         doc.agent_name ? `${doc.agent_code} - ${doc.agent_name}` : doc.agent_code
                       ) : (
-                        <None />
+                        '-'
                       )}
                     </Field>
                     <Field label="Currency">
@@ -367,9 +370,9 @@ export default function BillingDocumentDetail({ id }: { id: string }) {
                         </span>
                       ) : null}
                     </Field>
-                    <Field label="Reference">{doc.ref || <None />}</Field>
+                    <Field label="Reference">{doc.ref || '-'}</Field>
                     <div className="sm:col-span-2">
-                      <Field label="Description">{doc.description || <None />}</Field>
+                      <Field label="Description">{doc.description || '-'}</Field>
                     </div>
                   </CardContent>
                 </Card>

@@ -21,8 +21,9 @@ export interface BillingDocumentListRow {
   doc_no: string;
   /** YYYY-MM-DD */
   doc_date: string;
-  customer_id: string;
-  customer_name: string;
+  /** Null when the document's debtor is not a CRM customer. */
+  customer_id: string | null;
+  customer_name: string | null;
   debtor_code: string;
   agent_code: string | null;
   agent_name: string | null;
@@ -63,6 +64,7 @@ export interface BillingRelatedNote {
   document_type: BillingDocumentType;
   doc_no: string;
   doc_date: string;
+  currency_code: string;
   total: number;
   outstanding: number | null;
 }

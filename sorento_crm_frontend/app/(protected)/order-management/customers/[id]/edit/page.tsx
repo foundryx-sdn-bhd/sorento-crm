@@ -39,9 +39,7 @@ export default function EditCustomerPage({ params }: { params: Promise<{ id: str
         />
       </Container>
       <Container>
-        <div className="mb-4">
-          <CustomerOutstandingMeta customerId={id} />
-        </div>
+        <CustomerOutstandingMeta customerId={id} className="mb-4" />
         {/* Same tabs, same order as the customer's view page (view = edit). */}
         <Tabs value={tab} onValueChange={(v) => setTab(v as CustomerTab)}>
           <TabsList variant="line" className="mb-5">
