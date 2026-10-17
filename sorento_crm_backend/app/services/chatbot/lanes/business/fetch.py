@@ -619,6 +619,7 @@ def _set_page(
     row_items: list[Any],
     row_idx: list[int],
     question_at: int | None,
+    links_from: int | None,
     source: list[Any],
     loc: Any,
     footer: str,
@@ -644,6 +645,8 @@ def _set_page(
         cut = k < n_rows
         end = row_ends[k - 1] if cut else rows_end
         rows = msg[rows_start:end]
+        if cut and links_from is not None:
+            rows += msg[links_from:rows_end]
         listed = row_items[:k] if cut else (row_items or (e.get("items") or []))
         counted = _rendered_product_count(listed)
         n = min(shown, counted) if counted is not None else shown
@@ -3461,6 +3464,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     row_items: list[Any] = []  # the item behind each printed row
     row_idx: list[int] = []  # its index in the answers list (the summary list on a summary page)
     question_at: int | None = None  # where a dealer quantity question starts
+    links_from: int | None = None  # where a summary page's action links begin
     if qs_render:
         for si_pos, si in enumerate(e["summary_items"]):
             if not isinstance(si, dict) or not isinstance(si.get("fields"), list):
@@ -3477,6 +3481,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 row_ends.append(len(msg))
                 row_items.append(si)
                 row_idx.append(si_pos)
+        links_from = len(msg)  # the action links that follow stay on a cut page
 
     action_links = e.get("action_links") or []
     for i, link in enumerate(action_links):
@@ -3805,6 +3810,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 row_items=row_items,
                 row_idx=row_idx,
                 question_at=question_at,
+                links_from=links_from,
                 source=(
                     e["summary_items"]
                     if qs_render
@@ -3860,8 +3866,8 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # the only order the customer can be talking about. Ungrouped, this is `items`
         # unchanged, so nothing else moves.
         "answers": (
-            (e.get("items") or [])[: set_window["last"] - set_row_offset]
-            if qs_render and page_items is not None and set_window is not None
+            [it for it in (e.get("items") or []) if _row_code(it) in {_row_code(s) for s in page_items}]
+            if qs_render and page_items is not None
             else page_items
             if page_items is not None
             else (_rendered_answers(e) if groups_render else e.get("items"))

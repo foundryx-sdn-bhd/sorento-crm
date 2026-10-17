@@ -7079,12 +7079,19 @@ def _run_stages_body(  # noqa: PLR0915
                     state_out.focus.set_page = None
                 elif members_paged:
                     state_out.focus.set_page = turn_runtime.set_page_carry(
-                        {**predicate, "qualifying_total": members_total, "require": {}},
+                        {**predicate, "qualifying_total": members_total},
                         plan.fetch[0],
                         class_terms,
                         access_levels=(envelopes[0].get("access_levels_used") if envelopes else None),
                         shown=members_listed,
                     )
+                    if isinstance(state_out.focus.set_page, dict):
+                        # The leg stays in the key: the next page is this miss list's next members.
+                        state_out.focus.set_page["set_key"]["miss_list"] = True
+                        # ...and the offer's team is the first page's, not the "more" message's.
+                        first_team = (verdict.get("routing") or {}).get("suggested_team")
+                        if first_team:
+                            state_out.focus.set_page["set_key"]["offer_team"] = first_team
                 elif partly_listed or listed_to_the_limit or cut_small:
                     state_out.focus.set_page = turn_runtime.set_page_carry(
                         predicate,

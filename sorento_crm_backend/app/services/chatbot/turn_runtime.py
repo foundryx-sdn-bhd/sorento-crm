@@ -4106,6 +4106,15 @@ def make_tool_runner(
                 and access_notice
             ):
                 fragment = business._fixed_reply(access_notice, refused=True)
+            if page_predicate is not None and page_predicate.get("miss_list"):
+                # CHAT-COMPOSER: the next page of a zero-qualifying described list is written by
+                # the miss writer off the page's own predicate (members, leg, offset).
+                fragment["scope_gate"] = {
+                    "gate_passed": True,
+                    "compatible_entities": [],
+                    "predicate": page_predicate,
+                    "gate_debug": {},
+                }
             if no_subject_gate is not None:
                 # The refusal's OWN reason, for `answer_bridge.answer_for`'s miss
                 # composer - which otherwise reads the RESOLVER's gate, and the
@@ -4229,7 +4238,9 @@ def make_tool_runner(
             # W4: what an "another N" after this page continues from; after the last page
             # it stays, so a further count says "That is all" (round 3 W2). The engine
             # keeps it on `focus.set_page`.
-            envelope["set_carry"] = page_predicate.get("next_carry") if (page_ids or exhausted) else None
+            envelope["set_carry"] = (
+                page_predicate.get("next_carry") if (page_ids or exhausted or page_predicate.get("miss_list")) else None
+            )
             # The focus rows for the products this page listed (`listed_product_rows`).
             envelope["listed_products"] = listed_products
         return envelope
@@ -4586,6 +4597,45 @@ def page_the_set(
         access_levels=entitled,
         stock_policy=stock_policy,
     )
+    if key.get("miss_list") and _composers_on():
+        # CHAT-COMPOSER: the carried set is a zero-qualifying described list (its leg kept in
+        # the key); the next page is the same producer's next members, rendered by the miss writer.
+        offset = max(0, int(key.get("shown") or 0))
+        outcome = resolve_product_set(
+            db,
+            require=key.get("require") or {},
+            specs=list(key.get("specs") or []) if described else [],
+            free_terms=None,
+            scope_terms=None if described else list(key.get("scope_terms") or []),
+            limit=answer_mod.SET_ID_CAP,
+            product_ids=(list(key.get("product_ids") or []) or None) if described else None,
+            brand=key.get("brand") if described else None,
+            brand_is_default=bool(key.get("brand_default")) if described else False,
+            access_levels=entitled,
+            stock_policy=stock_policy,
+            breakdown_over=answer_mod.SET_LIST_MAX,
+            members_offset=offset,
+        )
+        members = outcome.get("members") if isinstance(outcome.get("members"), dict) else {}
+        listed = len(members.get("codes") or [])
+        members_total = int(members.get("total") or 0)
+        predicate = {
+            "require": outcome.get("require") or key.get("require") or {},
+            "qualifying_total": 0,
+            "members": members,
+            "offset": offset,
+            "miss_list": True,
+            "offer_team": key.get("offer_team"),
+            "unrecognized_terms": [],
+            "class_labels": outcome.get("class_labels") or [],
+            "set_noun": key.get("set_noun") or "products",
+        }
+        for field in ("description", "row_labels", "brand"):
+            if outcome.get(field):
+                predicate[field] = outcome[field]
+        more = bool(listed) and offset + listed < members_total
+        predicate["next_carry"] = {"set_key": {**key, "total": members_total, "shown": offset + listed}} if more else None
+        return predicate, []
     total = int(outcome.get("qualifying_total") or 0)
     # SET-STOCK-RENDER R4: a page steps by product CODE, every company's product of a
     # listed code riding with it, as `shown` counts codes.

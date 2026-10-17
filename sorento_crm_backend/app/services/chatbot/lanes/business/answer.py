@@ -2885,7 +2885,8 @@ def described_members_reply(predicate: Any, team: Any) -> str | None:
     on = composers.enabled()
     # CHAT-COMPOSER: more matching products than the page names them by code, no count lines;
     # the header states the range and a "more" line sits under the list.
-    paged = on and total > len(lines) > 0
+    offset = int(jsc.get(predicate, "offset") or 0) if on else 0
+    paged = on and (total > len(lines) > 0 or (offset > 0 and len(lines) > 0))
     lines = lines or ([] if on else breakdown_lines(jsc.get(members, "breakdown"), noun))
     leg = next(iter(require), "")
     noun_of_leg = (
@@ -2894,12 +2895,19 @@ def described_members_reply(predicate: Any, team: Any) -> str | None:
     if paged:
         from app.services.chatbot.composers import sets as composers_sets
 
+        if offset:
+            # A later page of the same list names the leg in its header (the miss sentence stays last),
+            # and offers the team the first page offered.
+            phrase = described_set_phrase(jsc.get(predicate, "description"), noun, require)
+            if team and team != refer.SALESMAN_TEAM and jsc.truthy(jsc.get(predicate, "offer_team")):
+                team = _pretty_team(jsc.get(predicate, "offer_team"))
+        remaining = composers_sets.next_count(total, offset, len(lines), SET_LIST_MAX)
         return what_you_want_reply(
-            f"{phrase} ({total:,}, showing 1 to {len(lines)})",
+            f"{phrase} ({total:,}, showing {offset + 1} to {offset + len(lines)})",
             lines,
             leg=noun_of_leg,
             team=team,
-            between=composers_sets.more_line(composers_sets.next_count(total, 0, len(lines), SET_LIST_MAX)),
+            between=composers_sets.more_line(remaining) if remaining else "",
         )
     return what_you_want_reply(f"{phrase} ({total:,})" if total else phrase, lines, leg=noun_of_leg, team=team)
 
@@ -3059,8 +3067,17 @@ def other_brands_line(other_brands: Any, require: dict[str, Any]) -> str:
     last line of a reply answered for the company's default brand because the customer
     named none (owner hand test round 3 on PR #833, W4). Every other brand with its full
     count, largest first; "" when there is none."""
+    from app.services.chatbot import composers
+
+    # CHAT-COMPOSER (crew R2): gate on, the offer names the brands and drops their counts.
+    with_counts = not composers.enabled()
+
+    def named(o: Any) -> str:
+        name = jsc.js_string(jsc.get(o, "brand")).strip()
+        return name if not with_counts else f"{name} {int(jsc.get(o, 'count') or 0):,}"
+
     others = [
-        f"{jsc.js_string(jsc.get(o, 'brand')).strip()} {int(jsc.get(o, 'count') or 0):,}"
+        named(o)
         for o in jsc.array(other_brands)
         if jsc.js_string(jsc.get(o, "brand")).strip() and jsc.get(o, "count")
     ]

@@ -861,6 +861,7 @@ def resolve_product_set(
     prefer_weighted_brand: bool = False,
     brand_is_default: bool = False,
     breakdown_over: int | None = None,
+    members_offset: int = 0,
 ) -> dict:
     """(described set) ∩ (require legs), with an honest count.
 
@@ -1299,6 +1300,7 @@ def resolve_product_set(
                     _base(db.query(family.label("family"), Product.product_code), with_legs=False)
                     .order_by(family, Product.product_code)
                     .distinct(family)
+                    .offset(max(int(members_offset or 0), 0))
                     .limit(breakdown_over)
                     .all()
                 )
