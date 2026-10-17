@@ -252,6 +252,8 @@ export interface SpecPreviewJobResult {
 }
 
 export interface SpecRegistryKey {
+  /** The row's id: the History tab reads its audit trail with it. Never shown. */
+  id: string;
   spec_key: string;
   label: string;
   data_type: string;
@@ -319,6 +321,12 @@ export interface SpecRegistryKey {
    * absent dict as `{}`.
    */
   value_labels?: Record<string, string>;
+  /** What this field means to the chatbot: one line the parser sees. Null when unset. */
+  parser_hint: string | null;
+  /** True once staff edited the Name: the seed repair leaves it alone. */
+  label_owned: boolean;
+  /** word -> the other fields' labels that also own it. Words with no overlap are absent. */
+  also_on?: Record<string, string[]>;
 }
 
 /** One tunable number in the ranker's scoring. */

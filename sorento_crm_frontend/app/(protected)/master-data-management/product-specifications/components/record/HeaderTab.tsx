@@ -1,6 +1,7 @@
 'use client';
 
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { NumberInput } from '@/components/ui/number-input';
 import { numberFieldError } from '@/lib/number-field';
 import { Switch } from '@/components/ui/switch';
@@ -16,6 +17,9 @@ const SELF_KEY = '_self';
 // words yet does not hand `WordsDataGrid` a fresh array identity on every render -
 // see `ValuesAndWordsTab.tsx`'s own note on why that loops the renderer forever.
 const EMPTY_WORDS: string[] = [];
+
+/** The longest chatbot meaning the server stores. */
+const HINT_MAX = 200;
 
 /** One labelled control. The label is the only chrome a field needs, present in
  *  both view and edit so a field's identity never moves between the two (B.2). */
@@ -67,18 +71,12 @@ export function HeaderTab({ row, mode, draft, setDraft }: HeaderTabProps) {
 
       {!isList && (
         <Field label="Unit">
-          {mode === 'edit' && draft ? (
-            <Input
-              value={draft.unit}
-              onChange={(event) => setDraft((d) => ({ ...d, unit: event.target.value }))}
-              className="h-8 w-40"
-              placeholder="e.g. mm"
-              aria-label="Unit"
-              maxLength={20}
-            />
-          ) : (
+          {/* Text in both modes: a saved unit cannot change without invalidating
+              every stored value. */}
+          <div className="flex items-baseline gap-2">
             <span className="text-sm">{row.unit || '-'}</span>
-          )}
+            <span className="text-xs text-muted-foreground">Fixed once saved</span>
+          </div>
         </Field>
       )}
 
@@ -125,6 +123,25 @@ export function HeaderTab({ row, mode, draft, setDraft }: HeaderTabProps) {
         </Field>
       )}
 
+      <Field label="What this means to the chatbot">
+        {mode === 'edit' && draft ? (
+          <div className="flex flex-col gap-1">
+            <Textarea
+              value={draft.parserHint}
+              onChange={(event) => setDraft((d) => ({ ...d, parserHint: event.target.value }))}
+              aria-label="What this means to the chatbot"
+              maxLength={HINT_MAX}
+              rows={2}
+            />
+            <span className="self-end text-xs text-muted-foreground">
+              {draft.parserHint.length} / {HINT_MAX}
+            </span>
+          </div>
+        ) : (
+          <span className="text-sm">{row.parser_hint || '-'}</span>
+        )}
+      </Field>
+
       <Field label="Other names for this specification">
         <WordsDataGrid
           words={otherNames}
@@ -132,6 +149,7 @@ export function HeaderTab({ row, mode, draft, setDraft }: HeaderTabProps) {
           specKey={row.spec_key}
           value={SELF_KEY}
           savedWords={row.synonyms?.[SELF_KEY] ?? EMPTY_WORDS}
+          alsoOn={row.also_on}
           emptyMessage="No other names yet."
           addPlaceholder="e.g. oz"
           onAdd={(word) =>

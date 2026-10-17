@@ -30,7 +30,8 @@ export const dedupe = (list: string[]) => Array.from(new Set(list));
  */
 export interface SpecKeyDraft {
   label: string;
-  unit: string;
+  /** What this field means to the chatbot; '' when unset. */
+  parserHint: string;
   /** D12: the seed-key delete refusal tells the user to switch the key off instead. */
   isActive: boolean;
   /** Input string; '' clears the cap (AC-D.3 of the folded plan). */
@@ -98,7 +99,7 @@ export function projectSpecKeyDraft(row: SpecRegistryKey): SpecKeyDraft {
   );
   return {
     label: row.label,
-    unit: row.unit ?? '',
+    parserHint: row.parser_hint ?? '',
     isActive: row.is_active,
     maxValue:
       row.max_value === null || row.max_value === undefined
@@ -149,7 +150,8 @@ export function buildPatchBody(row: SpecRegistryKey, draft: SpecKeyDraft) {
 
   return {
     label: draft.label.trim() || row.label,
-    unit: draft.unit.trim() ? draft.unit.trim() : null,
+    // No unit: it is fixed once saved (changing it would invalidate stored values).
+    parser_hint: draft.parserHint.trim() || null,
     is_active: draft.isActive,
     ...maxValuePayload,
     user_synonyms,

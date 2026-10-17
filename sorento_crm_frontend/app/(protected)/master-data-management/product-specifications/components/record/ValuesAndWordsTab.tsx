@@ -300,16 +300,26 @@ export function ValuesAndWordsTab({
             />
           );
         }
+        const others = Array.from(
+          new Set(wordList.flatMap((word) => row.also_on?.[word] ?? [])),
+        );
         return (
-          <button
-            type="button"
-            disabled={mode !== 'edit'}
-            onClick={() => mode === 'edit' && setEditing({ value, column: 'words' })}
-            className={`block w-full truncate text-left ${mode === 'edit' ? 'hover:underline' : ''}`}
-            title={wordList.join(', ')}
-          >
-            {wordList.length > 0 ? wordList.join(', ') : <span className="text-muted-foreground">No words yet</span>}
-          </button>
+          <div className="min-w-0">
+            <button
+              type="button"
+              disabled={mode !== 'edit'}
+              onClick={() => mode === 'edit' && setEditing({ value, column: 'words' })}
+              className={`block w-full truncate text-left ${mode === 'edit' ? 'hover:underline' : ''}`}
+              title={wordList.join(', ')}
+            >
+              {wordList.length > 0 ? wordList.join(', ') : <span className="text-muted-foreground">No words yet</span>}
+            </button>
+            {others.length > 0 && (
+              <span className="block truncate text-xs text-muted-foreground">
+                Also on: {others.join(', ')}
+              </span>
+            )}
+          </div>
         );
       },
       size: 220,
@@ -385,6 +395,7 @@ export function ValuesAndWordsTab({
     valueLabels,
     countByValue,
     row.allowed_values,
+    row.also_on,
   ]);
 
   const table = useReactTable({

@@ -38,6 +38,8 @@ export interface WordsDataGridProps {
   savedWords?: readonly string[];
   emptyMessage?: string;
   addPlaceholder?: string;
+  /** word -> the other specifications that also own it; shown under the word. */
+  alsoOn?: Record<string, string[]>;
 }
 
 interface WordRow {
@@ -66,6 +68,7 @@ export function WordsDataGrid({
   savedWords,
   emptyMessage = 'No words yet.',
   addPlaceholder = 'a word',
+  alsoOn,
 }: WordsDataGridProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -132,16 +135,24 @@ export function WordsDataGrid({
             />
           );
         }
+        const others = alsoOn?.[word] ?? [];
         return (
-          <button
-            type="button"
-            disabled={mode !== 'edit'}
-            onClick={() => mode === 'edit' && setEditing(word)}
-            className={`block w-full truncate text-left ${mode === 'edit' ? 'hover:underline' : ''}`}
-            title={word}
-          >
-            {word}
-          </button>
+          <div className="min-w-0">
+            <button
+              type="button"
+              disabled={mode !== 'edit'}
+              onClick={() => mode === 'edit' && setEditing(word)}
+              className={`block w-full truncate text-left ${mode === 'edit' ? 'hover:underline' : ''}`}
+              title={word}
+            >
+              {word}
+            </button>
+            {others.length > 0 && (
+              <span className="block truncate text-xs text-muted-foreground">
+                Also on: {others.join(', ')}
+              </span>
+            )}
+          </div>
         );
       },
       size: 280,
@@ -201,6 +212,7 @@ export function WordsDataGrid({
     removal.isBlocked,
     removalBusy,
     savedWords,
+    alsoOn,
     onRename,
   ]);
 
