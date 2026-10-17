@@ -198,7 +198,18 @@ def _same_list(items: list[dict[str, Any]], oq: dict[str, Any] | None) -> bool:
 HAND_OVER_OFFER = "hand_over"
 
 
-def _open_question(focus: Focus, oq: dict[str, Any] | None, pending: Any = None) -> dict[str, Any] | None:
+def _offer_just_made(pending: Any, turn_no: int | None) -> bool:
+    """An answered roster whose LAST reply offered the hand-over: the stamp (the miss path's
+    own turn; the roster's birth turn when an older store carries none) is the turn before this
+    one. A fresh roster, or a flag left by an earlier turn, is not an offer."""
+    payload = getattr(pending, "payload", None) or {}
+    if not payload.get("escalate_offered") or not payload.get("answered_positions"):
+        return False
+    stamp = payload.get("offered_at_turn", getattr(pending, "asked_at_turn", None))
+    return isinstance(stamp, int) and isinstance(turn_no, int) and stamp == turn_no - 1
+
+
+def _open_question(focus: Focus, oq: dict[str, Any] | None, pending: Any = None, turn_no: int | None = None) -> dict[str, Any] | None:
     obj = _plain(oq) if oq else {}
     if obj and pending is not None and getattr(pending, "kind", None) in ESCALATION_OFFER_KINDS:
         # A hand-over offer states its kind and the team it would go to (a name, never an id),
@@ -207,7 +218,7 @@ def _open_question(focus: Focus, oq: dict[str, Any] | None, pending: Any = None)
         team = _clean(getattr(pending, "team", None))
         if team:
             obj["hand_over_to"] = team.replace("_", " ")
-    elif obj and pending is not None and (getattr(pending, "payload", None) or {}).get("escalate_offered"):
+    elif obj and pending is not None and _offer_just_made(pending, turn_no):
         # An answered roster the reply followed with a hand-over offer (contract 36 keeps the
         # roster stored, stamped): the open question is that offer, not a pick still owed.
         obj["offer"] = HAND_OVER_OFFER
@@ -234,7 +245,7 @@ def _open_question(focus: Focus, oq: dict[str, Any] | None, pending: Any = None)
 def view(state: State, open_question: dict[str, Any] | None) -> dict[str, Any]:
     """The state as one plain, key-free dict: what the parser is shown and what the trace logs."""
     focus = state.focus
-    oq = _open_question(focus, open_question, state.pending)
+    oq = _open_question(focus, open_question, state.pending, state.turn_no)
     items = [i for i in (_list_item(r) for r in (focus.last_list or []) if isinstance(r, dict)) if i]
     stock_is_question = question_mod.is_the_stock_question(open_question)
     task = None if stock_is_question else task_mod.open_question(focus.tasks)
