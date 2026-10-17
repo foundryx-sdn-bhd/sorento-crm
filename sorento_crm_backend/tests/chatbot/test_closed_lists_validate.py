@@ -214,3 +214,18 @@ def test_under_the_gate_an_untagged_file_ask_reads_no_word_and_is_asked():
     bare = {**_verdict(), "closed_lists": True, "user_goal": "wants the cert"}
     assert derive_require(bare, message_text="any cert?") is None
 
+
+
+def test_an_items_own_name_outranks_another_items_word(db):
+    """"PPS" is the scheme's own name and also a word of the Certification type: it is the
+    scheme (the live check on a synthetic 'which basin got pps cert' read it as the kind)."""
+    certs = db.query(AttachmentType).filter(AttachmentType.code == "certification").one()
+    certs.description = "cert, certificate, pps"
+    db.add(Certificate(
+        id=str(uuid.uuid4()), attachment_type_id=certs.id, scheme="PPS",
+        certificate_number=unique_code("CERT")[:120], status="active", company_id=None,
+    ))
+    db.flush()
+
+    [scheme] = _ground(db, _file_entity("pps", "PPS"))
+    assert (scheme["listed"], scheme["canonical_code"]) == ("cert_scheme", "PPS")
