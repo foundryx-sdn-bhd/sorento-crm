@@ -18,6 +18,7 @@ Requires from `scripts/chatbot_eval/replay.py`:
 """
 from __future__ import annotations
 
+import copy
 import json
 
 import pytest
@@ -44,6 +45,20 @@ def chat(row, turns, *, conv="c1", start=None, run=1):
             it["start"] = start
         out.append(it)
     return out
+
+
+HELD = {"focus": {"products": [{"canonical_code": "SRTSYN-HELD", "raw": "SRTSYN-HELD"}]}, "open_question": None,
+        "ideation": None, "access_levels": None, "contains_flyer": None, "reply_language": "en"}
+
+
+def holding(row):
+    """The recorded row with a non-empty memory before the turn (the `received` record's session_vars), so a test
+    can tell the recorded memory from an empty one."""
+    row = copy.deepcopy(row)
+    rec = next(r for r in row["trace"] if isinstance(r, dict) and r.get("stage") == "received")
+    rec.setdefault("raw", {})["session_vars"] = {"session_vars": copy.deepcopy(HELD)}
+    assert replay_mod._recorded_memory(row) == HELD
+    return row
 
 
 def run(session_factory, row, items, chain=True):
@@ -89,12 +104,14 @@ def test_turn_two_starts_from_the_memory_turn_one_left(session_factory, recorded
 
 
 def test_turn_one_starts_from_the_recorded_memory(session_factory, recorded, live_env):
-    run(session_factory, recorded, chat(recorded, [ONE, TWO]))
-    assert _state(live_env["envelopes"][0]) == replay_mod._recorded_memory(recorded)
+    row = holding(recorded)
+    run(session_factory, row, chat(row, [ONE, TWO]))
+    assert _state(live_env["envelopes"][0]) == HELD
 
 
 def test_a_fresh_start_runs_turn_one_on_empty_memory(session_factory, recorded, live_env):
-    run(session_factory, recorded, chat(recorded, [ONE, TWO], start="empty"))
+    row = holding(recorded)
+    run(session_factory, row, chat(row, [ONE, TWO], start="empty"))
     assert _state(live_env["envelopes"][0]) == {}
 
 
