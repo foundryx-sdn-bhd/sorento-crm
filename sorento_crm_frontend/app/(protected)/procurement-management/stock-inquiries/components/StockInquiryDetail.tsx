@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Edit, Trash2, FileDown, Printer, Send, Link2, ExternalLink, CheckCircle, XCircle, RotateCcw, MessageSquare, ArrowUpCircle, Ban, UserRoundCog } from 'lucide-react';
+import { Check, Edit, Plus, Trash2, FileDown, Printer, Send, Link2, ExternalLink, CheckCircle, XCircle, RotateCcw, MessageSquare, ArrowUpCircle, Ban, UserRoundCog } from 'lucide-react';
 import { getFormSLATrackers, escalateFormTracking } from '@/app/(protected)/sla-management/_shared/formSLAService';
 import { SlaActiveTrackerControls } from '@/app/(protected)/sla-management/_shared/SlaActiveTrackerControls';
 import { SlaExtendMenuItem, SlaExtendDialog } from '@/app/(protected)/sla-management/_shared/SlaExtendAction';
@@ -72,6 +73,7 @@ import { useHasPermission } from '@/hooks/usePermissions';
 import StockInquiryDeleteDialog from './stock-inquiry-delete-dialog';
 import AuditTrail from '@/components/audit/AuditTrail';
 import { stockInquiriesPagerQuery } from '../hooks/useStockInquiries';
+import { useStockInquiryApplicationsQuery } from '../../new-product-applications/hooks/useNewProductApplications';
 import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
 import DetailActions from '@/components/common/DetailActions';
 import { EntityDownloadsButton } from '@/components/my-downloads/EntityDownloadsButton';
@@ -168,6 +170,19 @@ export default function StockInquiryDetail({
   const canPurchasingReject = useHasPermission('procurement.stock_inquiries.purchasing_reject');
   const canReopen = useHasPermission('procurement.stock_inquiries.reopen');
   const canVoid = useHasPermission('procurement.stock_inquiries.void');
+  // New product applications raised from this inquiry (NEW-PRODUCT-APP). The row is for users
+  // who hold any application permission; the gear item starts one and needs `create`.
+  const canCreateApplication = useHasPermission('procurement.new_product_applications.create');
+  const canSeeApplications = [
+    useHasPermission('procurement.new_product_applications.view'),
+    canCreateApplication,
+    useHasPermission('procurement.new_product_applications.approve'),
+    useHasPermission('procurement.new_product_applications.open_code'),
+  ].some(Boolean);
+  const { data: applications } = useStockInquiryApplicationsQuery(
+    isValidId ? inquiryId : null,
+    canSeeApplications,
+  );
   const voidMutation = useFormVoid('procurement/stock-inquiries', inquiryId, {
     queryKeysToInvalidate: [['stock-inquiry', inquiryId]],
   });
@@ -565,6 +580,18 @@ export default function StockInquiryDetail({
                 <FileDown className="size-4" />
                 {exporting ? 'Exporting…' : 'Export to Excel'}
               </DropdownMenuItem>
+              {inquiry.status === 'responded' && canCreateApplication && (
+                <DropdownMenuItem
+                  onClick={() =>
+                    router.push(
+                      `/procurement-management/new-product-applications/new?stock_inquiry_id=${inquiryId}`,
+                    )
+                  }
+                >
+                  <Plus className="size-4" />
+                  Create new product application
+                </DropdownMenuItem>
+              )}
               {canVoid && !isVoided && !formAction.ctasDisabled && (
                 <DropdownMenuItem
                   variant="destructive"
@@ -1168,6 +1195,32 @@ export default function StockInquiryDetail({
             </div>
           </div>
         </InquiryFormTableRow>
+        {canSeeApplications && (
+          <InquiryFormTableRow label="New product applications" labelClassName="items-start pt-3">
+            {applications && applications.length > 0 ? (
+              <ul className="space-y-1.5 py-2 text-sm">
+                {applications.map((a) => (
+                  <li key={a.id} className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/procurement-management/new-product-applications/${a.id}`}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {a.application_no}
+                    </Link>
+                    <span className={`${STATUS_PILL_BASE} ${statusPillClass(a.status)}`}>
+                      {a.status_label}
+                    </span>
+                    {a.opened_codes.length > 0 && (
+                      <span className="break-words">{a.opened_codes.join(', ')}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <InquiryReadValue>None yet</InquiryReadValue>
+            )}
+          </InquiryFormTableRow>
+        )}
         {(inquiry.last_responded_at || inquiry.last_responded_by) && (
           <>
             <InquiryFormTableRow label="Last responded by">
