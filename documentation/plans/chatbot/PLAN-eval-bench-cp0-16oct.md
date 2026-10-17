@@ -1,6 +1,6 @@
 # PLAN: EVAL-BENCH CP0, the bench check against the owner's targets (16 Oct)
 
-Status: Review, both owner CP0 review rounds and the CHAT-STATE root-cause classes applied (grader rounds 28 to 30f, 17 Oct; spend $11.96 of $12, regrade $0); CP0 closes when #1745 merges. Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
+Status: Build (follow-ups). CP0 closed: #1745 merged 17 Oct (8707b950e) with both owner CP0 review rounds and the CHAT-STATE root-cause classes applied (grader rounds 28 to 30f; spend $11.96 of $12, regrade $0). Open on the small fix track: the live runner prompt pin and the 4 rootcause-r2 grader/gold items (last section). Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
 gold and the review page live under `crew/state/eval/` (crew-only).
 
 ## The owner's bar (crew relay, 16 Oct)
@@ -341,3 +341,31 @@ old failures were bench artifacts, every flip hand-checked; reply to my question
 price tier before finding any product, five run results, now fail), attachment 61.5 / 53.8 / 65.4, customer access
 97.5 / 95.0 / 92.5 (was 91.7 mean); leaks 2 replies per run (#1648); made-up 0 confirmed.
 
+
+## Follow-ups after CP0 (17 Oct, small fix track)
+
+- Release fix #1757: `test_replay_live.py` (#1745) listed in `tests/chatbot/test_import_boundary.py` next to
+  `test_replay.py` (bench tooling, not core, not on a request path).
+- Live runner prompt pin (`replay.py live --prompt-version-id ID`): a lane measures an unlabelled parser prompt
+  version without moving the production label. The id goes onto every dry-run payload as the parser prompt
+  override and into each row's provenance as `prompt_version_id`. The CLI fails closed before any item runs if the
+  id is not a `chatbot_semantic_parser` version. A turn whose prompt version is None records no id. Used for S6
+  (#1755, v158 pinned): 342 turns per arm, USD 4.11.
+- rootcause-r2 (CHAT-STATE, 17 Oct): 4 grader/gold items for this lane (round 31).
+  - 34166492fe (grader, round 31a, red-first): the bot holds the order in memory `focus.after.extra.order` with no
+    products, and `_subject_after` read only products, so `new_subject` failed 8/8. The after-focus order now counts
+    as the subject after when no product code is held (products first, then the held order, then the lookup's own
+    strings). An order held only before the turn, or an entry with no number, does not count.
+  - 620ea78a75 (gold, crew `apply_gold_fixes.py`): the literal "20pcs" was read as a code with no family, which
+    skipped the round-30 family rule. A quantity (`QTY_RE`, unless the literal is itself an exact catalogue code) is
+    now no code literal, like a size, so the typed code's 5-variant family makes the gold `ambiguous`. Re-derived
+    from the original gold: only this item changes.
+  - 4dfbcd267e (bench, crew `reexport.py`): ideas-lane items cannot run live (train_followups README), and the train
+    export still carried 2 of them (4dfbcd267e, 99bb47ce6d). The export now drops `ideas` items: 86 -> 84.
+  - c7ec5f1c31: HELD (crew, 17 Oct, asking the owner). No change to the bot, the grader or the gold. The bot's picker
+    is the sibling picker that `lanes/business/answer.py:4846-4848` documents as an owner ruling ("ALWAYS a numbered
+    picker whenever at least one sibling exists ... the owner reversed the earlier split"). The grader's round 25
+    rule (`targets.py` `_picker_check`: a list left open is a picker unless the gold is `ambiguous`, except on spec
+    answers) fails it. The same rule decides held-out rows that fail on `no_picker` alone: per run 1/2/3, code
+    lookups 13 / 13 / 14 of 149, attachment 1 / 1 / 0, follow-ups 4 / 4 / 4, scope 1 / 2 / 3 (UNVERIFIED how many of
+    them are sibling pickers). The owner's answer decides whether that rule changes.

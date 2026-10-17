@@ -616,11 +616,10 @@ def test_every_company_id_table_is_registered():
     # + 2 (STOCK-DEBT-SNAPSHOT): `stock_debt_snapshots` and `stock_debt_snapshot_rows`, one
     #   company's frozen Stock Debt view and its rows (customer demand, OI numbers and
     #   decisions); every read is by snapshot within the company = 164.
+    # + 1 (SR-CORE #1718): `sample_requests`, one company's sample requests = 165.
     # + 3 (SALES-TARGET-DEALER): `sales.target_accounts` (a dealer target's counted accounts),
     #   `sales.target_tier_rates` (a tier's per-account rate) and `sales.point_ratios` (one
-    #   company's dated point-to-RM ratio); each is one company's own scheme data = 167.
-    # + 1 (SR-CORE, #1718): `sample_requests`, one company's own consignment requisition
-    #   (`SR-000001`), read by project within the company = 168.
+    #   company's dated point-to-RM ratio); each is one company's own scheme data = 168.
     expected_owned = 168
     assert len(owned) == expected_owned, (
         f"expected {expected_owned} owned tables, found {len(owned)}: {sorted(owned)}"

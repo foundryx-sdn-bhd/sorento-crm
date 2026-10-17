@@ -183,8 +183,11 @@ def _subject_after(row: dict[str, Any]) -> set[str]:
     if _has_memory_after(row):
         # the memory event exists: its after focus is the truth, and an empty one means the bot dropped the subject.
         # The state event (the subject BEFORE the turn) and the tool args must not stand in for it; only the lookup's
-        # own strings (an order or delivery number is no product) can name a non-product subject.
-        return codes or _lookup_subjects(row)
+        # own strings (an order or delivery number is no product) can name a non-product subject. An order the memory
+        # holds in its after focus (extra.order) is the subject when no product is: products first, order second.
+        held = {_key(o["raw"]) for o in ((_mem_focus(row, "after").get("extra") or {}).get("order") or [])
+                if isinstance(o, dict) and isinstance(o.get("raw"), str) and o["raw"].strip()}
+        return codes or held or _lookup_subjects(row)
     # older / hand-built rows: the first source that names anything wins; the tool args are the last resort (a lookup
     # that answered with entities of its own outranks the literal terms the tool was called with)
     return (codes or _codes_of((_kind(row, "state").get("focus") or {}).get("products"))
