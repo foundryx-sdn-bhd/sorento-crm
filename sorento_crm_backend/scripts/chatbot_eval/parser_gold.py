@@ -142,6 +142,9 @@ def run_live(rows: list[dict[str, Any]], *, session_factory: Any, version_id: st
 
     from app.services.chatbot.head import parser
     from scripts.chatbot_eval import replay
+    from app.services.company_scope import register_company_scope_listeners
+
+    register_company_scope_listeners()  # idempotent; without it set_company_scope filters nothing
 
     if not replay._valid_last4(require_key_last4):
         raise ValueError("require_key_last4 must be exactly 4 non-blank characters")
