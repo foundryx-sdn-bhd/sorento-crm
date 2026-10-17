@@ -18,7 +18,7 @@ import { useDeferredAction } from '@/hooks/useDeferredAction';
 import { readableValue } from '@/lib/spec-readable';
 import { useSpecKeyProductsQuery } from '../../hooks/useSpecKeyProductsQuery';
 import { SPEC_REGISTRY_QUERY_KEY } from '../../hooks/useSpecRegistryQuery';
-import { dedupe, seedValuesFor, seedWordsFor, type SpecKeyDraft } from '../../hooks/useSpecKeyRecord';
+import { dedupe, seedValuesFor, seedWordsFor, type SpecKeyDraft, type WordError } from '../../hooks/useSpecKeyRecord';
 import type { SpecRegistryKey } from '../../types/productSpec.types';
 
 /** `_self` names the specification itself, never a choice (D7); this tab never
@@ -48,6 +48,8 @@ export interface ValuesAndWordsTabProps {
   setDraft: (updater: (draft: SpecKeyDraft) => SpecKeyDraft) => void;
   /** The empty state's CTA enters edit mode on this tab (B.3). */
   onEnterEdit: () => void;
+  /** A refused word, shown under the row it was added to. */
+  wordError?: WordError | null;
 }
 
 interface ChoiceRow {
@@ -72,6 +74,7 @@ export function ValuesAndWordsTab({
   draft,
   setDraft,
   onEnterEdit,
+  wordError,
 }: ValuesAndWordsTabProps) {
   const isBoolean = row.data_type === 'boolean';
   const isNumeric = row.data_type === 'numeric';
@@ -300,16 +303,33 @@ export function ValuesAndWordsTab({
             />
           );
         }
+        const others = Array.from(
+          new Set(wordList.flatMap((word) => row.also_on?.[word] ?? [])),
+        );
         return (
-          <button
-            type="button"
-            disabled={mode !== 'edit'}
-            onClick={() => mode === 'edit' && setEditing({ value, column: 'words' })}
-            className={`block w-full truncate text-left ${mode === 'edit' ? 'hover:underline' : ''}`}
-            title={wordList.join(', ')}
-          >
-            {wordList.length > 0 ? wordList.join(', ') : <span className="text-muted-foreground">No words yet</span>}
-          </button>
+          <div className="min-w-0">
+            <button
+              type="button"
+              disabled={mode !== 'edit'}
+              onClick={() => mode === 'edit' && setEditing({ value, column: 'words' })}
+              className={`block w-full truncate text-left ${mode === 'edit' ? 'hover:underline' : ''}`}
+              title={wordList.join(', ')}
+            >
+              {wordList.length > 0 ? wordList.join(', ') : <span className="text-muted-foreground">No words yet</span>}
+            </button>
+            {others.length > 0 && (
+              <span className="block truncate text-xs text-muted-foreground">
+                Also on: {others.join(', ')}
+              </span>
+            )}
+            {mode === 'edit' &&
+              wordError &&
+              (wordError.value === value || (wordError.value === null && wordError.word === value)) && (
+                <span role="alert" className="block text-xs text-destructive">
+                  {wordError.message}
+                </span>
+              )}
+          </div>
         );
       },
       size: 220,
@@ -385,6 +405,8 @@ export function ValuesAndWordsTab({
     valueLabels,
     countByValue,
     row.allowed_values,
+    row.also_on,
+    wordError,
   ]);
 
   const table = useReactTable({

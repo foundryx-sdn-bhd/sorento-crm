@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import AuditTrail from '@/components/audit/AuditTrail';
 import { Container } from '@/components/common/container';
 import { PageHeader } from '@/components/common/PageHeader';
 import BackToList from '@/components/common/BackToList';
@@ -30,7 +31,7 @@ const LIST_PATH = '/master-data-management/product-specifications';
 /**
  * The specification record page (B.1-B.8).
  *
- * View and edit share this one layout: the same four tabs in the same order (D15b:
+ * View and edit share this one layout: the same five tabs in the same order (D15b:
  * Header first), the same record card, only the controls each field renders change.
  * `useSpecKeyRecord` owns the draft and the one PATCH Save sends; this component is
  * the wiring - the pager, the tabs, the not-found state, and the unsaved-changes
@@ -44,7 +45,7 @@ export function SpecKeyRecordDetail({ specKey }: { specKey: string }) {
   const { data: keys, isLoading, isError } = useSpecRegistryQuery();
   const row = selectSpecKey(keys, specKey);
   const record = useSpecKeyRecord(row);
-  const { actions, pending } = useSpecKeyActions(row, {
+  const { actions, dialogs, pending } = useSpecKeyActions(row, {
     onDeleted: () => router.push(LIST_PATH),
   });
   // The header's products count and last read time (fix round 5). A failed read
@@ -194,10 +195,17 @@ export function SpecKeyRecordDetail({ specKey }: { specKey: string }) {
             <TabsTrigger value="choices">Choices and words</TabsTrigger>
             <TabsTrigger value="rules">How it is read</TabsTrigger>
             <TabsTrigger value="products">Products</TabsTrigger>
+            <TabsTrigger value="history">History</TabsTrigger>
           </TabsList>
 
           <TabsContent value="details" className="mt-0 focus-visible:outline-none">
-            <HeaderTab row={row} mode={record.mode} draft={record.draft} setDraft={record.setDraft} />
+            <HeaderTab
+              row={row}
+              mode={record.mode}
+              draft={record.draft}
+              setDraft={record.setDraft}
+              wordError={record.wordError}
+            />
           </TabsContent>
 
           <TabsContent value="choices" className="mt-0 focus-visible:outline-none">
@@ -206,6 +214,7 @@ export function SpecKeyRecordDetail({ specKey }: { specKey: string }) {
               mode={record.mode}
               draft={record.draft}
               setDraft={record.setDraft}
+              wordError={record.wordError}
               onEnterEdit={() => {
                 record.edit();
                 setTab('choices');
@@ -232,7 +241,12 @@ export function SpecKeyRecordDetail({ specKey }: { specKey: string }) {
               valueLabels={row.value_labels}
             />
           </TabsContent>
+
+          <TabsContent value="history" className="mt-0 focus-visible:outline-none">
+            <AuditTrail entityType="product_spec_registry" entityId={row.id} title="History" />
+          </TabsContent>
         </Tabs>
+        {dialogs}
       </Container>
     </>
   );

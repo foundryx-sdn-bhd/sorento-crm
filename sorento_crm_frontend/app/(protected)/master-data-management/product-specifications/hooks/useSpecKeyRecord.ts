@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 import { numberFieldError } from '@/lib/number-field';
@@ -30,7 +30,8 @@ export const dedupe = (list: string[]) => Array.from(new Set(list));
  */
 export interface SpecKeyDraft {
   label: string;
-  unit: string;
+  /** What this field means to the chatbot; '' when unset. */
+  parserHint: string;
   /** D12: the seed-key delete refusal tells the user to switch the key off instead. */
   isActive: boolean;
   /** Input string; '' clears the cap (AC-D.3 of the folded plan). */
@@ -50,8 +51,17 @@ export interface SpecKeyDraft {
   rules: SpecDerivationRule[];
 }
 
+/** A refused word (409): which one, the value it was added under (`_self` for an other
+ *  name, null for a new value) and the server's sentence. */
+export interface WordError {
+  word: string;
+  value: string | null;
+  message: string;
+}
+
 export interface UseSpecKeyRecordResult {
   mode: 'view' | 'edit';
+  wordError: WordError | null;
   draft: SpecKeyDraft | null;
   saving: boolean;
   edit: () => void;
@@ -98,7 +108,7 @@ export function projectSpecKeyDraft(row: SpecRegistryKey): SpecKeyDraft {
   );
   return {
     label: row.label,
-    unit: row.unit ?? '',
+    parserHint: row.parser_hint ?? '',
     isActive: row.is_active,
     maxValue:
       row.max_value === null || row.max_value === undefined
@@ -149,7 +159,8 @@ export function buildPatchBody(row: SpecRegistryKey, draft: SpecKeyDraft) {
 
   return {
     label: draft.label.trim() || row.label,
-    unit: draft.unit.trim() ? draft.unit.trim() : null,
+    // No unit: it is fixed once saved (changing it would invalidate stored values).
+    parser_hint: draft.parserHint.trim() || null,
     is_active: draft.isActive,
     ...maxValuePayload,
     user_synonyms,
@@ -171,6 +182,9 @@ export function buildPatchBody(row: SpecRegistryKey, draft: SpecKeyDraft) {
 export function useSpecKeyRecord(row: SpecRegistryKey | undefined): UseSpecKeyRecordResult {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [draft, setDraftState] = useState<SpecKeyDraft | null>(null);
+  const [wordError, setWordError] = useState<WordError | null>(null);
+  // The words the refusal was about, as they stood: any change to them clears it.
+  const refusedWords = useRef<unknown>(null);
   const { update } = useSpecRegistryMutations();
   const queryClient = useQueryClient();
 
@@ -181,6 +195,7 @@ export function useSpecKeyRecord(row: SpecRegistryKey | undefined): UseSpecKeyRe
   }, [row]);
 
   const cancel = useCallback(() => {
+    setWordError(null);
     setDraftState(null);
     setMode('view');
   }, []);
@@ -188,6 +203,18 @@ export function useSpecKeyRecord(row: SpecRegistryKey | undefined): UseSpecKeyRe
   const setDraft = useCallback((updater: (current: SpecKeyDraft) => SpecKeyDraft) => {
     setDraftState((current) => (current ? updater(current) : current));
   }, []);
+
+  const wordsOf = useCallback(
+    (d: SpecKeyDraft | null, value: string | null) =>
+      value === null ? d?.liveValues : d?.words[value],
+    [],
+  );
+
+  useEffect(() => {
+    if (wordError && wordsOf(draft, wordError.value) !== refusedWords.current) {
+      setWordError(null);
+    }
+  }, [draft, wordError, wordsOf]);
 
   const save = useCallback(async () => {
     if (!row || !draft) return false;
@@ -227,18 +254,31 @@ export function useSpecKeyRecord(row: SpecRegistryKey | undefined): UseSpecKeyRe
       toast.success(
         `Saved. ${updated.products_updated} product${updated.products_updated === 1 ? '' : 's'} updated.`,
       );
+      setWordError(null);
       setDraftState(null);
       setMode('view');
       return true;
-    } catch {
+    } catch (error) {
+      // Matched by name, not `instanceof`: the service's `SpecWordRefusedError` is the
+      // only thing that carries a `word` here.
+      const refused = error as { name?: string; word?: unknown; value?: string | null; message?: string };
+      if (refused?.name === 'SpecWordRefusedError' && typeof refused.word === 'string') {
+        refusedWords.current = wordsOf(draft, refused.value ?? null);
+        setWordError({
+          word: refused.word,
+          value: refused.value ?? null,
+          message: refused.message ?? '',
+        });
+      }
       // useSpecRegistryMutations already toasted the reason; leave the session
       // open so nothing typed is lost and the refused field can be corrected.
       return false;
     }
-  }, [row, draft, update, queryClient]);
+  }, [row, draft, update, queryClient, wordsOf]);
 
   return {
     mode,
+    wordError,
     draft,
     saving: update.isPending,
     edit,

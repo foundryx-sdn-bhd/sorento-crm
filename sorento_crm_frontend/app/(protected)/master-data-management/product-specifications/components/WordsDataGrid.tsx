@@ -38,6 +38,10 @@ export interface WordsDataGridProps {
   savedWords?: readonly string[];
   emptyMessage?: string;
   addPlaceholder?: string;
+  /** word -> the other specifications that also own it; shown under the word. */
+  alsoOn?: Record<string, string[]>;
+  /** A refused word: its sentence shows under the row holding that word (edit mode). */
+  error?: { word: string; message: string } | null;
 }
 
 interface WordRow {
@@ -66,6 +70,8 @@ export function WordsDataGrid({
   savedWords,
   emptyMessage = 'No words yet.',
   addPlaceholder = 'a word',
+  alsoOn,
+  error,
 }: WordsDataGridProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -132,16 +138,29 @@ export function WordsDataGrid({
             />
           );
         }
+        const others = alsoOn?.[word] ?? [];
         return (
-          <button
-            type="button"
-            disabled={mode !== 'edit'}
-            onClick={() => mode === 'edit' && setEditing(word)}
-            className={`block w-full truncate text-left ${mode === 'edit' ? 'hover:underline' : ''}`}
-            title={word}
-          >
-            {word}
-          </button>
+          <div className="min-w-0">
+            <button
+              type="button"
+              disabled={mode !== 'edit'}
+              onClick={() => mode === 'edit' && setEditing(word)}
+              className={`block w-full truncate text-left ${mode === 'edit' ? 'hover:underline' : ''}`}
+              title={word}
+            >
+              {word}
+            </button>
+            {others.length > 0 && (
+              <span className="block truncate text-xs text-muted-foreground">
+                Also on: {others.join(', ')}
+              </span>
+            )}
+            {mode === 'edit' && error && error.word === word && (
+              <span role="alert" className="block text-xs text-destructive">
+                {error.message}
+              </span>
+            )}
+          </div>
         );
       },
       size: 280,
@@ -201,6 +220,8 @@ export function WordsDataGrid({
     removal.isBlocked,
     removalBusy,
     savedWords,
+    alsoOn,
+    error,
     onRename,
   ]);
 

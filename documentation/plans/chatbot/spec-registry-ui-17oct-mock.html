@@ -1,0 +1,232 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spec registry mock</title><style>
+:root{--bg:#ffffff;--fg:#0a0a0a;--muted:#f4f4f5;--muted-fg:#71717a;--border:#e4e4e7;
+--primary:#1b84ff;--primary-fg:#fff;--primary-soft:#eef5ff;--danger:#f8285a;--danger-soft:#ffeef3;
+--ok:#17c653;--ok-soft:#eafff1;--warn:#f6b100;--warn-soft:#fff8dd;--violet:#7239ea;--violet-soft:#f8f5ff;
+--pin:#f8285a;--note-bg:#fffbe6;--radius:8px;--shadow:0 8px 24px rgba(0,0,0,.12)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0b0d;--fg:#f4f4f5;--muted:#18181b;
+--muted-fg:#a1a1aa;--border:#2e2e33;--primary-soft:#0f2742;--danger-soft:#3a0f1a;--ok-soft:#0d2d1a;--warn-soft:#332600;
+--violet-soft:#23163f;--note-bg:#2a2410;--shadow:0 8px 24px rgba(0,0,0,.5)}}
+:root[data-theme="dark"]{--bg:#0b0b0d;--fg:#f4f4f5;--muted:#18181b;--muted-fg:#a1a1aa;--border:#2e2e33;
+--primary-soft:#0f2742;--danger-soft:#3a0f1a;--ok-soft:#0d2d1a;--warn-soft:#332600;--violet-soft:#23163f;
+--note-bg:#2a2410;--shadow:0 8px 24px rgba(0,0,0,.5)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.mk{container-type:inline-size;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.45}
+.mk .app{display:grid;grid-template-columns:210px minmax(0,1fr)}
+.mk .side{border-right:1px solid var(--border);background:var(--muted);padding:14px 10px;font-size:13px}
+.mk .brand{font-weight:700;padding:4px 8px 12px}
+.mk .nav div{padding:6px 8px;border-radius:6px;color:var(--muted-fg)}
+.mk .nav .grp{font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding-top:12px}
+.mk .nav .on{background:var(--bg);color:var(--fg);font-weight:600}
+.mk .top{display:none;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);font-weight:600}
+.mk .burger{width:18px;height:12px;border-top:2px solid var(--fg);border-bottom:2px solid var(--fg);position:relative}
+.mk .burger:after{content:"";position:absolute;left:0;right:0;top:3px;border-top:2px solid var(--fg)}
+.mk .main{padding:20px 24px;min-width:0}
+.mk .crumbs{font-size:12px;color:var(--muted-fg)}
+.mk .ph{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:4px 0 14px;flex-wrap:wrap}
+.mk .ph h1{margin:0;font-size:20px;font-weight:600}
+.mk .sub{color:var(--muted-fg);font-size:13px}
+.mk .tabs{display:flex;gap:18px;border-bottom:1px solid var(--border);margin-bottom:16px;overflow-x:auto;white-space:nowrap}
+.mk .tabs span{padding:8px 0;color:var(--muted-fg);font-size:13px}
+.mk .tabs .on{color:var(--fg);font-weight:600;border-bottom:2px solid var(--primary)}
+.mk .card{border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);margin-bottom:16px}
+.mk .card-h{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.mk .card-h h3{margin:0;font-size:15px;font-weight:600}
+.mk .card-b{padding:14px 16px}
+.mk .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.mk .row{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px;align-items:center;padding:9px 0;border-bottom:1px dashed var(--border)}
+.mk .row:last-child{border-bottom:0}
+.mk .row label{font-size:13px}
+.mk .val{font-size:13px}
+.mk .muted{color:var(--muted-fg)}
+.mk .sw{display:inline-block;width:36px;height:20px;border-radius:10px;background:var(--border);position:relative;vertical-align:middle}
+.mk .sw:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.mk .sw.on{background:var(--primary)}
+.mk .sw.on:after{left:18px}
+.mk .swrow{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.mk .sel{display:flex;align-items:center;gap:6px;min-height:34px;border:1px solid var(--border);border-radius:6px;padding:4px 8px 4px 10px;background:var(--bg);font-size:13px;flex-wrap:wrap;position:relative}
+.mk .sel .v{flex:1;min-width:60px}
+.mk .sel .ph2{flex:1;color:var(--muted-fg)}
+.mk .sel .x{color:var(--muted-fg);font-size:14px;padding:0 2px}
+.mk .sel .chev{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--muted-fg)}
+.mk .sel.focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.mk .menu{border:1px solid var(--border);border-radius:6px;background:var(--bg);box-shadow:var(--shadow);margin-top:4px;padding:4px;font-size:13px}
+.mk .menu .search{border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--muted-fg);margin-bottom:4px}
+.mk .menu .opt{padding:6px 8px;border-radius:4px;display:flex;justify-content:space-between;gap:8px}
+.mk .menu .opt.hl{background:var(--muted)}
+.mk .menu .opt .tick{color:var(--primary);font-weight:700}
+.mk .comp{display:inline-block;font:500 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--violet);background:var(--violet-soft);border-radius:4px;padding:3px 5px;margin-left:6px;vertical-align:middle}
+.mk .chip{display:inline-flex;align-items:center;gap:4px;background:var(--muted);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:12px}
+.mk .badge{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600;white-space:nowrap}
+.mk .b-crm{background:var(--muted);color:var(--muted-fg);border:1px solid var(--border)}
+.mk .b-learned{background:var(--primary-soft);color:var(--primary)}
+.mk .b-said{background:var(--ok-soft);color:#0f8a3a}
+.mk .b-staff{background:var(--violet-soft);color:var(--violet)}
+.mk .b-warn{background:var(--warn-soft);color:#a06c00}
+.mk .b-over{background:var(--warn-soft);color:#a06c00}
+.mk .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--bg);border-radius:6px;padding:5px 10px;font-size:13px;white-space:nowrap}
+.mk .btn.pr{background:var(--primary);border-color:var(--primary);color:var(--primary-fg)}
+.mk .btn.cd{background:var(--danger-soft);border-color:var(--danger);color:var(--danger)}
+.mk .ib{display:inline-flex;width:26px;height:26px;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:6px;font-size:12px;color:var(--muted-fg)}
+.mk .dg{border:1px solid var(--border);border-radius:6px;overflow:hidden;font-size:13px}
+.mk .dg-h,.mk .dg-r{display:grid;grid-template-columns:var(--cols);gap:10px;padding:8px 12px;align-items:center}
+.mk .dg-h{background:var(--muted);font-size:12px;color:var(--muted-fg);font-weight:600}
+.mk .dg-r{border-top:1px solid var(--border)}
+.mk .dg-r.live{background:var(--primary-soft)}
+.mk .dg-r.del{background:var(--danger-soft)}
+.mk .dg-r>div{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mk .dg-r>div.wr{white-space:normal}
+.mk .row.inl{grid-template-columns:minmax(0,1fr) auto}
+.mk .empty{border:1px dashed var(--border);border-radius:6px;padding:18px;text-align:center;color:var(--muted-fg);font-size:13px}
+.mk .pin{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--pin);color:#fff;font:700 11px/1 system-ui,sans-serif;margin:0 4px;vertical-align:middle;flex:none}
+.mk .modal-wrap{background:rgba(10,10,10,.35);padding:28px 16px;border-radius:var(--radius);margin-top:16px}
+.mk .modal{max-width:460px;margin:0 auto;background:var(--bg);border-radius:10px;box-shadow:var(--shadow);border:1px solid var(--border)}
+.mk .modal .mh{padding:14px 16px;border-bottom:1px solid var(--border);font-weight:600;display:flex;justify-content:space-between}
+.mk .modal .mb{padding:14px 16px;display:grid;gap:12px}
+.mk .modal .mf{padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.mk .fl{display:grid;gap:6px}
+.mk .fl label{font-size:13px;font-weight:500}
+.mk .input{border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px}
+.mk .drawer-wrap{display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.mk .drawer-bg{background:var(--muted);padding:12px;opacity:.75}
+.mk .drawer{border-left:1px solid var(--border);background:var(--bg);box-shadow:var(--shadow)}
+.mk .dr-h{padding:14px 16px;border-bottom:1px solid var(--border)}
+.mk .dr-b{padding:14px 16px;display:grid;gap:14px}
+.mk .sec h4{margin:0 0 8px;font-size:13px;font-weight:600}
+.mk .kv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:6px 12px;font-size:13px}
+.mk .kv>div:nth-child(odd){color:var(--muted-fg)}
+.mk .stage{display:grid;grid-template-columns:18px 110px minmax(0,1fr) 60px;gap:8px;align-items:start;font-size:13px;padding:6px 0;border-bottom:1px dashed var(--border)}
+.mk .dot{width:10px;height:10px;border-radius:50%;background:var(--ok);margin-top:4px}
+.mk .dot.q{background:var(--warn)}
+.mk .bar{height:8px;border-radius:4px;background:var(--muted);overflow:hidden}
+.mk .bar i{display:block;height:100%;background:var(--primary)}
+.mk .layer{display:grid;grid-template-columns:170px minmax(0,1fr) 70px;gap:10px;align-items:center;font-size:12px;padding:3px 0}
+.mk .r{text-align:right}
+.mk .notes{margin:10px 0 0;padding:12px 14px;background:var(--note-bg);border-radius:var(--radius);font-size:13px;display:grid;gap:6px}
+.mk .notes div{display:flex;gap:6px;align-items:flex-start}
+.mk .hide-n{display:inline}
+.mk .only-n{display:none}
+@container (max-width:760px){
+ .mk .app{grid-template-columns:1fr}
+ .mk .side{display:none}
+ .mk .top{display:flex}
+ .mk .main{padding:14px 16px}
+ .mk .cols{grid-template-columns:1fr}
+ .mk .row{grid-template-columns:1fr;gap:6px}
+ .mk .row.inl{grid-template-columns:minmax(0,1fr) auto}
+ .mk .dg-h{display:none}
+ .mk .dg-r{grid-template-columns:1fr;gap:3px;padding:10px 12px}
+ .mk .dg-r>div{white-space:normal}
+ .mk .dg-r>div[data-l]:before{content:attr(data-l) ": ";color:var(--muted-fg);font-size:12px}
+ .mk .drawer-wrap{grid-template-columns:1fr}
+ .mk .drawer-bg{display:none}
+ .mk .drawer{border-left:0}
+ .mk .stage{grid-template-columns:18px minmax(0,1fr) 50px}
+ .mk .stage .sn{grid-column:2}
+ .mk .stage .sd{grid-column:2 / 4}
+ .mk .layer{grid-template-columns:minmax(0,1fr) 60px}
+ .mk .layer .bar{grid-column:1 / 3;grid-row:2}
+ .mk .kv{grid-template-columns:1fr}
+ .mk .kv>div:nth-child(odd){margin-top:6px}
+ .mk .hide-n{display:none}
+ .mk .only-n{display:inline}
+}
+.mk .ta{border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;min-height:58px;background:var(--bg)}
+.mk .ta.focus,.mk .input.focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.mk .err{color:var(--danger);font-size:12px}
+.mk .input.bad{border-color:var(--danger)}
+.mk .ro{font-size:13px;color:var(--fg)}
+.mk .count{font-size:11px;color:var(--muted-fg);text-align:right}
+.mk .shot{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin:10px 0 28px}
+.mk .shot-t{font-size:12px;font-weight:600;color:var(--muted-fg);padding:8px 12px;border-bottom:1px solid var(--border);background:var(--muted)}
+.mk .meta{display:flex;gap:28px;flex-wrap:wrap;font-size:13px;margin:0 0 14px}
+.mk .meta dt{font-size:12px;color:var(--muted-fg)}
+.mk .meta dd{margin:0}
+.mk .phone{width:375px;max-width:100%;margin:0 auto;border:8px solid var(--border);border-radius:24px;overflow:hidden}
+.mk .arrow{font-weight:700;color:var(--primary)}
+.mk .strike{text-decoration:line-through;color:var(--muted-fg)}
+.mk table.map{width:100%;border-collapse:collapse;font-size:12px}
+.mk table.map td,.mk table.map th{border-top:1px solid var(--border);padding:6px 8px;text-align:left;vertical-align:top}
+.mk table.map code{font-size:11px}
+.mk .doc{max-width:980px;margin:0 auto;padding:20px 16px}
+.mk .doc h2{font-size:16px;margin:28px 0 6px}
+.mk .doc p{margin:4px 0 8px;color:var(--muted-fg);font-size:13px}
+.mk .comp{white-space:normal;overflow-wrap:anywhere;max-width:100%}
+.mk code{overflow-wrap:anywhere}
+.mk .shot,.mk .main,.mk .app>div{min-width:0;max-width:100%}
+.mk .modal-wrap{padding:16px 8px}
+.mk .menu .opt{flex-wrap:wrap}
+@media (max-width:600px){.mk table.map,.mk table.map tbody,.mk table.map tr,.mk table.map td{display:block}.mk table.map th{display:none}.mk table.map tr{border-top:1px solid var(--border);padding:6px 0}.mk table.map td{border:0;padding:2px 8px}}
+</style></head><body><div class="mk"><div class="doc">
+<h2 style="margin-top:0">SPEC-REGISTRY-UI mock (17 Oct 2026)</h2>
+<p>Extends the existing Product Specifications record page; no new settings screen. Purple tags name the component. Field rows and words are the shipped registry seed (already public in code); the Try message is a made-up example of the miss crew found.</p>
+<h2>1. Details tab, editing a field</h2><p>The owner gives Trap outlet length a chatbot meaning, adds a word, and is refused &quot;length&quot;, which is already Length's word.</p>
+<div class="shot"><div class="shot-t">1280px</div><div class="app"><aside class="side"><div class="brand">Sorento CRM</div><div class="nav">
+<div class="grp">Master Data</div><div>Products</div><div class="on">Product Specifications</div><div>Brands</div><div>Certificates</div>
+<div class="grp">Resources</div><div>Attachment Types</div>
+<div class="grp">System</div><div>Lookup Sets</div><div>Chatbot Console</div><div>Audit Logs</div></div></aside><div><div class="top"><span class="burger"></span>Product Specifications</div><main class="main"><div class="crumbs">Master Data / Product Specifications / Trap outlet length</div>
+<div class="ph"><h1>Trap outlet length <span class="comp">PageHeader</span></h1>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="muted" style="font-size:12px">&lsaquo; 12 / 40 &rsaquo;</span><span class="comp">ListPager</span>
+<span class="ib" title="More">&#9881;</span><span class="btn pr">Save</span><span class="comp">DetailActions</span></div></div>
+<dl class="meta"><div><dt>Type</dt><dd>Number (mm)</dd></div><div><dt>Choices</dt><dd>-</dd></div><div><dt>Products</dt><dd>738</dd></div><div><dt>Last read</dt><dd>17 Oct 2026, 09:12</dd></div><span class="comp">SpecKeyRecordCard</span></dl>
+<div class="tabs"><span class="on">Details</span><span class="">Choices and words</span><span class="">Rules</span><span class="">Seen in products</span><span class="">History <span class="badge b-learned">new</span></span><span class="comp">Tabs variant="line"</span></div><div style="max-width:620px">
+<div class="row"><label>Name</label><div><div class="input focus">Trap outlet length</div></div></div>
+<div class="row"><label>Unit</label><div class="ro">mm <span class="muted" style="font-size:12px">Fixed once saved: stored readings are in this unit.</span> <span class="comp">read-only on a saved field (G1)</span></div></div>
+<div class="row"><label>In use</label><div><span class="sw on"></span></div></div>
+<div class="row"><label>Highest believable value</label><div><div class="input" style="width:160px">5000</div></div></div>
+<div class="row"><label>What this means to the chatbot <span class="badge b-learned">new</span></label><div class="fl">
+<div class="ta focus">The WC outlet set-out. A size said with S trap or P trap (S trap 300mm) is this field, never the width or length.</div>
+<div class="count">113 / 200</div><span class="comp">Textarea (components/ui/textarea.tsx)</span></div></div>
+<div class="row" style="align-items:start"><label>Other names for this specification</label><div>
+<div class="dg" style="--cols:minmax(0,1fr) 90px 40px"><div class="dg-h"><div>Word</div><div>From</div><div></div></div>
+<div class="dg-r"><div>trap</div><div class="muted">Shipped</div><div><span class="ib">&#10005;</span></div></div>
+<div class="dg-r live"><div>outlet length</div><div class="muted">Added</div><div><span class="ib">&#10005;</span></div></div>
+<div class="dg-r"><div class="wr fl"><div class="input bad">length</div><div class="err">Already a word for Length. Remove it there first.</div></div><div></div><div></div></div>
+</div><span class="comp">WordsDataGrid (product-specifications/components/WordsDataGrid.tsx)</span></div></div>
+</div></main></div></div></div>
+<h2>1b. A shipped word that two fields share (Hose length)</h2><p>Shipped words that sit on two fields are listed, never blocked.</p><div class="shot"><div class="shot-t">Details tab, Hose length</div><div style="padding:12px"><div style="max-width:620px"><div class="row" style="align-items:start"><label>Other names for this specification</label><div>
+<div class="dg" style="--cols:minmax(0,1fr) 90px minmax(0,1.3fr)"><div class="dg-h"><div>Word</div><div>From</div><div>Also on</div></div>
+<div class="dg-r"><div>hose</div><div class="muted">Shipped</div><div class="muted wr">Product class (Flexible Hose), Type (Flexible hose)</div></div>
+<div class="dg-r"><div>hose length</div><div class="muted">Shipped</div><div class="muted">-</div></div>
+<div class="dg-r"><div>pipe</div><div class="muted">Shipped</div><div class="muted">-</div></div>
+<div class="dg-r"><div>tube</div><div class="muted">Shipped</div><div class="muted">-</div></div>
+</div><span class="comp">WordsDataGrid + "Also on" column (shipped overlaps listed, not blocked)</span></div></div></div></div></div>
+<h2>2. Gear menu</h2><div class="shot"><div class="shot-t">Record gear; the one primary button stays Edit / Save</div><div style="padding:12px"><div class="menu" style="max-width:240px;margin-left:auto"><div class="opt hl">Try in chatbot <span class="badge b-learned">new</span></div><div class="opt">Try a phrase (search)</div><div class="opt">Re-read catalogue</div><div style="border-top:1px solid var(--border);margin:4px 0"></div><div class="opt">File types &rarr; Attachment Types</div><div class="opt">Aliases and certificate schemes &rarr; Lookup Sets</div><div style="border-top:1px solid var(--border);margin:4px 0"></div><div class="opt" style="color:var(--danger)">Switch off</div></div><span class="comp">DetailActions gear menu, recordActions (D15)</span></div></div>
+<h2>3. Try in chatbot, before and after the fix</h2>
+<div class="shot"><div class="shot-t">Before: "S trap 300mm" read as Width (expected: Trap outlet length)</div><div style="padding:12px"><div class="modal-wrap"><div class="modal" style="max-width:560px"><div class="mh">Try in chatbot <span class="ib">&#10005;</span></div>
+<div class="mb"><div class="fl"><label>Customer message</label><div style="display:flex;gap:8px"><div class="input focus" style="flex:1">any stock for a WC, S trap 300mm?</div><span class="btn pr">Run</span></div></div>
+<div class="dg" style="--cols:minmax(0,1fr) minmax(0,1fr)"><div class="dg-h"><div>Read as</div><div>Value</div></div><div class="dg-r"><div data-l="Read as">Product class</div><div data-l="Value">Water Closet</div></div><div class="dg-r"><div data-l="Read as">Trap</div><div data-l="Value">S trap</div></div><div class="dg-r"><div data-l="Read as"><b>Width</b></div><div data-l="Value"><b>300 mm</b></div></div></div>
+<div class="muted" style="font-size:12px">Dry run. Nothing is sent and nothing is saved.</div></div></div>
+<div style="text-align:center"><span class="comp">Dialog (components/ui/dialog.tsx) + DataGrid + Input, modelled on TryPhraseDialog.tsx</span></div></div></div></div>
+<div class="shot"><div class="shot-t">After saving the meaning (next message, no deploy)</div><div style="padding:12px"><div class="modal-wrap"><div class="modal" style="max-width:560px"><div class="mh">Try in chatbot <span class="ib">&#10005;</span></div>
+<div class="mb"><div class="fl"><label>Customer message</label><div style="display:flex;gap:8px"><div class="input focus" style="flex:1">any stock for a WC, S trap 300mm?</div><span class="btn pr">Run</span></div></div>
+<div class="dg" style="--cols:minmax(0,1fr) minmax(0,1fr)"><div class="dg-h"><div>Read as</div><div>Value</div></div><div class="dg-r"><div data-l="Read as">Product class</div><div data-l="Value">Water Closet</div></div><div class="dg-r"><div data-l="Read as">Trap</div><div data-l="Value">S trap</div></div><div class="dg-r"><div data-l="Read as"><b>Trap outlet length</b></div><div data-l="Value"><b>300 mm</b></div></div></div>
+<div class="muted" style="font-size:12px">Dry run. Nothing is sent and nothing is saved.</div></div></div>
+<div style="text-align:center"><span class="comp">Dialog (components/ui/dialog.tsx) + DataGrid + Input, modelled on TryPhraseDialog.tsx</span></div></div></div></div>
+<h2>4. History tab</h2><div class="shot"><div class="shot-t">1280px</div><div class="app"><aside class="side"><div class="brand">Sorento CRM</div><div class="nav">
+<div class="grp">Master Data</div><div>Products</div><div class="on">Product Specifications</div><div>Brands</div><div>Certificates</div>
+<div class="grp">Resources</div><div>Attachment Types</div>
+<div class="grp">System</div><div>Lookup Sets</div><div>Chatbot Console</div><div>Audit Logs</div></div></aside><div><div class="top"><span class="burger"></span>Product Specifications</div><main class="main"><div class="crumbs">Master Data / Product Specifications / Trap outlet length</div>
+<div class="ph"><h1>Trap outlet length <span class="comp">PageHeader</span></h1>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="muted" style="font-size:12px">&lsaquo; 12 / 40 &rsaquo;</span><span class="comp">ListPager</span>
+<span class="ib" title="More">&#9881;</span><span class="btn pr">Edit</span><span class="comp">DetailActions</span></div></div>
+<dl class="meta"><div><dt>Type</dt><dd>Number (mm)</dd></div><div><dt>Choices</dt><dd>-</dd></div><div><dt>Products</dt><dd>738</dd></div><div><dt>Last read</dt><dd>17 Oct 2026, 09:12</dd></div><span class="comp">SpecKeyRecordCard</span></dl>
+<div class="tabs"><span class="">Details</span><span class="">Choices and words</span><span class="">Rules</span><span class="">Seen in products</span><span class="on">History <span class="badge b-learned">new</span></span><span class="comp">Tabs variant="line"</span></div><div class="empty"><b>No changes yet</b><br>Saves to this specification are listed here.</div><span class="comp">AuditTrail empty state </span><div style="height:14px"></div><p class="muted" style="font-size:12px">After the first save:</p><div class="dg" style="--cols:150px 140px minmax(0,1fr)"><div class="dg-h"><div>When</div><div>Who</div><div>Change</div></div>
+<div class="dg-r"><div data-l="When">17 Oct 2026, 21:41</div><div data-l="Who">Owner</div><div class="wr" data-l="Change">What this means to the chatbot: <span class="strike">-</span> <span class="arrow">&rarr;</span> The set-out from the toilet outlet to the wall ...</div></div>
+<div class="dg-r"><div data-l="When">17 Oct 2026, 21:41</div><div data-l="Who">Owner</div><div class="wr" data-l="Change">Other names: added "outlet length"</div></div>
+<div class="dg-r"><div data-l="When">02 Oct 2026, 10:05</div><div data-l="Who">Merchandiser</div><div class="wr" data-l="Change">Highest believable value: <span class="strike">-</span> <span class="arrow">&rarr;</span> 5000</div></div>
+</div><span class="comp">AuditTrail (components/audit/AuditTrail.tsx), entity product_spec_registry</span>
+</main></div></div></div>
+<h2>5. 375px, Details view</h2><div class="shot" style="padding:12px"><div class="phone"><div class="mk"><div class="app"><div><div class="top"><span class="burger"></span>Sorento CRM</div><main class="main"><div class="crumbs">Product Specifications / Trap outlet length</div>
+<div class="ph"><h1>Trap outlet length</h1><div style="display:flex;gap:6px"><span class="ib">&#9881;</span><span class="btn pr">Edit</span></div></div>
+<dl class="meta"><div><dt>Type</dt><dd>Number (mm)</dd></div><div><dt>Products</dt><dd>738</dd></div></dl>
+<div class="tabs"><span class="on">Details</span><span class="">Choices and words</span><span class="">Rules</span><span class="">Seen in products</span><span class="">History <span class="badge b-learned">new</span></span><span class="comp">Tabs variant="line"</span></div>
+<div class="row"><label class="muted">Name</label><div>Trap outlet length</div></div>
+<div class="row"><label class="muted">Unit</label><div>mm</div></div>
+<div class="row"><label class="muted">What this means to the chatbot</label><div>The WC outlet set-out. A size said with S trap or P trap (S trap 300mm) is this field, never the width or length.</div></div>
+<div class="row"><label class="muted">Other names for this specification</label><div class="dg" style="--cols:minmax(0,1fr) 80px"><div class="dg-r"><div data-l="Word">trap</div><div data-l="From">Shipped</div></div><div class="dg-r"><div data-l="Word">outlet length</div><div data-l="From">Added</div></div></div></div></main></div></div></div></div></div>
+<h2>What the bot reads (not a screen)</h2><p>Today the production prompt carries the spec list as baked text. A migration swaps that text for <code>{{specs}}</code> in a new UNLABELLED version; once the owner moves the label, every save above reaches the next message within 30 s. The Trap outlet length line becomes:</p>
+<div class="notes"><div><code>Specification trap_length ("Trap outlet length"): a number in mm. Means: The WC outlet set-out. A size said with S trap or P trap (S trap 300mm) is this field, never the width or length. Words: trap, outlet length.</code></div></div>
+<h2>Element to component map</h2><table class="map"><tr><th>Element</th><th>Component</th><th>Repo path (sorento_crm_frontend/)</th><th>State</th></tr><tr><td>Page title, crumbs</td><td>PageHeader</td><td><code>components/common/PageHeader.tsx</code></td><td>exists</td></tr><tr><td>Pager, gear, one primary button</td><td>DetailActions + ListPager</td><td><code>components/common/DetailActions.tsx, ListPager.tsx</code></td><td>exists</td></tr><tr><td>Read-only metadata under the header</td><td>SpecKeyRecordCard</td><td><code>product-specifications/components/record/SpecKeyRecordCard.tsx</code></td><td>exists</td></tr><tr><td>Tabs</td><td>Tabs variant="line"</td><td><code>components/ui/tabs.tsx</code></td><td>exists; History tab added</td></tr><tr><td>Name, Unit, In use, Highest believable value</td><td>HeaderTab</td><td><code>product-specifications/components/record/HeaderTab.tsx</code></td><td>exists; Unit becomes read-only (G1)</td></tr><tr><td>What this means to the chatbot</td><td>Textarea in HeaderTab</td><td><code>components/ui/textarea.tsx</code></td><td>NEW field + column parser_hint (G3)</td></tr><tr><td>Other names grid, refusal under the input</td><td>WordsDataGrid</td><td><code>product-specifications/components/WordsDataGrid.tsx</code></td><td>exists; server refusal "Already a word for X" (G4)</td></tr><tr><td>Choices and words (per value)</td><td>ValuesAndWordsTab</td><td><code>product-specifications/components/record/ValuesAndWordsTab.tsx</code></td><td>exists; same G4 refusal</td></tr><tr><td>History tab</td><td>AuditTrail</td><td><code>components/audit/AuditTrail.tsx</code></td><td>exists, mounted here</td></tr><tr><td>Try in chatbot</td><td>Dialog + Input + DataGrid</td><td><code>components/ui/dialog.tsx, components/ui/data-grid.tsx</code></td><td>NEW, calls the console dry-run (POST /api/v1/system/chatbot/console/turn)</td></tr><tr><td>File types, aliases, certification types</td><td>Attachment Types, Lookup Sets, Certificates pages</td><td><code>resource-management/attachment-types, system-management lookup sets, master-data-management/certificates</code></td><td>exist, unchanged</td></tr><tr><td>Toasts on save / refusal</td><td>toast</td><td><code>lib/toast.ts</code></td><td>exists</td></tr></table>
+</div></div></body></html>

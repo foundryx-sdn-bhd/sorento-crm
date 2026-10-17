@@ -1327,6 +1327,9 @@ def seed_spec_registry(db: Session, *, commit: bool = False) -> dict:
 
         changed = False
         for field, value in values.items():
+            # A label the owner edited stays theirs; every other seed column is repaired.
+            if field == "label" and row.label_owned:
+                continue
             if getattr(row, field) != value:
                 setattr(row, field, value)
                 changed = True
@@ -2026,3 +2029,43 @@ def find_similar_value(row: ProductSpecRegistry, value: str) -> dict | None:
             if normalise_vocabulary(word) == needle:
                 return {"value": existing, "matched_on": "synonym", "matched_text": word}
     return None
+
+
+def vocabulary_owners(db: Session) -> dict[str, list[ProductSpecRegistry]]:
+    """Every registry row (inactive ones too), indexed by each normalised word it owns.
+
+    A row owns its key, its label and every merged word (all value keys, `_self`
+    included; a suppressed word is already gone from `merged_synonyms`). Built once per
+    request so a save checking several words reads the 50-odd rows once.
+    """
+    owners: dict[str, list[ProductSpecRegistry]] = {}
+    for other in db.query(ProductSpecRegistry).order_by(ProductSpecRegistry.spec_key).all():
+        seen: set[str] = set()
+        texts = [other.spec_key, other.label]
+        for words in merged_synonyms(other).values():
+            texts.extend(words or [])
+        for text in texts:
+            needle = normalise_vocabulary(text)
+            if needle and needle not in seen:
+                seen.add(needle)
+                owners.setdefault(needle, []).append(other)
+    return owners
+
+
+def find_word_on_other_key(
+    db: Session,
+    row: ProductSpecRegistry,
+    word: str,
+    owners: dict[str, list[ProductSpecRegistry]] | None = None,
+) -> ProductSpecRegistry | None:
+    """The OTHER registry row a word already belongs to, or None.
+
+    One word, one field: the same phrase on two fields makes the parser's pick a coin
+    toss. Pass `owners` (from `vocabulary_owners`) when judging several words.
+    """
+    needle = normalise_vocabulary(word)
+    if not needle:
+        return None
+    if owners is None:
+        owners = vocabulary_owners(db)
+    return next((o for o in owners.get(needle, []) if o.id != row.id), None)

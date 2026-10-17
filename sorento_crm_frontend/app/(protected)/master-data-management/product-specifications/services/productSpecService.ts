@@ -208,6 +208,34 @@ export async function getSpecRegistry(): Promise<{ keys: SpecRegistryKey[] }> {
   return response.json();
 }
 
+/** What the chatbot's parser picked from one message, one row per pick. */
+export interface ParserPick {
+  /** The customer's own words for it. */
+  raw: string;
+  kind: string;
+  /** The specification it was read as; null for a product, category or list item. */
+  field_label: string | null;
+  value: string;
+}
+
+/**
+ * Run the chatbot's real parser on one message. A dry run: nothing is sent, nothing is
+ * saved. A refusal (parser unavailable) arrives as the server's own sentence.
+ */
+export async function tryInChatbot(
+  text: string,
+): Promise<{ prompt_version: number | null; picks: ParserPick[] }> {
+  const response = await apiFetch('/api/v1/system/chatbot/parser-try', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!response.ok) {
+    throw new Error(await extractApiError(response, 'The chatbot reader is not available'));
+  }
+  return response.json();
+}
+
 /**
  * Run the ranker exactly as the chatbot would. Returns each candidate's score and the
  * keys it matched on, so a reviewer can see why a result placed where it did.
@@ -303,6 +331,22 @@ export class SpecSimilarError extends Error {
 }
 
 /**
+ * A new word that another specification already owns (409
+ * `spec_registry_word_on_other_key`). Carries which word, and the value it was added
+ * under, so the words grid can put the sentence under that row.
+ */
+export class SpecWordRefusedError extends Error {
+  constructor(
+    message: string,
+    readonly word: string,
+    readonly value: string | null,
+  ) {
+    super(message);
+    this.name = 'SpecWordRefusedError';
+  }
+}
+
+/**
  * Raise the near-duplicate refusal as itself, and anything else as a plain error.
  *
  * `extractApiError` is still what handles every ordinary failure below; this reads the
@@ -322,6 +366,22 @@ async function throwSpecWriteError(
     }
     if (body?.match) {
       throw new SpecSimilarError(String(body.error ?? fallback));
+    }
+  }
+  if (response.status === 409) {
+    let body: { code?: string; details?: { word?: unknown; value?: unknown } } | null = null;
+    try {
+      body = await response.clone().json();
+    } catch {
+      body = null;
+    }
+    const details = body?.details;
+    if (body?.code === 'spec_registry_word_on_other_key' && typeof details?.word === 'string') {
+      throw new SpecWordRefusedError(
+        await extractApiError(response, fallback),
+        details.word,
+        typeof details.value === 'string' ? details.value : null,
+      );
     }
   }
   throw new Error(await extractApiError(response, fallback));
@@ -385,8 +445,8 @@ export async function updateSpecKey(
   specKey: string,
   body: {
     label?: string;
-    /** Editable from the record page's header field (B.1, B.2). null clears it. */
-    unit?: string | null;
+    /** What the field means to the chatbot. null clears it. */
+    parser_hint?: string | null;
     rank_weight?: number;
     is_active?: boolean;
     match_tolerance?: number;

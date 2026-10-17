@@ -103,11 +103,12 @@ describe('HeaderTab - same field labels in both modes (AC-S1.12)', () => {
     expect(screen.queryByText('Unit')).not.toBeInTheDocument();
   });
 
-  it('renders the same labels in edit mode, as inputs', () => {
+  it('renders the same labels in edit mode, as inputs (Unit stays text)', () => {
     renderWithQuery(<EditHarness row={baseRow({ unit: 'mm', data_type: 'numeric' })} />);
 
     expect(screen.getByLabelText('Name')).toBeInTheDocument();
-    expect(screen.getByLabelText('Unit')).toBeInTheDocument();
+    expect(screen.getByText('Unit')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Unit')).toBeNull();
     expect(screen.getByRole('switch', { name: 'In use' })).toBeInTheDocument();
   });
 });

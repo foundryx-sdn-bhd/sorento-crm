@@ -1274,7 +1274,9 @@ def specification_lines(db: "Session") -> list[str]:
     lines are rendered from their tables, through the registry's own readers
     (`active_registry`, `merged_synonyms`, `merged_allowed_values`, `display_spec_value`):
     the key, its label, and per choice its display name and the words customers use for
-    it; a numeric key's unit and its own words; a yes-or-no key's words. Staff editing a
+    it; a numeric key's unit and its own words; a yes-or-no key's words; and, when staff
+    wrote one, what the field means to the chatbot (`parser_hint`, printed as `Means:`
+    right after the type phrase). Staff editing a
     choice or a word on Product Specifications reaches the parser at the next publish,
     with no prompt edit. Keys in `(spec_key)` order so the hash is stable. The product
     types close the block as the words the category entity keeps."""
@@ -1300,12 +1302,15 @@ def specification_lines(db: "Session") -> list[str]:
         # A quote in the label would close the quotes it is rendered in (security pass 2, F2).
         label = (row.label or "").replace('"', "'")
         head = f'Specification {row.spec_key} ("{label}")'
+        # The owner's one-line meaning; quotes read as apostrophes like the label above.
+        hint = " ".join((getattr(row, "parser_hint", None) or "").replace('"', "'").split()).rstrip(".")
+        means = f" Means: {hint}." if hint else ""
         if data_type == "numeric":
             unit = f" in {row.unit}" if row.unit else ""
             worded = [
                 f"{value} ({', '.join(words)})" for value, words in synonyms.items() if value != "_self" and words
             ]
-            text = f"{head}: a number{unit}."
+            text = f"{head}: a number{unit}.{means}"
             if own:
                 text += f" Words: {own}."
             if worded:
@@ -1314,7 +1319,7 @@ def specification_lines(db: "Session") -> list[str]:
             continue
         if data_type == "boolean":
             words = ", ".join(w for value, ws in synonyms.items() if value != "_self" for w in ws)
-            lines.append(f"{head}: yes or no." + (f" Words: {words}." if words else ""))
+            lines.append(f"{head}: yes or no.{means}" + (f" Words: {words}." if words else ""))
             continue
         choices = []
         for value in dict.fromkeys(merged_allowed_values(row)):
@@ -1322,7 +1327,7 @@ def specification_lines(db: "Session") -> list[str]:
             shown = display_spec_value(value, labels)
             choices.append(f"{shown} = {value}" + (f" ({', '.join(words)})" if words else ""))
         if choices:
-            lines.append(f"{head}: choices {'; '.join(choices)}.")
+            lines.append(f"{head}: choices {'; '.join(choices)}.{means}")
     if types:
         lines.append(f"Product types (the category entity keeps these, never a specification): {', '.join(types)}.")
     return lines

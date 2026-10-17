@@ -18,6 +18,7 @@ offered, because that is the one edit that breaks the two consumers apart.
 """
 import hashlib
 import json
+import re
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, Query, Request, Response, status
@@ -44,10 +45,12 @@ from app.services.product_spec_registry import (
     default_match_window,
     find_similar_key,
     find_similar_value,
+    find_word_on_other_key,
     merged_allowed_values,
     merged_synonyms,
     normalise_vocabulary,
     seed_search_policy,
+    vocabulary_owners,
 )
 
 router = APIRouter()
@@ -69,8 +72,33 @@ def _effective_rules(row) -> list[dict]:
     return [{"builder": rule["builder"]} for rule in rules if isinstance(rule.get("builder"), dict)]
 
 
-def _serialise(row) -> dict:
+def _also_on(row, owners: dict) -> dict[str, list[str]]:
+    """{word: [other field labels]} for every word of this row another row also owns.
+
+    Words with no overlap are absent. Built from the same index the save guard reads, so
+    the note and the refusal cannot disagree.
+    """
+    out: dict[str, list[str]] = {}
+    for words in merged_synonyms(row).values():
+        for word in words or []:
+            labels = [
+                o.label
+                for o in owners.get(normalise_vocabulary(word), [])
+                if o.id != row.id
+            ]
+            if labels:
+                out[word] = list(dict.fromkeys(labels))
+    return out
+
+
+def _serialise(row, owners: Optional[dict] = None) -> dict:
+    if owners is None:
+        from sqlalchemy.orm import object_session
+
+        owners = vocabulary_owners(object_session(row))
     return {
+        # Never shown: the History tab needs it to read this row's audit trail.
+        "id": str(row.id),
         "spec_key": row.spec_key,
         "label": row.label,
         "data_type": row.data_type,
@@ -121,6 +149,9 @@ def _serialise(row) -> dict:
         # value -> display label ("pp" -> "PP"), purely cosmetic (#423, D/E). Editable
         # on seed AND user rows, like user_synonyms.
         "value_labels": row.value_labels or {},
+        "parser_hint": row.parser_hint,
+        "label_owned": bool(row.label_owned),
+        "also_on": _also_on(row, owners),
     }
 
 
@@ -140,7 +171,8 @@ async def get_spec_registry(
     """The active spec vocabulary, with an ETag so the parser can skip re-reading it."""
     try:
         rows = active_registry(db)
-        keys = [_serialise(row) for row in rows]
+        owners = vocabulary_owners(db)
+        keys = [_serialise(row, owners) for row in rows]
         stamps = [r.updated_at or r.created_at for r in rows]
         updated_at = max(stamps).isoformat() if stamps else None
 
@@ -218,6 +250,9 @@ class SpecKeyUpdate(BaseModel):
     # is a real answer and means no cap, which is why it is `Optional` on a payload that
     # only applies the fields it was sent.
     max_value: Optional[float] = Field(default=None, ge=0)
+    # What this field means to the chatbot: one line, max 200 once cleaned (checked in the
+    # route so the refusal carries its own code). Blank stores NULL.
+    parser_hint: Optional[str] = Field(default=None, max_length=2000)
 
 
 class SpecKeyCreate(BaseModel):
@@ -253,6 +288,32 @@ def _similar_refusal(message: str, match: dict) -> JSONResponse:
     question each, with nothing on any screen saying why.
     """
     return JSONResponse(status_code=422, content={"error": message, "match": match})
+
+
+def _word_refusal(
+    db: Session, row, word: str, owners: dict, value: Optional[str] = None
+) -> None:
+    """409 when `word` already belongs to another field (one word, one field).
+
+    `details` lets the grid put the message under the word: `value` is the value key the
+    word was added under (`_self` for an other-name), None for a new value."""
+    other = find_word_on_other_key(db, row, word, owners)
+    if other is not None:
+        raise AppException(
+            status_code=409,
+            message=f"\"{word}\" is already a word for {other.label}.",
+            code="spec_registry_word_on_other_key",
+            details={"word": word, "other_label": other.label, "value": value},
+        )
+
+
+def _held_words(row) -> set[str]:
+    """Everything this row already says, normalised: judged only for what is NEW."""
+    held = {normalise_vocabulary(v) for v in merged_allowed_values(row)}
+    held |= {normalise_vocabulary(v) for v in (row.user_values or [])}
+    for words in merged_synonyms(row).values():
+        held |= {normalise_vocabulary(w) for w in words or []}
+    return held
 
 
 def _validate_reachable(data_type: str, allowed_values, synonyms) -> None:
@@ -960,6 +1021,39 @@ def update_spec_key(
                     detail="Permission required: master_data.spec_registry.edit",
                 )
 
+        # The meaning and the cross-field word guard are judged before anything below is
+        # applied, so a refused save stores nothing.
+        hint = None
+        if "parser_hint" in fields:
+            # Control characters (NUL included) go first: Postgres refuses NUL in text,
+            # and none of them belongs on a one-line prompt entry.
+            hint = re.sub(r"[\x00-\x08\x0e-\x1f\x7f]", "", fields["parser_hint"] or "")
+            hint = re.sub(r"\s+", " ", hint).strip()
+            if len(hint) > 200:
+                raise AppException(
+                    status_code=422,
+                    message="The chatbot meaning is at most 200 characters.",
+                    code="spec_registry_hint_too_long",
+                )
+        owners = None
+        if "user_synonyms" in fields or "user_values" in fields:
+            owners = vocabulary_owners(db)
+        if "user_synonyms" in fields:
+            held = _held_words(row)
+            for value_key, words in (fields["user_synonyms"] or {}).items():
+                for word in words:
+                    if word and word.strip() and normalise_vocabulary(word) not in held:
+                        _word_refusal(db, row, word.strip(), owners, value_key)
+        if "user_values" in fields:
+            # Judged here, before any suppression below touches the row, so a refused
+            # save changes nothing. A value the row already holds is not judged.
+            present = {str(v) for v in merged_allowed_values(row)} | {
+                str(v) for v in (row.user_values or [])
+            }
+            for proposed in fields["user_values"] or []:
+                if proposed and proposed.strip() and proposed not in present:
+                    _word_refusal(db, row, proposed.strip(), owners)
+
         # Suppressions land BEFORE the near-duplicate guard below, so the guard judges the
         # vocabulary as this save leaves it. Renaming a value - take `floor_standing`
         # away, add `free_standing` - is one save, and `free standing` ships as a word
@@ -1110,9 +1204,15 @@ def update_spec_key(
                 if str(key).strip() and [v for v in (values or []) if str(v).strip()]
             }
 
+        if "label" in fields and fields["label"] is not None and fields["label"] != row.label:
+            # The owner's name from here on: the seed repair leaves it alone.
+            row.label_owned = True
         for field in ("label", "rank_weight", "is_active", "match_tolerance", "match_decay"):
             if field in fields and fields[field] is not None:
                 setattr(row, field, fields[field])
+
+        if "parser_hint" in fields:
+            row.parser_hint = hint or None
 
         # Cleared ON PURPOSE is a real answer here ("stop dropping numbers on this
         # key"), so this one applies a None it was actually sent rather than skipping it
@@ -1269,6 +1369,8 @@ def add_spec_value(
             return _similar_refusal(
                 f"\"{proposed}\" is already {match['value']} on {row.label}.", match
             )
+
+        _word_refusal(db, row, proposed, vocabulary_owners(db))
 
         row.user_values = [*(row.user_values or []), proposed]
 
