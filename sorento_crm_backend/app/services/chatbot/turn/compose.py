@@ -914,6 +914,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
                 if not offer_withheld:
                     team = carried.team or teams[0]
                     payload["escalate_offered"] = True
+                    payload["offered_at_turn"] = getattr(state, "turn_no", None)
                     # SRTSC07 review round 2, SHOULD-A: both halves come from
                     # the SAME source as the `team` expression right above, not
                     # independently. A roster CAN carry a team with no agent at

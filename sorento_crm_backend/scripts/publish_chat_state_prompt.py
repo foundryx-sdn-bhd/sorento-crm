@@ -15,7 +15,7 @@ from sqlalchemy import text as sql
 PROMPT_KEY = "chatbot_semantic_parser"
 
 
-def publish(session, *, from_version: int | None = None) -> int | None:
+def publish(session, *, from_version: int | None = None, with_closed_lists: bool = False) -> int | None:
     """Returns the new version number, the existing version when one already holds exactly
     the new text, or None when the source version is missing."""
     from app.models.ai_prompt import AIPromptVersion
@@ -37,7 +37,15 @@ def publish(session, *, from_version: int | None = None) -> int | None:
         ).first()
     if row is None:
         return None
-    new_text = build_lane_prompt(row[0] or "")
+    base_text = row[0] or ""
+    if with_closed_lists:
+        # One version with both gated sections, each once: #1755's builder, then the state section.
+        from app.services.chatbot.head.closed_lists_prompt import SECTION, gate_on
+        from scripts.publish_closed_lists_prompt import with_specs_token
+
+        if not gate_on(base_text):
+            base_text = with_specs_token(base_text) + SECTION
+    new_text = build_lane_prompt(base_text)
     existing = session.execute(
         sql("SELECT version FROM ai_prompt_versions WHERE name = :n AND template = :t"),
         {"n": PROMPT_KEY, "t": new_text},
@@ -59,7 +67,7 @@ def publish(session, *, from_version: int | None = None) -> int | None:
             variables=list(row[1] or []),
             commit_message=(
                 f"CHAT-STATE: v{from_version if from_version is not None else 'production'}"
-                " with the state_changes section"
+                + (" with the CLOSED LISTS and state_changes sections" if with_closed_lists else " with the state_changes section")
             ),
         )
     )
@@ -72,7 +80,9 @@ def main() -> None:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--from-version", type=int, default=None)
-    from_version = parser.parse_args().from_version
+    parser.add_argument("--with-closed-lists", action="store_true")
+    args = parser.parse_args()
+    from_version = args.from_version
 
     import app.main  # noqa: F401  registers every model
     from app.database import SessionLocal
@@ -80,7 +90,7 @@ def main() -> None:
 
     session = SessionLocal()
     try:
-        version = publish(session, from_version=from_version)
+        version = publish(session, from_version=from_version, with_closed_lists=args.with_closed_lists)
         session.commit()
         row = (
             session.query(AIPromptVersion)

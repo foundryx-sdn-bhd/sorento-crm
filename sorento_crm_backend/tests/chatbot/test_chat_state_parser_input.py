@@ -375,3 +375,182 @@ def test_r11_the_prompt_puts_the_options_of_the_open_question_under_pick_and_val
     assert "open question" in pick and "option" in pick and "last list" in pick, pick
     assert "yes" in answer and "no" in answer and "value" in answer, answer
     assert "one of its options" not in answer, answer
+
+
+# --------------------------------------------------------------------------- #
+# Round 2 integration: one schema when both gated sections are on
+# --------------------------------------------------------------------------- #
+
+CLOSED_MARKER = "== CLOSED LISTS =="
+
+
+def _sent_schema(monkeypatch, session_factory, raw_template: str) -> tuple[Any, dict[str, Any]]:
+    """resolve_config on a seeded version, then the schema parse() hands the provider."""
+    from app.services.chatbot import llm_call
+
+    config = _resolve(monkeypatch, session_factory, raw_template)
+    sent: dict[str, Any] = {}
+
+    def fake_chat(provider, api_key, model, messages, **kwargs):
+        sent.update(kwargs)
+        return types.SimpleNamespace(
+            content=json.dumps({key: None for key in parser_mod.DECLARED_KEYS}),
+            prompt_tokens=1, completion_tokens=1, total_tokens=2, cached_tokens=0,
+        )
+
+    monkeypatch.setattr(llm_call, "chat", fake_chat)
+    parser_mod.parse(config, "Current user message: hi")
+    return config, sent["json_schema"]
+
+
+def _entity_props(schema: dict[str, Any]) -> dict[str, Any]:
+    return schema["properties"]["entities"]["items"]["properties"]
+
+
+def test_r2_both_sections_turn_both_gates_on_and_one_schema_carries_both_additions(monkeypatch, session_factory):
+    raw = f"Rules {{{{current_date}}}}\n{CLOSED_MARKER}\n{HEADING_LINE}\nFill state_changes.\n"
+    config, schema = _sent_schema(monkeypatch, session_factory, raw)
+    assert config.state_block is True and config.closed_lists is True
+    assert "listed_item" in _entity_props(schema)
+    assert "listed_item" in schema["properties"]["entities"]["items"]["required"]
+    assert list(schema["properties"])[-1] == "state_changes"
+    assert schema["required"][-1] == "state_changes"
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["state_changes"] == parser_mod.PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE["properties"]["state_changes"]
+
+
+def test_r2_closed_lists_alone_sends_its_own_schema_without_state_changes(monkeypatch, session_factory):
+    config, schema = _sent_schema(monkeypatch, session_factory, f"Rules {{{{current_date}}}}\n{CLOSED_MARKER}\n")
+    assert config.closed_lists is True and config.state_block is False
+    assert "listed_item" in _entity_props(schema)
+    assert "state_changes" not in schema["properties"]
+
+
+def test_r2_state_alone_sends_the_state_schema_object(monkeypatch, session_factory):
+    config, schema = _sent_schema(monkeypatch, session_factory, f"Rules {{{{current_date}}}}\n{HEADING_LINE}\n")
+    assert config.state_block is True and config.closed_lists is False
+    assert schema is parser_mod.PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE
+
+
+def test_r2_neither_section_sends_the_base_schema_object(monkeypatch, session_factory):
+    config, schema = _sent_schema(monkeypatch, session_factory, "Rules {{current_date}}.\n")
+    assert config.state_block is False and config.closed_lists is False
+    assert schema is parser_mod.PARSE_OUTPUT_JSON_SCHEMA
+
+
+# --------------------------------------------------------------------------- #
+# r2-B / r2-D: prompt text
+# --------------------------------------------------------------------------- #
+
+
+def _section_text() -> str:
+    from app.services.chatbot.head.chat_state_prompt import STATE_SECTION
+
+    return " ".join(STATE_SECTION.split())
+
+
+def test_r2b_an_entity_is_what_this_message_names_even_when_the_state_holds_it():
+    import re
+
+    text = _section_text()
+    assert "Never restate an item of the State" not in text
+    assert re.search(r"even when the State (already )?holds", text), text
+    assert re.search(r"(State item|item of the State)[^.]*(does not name|not named)[^.]*not (copied|an entity)", text) or re.search(
+        r"not (copied|an entity)", text
+    ), text
+
+
+def test_r2b_the_reference_rule_stays():
+    text = _section_text()
+    assert "such a reference is never output as an entity" in text
+
+
+def test_r2d_a_message_naming_only_another_item_asks_the_same_fact_as_the_last_answer():
+    import re
+
+    text = _section_text()
+    assert "(answered)" in text, "the subject's domain marker must be explained"
+    assert re.search(r"(naming|names) only (another|a different) (item|code|product)[^.]*(same|keep)[^.]*(domain|fact|last answer)", text), text
+    assert re.search(r"`set product`", text)
+
+
+# --------------------------------------------------------------------------- #
+# r2-C: one combined publish
+# --------------------------------------------------------------------------- #
+
+
+def _combined(session, **kwargs):
+    from scripts.publish_chat_state_prompt import publish
+
+    return publish(session, with_closed_lists=True, **kwargs)
+
+
+def test_r2c_the_combined_publish_carries_both_sections_once_over_an_unchanged_base(session_factory):
+    from app.services.chatbot.head.closed_lists_prompt import MARKER
+
+    session = session_factory()
+    _seed_publish_base(session)
+    version = _combined(session, from_version=None)
+    rows = _publish_versions(session)
+    assert version == 2 and [r.version for r in rows] == [1, 2]
+    template = rows[-1].template
+    assert template.startswith(PUBLISH_BASE)
+    assert template.count(MARKER) == 1 and template.count(HEADING_LINE) == 1
+
+
+def test_r2c_the_combined_publish_is_idempotent_and_writes_no_label(session_factory):
+    from app.models.ai_prompt import AIPromptLabel
+
+    session = session_factory()
+    old = _seed_publish_base(session)
+    first = _combined(session, from_version=None)
+    second = _combined(session, from_version=None)
+    assert second in (first, None)
+    assert len(_publish_versions(session)) == 2
+    labels = session.query(AIPromptLabel).filter(AIPromptLabel.name == parser_mod.PROMPT_KEY).all()
+    assert [(l.label, l.version_id) for l in labels] == [("production", old.id)]
+
+
+def test_r2c_resolve_config_on_the_combined_version_turns_both_gates_on(monkeypatch, session_factory):
+    from app.services import ai_assistant_service, llm_provider
+
+    session = session_factory()
+    _seed_publish_base(session)
+    version = _combined(session, from_version=None)
+    row = [r for r in _publish_versions(session) if r.version == version][0]
+    cfg = types.SimpleNamespace(provider="openai", model="gpt-test")
+    monkeypatch.setattr(
+        ai_assistant_service, "AIAssistantConfigService", lambda d: types.SimpleNamespace(get=lambda: cfg)
+    )
+    monkeypatch.setattr(llm_provider, "resolve_api_key", lambda config, provider: "sk-test")
+    config = parser_mod.resolve_config(session, current_date="2026-10-17", override_version_id=row.id)
+    assert config.state_block is True and config.closed_lists is True
+
+
+PUBLISH_BASE = "You read a customer message.\nToday is {{current_date}}.\n"
+
+
+def _seed_publish_base(session):
+    from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
+
+    old = AIPromptVersion(id=str(uuid.uuid4()), name=parser_mod.PROMPT_KEY, version=1, type="text",
+                          template=PUBLISH_BASE, variables=["current_date"])
+    session.add(old)
+    session.flush()
+    session.add(AIPromptLabel(id=str(uuid.uuid4()), name=parser_mod.PROMPT_KEY, label="production", version_id=old.id))
+    session.flush()
+    from app.services import ai_prompt_registry
+
+    ai_prompt_registry.bust_cache()
+    return old
+
+
+def _publish_versions(session):
+    from app.models.ai_prompt import AIPromptVersion
+
+    return (
+        session.query(AIPromptVersion)
+        .filter(AIPromptVersion.name == parser_mod.PROMPT_KEY)
+        .order_by(AIPromptVersion.version)
+        .all()
+    )

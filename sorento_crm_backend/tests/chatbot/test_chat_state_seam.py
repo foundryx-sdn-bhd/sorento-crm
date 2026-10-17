@@ -959,3 +959,27 @@ def test_r11_set_product_with_an_unresolvable_code_leaves_the_replaced_product_o
     assert seam.uuid_of["SRT1"] not in json.dumps(seam.turn_calls[-1], default=str)
     assert "ZZQ9999" in ((out.reply or {}).get("text") or "").upper()
     assert "SRT1" not in [p.get("canonical_code") for p in seam.state["focus"]["products"]]
+
+
+R2A_SWAPS = [("SRT391-GM", 5), ("SRT391-GM", 12), ("SRT1", 3), ("SRT391-GM", 20)]
+
+
+@pytest.mark.parametrize("new_code,qty", R2A_SWAPS)
+def test_r2a_a_swap_after_an_answered_stock_check_does_not_ask_how_many_again(seam, new_code, qty):
+    from app.services.chatbot.turn import task as task_mod
+
+    held = "SRT1" if new_code != "SRT1" else "SRT391-GM"
+    key = seam.uuid_of[held]
+    task = task_mod.Task(kind="stock_qty", domain="inventory", status=task_mod.ANSWERED,
+                         slots=(task_mod.Slot(key, held, qty),))
+    row = {"raw": held, "canonical_code": held, "hint": "product", "uuid": key, "current_message": False}
+    prev = {"focus": focus_to_wire(Focus(products=[row], domains=["inventory"], tasks=(task,))), "open_question": None}
+    out = seam.say(
+        f"{new_code}?",
+        _emit(domain_hint="inventory", intent_hint="check_stock", entities=[_product(new_code)],
+              state_changes=[_op("set", "product")]),
+        previous=prev,
+    )
+    assert "how many" not in ((out.reply or {}).get("text") or "").lower()
+    q = seam.state["open_question"] or {}
+    assert q.get("kind") != "quantities"

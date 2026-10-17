@@ -2135,7 +2135,7 @@ def answer_for(
         question = _replace(
             carried_pending,
             team=carried_pending.team or question.team,
-            payload={**carried_pending.payload, "escalate_offered": True},
+            payload={**carried_pending.payload, "escalate_offered": True, "offered_at_turn": asked_at_turn},
         )
     # #1262 slice 11 (F8): same audience gate as the HIT-side ladder rung above.
     text = _apply_crossdomain_render(

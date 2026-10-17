@@ -939,3 +939,167 @@ def test_r11_a_refine_keeps_the_held_quantity():
     out = _apply(state, verdict(domain_hint="inventory", entities=[brand], state_changes=[_op("set", "brand")]))
     assert out.valid is True, out.log.get("rejected")
     assert [p.get("quantity") for p in out.state.focus.products] == [5]
+
+
+# --------------------------------------------------------------------------- #
+# r2-A: the quantity of an answered stock task carries onto refined, kept and swapped items
+# --------------------------------------------------------------------------- #
+
+
+def _answered_state(code: str, qty: int) -> State:
+    from app.services.chatbot.turn import task as task_mod
+
+    key = f"00000000-0000-4000-8000-{abs(hash(code)) % 10**12:012d}"
+    row = {**_held(code), "uuid": key}
+    task = task_mod.Task(
+        kind="stock_qty", domain="inventory", status=task_mod.ANSWERED, slots=(task_mod.Slot(key, code, qty),)
+    )
+    return State(focus=Focus(products=[row], domains=["inventory"], tasks=(task,)), turn_no=4)
+
+
+def _carried_quantities(out) -> list:
+    rows = [e for e in out.verdict.get("entities") or [] if e.get("hint") == "product"] or list(
+        out.state.focus.products
+    )
+    return [r.get("quantity") for r in rows]
+
+
+def _brand(code="SORENTO"):
+    return entity(code.lower(), "brand", canonical_code=code)
+
+
+HELD_QTY_CASES = [
+    # (id, held code, qty, state_changes, verdict kwargs)
+    ("keep_brand", "SRT5733", 5, [_op("keep")], dict(entities=[_brand()])),
+    ("keep_spec_colour", "MWB8051", 12, [_op("keep")], dict(entities=[entity("black", "specification", canonical_code="black")])),
+    ("set_brand", "SRTWC286-SH", 3, [_op("set", "brand")], dict(entities=[_brand("MOCHA")])),
+    ("set_tier", "ELP3754", 20, [_op("set", "tier")], dict(access_levels=["dealer"])),
+    ("set_sort", "SRT391-GM", 7, [_op("set", "sort")], dict(sort_by="price")),
+    ("set_channel", "SRTKT1631SS", 8, [_op("set", "channel")], dict(sales_channel="dealer")),
+    ("swap_product_en", "SRT1", 10, [_op("set", "product")], dict(entities=[entity("SRTWC8608-RL")])),
+    ("swap_product_bm", "MWC6603-S8", 2, [_op("set", "product")], dict(entities=[entity("SRTGV332-DIY")])),
+    ("swap_product_zh", "SRT5732", 6, [_op("set", "product")], dict(entities=[entity("MWB8052")], user_goal="还有这个吗")),
+]
+
+
+@pytest.mark.parametrize("held,qty,changes,extra", [c[1:] for c in HELD_QTY_CASES], ids=[c[0] for c in HELD_QTY_CASES])
+def test_r2a_the_answered_quantity_carries_onto_the_refined_or_swapped_item(held, qty, changes, extra):
+    out = _apply(_answered_state(held, qty), verdict(domain_hint="inventory", state_changes=changes, **extra))
+    assert out.valid is True, out.log.get("rejected")
+    quantities = _carried_quantities(out)
+    assert quantities and set(quantities) == {qty}, quantities
+
+
+def test_r2a_a_quantity_the_message_states_wins_over_the_held_one():
+    state = _answered_state("SRT1", 10)
+    out = _apply(
+        state,
+        verdict(domain_hint="inventory", state_changes=[_op("set", "product")],
+                entities=[entity("SRTWC8608-RL", quantity=4)]),
+    )
+    assert out.valid is True, out.log.get("rejected")
+    assert set(_carried_quantities(out)) == {4}
+
+
+# --------------------------------------------------------------------------- #
+# r2 round 2: clear quantity wins, a quantity transfers only from its own code, none onto a new subject
+# --------------------------------------------------------------------------- #
+
+
+def _task(code: str, qty: int):
+    from app.services.chatbot.turn import task as task_mod
+
+    return task_mod.Task(
+        kind="stock_qty", domain="inventory", status=task_mod.ANSWERED,
+        slots=(task_mod.Slot(f"key-{code}", code, qty),),
+    )
+
+
+def _any_quantity(out) -> list:
+    found = [r.get("quantity") for r in out.state.focus.products if r.get("quantity") is not None]
+    found += [e.get("quantity") for e in out.verdict.get("entities") or [] if e.get("quantity") is not None]
+    for t in out.state.focus.tasks or ():
+        found += [s.value for s in t.slots if s.value is not None]
+    return found
+
+
+CLEAR_QTY_CASES = [
+    # (id, held rows [(code, qty or None)], task or None, extra changes, verdict kwargs)
+    ("row_only", [("SRT5733", 5)], None, [], {}),
+    ("task_only", [("SRT1", None)], ("SRT1", 5), [], {}),
+    ("row_and_task", [("MWB8051", 12)], ("MWB8051", 12), [], {}),
+    ("task_only_with_keep", [("ELP3754", None)], ("ELP3754", 20), [_op("keep")], {}),
+    ("task_with_brand_set", [("SRT391-GM", None)], ("SRT391-GM", 7), [_op("set", "brand")], dict(entities=[_brand()])),
+    ("task_with_sort_set", [("SRTKT1631SS", None)], ("SRTKT1631SS", 3), [_op("set", "sort")], dict(sort_by="price")),
+    ("two_rows_one_task", [("SRT1", None), ("SRT2", 4)], ("SRT1", 9), [], {}),
+    ("bm_wording_fields", [("MWC6603-S8", None)], ("MWC6603-S8", 2), [], dict(user_goal="tak payah kuantiti")),
+]
+
+
+@pytest.mark.parametrize("rows,task,extra,kw", [c[1:] for c in CLEAR_QTY_CASES], ids=[c[0] for c in CLEAR_QTY_CASES])
+def test_r2b2_an_explicit_clear_quantity_wins_over_the_carry(rows, task, extra, kw):
+    from app.services.chatbot.turn import task as task_mod  # noqa: F401
+
+    held = [_held(c, **({"quantity": q} if q else {})) for c, q in rows]
+    tasks = (_task(*task),) if task else ()
+    state = State(focus=Focus(products=held, domains=["inventory"], tasks=tasks), turn_no=4)
+    out = _apply(state, verdict(domain_hint="inventory", state_changes=[*extra, _op("clear", "quantity")], **kw))
+    assert out.valid is True, out.log.get("rejected")
+    assert _any_quantity(out) == [], _any_quantity(out)
+
+
+OWN_CODE_CASES = [
+    ("SRT1", 5, "SRT7"), ("SRT391-GM", 12, "MWB8051"), ("ELP3754", 3, "SRTKT1631SS"), ("SRT5733", 20, "SRT5732"),
+    ("MWC6603-S8", 2, "MWC6604"), ("SRTWC286-SH", 8, "SRTWC286-SH-P"), ("SRTGV332-DIY", 6, "SRTGV333"),
+    ("MWB8052", 15, "MWB8053"),
+]
+
+
+@pytest.mark.parametrize("task_code,qty,other", OWN_CODE_CASES)
+def test_r2b2_a_kept_row_gets_only_its_own_codes_quantity(task_code, qty, other):
+    state = State(
+        focus=Focus(products=[_held(other), _held(task_code)], domains=["inventory"], tasks=(_task(task_code, qty),)),
+        turn_no=4,
+    )
+    out = _apply(state, verdict(domain_hint="inventory", state_changes=[_op("keep")]))
+    assert out.valid is True, out.log.get("rejected")
+    by_code = {r["canonical_code"]: r.get("quantity") for r in out.state.focus.products}
+    assert by_code[other] is None, by_code
+    assert by_code[task_code] in (None, qty)
+
+
+@pytest.mark.parametrize("task_code,qty,other", OWN_CODE_CASES)
+def test_r2b2_a_task_for_another_product_does_not_fill_the_only_held_row(task_code, qty, other):
+    state = State(
+        focus=Focus(products=[_held(other)], domains=["promotion"], tasks=(_task(task_code, qty),)), turn_no=6
+    )
+    out = _apply(state, verdict(domain_hint="inventory", state_changes=[_op("keep")]))
+    assert [r.get("quantity") for r in out.state.focus.products] == [None]
+
+
+NEW_SUBJECT_CASES = [
+    ("SRT1", 5, "SRTWC8608-RL"), ("SRT391-GM", 12, "SRT9"), ("ELP3754", 3, "ELP3755"), ("SRT5733", 20, "MWB8051"),
+    ("MWC6603-S8", 2, "SRTGV332-DIY"), ("SRTWC286-SH", 8, "SRTKT1631SS"), ("MWB8052", 15, "SRT1234"),
+    ("SRTGV333", 6, "MWC7625"),
+]
+
+
+@pytest.mark.parametrize("held,qty,new", NEW_SUBJECT_CASES)
+def test_r2b3_a_new_subject_never_carries_the_old_quantity_onto_the_stated_product(held, qty, new):
+    out = _apply(
+        _answered_state(held, qty),
+        verdict(domain_hint="inventory", entities=[entity(new)],
+                state_changes=[_op("new_subject"), _op("set", "product")]),
+    )
+    assert out.valid is True, out.log.get("rejected")
+    assert [e.get("quantity") for e in out.verdict["entities"] if e.get("hint") == "product"] == [None]
+
+
+@pytest.mark.parametrize("held,qty,new", NEW_SUBJECT_CASES)
+def test_r2b3_and_x_without_a_new_subject_still_carries_the_quantity(held, qty, new):
+    out = _apply(
+        _answered_state(held, qty),
+        verdict(domain_hint="inventory", entities=[entity(new)], state_changes=[_op("set", "product")]),
+    )
+    assert out.valid is True, out.log.get("rejected")
+    assert [e.get("quantity") for e in out.verdict["entities"] if e.get("hint") == "product"] == [qty]

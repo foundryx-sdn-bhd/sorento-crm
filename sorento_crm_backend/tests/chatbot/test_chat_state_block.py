@@ -185,3 +185,28 @@ def test_r5_a_hand_over_offer_is_stated_with_its_kind_and_team_name():
     assert "purchasing" in line.lower(), line
     assert any(w in line.lower() for w in ("hand", "offer")), line
     assert "agent-7f3a" not in text
+
+
+R2D_CASES = [
+    ("incoming", "SRT391-GM"), ("inventory", "SRT5733"), ("product_attachment", "SRTWC286-SH"),
+    ("order", "MWB8051"), ("sales", "ELP3754"), ("master_products", "SRT1"),
+    ("promotion", "SRTKT1631SS"), ("purchase_order", "MWC6603-S8"),
+]
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("domain,code", R2D_CASES, ids=[c[0] for c in R2D_CASES])
+def test_r2d_the_subject_line_names_the_domain_that_was_answered(domain, code):
+    state = State(focus=Focus(products=[_product(code)], domains=[domain]), turn_no=3)
+    text = _render(state)
+    line = next(l for l in text.splitlines() if l.startswith("- subject"))
+    assert f"domain {domain} (answered)" in line, line
+    assert "last answer" not in line, "the words collide with the open-question kind last_answer"
+    assert code in line
+
+
+def test_r2d_no_domain_held_prints_no_last_answer_claim():
+    text = _render(State(focus=Focus(products=[_product("SRT1")]), turn_no=3))
+    assert "(answered)" not in text

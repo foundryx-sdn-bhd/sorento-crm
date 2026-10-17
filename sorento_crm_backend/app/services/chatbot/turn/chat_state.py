@@ -194,12 +194,35 @@ def _same_list(items: list[dict[str, Any]], oq: dict[str, Any] | None) -> bool:
     return {key(i) for i in items} == {key(o) for o in options if isinstance(o, dict)}
 
 
-def _open_question(focus: Focus, oq: dict[str, Any] | None, pending: Any = None) -> dict[str, Any] | None:
+#: The `offer` value of a roster that carries a stamped hand-over offer.
+HAND_OVER_OFFER = "hand_over"
+
+
+def _offer_just_made(pending: Any, turn_no: int | None) -> bool:
+    """An answered roster whose LAST reply offered the hand-over: the stamp (the miss path's
+    own turn; a roster without one shows no offer) is the turn before this
+    one. A fresh roster, or a flag left by an earlier turn, is not an offer."""
+    payload = getattr(pending, "payload", None) or {}
+    if not payload.get("escalate_offered") or not payload.get("answered_positions"):
+        return False
+    stamp = payload.get("offered_at_turn")
+    return isinstance(stamp, int) and isinstance(turn_no, int) and stamp == turn_no - 1
+
+
+def _open_question(focus: Focus, oq: dict[str, Any] | None, pending: Any = None, turn_no: int | None = None) -> dict[str, Any] | None:
     obj = _plain(oq) if oq else {}
     if obj and pending is not None and getattr(pending, "kind", None) in ESCALATION_OFFER_KINDS:
         # A hand-over offer states its kind and the team it would go to (a name, never an id),
         # so a yes or a no can be read as accepting or declining it.
         obj["offer"] = pending.kind
+        team = _clean(getattr(pending, "team", None))
+        if team:
+            obj["hand_over_to"] = team.replace("_", " ")
+    elif obj and pending is not None and _offer_just_made(pending, turn_no):
+        # An answered roster the reply followed with a hand-over offer (contract 36 keeps the
+        # roster stored, stamped): the open question is that offer, not a pick still owed.
+        obj["offer"] = HAND_OVER_OFFER
+        obj["owed"] = ["yes_no"]
         team = _clean(getattr(pending, "team", None))
         if team:
             obj["hand_over_to"] = team.replace("_", " ")
@@ -222,7 +245,7 @@ def _open_question(focus: Focus, oq: dict[str, Any] | None, pending: Any = None)
 def view(state: State, open_question: dict[str, Any] | None) -> dict[str, Any]:
     """The state as one plain, key-free dict: what the parser is shown and what the trace logs."""
     focus = state.focus
-    oq = _open_question(focus, open_question, state.pending)
+    oq = _open_question(focus, open_question, state.pending, state.turn_no)
     items = [i for i in (_list_item(r) for r in (focus.last_list or []) if isinstance(r, dict)) if i]
     stock_is_question = question_mod.is_the_stock_question(open_question)
     task = None if stock_is_question else task_mod.open_question(focus.tasks)
@@ -230,7 +253,7 @@ def view(state: State, open_question: dict[str, Any] | None) -> dict[str, Any]:
         "subject": _subject(focus),
         "open_question": oq,
         "last_list": items or None,
-        "last_list_is_question": bool(items) and _same_list(items, oq),
+        "last_list_is_question": bool(items) and _same_list(items, oq) and (oq or {}).get("offer") != HAND_OVER_OFFER,
         "task": _plain(task) if task else None,
         "task_is_question": stock_is_question,
     }
@@ -250,7 +273,9 @@ def _subject_text(subject: dict[str, Any]) -> str:
             value = [" to ".join(value)]
         elif key == "sort":
             value = [" ".join(value)]
-        parts.append(f"{key} {', '.join(value) if isinstance(value, list) else value}")
+        joined = ', '.join(value) if isinstance(value, list) else value
+        # The held domain is the domain that was answered last.
+        parts.append(f"domain {joined} (answered)" if key == "domain" else f"{key} {joined}")
     return "; ".join(parts)
 
 
@@ -327,6 +352,37 @@ def _message_domains(verdict: dict[str, Any]) -> list[str]:
     return [verdict["domain_hint"]] if verdict.get("domain_hint") else []
 
 
+def _held_quantity(focus: Focus) -> tuple[dict[str, Any], Any]:
+    """The quantity of an answered stock check, per product code, and the one quantity all
+    of them share (None when they differ or none was answered)."""
+    by_code: dict[str, Any] = {}
+    for task in focus.tasks or ():
+        if getattr(task, "kind", None) == "stock_qty" and getattr(task, "status", None) == task_mod.ANSWERED:
+            for slot in task.slots:
+                if isinstance(slot.value, (int, float)) and not isinstance(slot.value, bool):
+                    by_code[str(slot.label).casefold()] = slot.value
+    for row in focus.products:
+        if isinstance(row, dict) and row.get("quantity") is not None:
+            by_code.setdefault(str(row.get("canonical_code") or row.get("raw") or "").casefold(), row["quantity"])
+    values = set(by_code.values())
+    return by_code, (next(iter(values)) if len(values) == 1 else None)
+
+
+#: The verdict key carrying the held quantities that reach this turn's stock fetch.
+CARRIED_QUANTITY_KEY = "_carried_quantity"
+
+
+def carry_onto_family(verdict: dict[str, Any], codes: list[str]) -> dict[str, Any]:
+    """A refine of the same held subject landing on several family codes: the one held
+    quantity rides onto each (owner: "don't re-ask what the user gave"). No-op when
+    `apply_changes` carried no shared quantity."""
+    carry = verdict.get(CARRIED_QUANTITY_KEY)
+    if not isinstance(carry, dict) or carry.get("shared") is None:
+        return verdict
+    by_code = {**(carry.get("by_code") or {}), **{str(c).casefold(): carry["shared"] for c in codes}}
+    return {**verdict, CARRIED_QUANTITY_KEY: {**carry, "by_code": by_code}}
+
+
 def _clear_axis(focus: Focus, axis: str) -> None:
     if axis == "channel":
         focus.sales_channel = None
@@ -351,6 +407,11 @@ def _clear_axis(focus: Focus, axis: str) -> None:
     elif axis == "quantity":
         for row in focus.products:
             row.pop("quantity", None)
+        # The answered check's quantity goes with it.
+        focus.tasks = tuple(
+            t for t in focus.tasks or ()
+            if not (getattr(t, "kind", None) == "stock_qty" and getattr(t, "status", None) == task_mod.ANSWERED)
+        )
     elif axis in ("product", "customer", "warehouse"):
         setattr(focus, {"product": "products", "customer": "customers", "warehouse": "warehouse"}[axis], [])
     else:
@@ -427,7 +488,9 @@ def _held(focus: Focus, axis: str) -> bool:
     if axis == "brand":
         return bool(focus.brands)
     if axis == "quantity":
-        return any(isinstance(r, dict) and r.get("quantity") is not None for r in focus.products)
+        return any(isinstance(r, dict) and r.get("quantity") is not None for r in focus.products) or bool(
+            _held_quantity(focus)[0]
+        )
     if axis == "product":
         return bool(focus.products)
     if axis == "warehouse":
@@ -549,7 +612,16 @@ def apply_changes(
     if log["shown"] is None:
         # Nothing shown, nothing to carry: a first ask runs exactly as it does without the key.
         return Applied(True, state, {k: v for k, v in verdict.items() if k != "state_changes"}, log)
-    if not isinstance(changes, list) or not changes:
+    if isinstance(changes, list) and not changes:
+        # Nothing declared (a retyped code, a bare re-ask): the state is not led, but the held
+        # quantity still joins by the product's own code at the fetch; nothing else moves.
+        rejected = _reject(state, verdict, log, [{"op": None, "reason": "no changes declared"}])
+        by_code, _shared = _held_quantity(state.focus)
+        if by_code and verdict.get("demand_qty") is None:
+            # Own-code join only: a turn the parser could not call a refine spreads nothing.
+            rejected.verdict[CARRIED_QUANTITY_KEY] = {"by_code": dict(by_code), "shared": None}
+        return rejected
+    if not isinstance(changes, list):
         return _reject(state, verdict, log, [{"op": None, "reason": "no changes declared"}])
 
     axes = set(FIXED_AXES) | set(kinds) | set(CLEAR_ONLY_AXES) | {k for k, v in (state.focus.extra or {}).items() if v}
@@ -783,10 +855,27 @@ def apply_changes(
     # Values come from the parse as stated; a restated held row (current_message false) goes.
     dropped_entities = [{"kind": e.get("hint")} for e in _entities(out) if e.get("current_message") is False]
     entities = [copy.deepcopy(e) for e in _entities(out) if e.get("current_message") is not False]
-    if "product" in set_axes and len(held_products) == 1 and held_products[0].get("quantity") is not None:
+    # The quantity of the answered check (or of the held row) carries onto the refined, kept
+    # or swapped item when the message states none; a stated quantity wins.
+    qty_by_code, shared_qty = _held_quantity(state.focus)
+    qty_open = out.get("demand_qty") is None and not new_subject and not (
+        any(c.get("op") == "clear" and c.get("axis") == "quantity" for c in changes if isinstance(c, dict))
+    )
+    if qty_open and qty_by_code:
+        # What the stock fetch joins by the product's own code (`turn_runtime._carried_quantities`,
+        # its last source); `shared` rides onto the family codes a refine lands on
+        # (`carry_onto_family`). The decision is made here and nowhere else.
+        out[CARRIED_QUANTITY_KEY] = {"by_code": dict(qty_by_code), "shared": shared_qty}
+    if shared_qty is not None and qty_open:
         mine = [e for e in entities if e.get("hint") == "product"]
-        if len(mine) == 1 and mine[0].get("quantity") is None and out.get("demand_qty") is None:
-            mine[0]["quantity"] = held_products[0]["quantity"]
+        # Only an explicit one-for-one swap moves the quantity to another code.
+        if "product" in set_axes and len(held_products) == 1 and len(mine) == 1 and mine[0].get("quantity") is None:
+            mine[0]["quantity"] = shared_qty
+        for row in focus.products:
+            if isinstance(row, dict) and row.get("quantity") is None:
+                filled = qty_by_code.get(str(row.get("canonical_code") or row.get("raw") or "").casefold())
+                if filled is not None:
+                    row["quantity"] = filled
     picked_kinds = {"product" for _ in data_picks}
     if pending is not None or state.pending is not None:
         for position in roster_picks:

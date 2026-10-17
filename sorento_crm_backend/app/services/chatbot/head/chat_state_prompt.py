@@ -8,15 +8,16 @@ STATE_SECTION = """## Conversation state and state_changes
 
 The user block may carry a `State:` block. It is the whole conversation state and it is never cut:
 - `subject`: what the conversation is about now (domain, customer, products, brand, tier, channel, period, status,
-  document, sort, report).
+  document, sort, report); a domain marked `(answered)` is the domain of the last answer.
 - `open question`: the question the bot asked last, with its numbered options, or none.
 - `last list`: the numbered items the bot showed last, or none.
 - `pending task`: the stock quantity task still owed, or none.
 Where the rules above mention "Current subject", "Open question", "Open question options", "Pending" or "Open task",
 read the matching `State` line.
 
-Fill every other field exactly as the rules above say, with values from THIS message only. Never restate an item of
-the State as an entity: only what this message itself names is an entity.
+Fill every other field exactly as the rules above say, with values from THIS message only. An entity is what THIS
+message names, even when the State already holds it; a State item the message does not name is not copied, it is not
+an entity.
 
 Then fill `state_changes`: the changes this message makes to the State, in order. Each item is
 `{op, axis, position}`. An op never carries a value: the value of a `set` is the field you already filled for that
@@ -37,6 +38,7 @@ axis (entities with that hint; `sales_channel`; `date_mode` / `date_filter_start
 
 Business rules:
 - Several items of one axis (several products, several brands) are ONE `set` for that axis.
+- A message naming only another item (another code, another product) asks the same fact as the last answer: `set product` and keep the domain marked `(answered)`.
 - A message that refers to the held subject as a whole is `keep`; such a reference is never output as an entity.
 - "and <another item>?" replaces only that item (`set product` or `set customer`); the ask, quantity, period and
   filters stay.

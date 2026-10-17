@@ -40,6 +40,7 @@ from app.services.chatbot.contracts import (
     named_count,
 )
 from app.services.chatbot.turn.apply import names_its_own_ask
+from app.services.chatbot.turn.chat_state import CARRIED_QUANTITY_KEY
 from app.services.chatbot.turn.decide import RESTATED_KINDS_KEY, picked_positions
 from app.services.chatbot.turn.pending import (
     OFFER_KINDS,
@@ -3136,6 +3137,77 @@ def stamp_customer_options(
     return out
 
 
+def file_type_ask(db: Session, ask: Any, focus: Any) -> Any:
+    """`ask`, a "which kind of file?" question given the file types the subject products
+    really carry as its numbered options (CHAT-CLOSED-LISTS card R3, crew Q3 (a), 17 Oct
+    2026), or `ask` itself when it is another question, already has options, or no product
+    on the focus has a file. Each option is the roster shape a picked option becomes an
+    entity from (`turn/apply._answer_pending`): a bare "2" fetches that type."""
+    from dataclasses import replace
+
+    from app.models.product import ProductAttachment
+    from app.models.resources import Attachment, AttachmentType
+
+    if getattr(ask, "kind", None) != "attachment_type_ask" or getattr(ask, "options", None):
+        return ask
+    from sqlalchemy import func
+
+    from app.models.product import Product, chat_searchable_products
+
+    from sqlalchemy import or_
+
+    rows_in_focus = [row for row in getattr(focus, "products", None) or [] if isinstance(row, dict)]
+    uuids = [str(row["uuid"]) for row in rows_in_focus if row.get("uuid")]
+    # The ask is raised before the resolver runs, so a product named this turn has its
+    # code and no uuid yet: the code, whole (case aside). Either way the product is read
+    # through the ORM here, so the contact's company AND brand scope and the chat rule
+    # apply to every product the roster is built from (security review, 17 Oct 2026).
+    codes = {
+        str(row.get("canonical_code") or row.get("raw") or "").strip().upper()
+        for row in rows_in_focus
+        if not row.get("uuid")
+    } - {""}
+    if not uuids and not codes:
+        return ask
+    product_ids = [
+        str(pid)
+        for (pid,) in db.query(Product.id)
+        .filter(
+            or_(
+                *([Product.id.in_(uuids)] if uuids else []),
+                *([func.upper(Product.product_code).in_(codes)] if codes else []),
+            ),
+            chat_searchable_products(),
+        )
+        .all()
+    ]
+    if not product_ids:
+        return ask
+    rows = (
+        db.query(AttachmentType.id, AttachmentType.code, AttachmentType.type_name)
+        .join(Attachment, Attachment.attachment_type_id == AttachmentType.id)
+        .join(ProductAttachment, ProductAttachment.attachment_id == Attachment.id)
+        .filter(ProductAttachment.product_id.in_(product_ids), Attachment.is_deleted.isnot(True))
+        .distinct()
+        .order_by(AttachmentType.type_name)
+        .all()
+    )
+    if not rows:
+        return ask
+    options = [
+        {
+            "position": i,
+            "entity_type": "attachment_type",
+            "code": code or name,
+            "uuid": str(type_id),
+            "name": name,
+            "label": name,
+        }
+        for i, (type_id, code, name) in enumerate(rows, start=1)
+    ]
+    return replace(ask, options=options)
+
+
 def stamp_customer_ask(
     db: Session,
     ask: Any,
@@ -3354,6 +3426,29 @@ def _spec_quantities(
             prefixed = [uuid for uuid, code in resolved_codes.items() if token in _token_key(code)]
         if len(prefixed) == 1 and prefixed[0] not in quantities:
             quantities[prefixed[0]] = quantity
+    return {**out, "requested_quantities": quantities} if quantities else out
+
+
+def _carried_quantities(out: dict[str, Any], carried: Any, entities: list[dict[str, Any]]) -> dict[str, Any]:
+    """The LAST quantity source: what the State carried this turn (`chat_state.apply_changes`
+    decided it), joined to the placed uuid by the product's own code. A uuid the task or this
+    message already gave a quantity keeps it."""
+    by_code = carried.get("by_code") if isinstance(carried, dict) else None
+    if not by_code:
+        return out
+    keyed = {_token_key(str(code)): qty for code, qty in by_code.items()}
+    quantities = dict(out.get("requested_quantities") or {})
+    for e in entities:
+        uuid = e.get("uuid") if isinstance(e, dict) else None
+        if not isinstance(uuid, str) or not uuid or uuid in quantities:
+            continue
+        for name in ("code", "canonical_code", "raw"):
+            code = e.get(name)
+            if isinstance(code, str) and code.strip() and _token_key(code) in keyed:
+                value = _int(keyed[_token_key(code)])
+                if value is not None:
+                    quantities[uuid] = value
+                break
     return {**out, "requested_quantities": quantities} if quantities else out
 
 
@@ -3845,6 +3940,7 @@ def make_tool_runner(
         # product, resolved to uuids here - `lanes/business/fetch.py` reads it
         # straight off the lane input.
         lane_out = _spec_quantities(lane_out, spec, entities)
+        lane_out = _carried_quantities(lane_out, verdict.get(CARRIED_QUANTITY_KEY), entities)
         lane_ctx = {**lane_ctx, "parse": {**(lane_ctx.get("parse") or {}), "output": lane_out}}
         # R2: start from the resolver's own gate (gate_reason, require_specific,
         # customer_probe_entities, company_team, gate_debug, ...) - `compatible_entities`

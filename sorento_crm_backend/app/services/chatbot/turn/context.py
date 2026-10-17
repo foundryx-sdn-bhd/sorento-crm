@@ -235,6 +235,10 @@ class ContextLayers:
     #: lines (Current subject, Open task, Open question, Pending, Open question options)
     #: and is never trimmed.
     state_block: str | None = None
+    #: CHAT-CLOSED-LISTS: the candidate block for the words of the current message
+    #: (`head/candidates.candidate_lines`), right after the message; None for a prompt
+    #: version without the CLOSED LISTS section, which keeps the block unchanged.
+    candidate_lines: list[str] | None = None
 
 
 def _l5_segment(fact: dict[str, Any]) -> str:
@@ -470,6 +474,7 @@ def _assemble_off(layers: ContextLayers) -> tuple[str, dict[str, Any]]:
     lines = [
         f"Previous response: {previous}",
         f"Current user message: {layers.current_message}",
+        *(layers.candidate_lines or []),
     ]
     if not layers.state_block:
         if layers.current_subject:
@@ -537,6 +542,8 @@ def assemble(layers: ContextLayers) -> tuple[str, dict[str, Any]]:
         layers.state_block,
     )
     l1_text, l1_dropped = _render_l1(layers.current_message, layers.reply_to, layers.media_line)
+    if layers.candidate_lines:
+        l1_text = "\n".join([l1_text, *layers.candidate_lines])
 
     blocks = [b for b in (l5_text, l4_text, l3_text, l2_text, l1_text) if b]
     text = "\n".join(blocks)

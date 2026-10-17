@@ -94,6 +94,31 @@ def _attachment_type_code(parser_output: dict[str, Any], raw: str) -> str:
     return raw
 
 
+def _listed_require(parser_output: dict[str, Any]) -> dict[str, Any] | None:
+    """CHAT-CLOSED-LISTS card R5: the leg the closed-list picks name, from grounding's tag
+    alone (`head/grounding._on_closed_lists`), or None when no entity carries one. A scheme
+    on file scopes the certificate ask; a certificate kind is the bare ask; a file type is
+    its own leg. No word of the raw is read, so a scheme word that is not on file ("span")
+    was never an entity and never becomes a filter that matches nothing (cards c04 / c19)."""
+    tagged = [
+        e
+        for e in parser_output.get("entities") or []
+        if isinstance(e, dict) and str(e.get("hint") or "").strip().lower() == "attachment_type" and e.get("listed")
+    ]
+    if not tagged:
+        return None
+    by_list: dict[str, list[str]] = {}
+    for entity in tagged:
+        by_list.setdefault(str(entity["listed"]), []).append(str(entity.get("canonical_code") or ""))
+    if by_list.get("cert_scheme"):
+        return {"certificate": {"scheme": by_list["cert_scheme"][0]}}
+    if by_list.get("cert_kind"):
+        return {"certificate": True}
+    if by_list.get("file_type"):
+        return {"attachment_type": by_list["file_type"][0]}
+    return None
+
+
 def _attachment_type_raws(parser_output: dict[str, Any]) -> list[str]:
     """Every `attachment_type` entity's own raw, in order, non-empty, deduped."""
     raws: list[str] = []
@@ -262,7 +287,10 @@ def derive_require(
     basin?" genuinely are one.
     """
     from_attributes = _require_from_attributes(parser_output)
+    listed = _listed_require(parser_output)
     if from_attributes is not None:
+        if from_attributes == {"certificate": True} and (listed is not None or parser_output.get("closed_lists")):
+            return listed if listed is not None and "certificate" in listed else from_attributes
         if from_attributes == {"certificate": True}:
             # The attribute names only the bare leg; an attachment_type raw beside it
             # may still carry the scheme ("certificate" + entity "PPS cert").
@@ -284,6 +312,9 @@ def derive_require(
         return {domain_leg: True}
 
     if intent == "check_product_attachment":
+        if listed is not None or parser_output.get("closed_lists"):
+            # CHAT-CLOSED-LISTS card R3: no listed pick is asked, never read off the words.
+            return listed
         raws = _attachment_type_raws(parser_output)
         if not raws:
             goal_or_message = parser_output.get("user_goal") or message_text or ""

@@ -48,6 +48,11 @@ ALLOWED = {
     # (engine H57), so there is no route through `/chat/turn` that exercises the queue.
     # Not core, not on any request path.
     "scripts/chatbot_queue_replay.py",
+    # CHAT-CLOSED-LISTS S3: publishes a parser version carrying the CLOSED LISTS section,
+    # which lives in the package (`head/closed_lists_prompt.py`) because the engine's gate
+    # reads the same marker. A developer tool, not core, not on any request path; it never
+    # moves a label.
+    "scripts/publish_closed_lists_prompt.py",
     # CHAT-STATE (#1747): a maintenance script that publishes an unlabelled parser prompt
     # version (`head/chat_state_prompt`). Not core, not on any request path.
     "scripts/publish_chat_state_prompt.py",
