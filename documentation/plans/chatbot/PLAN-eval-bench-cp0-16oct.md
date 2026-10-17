@@ -369,3 +369,27 @@ price tier before finding any product, five run results, now fail), attachment 6
     answers) fails it. The same rule decides held-out rows that fail on `no_picker` alone: per run 1/2/3, code
     lookups 13 / 13 / 14 of 149, attachment 1 / 1 / 0, follow-ups 4 / 4 / 4, scope 1 / 2 / 3 (UNVERIFIED how many of
     them are sibling pickers). The owner's answer decides whether that rule changes.
+
+## Rounds 32 and 33 (17 Oct, CHAT-CODE-LOOKUP card + owner sibling-picker ruling; small fix track)
+
+- 32a grader: `_attribute_answered` reads the reply with WhatsApp emphasis markers (`*_~`) removed, so the engine's
+  `*weight:* not recorded for X` counts as an honest none. Held-out rows affected: 0.
+- 32 gold, in the crew tooling (`apply_gold_fixes.py`, `code_families.py`; crew rulings Q1 to Q6, 17 Oct):
+  - The round-30 code-family rule now covers code lookups and reads product sets as well as products. It is built
+    from the ORIGINAL gold.
+  - A typo names the one code a single edit away (owner 16 Oct: the valid value is kept). If 2+ codes are that
+    close, the item is `ambiguous` plus `code_unresolved`. A typed code that matches nothing is `code_unresolved`.
+  - Order and DO numbers are no codes: they are tagged `kind: order` and stay in code lookups.
+  - A bare code (no quantity) reuses the answer domain held before the turn (owner: resolve then reuse the answer).
+  - Photo items are `media`: graded on the recorded turn, out of live runs and exports.
+  - Cost asks are held (`cost_owner_pending`) until the owner rules who may see cost.
+  - Held-out code lookups at $0, runs 1/2/3: 76.0 / 75.3 / 74.7% to 78.1 / 78.8 / 79.5% (n 146 with the photo item;
+    145 without).
+- 33 grader (OWNER RULING 17 Oct): after a full answer to an exact code, a numbered picker of its sibling variants
+  is right (`lanes/business/answer.py:4846-4848`), so `no_picker` passes. Sibling means every option starts with the
+  gold code's family stem. Full means the reply carries an answer outside its option lines and every other check
+  passes. A did-you-mean picker instead of the answer still fails (typo ruling). On real rows both kinds record
+  `asking: product_pick` and `sections: 0`, so the reply text decides, not the trace flag. cp0-c7ec5f1c31 passes
+  8/8. Held-out, same gold, runs 1/2/3: follow-ups 83 / 85 / 81 to 84 / 86 / 82; every other slice is unchanged.
+- Open from the card: the leak failure on DO item cp0-d9971420da (asker linkage vs the grader's leak check) is not
+  yet investigated.
