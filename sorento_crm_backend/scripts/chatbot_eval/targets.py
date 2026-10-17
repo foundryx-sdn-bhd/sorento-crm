@@ -572,8 +572,7 @@ def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None,
     g = gold or {}
     label = _norm(g.get("fact_label"))
     flt = g.get("filter") if isinstance(g.get("filter"), dict) else {}
-    # a hand-built gold may say `kind` for `key`; kind "spec" is the generic label of the older fixtures and stays no spec refine
-    spec_refine = (slice_name == "followup" and (flt.get("key") in SPEC_REFINE_KEYS or flt.get("kind") in SPEC_REFINE_KEYS - {"spec"})
+    spec_refine = (slice_name == "followup" and flt.get("key") in SPEC_REFINE_KEYS
                    and not _qty_owed_before(row))
     answer_ask = (spec_refine or g.get("fact") in FILES_PROMO_SPEC_FACTS or label in FILES_PROMO_SPEC_LABELS
                   or bool(label and label not in KNOWN_FACT_LABELS) or slice_name == "attachment"
@@ -681,7 +680,8 @@ def _code_lookup(row, item):
     if gold.get("fact"):
         checks.append(("fact", _fact_ok(row, gold["fact"]), "The bot looked up a different fact than the one asked."))
     if isinstance(gold.get("family"), list) and gold["family"]:   # a staff stock ask on a code family lists every member
-        checks.append(("family_listed", {_key(c) for c in gold["family"]} <= (_resolved_codes(row) | _tool_targets(row)),
+        checks.append(("family_listed", {_key(c) for c in gold["family"]} <= (_resolved_codes(row) | _tool_targets(row))
+                       and all(_mentions(reply_text(row), c) for c in gold["family"]),
                        "The answer did not cover every product of the family."))
     if gold.get("ambiguous"):
         checks.append(("clarified", clarified, "The code was ambiguous but the bot did not ask which one."))
@@ -778,6 +778,8 @@ def _followup_checks(row, item, kind, gold):
     real = _has_memory_after(row)
     before_subject, after_subject = _subject_before(row), _subject_after(row)
     want = {_key(c) for c in gold.get("subject_after") or []}
+    # a looked-up set key joins the subject only when the gold names it (members stay in memory either way)
+    after_subject = after_subject - (_looked_up_sets(row) - want)
     _mem_before = _codes_of(_mem_focus(row, "before").get("products"))
 
     # a typed literal the resolver expanded (prefix family, picker options) counts only for an unresolved gold code
@@ -869,7 +871,11 @@ def _followup_checks(row, item, kind, gold):
         fp = {_key(c) for c in gold.get("filter_products") or [] if c}
         ids = _tool_subjects(row) if fp else set()
         # gold ids: judged by the products the lookup was run for, not the words (a listed type rewrites the class word)
-        by_ids = None if not fp else ((ids <= fp) if ids else (None if _tools(row) else False))
+        # unknown ONLY when product-id args exist and every one is an unmapped uuid; a word-only lookup names no product (False)
+        pid_args = [x for t in _tools(row) for n in ("product_ids", "product_id", "product_code", "product_codes")
+                    for x in _strings((t.get("args") or {}).get(n))]
+        by_ids = None if not fp else ((ids <= fp) if ids else (None if pid_args and all(UUID_RE.fullmatch(x) for x in pid_args)
+                                                              else False))
         checks = [
             # narrowing may keep a part of the list: a non-empty subset of the gold subject or of what was held before
             ("subject", (want <= after_subject or bool(after_subject and (after_subject <= want or after_subject <= before_subject)))
@@ -919,7 +925,7 @@ def _followup_checks(row, item, kind, gold):
             named = {_key(c) for c in CODE_RE.findall(reply)}
             says_no = bool(NO_MATCH_RE.search(reply)) or (
                 bool(want) and any(_mentions(reply, w) for w in want)
-                and bool(re.search(r"\bno\b[^\n.]{0,40}\b" + re.escape(fv) + r"\b", reply.lower())))
+                and bool(re.search(r"\bno\b[^\n.]{0,40}\b" + r"[\s_-]+".join(re.escape(w) for w in fv.split()) + r"\b", reply.lower())))
             honest_none = bool(gold.get("none_on_record")) and bool(want) and bool(_tools(row)) and says_no \
                 and want <= _tool_targets(row) and named <= want
             applied_ids = by_ids if fp else (fv in held or carried or applied_by_words or narrowed or honest_none
