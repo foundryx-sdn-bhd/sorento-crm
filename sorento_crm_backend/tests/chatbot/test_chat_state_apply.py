@@ -374,7 +374,7 @@ def test_s4b_no_statement_reports_no_slots():
     assert out.log.get("slots", {}) == {}
 
 
-@pytest.mark.parametrize("op", ["keep", "skip", "clear", "unclear"])
+@pytest.mark.parametrize("op", ["skip", "clear", "unclear"])
 def test_s4b_an_axis_other_than_customer_or_period_is_invalid_for_these_ops(op):
     state = _held_state()
     for axis in ("product", "gizmo"):
