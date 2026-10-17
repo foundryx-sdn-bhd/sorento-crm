@@ -11,6 +11,11 @@ export interface StockInquiry {
   item_description?: string | null;
   project_customer?: string | null;
   project_name?: string | null;
+  /** Registered project link (explicit pick only). `project_name` above is the free text;
+   *  the linked project is `project_label` (`CODE - Title`). */
+  project_id?: string | null;
+  project_code?: string | null;
+  project_label?: string | null;
   quantity?: string | null;
   delivery_date?: string | null;
   remark?: string | null;
@@ -97,6 +102,8 @@ export interface StockInquiryFormData {
   item_description?: string;
   project_customer?: string;
   project_name?: string;
+  /** null clears the link; omitted leaves it unchanged. */
+  project_id?: string | null;
   quantity?: string;
   delivery_date?: string;
   remark?: string;

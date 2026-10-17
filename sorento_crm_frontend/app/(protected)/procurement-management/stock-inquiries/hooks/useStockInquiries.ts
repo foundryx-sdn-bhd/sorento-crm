@@ -32,6 +32,8 @@ import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 
 export type StockInquiriesListParams = DataGridApiFetchParams & {
   statuses?: string[];
+  /** Only this project's inquiries (the project page's Forms tab). */
+  project_id?: string;
 };
 
 
@@ -54,6 +56,7 @@ export function stockInquiriesListQueryKey(
     params.sorting,
     params.searchQuery,
     params.statuses,
+    params.project_id,
   ];
 }
 

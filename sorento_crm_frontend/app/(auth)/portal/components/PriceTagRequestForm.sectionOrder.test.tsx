@@ -144,6 +144,8 @@ describe('read-only view section order (AC-P11)', () => {
       // Information now opens directly on Need by / Notes.
       'Need by',
       'Notes',
+      // FORMS-PROJECT: the linked project closes Additional Information.
+      'Project',
     ]);
   });
 });

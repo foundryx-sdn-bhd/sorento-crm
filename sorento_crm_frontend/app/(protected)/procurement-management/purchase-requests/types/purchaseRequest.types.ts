@@ -40,6 +40,8 @@ export interface PurchaseRequest {
   /** AC-L3: reportable link to a registered project. `project_code` is the display value. */
   project_id?: string | null;
   project_code?: string | null;
+  /** `CODE - Title`, ready to display (project_title above is free text). */
+  project_label?: string | null;
   purpose?: string | null;
   delivery_address?: string | null;
   total_project_value?: number | null;

@@ -49,6 +49,8 @@ import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { FormSection } from '@/components/common/FormSection';
 import { RevisionHistory } from './RevisionHistory';
+import { AsyncCombobox } from './AsyncCombobox';
+import { lookupProjects, type ProjectLookupItem } from '../lib/portal-client';
 import {
   SearchableSelect,
   type SearchableSelectOption,
@@ -565,6 +567,9 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
   const [priceMode, setPriceMode] = useState<PriceMode>('list');
   const [neededByDate, setNeededByDate] = useState('');
   const [notes, setNotes] = useState('');
+  // The optional registered project: the id is what is saved, the label is what is shown.
+  const [projectId, setProjectId] = useState('');
+  const [projectLabel, setProjectLabel] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [attachments, setAttachments] = useState<PortalAttachment[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -787,6 +792,8 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
     setPriceModeChosen(true);
     setNeededByDate(data.needed_by_date ?? '');
     setNotes(data.notes ?? '');
+    setProjectId(data.project_id ?? '');
+    setProjectLabel(data.project_label ?? data.project_code ?? '');
     setLines(data.lines.map(lineToDraft));
     setAttachments(data.attachments ?? []);
   }, []);
@@ -973,6 +980,8 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
         setPriceModeChosen(true);
         setNeededByDate(data.needed_by_date ?? '');
         setNotes(data.notes ?? '');
+        setProjectId(data.project_id ?? '');
+        setProjectLabel(data.project_label ?? data.project_code ?? '');
         // A duplicate's lines are new, unsaved rows with no identity of
         // their own yet (nit, review round 2) - the source request's own
         // line ids have no business surviving as this draft's React keys.
@@ -1702,6 +1711,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
         debtor_name: debtorCode ? (debtor?.name ?? debtorCode) : null,
         needed_by_date: neededByDate || null,
         notes: notes || null,
+        project_id: projectId || null,
         price_mode: priceMode,
         print_by: printBy,
         lines: payloadLines(),
@@ -1737,7 +1747,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
       setSaving(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numbersInvalid, effectiveId, debtorCode, debtors, priceMode, neededByDate, notes, lines, flushPendingFiles, router, slug, applyFieldErrors]);
+  }, [numbersInvalid, effectiveId, debtorCode, debtors, priceMode, neededByDate, notes, projectId, lines, flushPendingFiles, router, slug, applyFieldErrors]);
 
   // ---- Revise (R3-1): sent through the portal revision engine, never the
   // retired post-submit PUT. A reason is required; the same zero-line/
@@ -1762,6 +1772,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
           debtor_name: debtorCode ? (debtor?.name ?? debtorCode) : null,
           needed_by_date: neededByDate || null,
           notes: notes || null,
+          project_id: projectId || null,
           price_mode: priceMode,
           // Live finding, PT-202609-0013: Save Draft and Submit both carry the
           // print choice and this payload did not, so revising a request
@@ -1793,7 +1804,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
       toast.error(e instanceof Error ? e.message : 'Failed to send revision');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numbersInvalid, effectiveId, reviseReason, revise, debtorCode, debtors, priceMode, neededByDate, notes, request, applyRequestFieldsFrom, flushPendingFiles, revisionHistory]);
+  }, [numbersInvalid, effectiveId, reviseReason, revise, debtorCode, debtors, priceMode, neededByDate, notes, projectId, request, applyRequestFieldsFrom, flushPendingFiles, revisionHistory]);
 
   const handleCancelRevise = useCallback(async () => {
     setReviseMode(false);
@@ -1860,6 +1871,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
         // null, same as the other two payload builders here, never as ''.
         needed_by_date: neededByDate || null,
         notes: notes || null,
+        project_id: projectId || null,
         price_mode: priceMode,
         print_by: printBy,
         lines: payloadLines(),
@@ -1896,7 +1908,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
       setSubmitting(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numbersInvalid, collectProblems, applyFieldErrors, openSectionForProblems, effectiveId, debtorCode, debtors, priceMode, neededByDate, notes, lines, flushPendingFiles, router, slug]);
+  }, [numbersInvalid, collectProblems, applyFieldErrors, openSectionForProblems, effectiveId, debtorCode, debtors, priceMode, neededByDate, notes, projectId, lines, flushPendingFiles, router, slug]);
 
   // ---- Approve proof ----
   const handleApprove = useCallback(async () => {
@@ -2415,6 +2427,14 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
             <p className="text-sm py-2">
               {request.notes || (
                 <span className="text-muted-foreground">No notes.</span>
+              )}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Project</Label>
+            <p className="text-sm py-2">
+              {request.project_label || request.project_code || (
+                <span className="text-muted-foreground">No project</span>
               )}
             </p>
           </div>
@@ -2945,6 +2965,25 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Any additional notes..."
             rows={3}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="project_id">Project (optional)</Label>
+          <AsyncCombobox<ProjectLookupItem>
+            id="project_id"
+            value={projectId}
+            displayValue={projectLabel}
+            allowFreeText={false}
+            onChange={(v, item) => {
+              setProjectId(v);
+              setProjectLabel(item ? `${item.project_code} - ${item.title}` : '');
+            }}
+            fetchOptions={(q) => lookupProjects(q)}
+            optionValue={(o) => o.id}
+            optionLabel={(o) => `${o.project_code} - ${o.title}`}
+            optionMeta={(o) => o.company_name ?? ''}
+            placeholder="Search your registered projects"
           />
         </div>
       </FormSection>

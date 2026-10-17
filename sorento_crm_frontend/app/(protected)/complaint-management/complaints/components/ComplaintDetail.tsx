@@ -1219,13 +1219,12 @@ export default function ComplaintDetail({ complaintId }: ComplaintDetailProps) {
               <p className="font-medium">{complaint.project_title || '-'}</p>
               {/* AC-L3: the registered project, by CODE. Rendered as a link because the
                   first thing somebody wants after seeing it is the pursuit itself. */}
-              {complaint.project_code && (
+              {(complaint.project_label || complaint.project_code) && (
                 <Link
                   href={`/project-sales/${complaint.project_id}`}
                   className="text-xs text-primary hover:underline"
                 >
-                  {complaint.project_code}
-                  {complaint.project_name ? ` - ${complaint.project_name}` : ''}
+                  {complaint.project_label ?? complaint.project_code}
                 </Link>
               )}
             </div>

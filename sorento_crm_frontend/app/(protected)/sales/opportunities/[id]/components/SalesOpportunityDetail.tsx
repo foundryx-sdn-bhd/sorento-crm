@@ -23,6 +23,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import DetailActions from '@/components/common/DetailActions';
 import { RecordNavigation } from '@/components/common/RecordNavigation';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
+import { ProjectLinkSelect } from '@/components/common/ProjectLinkSelect';
+import { ProjectLinkValue } from '@/components/common/ProjectLinkValue';
+import { isProjectLinkError } from '@/lib/project-link';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { formatCurrency, formatDate, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { getSalesOpportunitySalesOrderOptions } from '../../services/salesOpportunityService';
@@ -91,6 +94,11 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
   // with the field untouched must not resend the same id as though it had changed -
   // only an actual pick (SearchableSelect's onChange) sets this.
   const [salesAgentTouched, setSalesAgentTouched] = useState(false);
+  // Same rule for the project: sent only when picked or cleared, so an untouched save
+  // leaves the link alone.
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectTouched, setProjectTouched] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
   const [expectedAmount, setExpectedAmount] = useState('');
   // F7: while untouched the field tracks the live line total; typing into it (or
   // starting an edit session where the stored amount already disagrees with the
@@ -173,6 +181,9 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
     );
     setSalesAgentId(opportunity.sales_agent_id ?? '');
     setSalesAgentTouched(false);
+    setProjectId(opportunity.project_id ?? null);
+    setProjectTouched(false);
+    setProjectError(null);
     setExpectedAmount(String(opportunity.expected_amount ?? ''));
     setExpectedCloseDate(opportunity.expected_close_date ?? '');
     const seededLines = (opportunity.lines ?? []).map((line) => ({
@@ -234,6 +245,7 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
         // resending the seeded value every save reads as a change to `update_opportunity`
         // (it re-validates the agent) for a field nothing happened to.
         ...(salesAgentTouched ? { sales_agent_id: salesAgentId || null } : {}),
+        ...(projectTouched ? { project_id: projectId } : {}),
         // B-new (Phase 3 fix2): the OTHER key goes along as an explicit null, not
         // omitted - `update_opportunity` fills an absent key from the row already on the
         // opportunity, so switching customer -> prospect (or back) with the other key
@@ -250,8 +262,10 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
           })),
       });
       setIsEditing(false);
-    } catch {
-      // The hook toasted the reason; the session stays open so nothing typed is lost.
+    } catch (error) {
+      // The hook toasted the reason; the session stays open so nothing typed is lost. A
+      // refused project also reads under its picker.
+      if (isProjectLinkError(error)) setProjectError((error as Error).message);
     }
   };
 
@@ -432,6 +446,24 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
                       wrapOptions
                     />
                   </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="opportunity-edit-project">Project (optional)</Label>
+                    <ProjectLinkSelect
+                      id="opportunity-edit-project"
+                      value={projectId}
+                      onChange={(next) => {
+                        setProjectId(next);
+                        setProjectTouched(true);
+                        setProjectError(null);
+                      }}
+                      selectedLabel={opportunity.project_label}
+                    />
+                    {projectError ? (
+                      <p role="alert" className="text-sm text-destructive">
+                        {projectError}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               ) : (
                 <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -453,6 +485,15 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
                     <dt className="text-xs text-muted-foreground">Agent</dt>
                     <dd className="truncate text-sm" title={opportunity.sales_agent_label ?? undefined}>
                       {opportunity.sales_agent_label ?? 'Unassigned'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Project</dt>
+                    <dd className="truncate text-sm">
+                      <ProjectLinkValue
+                        projectId={opportunity.project_id}
+                        projectLabel={opportunity.project_label}
+                      />
                     </dd>
                   </div>
                 </dl>

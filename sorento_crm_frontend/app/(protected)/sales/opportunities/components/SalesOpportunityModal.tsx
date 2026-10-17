@@ -15,6 +15,8 @@ import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
+import { ProjectLinkSelect } from '@/components/common/ProjectLinkSelect';
+import { isProjectLinkError } from '@/lib/project-link';
 import { useSaveSalesOpportunity } from '../hooks/useSalesOpportunities';
 import { numberFieldError } from '@/lib/number-field';
 import {
@@ -65,6 +67,8 @@ export default function SalesOpportunityModal({
   const [amountTouched, setAmountTouched] = useState(false);
   const [expectedCloseDate, setExpectedCloseDate] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([]);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectError, setProjectError] = useState<string | null>(null);
   const [showErrors, setShowErrors] = useState(false);
 
   useEffect(() => {
@@ -75,6 +79,8 @@ export default function SalesOpportunityModal({
     setAmountTouched(false);
     setExpectedCloseDate('');
     setLines([]);
+    setProjectId(null);
+    setProjectError(null);
     setShowErrors(false);
   }, [open, presetCustomerId]);
 
@@ -119,6 +125,7 @@ export default function SalesOpportunityModal({
       title: title.trim(),
       expected_amount: effectiveAmount,
       expected_close_date: expectedCloseDate,
+      project_id: projectId,
       ...(isProspect
         ? { prospect_name: customerOrProspect.slice(PROSPECT_PREFIX.length) }
         : { customer_id: customerOrProspect }),
@@ -133,8 +140,10 @@ export default function SalesOpportunityModal({
     try {
       await save.mutateAsync(payload);
       onOpenChange(false);
-    } catch {
-      // The hook toasted the reason; the modal stays open with what was typed.
+    } catch (error) {
+      // The hook toasted the reason; the modal stays open with what was typed. A refused
+      // project also reads under its picker.
+      if (isProjectLinkError(error)) setProjectError((error as Error).message);
     }
   };
 
@@ -164,6 +173,22 @@ export default function SalesOpportunityModal({
                 placeholder="Search customers..."
                 wrapOptions
               />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="opportunity-project">Project (optional)</Label>
+              <ProjectLinkSelect
+                id="opportunity-project"
+                value={projectId}
+                onChange={(next) => {
+                  setProjectId(next);
+                  setProjectError(null);
+                }}
+              />
+              {projectError ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {projectError}
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="opportunity-title">Title</Label>

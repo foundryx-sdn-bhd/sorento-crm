@@ -203,6 +203,14 @@ const FIELDS: Record<PortalSubmissionKind, FieldDef[]> = {
     },
     { name: 'project_name', label: 'Project name' },
     {
+      // Optional and always shown (AC-FP-20): a person picks one of their own company's
+      // projects; the free text stays alongside it.
+      name: 'project_id',
+      label: 'Project (optional)',
+      widget: 'project-async',
+      displayFromDetail: 'project_label',
+    },
+    {
       name: 'salesperson_contact_id',
       label: 'Salesperson',
       widget: 'contact-select',
@@ -281,12 +289,28 @@ const FIELDS: Record<PortalSubmissionKind, FieldDef[]> = {
       required: true,
     },
     { name: 'project_title', label: 'Project title' },
+    {
+      // Optional and always shown (AC-FP-20): a person picks one of their own company's
+      // projects; the free text stays alongside it.
+      name: 'project_id',
+      label: 'Project (optional)',
+      widget: 'project-async',
+      displayFromDetail: 'project_label',
+    },
   ],
   purchase_request: [
     { name: 'customer_name', label: 'Customer name', widget: 'debtor-async' },
     { name: 'customer_id', label: 'Customer', widget: 'hidden' },
     { name: 'pic', label: 'PIC', placeholder: 'Name and contact number' },
     { name: 'project_title', label: 'Project title' },
+    {
+      // Optional and always shown (AC-FP-20): a person picks one of their own company's
+      // projects; the free text stays alongside it.
+      name: 'project_id',
+      label: 'Project (optional)',
+      widget: 'project-async',
+      displayFromDetail: 'project_label',
+    },
     { name: 'purpose', label: 'Purpose', widget: 'textarea' },
     {
       name: 'sales_type',
@@ -859,6 +883,9 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         if (value) out[f.name] = value;
         // Typing over a picked customer unlinks it; an omitted key would keep the old link.
         else if (f.name === 'customer_id') out[f.name] = null;
+        // Same for the optional project picker; the sponsorship form's own project rule
+        // is left exactly as it was.
+        else if (f.name === 'project_id' && kind !== 'sponsorship_form') out[f.name] = null;
       }
     }
     // Sponsorship: the "Others" detail only applies when the subject is 'others'.
@@ -2618,6 +2645,19 @@ function StockInquiryFormSection({
             value={fields.project_name ?? ''}
             onChange={(v) => setFieldValue('project_name', v)}
             disabled={!isEditable}
+          />
+        </InquiryFormTableRow>
+        <InquiryFormTableRow label="Project (optional)">
+          <FieldControl
+            field={fieldByName.project_id}
+            value={fields.project_id ?? ''}
+            onChange={(v) => setFieldValue('project_id', v)}
+            disabled={!isEditable}
+            displayValue={
+              ((detail as Record<string, unknown> | null)?.project_label as
+                | string
+                | undefined) ?? undefined
+            }
           />
         </InquiryFormTableRow>
         <InquiryFormTableRow label="Qty">

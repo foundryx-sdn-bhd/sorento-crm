@@ -7,6 +7,7 @@ export const StockInquirySchema = z.object({
   item_description: z.string().max(2000).optional().nullable(),
   project_customer: z.string().max(255).optional().nullable(),
   project_name: z.string().max(255).optional().nullable(),
+  project_id: z.string().max(255).optional().nullable(),
   quantity: z
     .string()
     .max(255)

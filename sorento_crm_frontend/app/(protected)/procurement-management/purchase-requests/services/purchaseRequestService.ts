@@ -47,10 +47,20 @@ export async function getPurchaseRequests(
     requestType?: string;
     approvalStatus?: string;
     assignedTo?: string;
+    /** Only this project's records (the project page's Forms tab). */
+    projectId?: string;
   },
 ): Promise<DataGridApiResponse<PurchaseRequest>> {
-  const { pageIndex, pageSize, sorting, searchQuery, requestType, approvalStatus, assignedTo } =
-    params;
+  const {
+    pageIndex,
+    pageSize,
+    sorting,
+    searchQuery,
+    requestType,
+    approvalStatus,
+    assignedTo,
+    projectId,
+  } = params;
   const sortField = sorting?.[0]?.id || 'request_date';
   const sortDirection = sorting?.[0]?.desc ? 'desc' : 'asc';
   const queryParams = new URLSearchParams({
@@ -62,6 +72,7 @@ export async function getPurchaseRequests(
     ...(requestType ? { request_type: requestType } : {}),
     ...(approvalStatus ? { approval_status: approvalStatus } : {}),
     ...(assignedTo ? { assigned_to: assignedTo } : {}),
+    ...(projectId ? { project_id: projectId } : {}),
   });
   const response = await apiFetch(
     `/api/v1/procurement/purchase-requests?${queryParams.toString()}`,

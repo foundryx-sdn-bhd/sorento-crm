@@ -906,11 +906,8 @@ export default function ComplaintForm({
                     pageSize={25}
                     clearable
                     selectedOption={
-                      field.value && complaint?.project_code
-                        ? {
-                            value: field.value,
-                            label: `${complaint.project_code} - ${complaint.project_name ?? ""}`,
-                          }
+                      field.value && complaint?.project_label
+                        ? { value: field.value, label: complaint.project_label }
                         : undefined
                     }
                     placeholder="Search a project by code or title"

@@ -10,6 +10,8 @@ import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { toast } from '@/lib/toast';
+import { AsyncCombobox } from '../../components/AsyncCombobox';
+import { lookupProjects, type ProjectLookupItem } from '../../lib/portal-client';
 import { createPortalSalesOpportunity } from '../../lib/sales-opportunity-service';
 import {
   BLOCKED_VALUE,
@@ -53,6 +55,8 @@ export default function SalesOpportunityPortalForm({
   const [customerSelectedOption, setCustomerSelectedOption] = useState<
     SearchableSelectOption | undefined
   >();
+  const [projectId, setProjectId] = useState('');
+  const [projectLabel, setProjectLabel] = useState('');
   const [title, setTitle] = useState('');
   const [expectedAmount, setExpectedAmount] = useState('');
   const [amountTouched, setAmountTouched] = useState(false);
@@ -99,6 +103,7 @@ export default function SalesOpportunityPortalForm({
       title: title.trim(),
       expected_amount: expectedAmount,
       expected_close_date: expectedCloseDate,
+      ...(projectId ? { project_id: projectId } : {}),
       ...(isProspect
         ? { prospect_name: customerOrProspect.slice(PROSPECT_PREFIX.length) }
         : { customer_id: customerOrProspect }),
@@ -142,6 +147,24 @@ export default function SalesOpportunityPortalForm({
               placeholder="Search customer or prospect..."
               emptyMessage={NO_CUSTOMERS_MESSAGE}
               wrapOptions
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="opportunity-project">Project (optional)</Label>
+            <AsyncCombobox<ProjectLookupItem>
+              id="opportunity-project"
+              value={projectId}
+              displayValue={projectLabel}
+              allowFreeText={false}
+              onChange={(v, item) => {
+                setProjectId(v);
+                setProjectLabel(item ? `${item.project_code} - ${item.title}` : '');
+              }}
+              fetchOptions={(q) => lookupProjects(q)}
+              optionValue={(o) => o.id}
+              optionLabel={(o) => `${o.project_code} - ${o.title}`}
+              optionMeta={(o) => o.company_name ?? ''}
+              placeholder="Search your registered projects"
             />
           </div>
           <div className="flex flex-col gap-1.5">

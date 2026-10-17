@@ -49,6 +49,8 @@ export interface Complaint {
   project_id?: string | null;
   project_code?: string | null;
   project_name?: string | null;
+  /** `CODE - Title`, ready to display. */
+  project_label?: string | null;
   contact_id?: string | null;
   space_id?: string | null;
   respond_inbox_url?: string | null;

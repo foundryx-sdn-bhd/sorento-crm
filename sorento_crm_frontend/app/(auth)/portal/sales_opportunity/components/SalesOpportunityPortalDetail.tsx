@@ -32,6 +32,8 @@ import type { RecordAction } from '@/components/common/recordActions';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { toast } from '@/lib/toast';
 import { formatCurrency, formatDate } from '@/lib/helpers';
+import { AsyncCombobox } from '../../components/AsyncCombobox';
+import { lookupProjects, type ProjectLookupItem } from '../../lib/portal-client';
 import { portalHomePath } from '../../lib/portal-paths';
 import {
   getPortalOpportunityMeta,
@@ -79,6 +81,8 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
   // doesn't include it) shows blank instead of what was just chosen. Seeded from the
   // opportunity's own value on `beginEdit`, then follows every fresh pick.
   const [editCustomerOption, setEditCustomerOption] = useState<SearchableSelectOption | undefined>();
+  const [projectId, setProjectId] = useState('');
+  const [projectLabel, setProjectLabel] = useState('');
   const [expectedAmount, setExpectedAmount] = useState('');
   const [showNumberErrors, setShowNumberErrors] = useState(false);
   const [amountTouched, setAmountTouched] = useState(false);
@@ -164,6 +168,8 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
       opportunity.customer_id ?? (opportunity.prospect_name ? `${PROSPECT_PREFIX}${opportunity.prospect_name}` : ''),
     );
     setEditCustomerOption(customerSelectedOption);
+    setProjectId(opportunity.project_id ?? '');
+    setProjectLabel(opportunity.project_label ?? opportunity.project_code ?? '');
     setExpectedCloseDate(opportunity.expected_close_date ?? '');
     const nextLines: LineDraft[] = lines_.map((line) => ({
       key: nextLineKey(),
@@ -219,6 +225,7 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
         title: title.trim(),
         expected_amount: expectedAmount,
         expected_close_date: expectedCloseDate,
+        project_id: projectId || null,
         // B-new (Phase 3 fix2): the OTHER key goes along as an explicit null - the
         // service fills an absent key from the row already on the opportunity, so
         // switching customer <-> prospect with the other key merely missing re-sent the
@@ -351,6 +358,30 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
             </div>
           ) : (
             <span className="text-xs text-muted-foreground">{customerLabel ?? '-'}</span>
+          )}
+          {isEditing ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="portal-opportunity-edit-project">Project (optional)</Label>
+              <AsyncCombobox<ProjectLookupItem>
+                id="portal-opportunity-edit-project"
+                value={projectId}
+                displayValue={projectLabel}
+                allowFreeText={false}
+                onChange={(v, item) => {
+                  setProjectId(v);
+                  setProjectLabel(item ? `${item.project_code} - ${item.title}` : '');
+                }}
+                fetchOptions={(q) => lookupProjects(q)}
+                optionValue={(o) => o.id}
+                optionLabel={(o) => `${o.project_code} - ${o.title}`}
+                optionMeta={(o) => o.company_name ?? ''}
+                placeholder="Search your registered projects"
+              />
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              {opportunity.project_label ?? opportunity.project_code ?? 'No project'}
+            </span>
           )}
           {isEditing ? (
             <div className="grid grid-cols-2 gap-3">

@@ -46,6 +46,8 @@ import {
 import type { StockInquiryFormData } from '../types/stockInquiry.types';
 import StockInquiryAttachmentsSection from './StockInquiryAttachmentsSection';
 import { usePublicViewLinksEnabled } from '@/hooks/usePublicViewLinksEnabled';
+import { ProjectLinkSelect } from '@/components/common/ProjectLinkSelect';
+import { isProjectLinkError, projectSuggestionQuery } from '@/lib/project-link';
 import { RequestorContactSelect } from '@/app/(protected)/master-data-management/shared/components/RequestorContactSelect';
 
 interface StockInquiryFormProps {
@@ -79,6 +81,7 @@ export default function StockInquiryForm({
       item_description: null,
       project_customer: null,
       project_name: null,
+      project_id: null,
       quantity: null,
       delivery_date: null,
       remark: null,
@@ -102,6 +105,7 @@ export default function StockInquiryForm({
         item_description: inquiry.item_description || null,
         project_customer: inquiry.project_customer || null,
         project_name: inquiry.project_name || null,
+        project_id: inquiry.project_id || null,
         quantity: inquiry.quantity ?? null,
         delivery_date: inquiry.delivery_date ?? null,
         remark: inquiry.remark ?? null,
@@ -146,6 +150,7 @@ export default function StockInquiryForm({
       item_description: data.item_description || undefined,
       project_customer: data.project_customer || undefined,
       project_name: data.project_name || undefined,
+      project_id: data.project_id || null,
       quantity: data.quantity ?? undefined,
       delivery_date: data.delivery_date ?? undefined,
       remark: data.remark ?? undefined,
@@ -159,8 +164,12 @@ export default function StockInquiryForm({
       setUpdateAndReplyDialogOpen(false);
       setReplyMessage('');
       onSuccess?.();
-    } catch {
-      // Error toast from mutation
+    } catch (error) {
+      // Error toast from mutation; a refused project also shows under the picker.
+      if (isProjectLinkError(error)) {
+        setUpdateAndReplyDialogOpen(false);
+        form.setError('project_id', { message: (error as Error).message });
+      }
     }
   };
 
@@ -173,6 +182,7 @@ export default function StockInquiryForm({
         item_description: data.item_description || undefined,
         project_customer: data.project_customer || undefined,
         project_name: data.project_name || undefined,
+        project_id: data.project_id || null,
         quantity: data.quantity ?? undefined,
         delivery_date: data.delivery_date ?? undefined,
         remark: data.remark ?? undefined,
@@ -200,6 +210,9 @@ export default function StockInquiryForm({
 
       onSuccess?.();
     } catch (error) {
+      if (isProjectLinkError(error)) {
+        form.setError('project_id', { message: (error as Error).message });
+      }
       console.error('Error submitting form:', error);
     }
   };
@@ -336,6 +349,31 @@ export default function StockInquiryForm({
                       value={field.value || ''}
                     />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </InquiryFormTableRow>
+
+          <InquiryFormTableRow label="Project (optional)">
+            <FormField
+              control={form.control}
+              name="project_id"
+              render={({ field }) => (
+                <FormItem className="space-y-1">
+                  {/* No FormControl wrapper: SearchableSelect renders a trigger plus its popover. */}
+                  <ProjectLinkSelect
+                    value={field.value}
+                    onChange={(next) => {
+                      form.clearErrors('project_id');
+                      field.onChange(next);
+                    }}
+                    selectedLabel={inquiry?.project_label}
+                    initialQuery={projectSuggestionQuery(
+                      field.value,
+                      form.watch('project_name'),
+                    )}
+                  />
                   <FormMessage />
                 </FormItem>
               )}

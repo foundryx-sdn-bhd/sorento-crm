@@ -17,7 +17,7 @@
  * LESSONS-LEARNT: never a capped static list over ~22,000 products).
  */
 import { apiFetch } from '@/lib/api';
-import { buildDataGridParams, extractApiError } from '@/lib/api-client';
+import { buildDataGridParams, codedError, extractApiError } from '@/lib/api-client';
 import type { SearchableSelectOption } from '@/components/common/SearchableSelect';
 import type {
   SalesOpportunityCustomerOptionsResponse,
@@ -33,7 +33,7 @@ import { codeWithName } from '@/lib/product-display';
 const BASE = '/api/v1/sales/opportunities';
 
 async function read<T>(response: Response, fallback: string): Promise<T> {
-  if (!response.ok) throw new Error(await extractApiError(response, fallback));
+  if (!response.ok) throw await codedError(response, fallback);
   return response.json();
 }
 
@@ -52,6 +52,7 @@ export async function getSalesOpportunities(
     status_id: params.statusId,
     sales_agent_id: params.salesAgentId,
     customer_id: params.customerId,
+    project_id: params.projectId,
     close_from: params.closeFrom,
     close_to: params.closeTo,
     outcome: params.outcome,

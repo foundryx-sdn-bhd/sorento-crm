@@ -19,6 +19,8 @@ export type ComplaintsListParams = DataGridApiFetchParams & {
   root_cause_ids?: string[];
   /** Same, for resolutions. */
   resolution_ids?: string[];
+  /** Only this project's complaints (the project page's Forms tab). */
+  project_id?: string;
 };
 
 
@@ -34,6 +36,7 @@ export function complaintListExtraParams(params: ComplaintsListParams) {
     resolution_ids: params.resolution_ids?.length
       ? params.resolution_ids.join(',')
       : undefined,
+    project_id: params.project_id,
   };
 }
 
