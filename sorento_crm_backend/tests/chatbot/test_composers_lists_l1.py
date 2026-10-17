@@ -344,11 +344,12 @@ def test_capped_past_the_end_is_the_narrow_sentence_alone(monkeypatch):
 
 
 def test_capped_sentence_catalogued_gate_on_only(monkeypatch):
-    assert NARROW in LANE_LABELS
+    key = "Those are the first {n} matches. Send more of the code to narrow it."
+    assert key in LANE_LABELS
     assert "(showing {first} to {last})" in LANE_LABELS
-    for key in (NARROW, "(showing {first} to {last})"):
+    for k in (key, "(showing {first} to {last})"):
         for lang in ("ms", "zh"):
-            assert LANE_LABELS[key][lang] and LANE_LABELS[key][lang] != key
+            assert LANE_LABELS[k][lang] and LANE_LABELS[k][lang] != k
     _set_gate(monkeypatch, True)
     for lang in ("ms", "zh"):
         assert Localizer(lang, defaults(lang)).reply(NARROW) != NARROW

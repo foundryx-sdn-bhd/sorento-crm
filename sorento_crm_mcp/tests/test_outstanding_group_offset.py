@@ -145,3 +145,24 @@ def test_catalog_exposes_and_forwards_group_offset():
 
     calls = asyncio.run(call())
     assert calls and calls[0]["query"].get("group_offset") == "20", calls
+
+
+def test_a_do_block_longer_than_the_so_block_drives_the_more_line_and_page_two():
+    """K3: the more line counts the LONGEST group's next page and page 2 continues the DO block."""
+    base = {**_header(), **_so_block(_customers(25)), **_do_block(_customers(45, so=False))}
+    first = _outstanding_envelope({**base, "group_offset": 0})
+    assert MORE_20 in first["response"]
+    assert first["group_window"]["total"] == 45
+
+    second = _outstanding_envelope({**base, "group_offset": 20})
+    text = second["response"]
+    so_part, do_part = text.split("*Delivery order outstanding*")
+    assert _names(so_part) == [f"Customer {i:02d}" for i in range(21, 26)]
+    assert _names(do_part) == [f"Customer {i:02d}" for i in range(21, 41)]
+    assert 'Reply "more" to see the next 5.' in text
+    assert second["group_window"] == {"offset": 20, "shown": 20, "total": 45}
+
+    third = _outstanding_envelope({**base, "group_offset": 40})
+    so_part, do_part = third["response"].split("*Delivery order outstanding*")
+    assert _names(so_part) == [] and _names(do_part) == [f"Customer {i:02d}" for i in range(41, 46)]
+    assert 'Reply "more"' not in third["response"]
