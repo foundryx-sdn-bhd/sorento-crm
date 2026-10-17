@@ -153,3 +153,7 @@ Request: the held-out code-lookup fails counted by failing check name (no items)
   the plan records that the parser picks the first listed near code and R2-4's post-parse refusal is the only
   effective guard; the csk11b class stays red; next are the bigger classes (fact, clarified, made-up family codes).
   Model finding for the owner (crew): gpt-5.4-mini ignores tie rules and has a position bias.
+- Crew decision 18 Oct (TRAIN fact/clarified root cause): the L2 "Current subject" cut (turn/context.py:29 cap 350,
+  _render_l2 shrinks only the subject; 0 of 198 train2 rows carry it) belongs to CHAT-STATE (its R4); this lane stays
+  off context.py. C2: no which-one on a non-stock family ask (configured list_all stands); the "dealer typed but
+  access_levels []" promotion case is noted, no change now. Grader items G1/G3 went to EVAL-BENCH.
