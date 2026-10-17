@@ -1,6 +1,6 @@
 # PLAN: EVAL-BENCH CP0, the bench check against the owner's targets (16 Oct)
 
-Status: Review, both owner CP0 review rounds applied (grader rounds 28 to 29e, 17 Oct; spend $11.96 of $12, regrade $0); CP0 closes when #1745 merges. Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
+Status: Review, both owner CP0 review rounds and the CHAT-STATE root-cause classes applied (grader rounds 28 to 30f, 17 Oct; spend $11.96 of $12, regrade $0); CP0 closes when #1745 merges. Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
 gold and the review page live under `crew/state/eval/` (crew-only).
 
 ## The owner's bar (crew relay, 16 Oct)
@@ -297,7 +297,7 @@ probes 1 / 2 / 3 on the page). With them the bench is the owner-confirmed yardst
    now says none on record (crew file `items/none_on_record_verified.jsonl`), and the bot's reply there, an
    unknown-word dead end, still fails.
 
-## Grader changes for both rounds (`targets.py`, rounds 28 to 29e on #1745, red-first, kill-proof per round, opus review per round)
+## Grader changes for both rounds (`targets.py`, rounds 28 to 30f on #1745, red-first, kill-proof per round, opus review per round)
 
 - Attribute asks (`_attribute_answered`): a number after the attribute word (digits inside a product code do not
   count), or an honest none about that attribute when the record's item has no such field ("Not defined" counts as
@@ -316,7 +316,27 @@ probes 1 / 2 / 3 on the page). With them the bench is the owner-confirmed yardst
 - Spec items whose gold says none on record are graded on an honest none ("But none matched.", "But no <X> matched
   these.", the value-miss line "Couldn't find: <value> (<label>)."), never on the unknown-word line.
 
-Regrade ($0, 3 runs, held-out): follow-ups 72.6 / 74.8 / 71.4 (reply to my question 50 -> 62.5), code lookups
+## CHAT-STATE root-cause classes (rootcause-r1, 28 bench items; crew asked to land all before its lane re-run)
+
+- Fixed by gold exclusion or re-derivation (crew `apply_gold_fixes.py`): G-NOT-ANSWER 6, G-QUESTION 4 (one kept with
+  options from the question before), G-FILTER 5, G-HELD 2, LEGACY 5 (old `variables` session shape: dropped, not
+  converted). 21 of the 28 items leave the gold.
+- G-CODE (round 30, 30b): the gold set `code_unresolved` by exact lookup only, a class of 46 follow-up items (25
+  held-out). A catalogue family per typed code (crew `items/code_families.jsonl`, read-only): an exact code is itself;
+  one product = resolved; 2+ with exactly one held before the turn = that held product (owner card c08: the 10-option
+  picker for "Srtwc286 drawing" with SRTWC286-SH-NEW held is a fail); otherwise 2+ = ambiguous (a which-one picker is
+  right); sizes ("250mm") are not codes. The grader no longer demands a subject change when the gold subject is the
+  held subject.
+- G-BLIND (round 30 to 30f): a filter phrase read across entities counts for `filter`; `applied` needs carried
+  evidence (memory after, or one lookup argument holding every word, never pooled across keys or tools); the bot's set
+  header counts only when the apply payload is omitted and never for a value held before.
+- Kept failing by owner ruling: 665ba3e897 ("How about p trap": a count-only set reply, round 1 rule 5).
+- Changed against rootcause-r1's reading: 7700ed1490 ("incoming srtwc286?" with SRTWC286-SH held) now expects the held
+  product, the same pattern as owner card c08.
+- train_followups (crew-only, for CHAT-STATE) re-exported from the fixed gold: 118 -> 86 items.
+
+Regrade ($0, 3 runs, held-out, final at round 30f): follow-ups 78.3 / 80.4 / 77.1 (topic switch 69.2 -> 84.6: the
+old failures were bench artifacts, every flip hand-checked; reply to my question 50 -> 62.5), code lookups
 75.0 / 74.3 / 73.6, spec 54.1 / 55.3 / 54.1 (two how-many replies that list products now pass; two items that asked the
 price tier before finding any product, five run results, now fail), attachment 61.5 / 53.8 / 65.4, customer access
 97.5 / 95.0 / 92.5 (was 91.7 mean); leaks 2 replies per run (#1648); made-up 0 confirmed.
