@@ -19,6 +19,7 @@ import {
   ListOrdered,
   LoaderCircleIcon,
   Move,
+  Receipt,
   Plus,
   Trash2,
   Truck,
@@ -115,6 +116,8 @@ import { PLAN_PERMISSION } from '../../lib/planActions';
 import { SOURCE_LABELS as LINE_SOURCE_LABELS } from '../../lib/sourceLabels';
 import { cancelSourcesTitle, isPartlyCancelled, PARTLY_CANCELLED } from '@/app/(protected)/scm/lib/autocountCancel';
 import { useHasPermission } from '@/hooks/usePermissions';
+import { SalesOrderInvoices } from '@/app/(protected)/finance/billing-documents/components/SalesOrderInvoices';
+import { BILLING_VIEW_SLUG } from '@/app/(protected)/finance/billing-documents/lib/permissions';
 import { distinctName } from '@/lib/product-display';
 
 /**
@@ -487,6 +490,7 @@ export function SalesOrderDetail({
   const [deliveriesRequested, setDeliveriesRequested] = useState(false);
   const canPlan = useHasPermission(PLAN_PERMISSION);
   const canOpenDo = useHasPermission('order_management.orders.view');
+  const canSeeInvoices = useHasPermission(BILLING_VIEW_SLUG);
   const deliveries = useSalesOrderDeliveries(id, deliveriesRequested);
   const searchParams = useSearchParams();
   // A consignment opened by a sales-orders link lands on its own page.
@@ -1797,6 +1801,12 @@ export function SalesOrderDetail({
             <Truck />
             <span>Delivery</span>
           </TabsTrigger>
+          {canSeeInvoices ? (
+            <TabsTrigger value="invoices">
+              <Receipt />
+              <span>Invoices</span>
+            </TabsTrigger>
+          ) : null}
           <TabsTrigger value="transfers">
             <Move />
             <span>Transfers</span>
@@ -2237,6 +2247,13 @@ export function SalesOrderDetail({
             </div>
           </Card>
         </TabsContent>
+
+        {/* PLAN-finance-billing-documents S3-1: billing documents pointing at this order's lines. */}
+        {canSeeInvoices ? (
+          <TabsContent value="invoices" className="mt-0 focus-visible:outline-none">
+            <SalesOrderInvoices salesOrderId={so.id} />
+          </TabsContent>
+        ) : null}
 
         {/* AC-E6: the movements this order's supply decision asked for. The SAME grid the
             Transfers page is, pinned to this order - so a transfer cannot read one way here
