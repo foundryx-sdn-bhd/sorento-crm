@@ -399,3 +399,33 @@ describe('read-only view of an existing request', () => {
     expect(await screen.findByText('Created 16/10/2026')).toBeTruthy();
   });
 });
+
+describe('number fields: a blank line Quantity is refused, never defaulted to 1', () => {
+  it('shows the sentence under Quantity, sends nothing, and clears it once 3 is typed', async () => {
+    renderForm();
+    await screen.findByText(TITLE);
+    const customer = screen.getByLabelText(/^Customer Name/);
+    fireEvent.focus(customer);
+    fireEvent.change(customer, { target: { value: 'Walk-in Trading' } });
+    fireEvent.blur(customer);
+    await new Promise((r) => setTimeout(r, 250));
+    fireEvent.change(screen.getByLabelText(/^Project Title/), { target: { value: 'Tower A' } });
+    fireEvent.change(screen.getByLabelText(/^Request Delivery Date/), { target: { value: '2026-12-01' } });
+    fireEvent.change(screen.getByLabelText(/^Ship To/), { target: { value: 'Site store' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Deliver-Van' }));
+    const row = ensureRow();
+    searchProduct(row, 'tpe9101');
+    fireEvent.click(await screen.findByRole('option', { name: /TPE-9101/ }));
+
+    const qty = within(row).getByLabelText('Quantity') as HTMLInputElement;
+    fireEvent.change(qty, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /^submit sample request$/i }));
+
+    expect(await screen.findByText('Enter a whole number of at least 1.')).toBeTruthy();
+    expect(createSampleRequest).not.toHaveBeenCalled();
+    expect(submitSampleRequest).not.toHaveBeenCalled();
+
+    fireEvent.change(qty, { target: { value: '3' } });
+    await waitFor(() => expect(screen.queryByText('Enter a whole number of at least 1.')).toBeNull());
+  });
+});

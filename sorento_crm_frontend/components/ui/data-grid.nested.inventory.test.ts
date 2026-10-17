@@ -93,6 +93,10 @@ const EXPANDED_CONTENT_SITES = new Map<string, string>([
     'app/(protected)/master-data-management/products/[id]/components/ProductSuppliersTab.tsx',
     'NESTED GRID: SupplierCostPrices (PanelDataGrid) under a supplier row, #1305 round 9. Covered by the context default (it names no scrollerMaxHeight of its own)',
   ],
+  [
+    'app/(protected)/project-sales/sample-requests/components/SampleRequestDetail.tsx',
+    'OrderInquiryStockGrid for the line product at BRW (the same thin CellStockTable wrapper as the OI lines grid) under a sample request line. Baseline addition for a site main introduced in #1718, not a behaviour test; the expansion sits inside the lines PanelDataGrid provider, so the context default covers it',
+  ],
   // The primitives themselves: the prop declaration, the renderer, and the
   // wrapper that forwards `expanded`. Not nesting sites.
   ['components/ui/data-grid.tsx', 'declares the ColumnMeta field'],

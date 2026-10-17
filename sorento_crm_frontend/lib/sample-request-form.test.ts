@@ -43,3 +43,31 @@ describe('sample request form: customer', () => {
     expect(stateFromDetail(detail).lines[0].inactive).toBe(true);
   });
 });
+
+describe('sample request form: number fields refuse, never default', () => {
+  const SENTENCE = 'Enter a whole number of at least 1.';
+
+  it.each(['', '0', '2.5', 'NaN'])('reports a line qty of %j as an error and never sends 1', (qty) => {
+    const s = complete({ lines: [{ key: 'l1', product_id: 'p1', label: 'P1', qty, remark: '' }] });
+    expect(Object.values(validate(s))).toContain(SENTENCE);
+    expect(payloadFromState(s).lines[0].qty).not.toBe(1);
+  });
+
+  it('passes a valid qty of 3 through as 3 with no error', () => {
+    const s = complete({ lines: [{ key: 'l1', product_id: 'p1', label: 'P1', qty: '3', remark: '' }] });
+    expect(Object.values(validate(s))).not.toContain(SENTENCE);
+    expect(payloadFromState(s).lines[0].qty).toBe(3);
+  });
+
+  it.each(['', '0', '2.5', 'NaN'])('reports a loan period of %j as an error and never sends 2', (loan) => {
+    const s = complete({ loan_value: loan });
+    expect(validate(s).loan_value).toBe(SENTENCE);
+    expect(payloadFromState(s).loan_value).not.toBe(2);
+  });
+
+  it('passes a valid loan period of 5 through as 5 with no error', () => {
+    const s = complete({ loan_value: '5' });
+    expect(validate(s).loan_value).toBeUndefined();
+    expect(payloadFromState(s).loan_value).toBe(5);
+  });
+});
