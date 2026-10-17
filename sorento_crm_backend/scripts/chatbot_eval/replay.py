@@ -778,6 +778,17 @@ def _pin_resolves(session_factory: Callable[[], Any], version_id: str) -> bool:
         db.close()
 
 
+LIVE_ERROR_RATE = 0.02
+
+
+def _live_errored(res: dict[str, Any]) -> bool:
+    """An item that raised, or whose turn came back with no trace and no response."""
+    if "error" in res:
+        return True
+    turn = res.get("turn")
+    return isinstance(turn, dict) and not turn.get("trace") and not turn.get("response")
+
+
 def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], *,
               session_factory: Callable[[], Any], max_calls: int, max_usd: float,
               require_key_last4: str, on_row: Callable[[dict[str, Any]], None] | None = None,
@@ -795,6 +806,7 @@ def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], 
     total.update(max_calls=max_calls, max_usd=max_usd, stop=None, require_key_last4=require_key_last4)
     results: list[dict[str, Any]] = []
     stopped: str | None = None
+    error_ids: list[Any] = []
     previous_disable = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
     try:
@@ -819,6 +831,14 @@ def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], 
             results.append(res)
             if on_row is not None:
                 on_row(res)
+            if _live_errored(res):
+                error_ids.append(item["item_id"])
+            if len(error_ids) > max(2, LIVE_ERROR_RATE * len(items)):   # (never on a lone error in a short list) the bench is broken, not the bot: stop spending
+                res = {"stopped": "error_rate", "errors": len(error_ids), "first_ids": error_ids[:5]}
+                results.append(res)
+                if on_row is not None:
+                    on_row(res)
+                break
     finally:
         logging.disable(previous_disable)
     return results
@@ -834,6 +854,17 @@ def _stage_value(row: dict[str, Any], stage: str) -> Any:
     if stage == "tools":
         return [stages.get("tools"), row.get("misses") or []]
     return stages.get(stage)
+
+
+def _broken_reason(r: dict[str, Any]) -> str | None:
+    """Why a replay row is no evidence: the engine errored, a run row has no stages, or the turn was a duplicate."""
+    if any(isinstance(m, dict) and "error" in m for m in r.get("misses") or []):
+        return "error"
+    if r.get("skipped") == "duplicate":
+        return "duplicate"
+    if not r.get("skipped") and not r.get("stages"):
+        return "empty_stages"
+    return None
 
 
 def diff_rows(base: list[dict[str, Any]], head: list[dict[str, Any]],
@@ -867,7 +898,13 @@ def diff_rows(base: list[dict[str, Any]], head: list[dict[str, Any]],
             skipped["missing_in_base"] = skipped.get("missing_in_base", 0) + 1
             diffs.append((key[0], key[1], "missing_in_base"))
     unintended = [d for d in diffs if d[2] == "missing_in_base" or (d[0], d[2]) not in intended]
-    return {"diffs": diffs, "unintended": unintended, "counts": {"stage": stage_counts, "skipped": skipped}}
+    broken: list[tuple[str, str, str]] = []
+    for r in (*base, *head):   # a row broken in either arm counts once, even when both arms match
+        key = (r["case_id"], r["turn_id"])
+        reason = _broken_reason(r)
+        if reason and key not in {b[:2] for b in broken}:
+            broken.append((*key, reason))
+    return {"diffs": diffs, "unintended": unintended, "broken": broken, "counts": {"stage": stage_counts, "skipped": skipped}}
 
 
 # --------------------------------------------------------------------------- #
@@ -886,6 +923,36 @@ def _read(path: str) -> list[dict[str, Any]]:
     return out
 
 
+def _db_revisions(session_factory: Callable[[], Any]) -> set[str]:
+    from sqlalchemy import text
+
+    db = session_factory()
+    try:
+        return {r[0] for r in db.execute(text("SELECT version_num FROM alembic_version"))}
+    finally:
+        db.close()
+
+
+def _code_heads(backend_dir: str) -> set[str]:
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config(os.path.join(backend_dir, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(backend_dir, "alembic"))
+    return set(ScriptDirectory.from_config(cfg).get_heads())
+
+
+def _preflight(session_factory: Callable[[], Any]) -> int | None:
+    """Refuse (2) a replay DB that is not at this checkout's alembic head: a stale schema fails every turn quietly."""
+    current, heads = _db_revisions(session_factory), _code_heads(os.getcwd())
+    if current == heads:
+        return None
+    env = os.environ.get("SORENTO_ENV_FILE") or ".env"
+    print(f"refused: replay DB alembic {' '.join(sorted(current))} != code head {' '.join(sorted(heads))}; "
+          f"run: SORENTO_ENV_FILE={env} alembic upgrade head", file=sys.stderr)
+    return 2
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     import app
 
@@ -894,6 +961,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
     from app.database import SessionLocal
 
+    refused = _preflight(SessionLocal)
+    if refused:
+        return refused
     rows = [r for path in args.traces for r in _read(path)]
     # One line per finished row, flushed, so a run killed at a time budget leaves its finished rows.
     with open(args.out, "w") as fh:
@@ -913,8 +983,12 @@ def _cmd_live(args: argparse.Namespace) -> int:
         return 2
     from app.database import SessionLocal
 
+    refused = _preflight(SessionLocal)
+    if refused:
+        return refused
     items, recorded = _read(args.items), _read(args.recorded)
     n = {"run": 0, "stopped": 0, "skipped": 0}
+    last: dict[str, Any] = {}
     with open(args.out, "w") as fh:
         os.chmod(args.out, 0o600)
 
@@ -922,11 +996,15 @@ def _cmd_live(args: argparse.Namespace) -> int:
             fh.write(json.dumps(r) + "\n")
             fh.flush()
             n["stopped" if "stopped" in r else "skipped" if "skipped" in r else "run"] += 1
+            last.update(r)
 
         live_rows(items, recorded, session_factory=SessionLocal, max_calls=args.max_calls, max_usd=args.max_usd,
                   require_key_last4=args.require_key_last4, on_row=write,
                   prompt_version_id=args.prompt_version_id)
     print(f"live items {len(items)} run {n['run']} stopped {n['stopped']} skipped {n['skipped']}")
+    if last.get("stopped") == "error_rate":
+        print(f"error_rate stop: {last['errors']} errored items, first {' '.join(str(i) for i in last['first_ids'])}")
+        return 3
     return 0
 
 
@@ -943,6 +1021,9 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     print(f"stages {json.dumps(res['counts']['stage'], sort_keys=True)}")
     print(f"skipped {json.dumps(res['counts']['skipped'], sort_keys=True)}")
     print(f"unintended {len(res['unintended'])}")
+    print(f"broken {len(res['broken'])} {' '.join(str(b[1]) for b in res['broken'][:5])}".rstrip())
+    if res["broken"]:   # checked first: an identical broken row in both arms is no diff, and no evidence
+        return 3
     return 1 if res["unintended"] else 0
 
 
