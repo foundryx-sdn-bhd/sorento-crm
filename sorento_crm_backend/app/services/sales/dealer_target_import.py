@@ -1390,7 +1390,7 @@ _ACCOUNT_SUFFIX = re.compile(r"\bA\s*+/\s*+C\.?\s*+([IVX]++|\d++)\s*+[)\]]?\s*+\
 
 def _is_account_marker(text: str) -> bool:
     """A bracketed "A/C I" / "A/C 1", never a branch that merely starts with L ("(LABUAN)")."""
-    return re.fullmatch(r"L\d+|RAW\d+", account_key(text) or "") is not None
+    return re.fullmatch(r"L\d+|RAW\w+", account_key(text) or "") is not None
 
 
 def branch_key(name: Optional[str]) -> str:
@@ -1549,8 +1549,10 @@ class _CustomerIndex:
             # In a tie, a ledger whose name states another account ("[CERAMIC]" at level 1) is
             # out before any tie-break can land on it (gate 5 review B2).
             plain = [c for c in exact if not name_accounts(c.name) or acc in name_accounts(c.name)]
-            if plain:
-                exact = plain
+            if not plain:
+                # Every tied ledger names another account: no tie-break may pick one (re-check).
+                return None, exact[:_MAX_SUGGESTIONS], False, "several"
+            exact = plain
         if len(exact) > 1 and acc is not None:
             # Several ledgers answer to the account through `account_level`, but only one names
             # it in its own name ("[A/C I]", "A/C I"): that one (gate 4). A level never outranks
