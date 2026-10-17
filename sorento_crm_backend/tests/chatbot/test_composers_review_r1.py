@@ -415,3 +415,47 @@ def test_n7_status_label_prefix_names_no_internal_domain(monkeypatch, status):
         "escalate_message"
     ]
     assert not re.search(r"\binventory\b|master[_ ]products", out), out
+
+
+# --------------------------------------------------------------------------- #
+# Round 2
+# --------------------------------------------------------------------------- #
+
+
+def test_unplaced_line_all_uuid_prints_nothing_gate_on(monkeypatch):
+    """A token list made only of UUIDs names nothing: no "Couldn't find ." sentence at all."""
+    from tests.chatbot.test_multi_code_dym import _answer, _envelope
+
+    _set_gate(monkeypatch, True)
+    answer = _answer(_envelope({"SRTWC286": 12}, [UUID], {}))
+    assert "Couldn't find ." not in answer.text, answer.text
+    assert "Couldn't find ." not in answer.miss_text
+    assert not UUID_RE.search(answer.text)
+
+
+def test_absence_writers_satisfy_states_absence(monkeypatch):
+    """Drift guard: every writer of an absence sentence produces a phrase `states_absence` reads."""
+    from app.services.chatbot.composers import misses
+    from tests.chatbot.test_composers_s4_miss import _breakdown
+    from tests.chatbot.test_rearch_r4_bridge_miss import _expected_miss_text
+    from tests.chatbot.test_rearch_r8_recheck_round import _dym_incoming_sibling_scenario
+
+    _set_gate(monkeypatch, True)
+    parser, resolved, extra = _dym_incoming_sibling_scenario()
+    payload = {"resolved": resolved, "gate": extra["gate"], "_exit_kind": "not_found"}
+    sibling_text, _offer = _expected_miss_text(
+        payload, parser=parser, resolved=resolved, gate=extra["gate"], services=extra["services"], build_result=extra["build_result"]
+    )
+    writers = {
+        "what_you_want_reply": (
+            A.what_you_want_reply("SRT5734", ["• product: SRT5734"], leg="incoming", team="sales"),
+            "SRT5734",
+        ),
+        "build_breakdown_msg": (_breakdown(), "SRTBF11850"),
+        "build_suggest_offer": (sibling_text, "SRTWT7202"),
+    }
+    for name, (text, code) in writers.items():
+        assert misses.states_absence(text, [code]), (name, text)
+    joined = "\n".join(text for text, _code in writers.values()).lower()
+    for phrase in misses.ABSENCE_PHRASES:
+        assert phrase in joined, phrase

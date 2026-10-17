@@ -222,6 +222,10 @@ None is edited in S2; the flip PR retargets them.
   set it). The turn tier itself is vacuous until crew brings `sorento_eval_base` to main's schema (crew fixing).
 - R3: the tester covers the entitlement-miss shape; if a miss text does not state the absence, I3 is restricted to
   `build_breakdown_msg` misses via a flag.
+- R3 as built (review round 1, 17 Oct; deviation recorded): no flag is plumbed (the unit seam `_apply_crossdomain_render`
+  sees only text + result). The duplicate absence line is dropped only when the miss text carries one of the writers'
+  own absence phrases (`composers/misses.ABSENCE_PHRASES`) with the code. Fails safe (keeps main's duplicate) on
+  drift; round 2 makes the writers share those constants and adds a drift-guard test.
 
 ## 10. Open items for crew
 
