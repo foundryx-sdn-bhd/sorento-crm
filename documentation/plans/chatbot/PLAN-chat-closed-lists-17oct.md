@@ -1,6 +1,6 @@
 # PLAN: CHAT-CLOSED-LISTS - chatbot step 2, closed candidate lists
 
-Status: Build (card answered 17 Oct, all (a); S1 green). Track: full (size L, LEAD pattern).
+Status: Build (card answered 17 Oct, all (a); S1-S5 green; S6 TRAIN measurement asked of crew). Track: full (size L, LEAD pattern).
 Branch `claude/chat-closed-lists-x6ymb5` (the sandbox cannot push `crew/chat-closed-lists`), PR #1755.
 
 Design source: CHATBOT-SCALE-DESIGN-16oct section 8 step 2 + D2 (crew-only): code only SHORTLISTS
@@ -103,3 +103,23 @@ No word rules, no code fuzzy matching (owner): near spellings only ever ADD a ca
 decides. Never move the production label; no prod access; held-out never to this lane. Coordinate with CHAT-STATE
 (#1747): new code in new files (`head/candidates.py`, `head/closed_lists_prompt.py`), the schema change limited to
 one entity hint value and no new top-level key.
+
+## Progress (17 Oct)
+
+| Slice | Red | Green | Notes |
+|---|---|---|---|
+| S1 lists as registry variables | 30ab1b98 | 4e53135c | words = description parts + `attachment_type_alias` set (3c86043c) |
+| S2 candidate shortlist | 63cb35d1 | 91cf60a0 | about 20 ms per message on the 50-key seed registry |
+| S3 section, gate, block, publisher | 7a492b88 | 02eabada | gate = marker in the RAW template |
+| S4a kind lock (c06) | 3d686767 | 1498b51b | ungated: an intended L1 diff under production |
+| S4b list-validated picks, tag-built legs (c04/c19) | d8718250, 60d1762e | 811f22fb, 3c86043c | an item's own word names it; a shared word names none |
+| S5 no word rewrites under the gate (c27) | (S5 red commit) | 811f22fb | `_category_word_under_documents` off; listed type binds; F4 kept |
+
+Held (crew Q4 (a)): deleting the gate-off rewrites waits for the owner to move the label; each is
+listed with the replay diff it would need. Gated off under the CLOSED LISTS path today:
+`_category_word_under_documents`, the class split of a listed type pick, the cert regexes and
+the `user_goal` fallback in `derive_require`.
+
+Open: S4c, the "which file?" ask listing the file types that product has (crew Q3 (a)); c06's
+"300mm" reads trap_length where the answer key says dim_length (a numeric key choice; no
+candidate covers a number with a unit, trigger: a TRAIN miss family on units).
