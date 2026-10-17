@@ -1,6 +1,6 @@
 # CARD: AC-BILLING, billing documents S2 to S4 plus outstanding (17 Oct)
 
-Status: design card, waiting on the owner's OK. Track: full (migration, contract bump, new ingest entity).
+Status: design card; crew answered Q1 (a), Q3 (a), Q4 (a), Q5 (a) on 17 Oct; Q2 is with the owner, built as (a) meanwhile (one-line switch: the slug constant `OUTSTANDING_VIEW_SLUG`). Track: full (migration, contract bump, new ingest entity).
 Lane AC-BILLING, PR #1770, branch `claude/autocount-billing-outstanding-351yyn`.
 Plan: `PLAN-finance-billing-documents-27sep.md` (S0 #1314 and S1 #1321 on main). Schema reference:
 `REF-autocount-billing-schema.md`. Owner 15 Oct ~21:00: the billing sync INCLUDES outstanding per invoice and per
