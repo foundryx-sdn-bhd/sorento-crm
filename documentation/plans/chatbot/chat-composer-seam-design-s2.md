@@ -207,6 +207,21 @@ for` in recorded replays: `replay_turns/console/case-001`, `-004`, `-016`, `-018
 `test_s6c_engine_paths.py`, which grade the `_xdBlock` key set: I3a / I5 keys are gate-on only for that reason).
 None is edited in S2; the flip PR retargets them.
 
+## 10a. Lead decisions 17 Oct (override section 10 and anything above that disagrees)
+
+- OI-1: (a) all tools. Card R13 (crew-answered card) already sets one date format for every reply, and S4's promotion
+  dates are the same fix. UAC S2 reads "every date-only value on a field line prints dd/mm/yyyy (gate on)".
+  Reviewer checks the gate-on diff with the section 5 normalised-diff method.
+- OI-2: as recommended. The miss sentence stays; the crossdomain "No incoming for X." goes on the total-miss fold.
+- OI-3: in S2, same mechanism (drop the `origin == "incoming"` condition in I3). The word "inventory" in
+  "But no inventory matched these." is an internal name (R5) and is fixed with S3's one miss grammar.
+- OI-4: asked of crew; until answered, unchanged (not in the card).
+- OI-5: acceptable (the owner kept the same shape on the main path; the picker text cannot change).
+- OI-6: verified 17 Oct: `CHAT_COMPOSER_ENABLED=true` in the shell reaches the replay process (`replay.env` does not
+  set it). The turn tier itself is vacuous until crew brings `sorento_eval_base` to main's schema (crew fixing).
+- R3: the tester covers the entitlement-miss shape; if a miss text does not state the absence, I3 is restricted to
+  `build_breakdown_msg` misses via a flag.
+
 ## 10. Open items for crew
 
 - **OI-1 (date scope, owner-visible).** Recommend (a) all tools (section 5); it brings S4's / S5's field-line dates

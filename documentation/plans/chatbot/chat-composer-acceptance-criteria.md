@@ -51,8 +51,10 @@ Helpers land in the slice that first prints them (lead decision 17 Oct, seam des
 
 ## Later slices (outline; detailed when each starts)
 
-- S2 ETA: dates dd/mm/yyyy (TRAIN cp0-0654e3e74a); one "Container" label; an ETA miss says it once
-  (TRAIN cp0-5430419641); dealer `CODE: ✅ ETA d` line unchanged.
+- S2 ETA: gate on, every date-only value on a field line prints dd/mm/yyyy, every tool (R13; TRAIN cp0-0654e3e74a,
+  cp0-b90acd1184); one "Container" label; an ETA miss (and its stock twin) says the absence once (TRAIN cp0-5430419641);
+  incoming rows under a stock miss use the numbered block; dealer `CODE: ✅ ETA d` line and the sibling-variant picker
+  unchanged.
 - S3 not found / clarify / hand-over: one miss grammar; one "more" line; no internal names (TRAIN cp0-75e516bd40); no
   needless question left open after a full exact answer (R12; TRAIN cp0-b1f73c72c0,
   cp0-958b275668), but the numbered sibling-variant picker after a full answer to an exact code stays, unchanged
