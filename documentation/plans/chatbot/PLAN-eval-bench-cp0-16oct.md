@@ -1,6 +1,6 @@
 # PLAN: EVAL-BENCH CP0, the bench check against the owner's targets (16 Oct)
 
-Status: Review, both owner CP0 review rounds and the CHAT-STATE root-cause classes applied (grader rounds 28 to 30f, 17 Oct; spend $11.96 of $12, regrade $0); CP0 closes when #1745 merges. Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
+Status: Build (follow-ups). CP0 closed: #1745 merged 17 Oct (8707b950e) with both owner CP0 review rounds and the CHAT-STATE root-cause classes applied (grader rounds 28 to 30f; spend $11.96 of $12, regrade $0). Open on the small fix track: the live runner prompt pin and the 4 rootcause-r2 grader/gold items (last section). Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
 gold and the review page live under `crew/state/eval/` (crew-only).
 
 ## The owner's bar (crew relay, 16 Oct)
@@ -341,3 +341,17 @@ old failures were bench artifacts, every flip hand-checked; reply to my question
 price tier before finding any product, five run results, now fail), attachment 61.5 / 53.8 / 65.4, customer access
 97.5 / 95.0 / 92.5 (was 91.7 mean); leaks 2 replies per run (#1648); made-up 0 confirmed.
 
+
+## Follow-ups after CP0 (17 Oct, small fix track)
+
+- Release fix #1757: `test_replay_live.py` (#1745) listed in `tests/chatbot/test_import_boundary.py` next to
+  `test_replay.py` (bench tooling, not core, not on a request path).
+- Live runner prompt pin (`replay.py live --prompt-version-id ID`): a lane measures an unlabelled parser prompt
+  version without moving the production label. The id goes onto every dry-run payload as the parser prompt
+  override and into each row's provenance as `prompt_version_id`. The CLI fails closed before any item runs if the
+  id is not a `chatbot_semantic_parser` version. A turn whose prompt version is None records no id. Used for S6
+  (#1755, v158 pinned): 342 turns per arm, USD 4.11.
+- rootcause-r2 (CHAT-STATE, 17 Oct): 4 grader/gold items for this lane. 620ea78a75: a 5-variant code, so the gold is
+  `ambiguous` by the round-30 family rule. c7ec5f1c31: a related-products picker after a fully answered fact.
+  34166492fe: the order subject is in `focus.extra.order` and the tool envelope, and `_subject_after` reads
+  neither. 4dfbcd267e: an ideate-lane item that cannot run live, so it leaves the live gold.
