@@ -1,6 +1,6 @@
 # PLAN: CHAT-COMPOSER - one composer per answer type
 
-**Status:** Build S4-S6 design (17 Oct). S0-S3a done with red-first + kill-proof on #1760 (head d3b8adab8). Replay DB fixed and cleaned by crew; full turn tier + gate-on text review running. Track: L, LEAD pattern (local lane).
+**Status:** Code complete for this PR (17 Oct): S0-S6 + review rounds 1-2, reviewer READY, security PASS, red-first + kill-proof per slice on #1760, L1 replay gate off 0/1506 + 585/585 turn 0 unintended, gate on 125/585 intended; TRAIN paired run main 71/84 vs lane 70/84 (+1 unknown, parser noise), $1.05. Waiting for CI; follow-ups: Sets slice, S3b, S3c, R10 lane, flip PR (`PLAN-chat-composer-flip.md`). Track: L, LEAD pattern (local lane).
 **UAC:** `chat-composer-acceptance-criteria.md`. **Card:** `chat-composer-behaviour-card.md` (discovery, contract, rules R1-R13, per-type changes, slices, Q1-Q4).
 **Lane:** CHAT-COMPOSER, branch `crew/chat-composer`, base origin/main 20c191d86. Step 3 of the 16 Oct chatbot scale
 design (`crew/state/reports/CHATBOT-SCALE-DESIGN-16oct.html`, section 4 row F, section 8 step 3) and reports
@@ -50,12 +50,12 @@ goes to crew in a crew-note so crew can order merges.
 | Slice | Content | Status |
 |---|---|---|
 | S0 | gate `chat_composer_enabled`, composer package, shared format helpers (fold), contract tests | done (with S1) |
-| S1 | stock: miss wording, ETA-miss stock block, full dealer block (OI-1) | done; turn-tier replay owed |
+| S1 | stock: miss wording, ETA-miss stock block, full dealer block (OI-1) | done |
 | S2 | ETA / incoming: dates all tools, Container/ETA labels, miss once, numbered incoming rows | done (5457f57ac) |
-| S3 | not found / clarify / hand-over | queued |
-| S4 | files + promotions | seam design |
-| S5 | order / document status | seam design |
-| S6 | product info + price | seam design |
+| S3 | not found / clarify / hand-over | split: S3a done, S3b/S3c wait |
+| S4 | files + promotions | done (304602ca5) |
+| S5 | order / document status | done (fa1288252) |
+| S6 | product info + price | done (fa1288252) |
 | Sets | set / list wrapper + one "more" line on every capped list, paging via the parser continuation flag (owner 17 Oct ~15:15) | waits #1744; continuation waits #1747/#1755 |
 | S3a | one miss wording, no internal names, carried-stock-leg bare question dropped (parser guard) | done (11f1f5b7b, d3b8adab8) |
 | S3b/S3c | M7 (waits #1744), run_gate:1598 (waits #1755) | waits |
