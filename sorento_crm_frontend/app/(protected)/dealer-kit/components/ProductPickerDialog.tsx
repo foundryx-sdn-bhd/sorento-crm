@@ -168,6 +168,16 @@ export function ProductPickerDialog({
   // Remount-on-open keeps the draft honest when the dialog is reopened after a
   // cancel; without it the previous edit would silently persist.
   const [openedWith, setOpenedWith] = useState(value);
+  // A fresh opening starts on By rule, with no leftover refusal and the saved selection.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setTab('rule');
+      setRuleRefused(false);
+      setDraft(value);
+    }
+  }
   if (open && openedWith !== value) {
     setOpenedWith(value);
     setDraft(value);

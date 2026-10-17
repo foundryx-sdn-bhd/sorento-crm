@@ -59,7 +59,7 @@ def _validate_conditions(conditions: Optional[dict]) -> None:
     def walk(node: object) -> None:
         if not isinstance(node, dict):
             return
-        if node.get("kind") == "group":
+        if node.get("kind") == "group" or "rules" in node:
             for rule in node.get("rules") or []:
                 walk(rule)
             return
