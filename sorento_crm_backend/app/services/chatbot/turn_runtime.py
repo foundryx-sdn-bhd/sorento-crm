@@ -1359,6 +1359,64 @@ def with_set_count_from_text(
     return {**base, "top_n": count, "reference_positions": []}
 
 
+#: The verdict fields that carry an ask or a filter of the message's own. A "more" sets none of them.
+_OWN_ASK_FIELDS = (
+    "broaden_axis",
+    "broaden_to",
+    "date_mode",
+    "date_filter_start",
+    "date_filter_end",
+    "demand_qty",
+    "order_status",
+    "group_by",
+    "sales_channel",
+    "reference_target",
+    "person_mention",
+    "contains_flyer",
+    "query_brands",
+)
+
+
+def with_set_more(verdict: dict[str, Any], *, carried: Any) -> dict[str, Any]:
+    """CHAT-COMPOSER: a bare "more" pages the set the LAST reply listed (or, past the end,
+    reaches the existing "That is all N." reply). Parser fields only, and a WHITELIST: the
+    verdict pages only when `continuation` is true, the carry is a set carry (`shown > 0`, not
+    offer-only), and the message sets nothing of its own (no entity, attribute, ask, named
+    count, affirmative, filter field, or a domain other than the carried set's). Anything else is
+    returned unchanged and parsed as any other message."""
+    from app.services.chatbot import composers
+    from app.services.chatbot.lanes.business import answer as answer_mod
+
+    if not composers.enabled() or verdict.get("continuation") is not True:
+        return verdict
+    key = carried.get("set_key") if isinstance(carried, dict) else None
+    if not isinstance(key, dict) or key.get("offer_only"):
+        return verdict
+    shown, total = int(key.get("shown") or 0), int(key.get("total") or 0)
+    if not (shown > 0 and total > 0):
+        return verdict
+    if (
+        verdict.get("requested_attributes")
+        or verdict.get("asks")
+        or verdict.get("sub_asks")
+        or verdict.get("is_affirmative") is True
+        or named_count(verdict.get("top_n")) is not None
+        or any(verdict.get(field) for field in _OWN_ASK_FIELDS)
+    ):
+        return verdict
+    if verdict.get("message_type") not in (None, "business_query"):
+        return verdict
+    hint, domain = verdict.get("domain_hint"), key.get("domain")
+    if hint and (hint != domain if domain else verdict.get("domain_in_message") is True):
+        return verdict
+    entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
+    echoed = [e for e in entities if e.get("current_message") is True]
+    if echoed and verdict.get("entity_op") != "reuse":
+        return verdict
+    base = {**verdict, "entities": [e for e in verdict.get("entities") or [] if e not in echoed]} if echoed else verdict
+    return {**base, "top_n": answer_mod.SET_LIST_MAX, "reference_positions": [], SET_CONTINUE_KEY: True}
+
+
 #: The verdict keys that say WHAT was asked, kept with an open clarify so its answer
 #: re-runs that ask (round 4 R5).
 _CLARIFY_ASK_KEYS = (
@@ -3727,8 +3785,18 @@ def make_tool_runner(
             "files_as_links": bool(getattr(profile, "files_as_links", False)),
         }
         if page_predicate is not None:
+            # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local copy, 7 Oct
+            # 2026): the rows this page LISTS are the conversation's subject from here on,
+            # handed back on the envelope (`listed_products`) for the engine to settle
+            # onto `focus.products`. A page turn never runs the resolver, and
+            # `turn/apply._narrow_and_plan` settles the focus only from what the resolver
+            # matched, so after "sorento" listed 50 taps the focus still held turn 1's
+            # code-tier rows (the COLD TAP family) and "pic" ran over those two.
+            listed_products = listed_product_rows(db, page_ids)
+            # The code rides each id, so the fetch's set cut counts codes (twins, R4).
+            code_of = {row["uuid"]: row["canonical_code"] for row in listed_products}
             entities = [
-                {"uuid": pid, "entity_type": "product", "canonical_code": None}
+                {"uuid": pid, "entity_type": "product", "canonical_code": None, "code": code_of.get(pid)}
                 for pid in page_ids
             ]
             # ATTACH-SET-BRAND-FOLLOWUP (owner hand test, 6 Oct 2026): the document type the
@@ -3742,14 +3810,6 @@ def make_tool_runner(
                 {"uuid": type_id, "entity_type": "attachment_type", "canonical_code": None}
                 for type_id in set_page_attachment_type_ids(carry)
             ]
-            # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local copy, 7 Oct
-            # 2026): the rows this page LISTS are the conversation's subject from here on,
-            # handed back on the envelope (`listed_products`) for the engine to settle
-            # onto `focus.products`. A page turn never runs the resolver, and
-            # `turn/apply._narrow_and_plan` settles the focus only from what the resolver
-            # matched, so after "sorento" listed 50 taps the focus still held turn 1's
-            # code-tier rows (the COLD TAP family) and "pic" ran over those two.
-            listed_products = listed_product_rows(db, page_ids)
         elif spec.filters.get("task"):
             # Ported from PR #1118 (not merged): an OPEN TASK's own fetch is about the
             # TASK's subjects, all of them (`turn/task.py::StockQtyTask.to_fetch`): a
@@ -3996,7 +4056,12 @@ def make_tool_runner(
             )
             if probe_gate.get("gate_passed") is False:
                 no_subject_gate = probe_gate
-        exhausted = page_predicate is not None and bool(page_predicate.get("exhausted")) and not page_ids
+        exhausted = (
+            page_predicate is not None
+            and bool(page_predicate.get("exhausted"))
+            and not page_ids
+            and not page_predicate.get("miss_list")  # a miss list's end is written by the miss writer
+        )
         if exhausted:
             # Round 3 W2: every product of the carried set is listed already. No tool call:
             # the reply is the set's own header, closed by "That is all N.".
@@ -4046,6 +4111,15 @@ def make_tool_runner(
                 and access_notice
             ):
                 fragment = business._fixed_reply(access_notice, refused=True)
+            if page_predicate is not None and page_predicate.get("miss_list"):
+                # CHAT-COMPOSER: the next page of a zero-qualifying described list is written by
+                # the miss writer off the page's own predicate (members, leg, offset).
+                fragment["scope_gate"] = {
+                    "gate_passed": True,
+                    "compatible_entities": [],
+                    "predicate": page_predicate,
+                    "gate_debug": {},
+                }
             if no_subject_gate is not None:
                 # The refusal's OWN reason, for `answer_bridge.answer_for`'s miss
                 # composer - which otherwise reads the RESOLVER's gate, and the
@@ -4169,7 +4243,9 @@ def make_tool_runner(
             # W4: what an "another N" after this page continues from; after the last page
             # it stays, so a further count says "That is all" (round 3 W2). The engine
             # keeps it on `focus.set_page`.
-            envelope["set_carry"] = page_predicate.get("next_carry") if (page_ids or exhausted) else None
+            envelope["set_carry"] = (
+                page_predicate.get("next_carry") if (page_ids or exhausted or page_predicate.get("miss_list")) else None
+            )
             # The focus rows for the products this page listed (`listed_product_rows`).
             envelope["listed_products"] = listed_products
         return envelope
@@ -4295,8 +4371,8 @@ def set_page_carry(
 
     No paging (owner ruling, 26 Sep 2026): the carry exists only so the answer to "how
     many should I show?" - the parser's own count key, `top_n` - can list that many of
-    the SAME set. The engine writes it only when the rows were withheld (more than
-    `answer.SET_LIST_MAX` qualifying, no count named) and clears it on the next turn
+    the SAME set. The engine writes it only when the set was listed in part (more than
+    `answer.SET_LIST_MAX` qualifying, or fewer named) and clears it on the next turn
     whatever that turn is. `{set_key}` and nothing more: the set is RE-DESCRIBED from
     `set_key` rather than carried as a list of ids, so a session never holds two hundred
     uuids and the answer is counted over live data.
@@ -4513,6 +4589,51 @@ def page_the_set(
     # W4: a carry that holds the resolver's own description replays it exactly (specs,
     # brand, LOOKUP ids); an older carry falls back to its class words.
     described = "specs" in key or "brand" in key or "product_ids" in key
+    if key.get("miss_list") and _composers_on():
+        # CHAT-COMPOSER: the carried set is a zero-qualifying described list (its leg kept in
+        # the key); the next page is the same producer's next members, rendered by the miss writer.
+        offset = max(0, int(key.get("shown") or 0))
+        outcome = resolve_product_set(
+            db,
+            require=key.get("require") or {},
+            specs=list(key.get("specs") or []) if described else [],
+            free_terms=None,
+            scope_terms=None if described else list(key.get("scope_terms") or []),
+            limit=answer_mod.SET_ID_CAP,
+            product_ids=(list(key.get("product_ids") or []) or None) if described else None,
+            brand=key.get("brand") if described else None,
+            brand_is_default=bool(key.get("brand_default")) if described else False,
+            access_levels=entitled,
+            stock_policy=stock_policy,
+            breakdown_over=answer_mod.SET_LIST_MAX,
+            members_offset=offset,
+        )
+        members = outcome.get("members") if isinstance(outcome.get("members"), dict) else {}
+        listed = len(members.get("codes") or [])
+        members_total = int(members.get("total") or 0)
+        predicate = {
+            "require": outcome.get("require") or key.get("require") or {},
+            "qualifying_total": 0,
+            "members": members,
+            "offset": offset,
+            "miss_list": True,
+            "offer_team": key.get("offer_team"),
+            "unrecognized_terms": [],
+            "class_labels": outcome.get("class_labels") or [],
+            "set_noun": key.get("set_noun") or "products",
+        }
+        for field in ("description", "row_labels", "brand"):
+            if outcome.get(field):
+                predicate[field] = outcome[field]
+        shown_now = offset + listed
+        if members_total and offset >= members_total:
+            # Past the last page: the end-of-list reply, and it stays so on a further "more".
+            predicate["exhausted"] = True
+            shown_now = members_total
+        predicate["next_carry"] = (
+            {"set_key": {**key, "total": members_total, "shown": min(shown_now, members_total)}} if members_total else None
+        )
+        return predicate, []
     outcome = resolve_product_set(
         db,
         require=key.get("require") or {},
@@ -4527,16 +4648,21 @@ def page_the_set(
         stock_policy=stock_policy,
     )
     total = int(outcome.get("qualifying_total") or 0)
-    ids = [
-        c.get("product_id") or c.get("id")
-        for c in (outcome.get("candidates") or [])
-        if isinstance(c, dict)
-    ]
-    ids = [i for i in ids if i]
-    limit = answer_mod.SET_LIST_MAX if not size else min(int(size), answer_mod.SET_LIST_MAX)
+    # SET-STOCK-RENDER R4: a page steps by product CODE, every company's product of a
+    # listed code riding with it, as `shown` counts codes.
+    ids_by_code: dict[str, list[str]] = {}
+    for c in outcome.get("candidates") or []:
+        pid = (c.get("product_id") or c.get("id")) if isinstance(c, dict) else None
+        if pid:
+            ids_by_code.setdefault(c.get("product_code") or pid, []).append(pid)
+    codes = list(ids_by_code)
+    from app.services.chatbot.composers import sets as composers_sets
+
+    limit = composers_sets.page_size(int(size) if size else None, answer_mod.SET_LIST_MAX)
     # "another N" continues from where the last list stopped.
     offset = max(0, int(key.get("shown") or 0))
-    page_ids = ids[offset : offset + limit]
+    page_codes = codes[offset : offset + limit]
+    page_ids = [pid for code in page_codes for pid in ids_by_code[code]]
     predicate = {
         "require": outcome.get("require") or key.get("require") or {},
         "qualifying_total": total,
@@ -4562,7 +4688,7 @@ def page_the_set(
         predicate["certificate_ids"] = outcome["certificate_ids"]
     # The next page's carry: the same description, moved past what this page lists.
     # Kept after the last page too (round 3 W2), so a further count says "That is all".
-    next_key = {**key, "total": total, "shown": min(offset + len(page_ids), total) if page_ids else offset}
+    next_key = {**key, "total": total, "shown": min(offset + len(page_codes), total) if page_codes else offset}
     predicate["next_carry"] = {"set_key": next_key} if total else None
     return predicate, page_ids
 
@@ -5544,6 +5670,12 @@ def _suggestions_by_typed_word(
     }
 
 
+def _composers_on() -> bool:
+    from app.services.chatbot import composers
+
+    return composers.enabled()
+
+
 def envelope_of(
     fragment: dict[str, Any],
     spec: FetchSpec,
@@ -5650,6 +5782,10 @@ def envelope_of(
         # (#930's grammar, contract 102); this is what a tool with no rows to render -
         # a report, a refusal, a miss suggestion - has to say instead. A refused domain
         # says contract 7's registered sentence.
+        # CHAT-COMPOSER (gate on): the presenter's intro sentence, so compose reads it as data.
+        **({"lane_intro": fetched.get("response_intro")} if _composers_on() else {}),
+        # CHAT-COMPOSER (gate on): the page the set reply listed, as data for the carry and numbering.
+        **({"set_window": fetched["set_window"]} if _composers_on() and fetched.get("set_window") else {}),
         "lane_text": _lane_text_without_withheld_header(
             denial_text if refused else fetched.get("response"),
             fetched.get("set_header"),

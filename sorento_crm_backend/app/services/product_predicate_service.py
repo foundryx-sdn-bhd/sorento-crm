@@ -778,20 +778,20 @@ def _near_miss(db: Session, *, membership: dict[str, list[str]], legs: list, bra
 
 
 def _set_breakdown(
-    db: Session, members_query, *, membership: dict[str, list[str]], brand: str | None, key: str | None = None
+    db: Session, members_query, *, membership: dict[str, list[str]], brand: str | None
 ) -> dict | None:
     """A set counted by the next attribute that splits it: `{key, label, rows: [{value,
     count}]}`, largest first, each count in distinct variant families as the set's own
     count is.
 
-    Fix round 9 on PR #833 (owner, 28 Sep 2026: "no cap", "always break it down"): a set
-    too long for one reply gives its full count and this breakdown, never a paging
-    question. The next attribute is the brand when none was named (no brand named means
+    Fix round 9 on PR #833: what a set that qualifies nothing does hold, when its
+    described products are too many to name (`members`); a longer set is listed in part,
+    never broken down (SET-STOCK-RENDER, owner 16 Oct 2026). The next attribute is the
+    brand when none was named (no brand named means
     every brand), then the class, then each registry key in the registry's own order that
     the ask did not already bind; the first that splits the set in two or more is used.
-    `key` forces one (the key of a value the registry does not know: "pink water
-    closets" is said beside the finishes water closets come in). One query over the
-    members' brand and specification row; `_near_miss` counts the same way."""
+    One query over the members' brand and specification row; `_near_miss` counts the
+    same way."""
     from app.services.product_spec_registry import active_registry, display_spec_value
 
     members = members_query.subquery()
@@ -807,7 +807,7 @@ def _set_breakdown(
         return None
     registry = [row for row in active_registry(db) if (row.data_type or "enum").lower() in ("enum", "numeric")]
     by_key = {row.spec_key: row for row in registry}
-    order = [key] if key else [
+    order = [
         *(["brand"] if not brand else []),
         *(["class"] if len(membership.get("class") or []) != 1 else []),
         *[row.spec_key for row in registry if row.spec_key not in membership and row.spec_key not in ("brand", "class")],
@@ -831,7 +831,7 @@ def _set_breakdown(
                 found = shown
             for value in found:
                 counts.setdefault(str(value), set()).add(str(family_code))
-        if len(counts) >= (1 if key else 2):
+        if len(counts) >= 2:
             label = "Brand" if name == "brand" else "Product type" if name == "class" else (
                 row.label if row is not None and row.label else _sentence_case(name)
             )
@@ -861,17 +861,15 @@ def resolve_product_set(
     prefer_weighted_brand: bool = False,
     brand_is_default: bool = False,
     breakdown_over: int | None = None,
-    breakdown_key: str | None = None,
+    members_offset: int = 0,
 ) -> dict:
     """(described set) ∩ (require legs), with an honest count.
 
-    Fix round 9 on PR #833 (owner, 28 Sep 2026: "always break it down", "no cap"):
-    ``breakdown_over`` is the longest set one reply lists; a set longer than it carries
-    ``breakdown``, its members counted by the next attribute that splits them
-    (`_set_breakdown`), and a set that qualifies nothing carries ``members``, the
-    described products without the require legs, so the miss can say what matched.
-    ``breakdown_key`` names the key to break the set down by (a value the registry does
-    not know is said back beside the values the set does hold).
+    Fix round 9 on PR #833 (owner, 28 Sep 2026: "no cap"): ``breakdown_over`` is the
+    longest set one reply lists; a set that qualifies nothing carries ``members``, the
+    described products without the require legs, so the miss can say what matched (a
+    longer set is listed in part, SET-STOCK-RENDER, owner 16 Oct 2026, never broken
+    down).
 
     The described set is ``product_ids`` (ids LOOKUP already matched by name or
     code prefix) and the ``class`` / ``product_type`` / ``brand`` membership
@@ -1177,6 +1175,27 @@ def resolve_product_set(
             # this is the earliest point the true display order is knowable.
             candidates.sort(key=lambda c: (-len(c["matched_specs"]), c["product_code"]))
             candidates = candidates[: (limit or 15)]
+    listed = len(candidates)
+    if candidates:
+        # SET-STOCK-RENDER R4 (owner, 16 Oct 2026): the same code in another company is
+        # listed beside its candidate, as the product-code answer lists it
+        # (`gate.py`'s same-code collapse); the count stays one per family.
+        shown_ids = {str(c["product_id"]) for c in candidates}
+        twins: dict[str, list[str]] = {}
+        for twin_id, twin_code in _base(db.query(Product.id, Product.product_code)).filter(
+            Product.product_code.in_([c["product_code"] for c in candidates])
+        ):
+            if str(twin_id) not in shown_ids:
+                twins.setdefault(twin_code, []).append(str(twin_id))
+        if twins:
+            candidates = [
+                row
+                for candidate in candidates
+                for row in [
+                    candidate,
+                    *({**candidate, "product_id": t} for t in twins.pop(candidate["product_code"], [])),
+                ]
+            ]
 
     # E2/AC-1316: the described set's own class label(s), for the header's noun
     # (`answer.set_noun_for`). Unioned with what the qualifying candidates
@@ -1246,7 +1265,7 @@ def resolve_product_set(
     outcome: dict[str, Any] = {
         "candidates": candidates,
         "qualifying_total": int(qualifying_total),
-        "truncated": int(qualifying_total) > len(candidates),
+        "truncated": int(qualifying_total) > listed,
         "unrecognized_terms": unrecognized,
         "require": require_echo,
         "class_labels": sorted(class_labels),
@@ -1267,19 +1286,26 @@ def resolve_product_set(
         if near:
             outcome["near_miss"] = near
     membership = verdict.get("membership") or {}
-    if breakdown_key or (breakdown_over is not None and int(qualifying_total) > breakdown_over):
-        broken = _set_breakdown(
-            db, _base(db.query(Product.id.label("pid"), family.label("family"))), membership=membership, brand=brand, key=breakdown_key
-        )
-        if broken:
-            outcome["breakdown"] = broken
-    if breakdown_over is not None and not qualifying_total and legs and not breakdown_key:
+    if breakdown_over is not None and not qualifying_total and legs:
         # Fix round 9: the described products without the legs - "Here's what you want"
         # names them, then "But no incoming matched these", as the product-code miss does.
         members_total = int(_base(db.query(func.count(func.distinct(family))), with_legs=False).scalar() or 0)
         if members_total:
             members: dict[str, Any] = {"total": members_total}
-            if members_total > breakdown_over:
+            from app.config import settings
+
+            if members_total > breakdown_over and getattr(settings, "chat_composer_enabled", False):
+                # CHAT-COMPOSER: the first page of the matching products, by code (never counts).
+                first = (
+                    _base(db.query(family.label("family"), Product.product_code), with_legs=False)
+                    .order_by(family, Product.product_code)
+                    .distinct(family)
+                    .offset(max(int(members_offset or 0), 0))
+                    .limit(breakdown_over)
+                    .all()
+                )
+                members["codes"] = sorted({str(f) for f, _code in first})
+            elif members_total > breakdown_over:
                 broken = _set_breakdown(
                     db, _base(db.query(Product.id.label("pid"), family.label("family")), with_legs=False), membership=membership, brand=brand
                 )

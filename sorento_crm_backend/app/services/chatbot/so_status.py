@@ -25,6 +25,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.order import Customer, SalesOrder, SalesOrderLine
+from app.services.chatbot.composers import status as composers_status
 from app.services.chatbot.contracts import SALES_DOMAIN, SALES_FIGURE_STATUSES
 from app.services.contact_brand_scope import product_in_scope_clauses
 from app.services.scm.po_ref import po_ref_key
@@ -275,6 +276,10 @@ def po_ref_reply_text(result: PoRefLookup, ref: str) -> str:
     ref = ref.strip()
     cards = result.groups.get(po_ref_key(ref) or "") or []
     if not cards:
+        from app.services.chatbot import composers
+
+        if composers.enabled():
+            return f"Couldn't find PO ref {ref}."
         return f"I could not find PO ref {ref}."
     head = f"PO ref: {ref}" + (f"\nSales orders: {len(cards)}" if len(cards) > 1 else "")
     return "\n\n".join([head, *cards])
@@ -290,7 +295,9 @@ def reply_text(result: SoLookup, *, refusal: str, kind_word: str | None = None) 
     if result.missing:
         words = result.missing
         joined = words[0] if len(words) == 1 else ", ".join(words[:-1]) + " or " + words[-1]
-        parts.append(f"I could not find {joined}.")
+        from app.services.chatbot import composers
+
+        parts.append(f"Couldn't find {joined}." if composers.enabled() else f"I could not find {joined}.")
     return "\n\n".join(parts)
 
 
@@ -309,39 +316,10 @@ def period_reply(start: Any, end: Any, subject: str | None) -> str | None:
     The same rule as `do_ask.range_reply` (its cap, its "today", its month and span words),
     in the words of a sales order list; `do_ask` is the DO list's own and is not bent to
     speak about sales orders."""
-    from datetime import timedelta
-
     from app.services.chatbot import do_ask
 
-    today = do_ask.today_myt()
-    if start is None and end is None:
-        this_month = today.replace(day=1)
-        last_month = (this_month - timedelta(days=1)).replace(day=1)
-        return (f"Which period for {subject}?\n" if subject else "Which period?\n") + (
-            f"- This month ({do_ask._month(this_month)})\n"
-            f"- Last month ({do_ask._month(last_month)})\n"
-            "Or type a month (e.g. August) or dates (e.g. 15 Sep to 10 Oct)."
-        )
-    end = end or today
-    if start is not None and start > end:
-        start, end = end, start
-    days = (end - start).days + 1 if start is not None else None
-    if days is not None and days <= do_ask.MAX_DAYS:
-        return None
-    last = min(end, today)
-    suggestions = [do_ask._month(last)]
-    lead = ""
-    if start is not None:
-        if start <= last and do_ask._month(start) not in suggestions:
-            suggestions.append(do_ask._month(start))
-        lead = (
-            f"That is {do_ask._span(start, end, days)} "
-            f"({do_ask._ddmmyyyy(start)} to {do_ask._ddmmyyyy(end)}). "
-        )
-    return (
-        f"{lead}I can show up to {do_ask.MAX_DAYS} days of sales orders at a time:\n"
-        + "".join(f"- {s}\n" for s in suggestions)
-        + "Or type a month or dates."
+    return composers_status.period_question(
+        start, end, today=do_ask.today_myt(), subject=subject, noun="sales orders", max_days=do_ask.MAX_DAYS
     )
 
 

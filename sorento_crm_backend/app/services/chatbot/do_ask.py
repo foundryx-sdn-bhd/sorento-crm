@@ -21,6 +21,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from app.services.chatbot import jsc
+from app.services.chatbot.composers import status as composers_status
 from app.services.ledger_family import customer_group_of, customer_header_words
 
 #: Owner Q1 (a), 2 Oct 2026: at most 31 days, both ends included.
@@ -62,20 +63,10 @@ def _parse(value: Any) -> date | None:
         return None
 
 
-def _month(d: date) -> str:
-    return d.strftime("%b %Y")
-
-
-def _ddmmyyyy(d: date) -> str:
-    return d.strftime("%d/%m/%Y")
-
-
-def _span(start: date, end: date, days: int) -> str:
-    """Whole calendar months are said in months ("6 months"), anything else in days."""
-    if start.day == 1 and (end + timedelta(days=1)).day == 1:
-        months = (end.year - start.year) * 12 + end.month - start.month + 1
-        return f"{months} months"
-    return f"{days} days"
+# Moved byte for byte into `composers/status.py` (CHAT-COMPOSER S5 fold); the old names stay.
+_month = composers_status.month
+_ddmmyyyy = composers_status.ddmmyyyy
+_span = composers_status.span
 
 
 def _subject(entities: list[Any]) -> str | None:
@@ -117,38 +108,11 @@ def range_reply(
         return None
     if _is_quantity_ask(semantic_input) or _names_an_order(entities):
         return None
-    today = today_myt()
-    start = _parse(semantic_input.get("date_filter_start"))
-    end = _parse(semantic_input.get("date_filter_end"))
-    if start is None and end is None:
-        this_month = today.replace(day=1)
-        last_month = (this_month - timedelta(days=1)).replace(day=1)
-        subject = _subject(entities)
-        return (
-            f"Which period for {subject}?\n" if subject else "Which period?\n"
-        ) + (
-            f"- This month ({_month(this_month)})\n"
-            f"- Last month ({_month(last_month)})\n"
-            "Or type a month (e.g. August) or dates (e.g. 15 Sep to 10 Oct)."
-        )
-    end = end or today
-    if start is not None and start > end:
-        start, end = end, start  # a parser that swapped the two ends
-    days = (end - start).days + 1 if start is not None else None
-    if days is not None and days <= MAX_DAYS:
-        return None
-    # Suggest the asked range's last month, then its first, within what has happened: a
-    # range wholly in the future suggests this month.
-    last = min(end, today)
-    suggestions = [_month(last)]
-    if start is None:
-        lead = ""
-    else:
-        if start <= last and _month(start) not in suggestions:
-            suggestions.append(_month(start))
-        lead = f"That is {_span(start, end, days)} ({_ddmmyyyy(start)} to {_ddmmyyyy(end)}). "
-    return (
-        f"{lead}I can show up to {MAX_DAYS} days of delivery orders at a time:\n"
-        + "".join(f"- {s}\n" for s in suggestions)
-        + "Or type a month or dates."
+    return composers_status.period_question(
+        _parse(semantic_input.get("date_filter_start")),
+        _parse(semantic_input.get("date_filter_end")),
+        today=today_myt(),
+        subject=_subject(entities),
+        noun="delivery orders",
+        max_days=MAX_DAYS,
     )

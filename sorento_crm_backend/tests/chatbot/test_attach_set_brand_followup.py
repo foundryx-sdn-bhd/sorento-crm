@@ -284,8 +284,9 @@ def test_the_brand_follow_up_fetches_the_same_document_type(chat, world, small_l
     sorento, mocha = _display(world["sorento"].brand_name), _display(world["mocha"].brand_name)
     # Turn 1 as the owner saw it: the count and the breakdown by brand, fetched under the
     # resolved document type.
-    assert one_line_header(first) == "Here's what you want: taps with technical drawing (5)", first
-    assert f"• {sorento} taps: 4" in first and f"• {mocha} taps: 1" in first, first
+    # SET-STOCK-RENDER (SSR-6): the first 3 of 5 are listed, no breakdown lines.
+    assert one_line_header(first) == "Here's what you want: taps with technical drawing (5, showing 1 to 3)", first
+    assert not [ln for ln in first.split("\n") if ln.startswith("• ")], first
     assert chat.attachment_calls()[-1].get("attachment_type_ids") == [world["drawing"].id], chat.calls
 
     second = chat.say(world["sorento"].brand_name.lower(), _turn_2_brand(world["sorento"].brand_name.lower()))
@@ -534,9 +535,11 @@ def test_a_count_after_the_breakdown_fetches_the_same_document_type(chat, world,
     calls = chat.attachment_calls()
     assert len(calls) == 2, chat.calls
     assert calls[1].get("attachment_type_ids") == [world["drawing"].id], calls[1]
-    assert len(calls[1].get("product_ids") or []) == 3, calls[1]
-    assert one_line_header(second) == "Here's what you want: taps with technical drawing (5, showing 1 to 3)", second
-    assert _row_types(second) == [DRAWING] * 3, second
+    # SET-STOCK-RENDER (SSR-5/6): the ask listed 1 to 3, so "3" lists the 2 left, count bare.
+    assert len(calls[1].get("product_ids") or []) == 2, calls[1]
+    # SET-STOCK-RENDER (SSR-14): a continuation page says its range, the last page too.
+    assert one_line_header(second) == "Here's what you want: taps with technical drawing (5, showing 4 to 5)", second
+    assert _row_types(second) == [DRAWING] * 2, second
 
 
 # --------------------------------------------------------------------------- #

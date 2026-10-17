@@ -72,6 +72,7 @@ from app.services.chatbot.usage import CLARIFIER_FEATURE, record_parser_usage, r
 # is everything that has to touch a database or a tool on its behalf.
 from app.services.chatbot import label_catalog, language as language_mod, session_state, turn_runtime
 from app.services.chatbot import quick_reply_guard
+from app.services.chatbot.composers import sets as composers_sets
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import chat_state
 from app.services.chatbot.turn import question as turn_question
@@ -180,7 +181,7 @@ def split_marked_message(text: str) -> list[str]:
 
 #: WhatsApp's per-message ceiling as the MCP presenter keeps it
 #: (`sorento_crm_mcp.presenters.WHATSAPP_MESSAGE_MAX_CHARS`, under WhatsApp's own 4096).
-WHATSAPP_MESSAGE_MAX_CHARS = 3900
+WHATSAPP_MESSAGE_MAX_CHARS = composers_sets.MESSAGE_MAX_CHARS
 
 
 def _product_family(db: Any, code: str) -> list[dict[str, str]]:
@@ -4811,6 +4812,8 @@ def _run_stages_body(  # noqa: PLR0915
         verdict = turn_runtime.with_brand_from_offer(
             verdict, latest_user_message, carried=state_in.focus.set_page
         )
+    # CHAT-COMPOSER: a "more" pages the set the last reply listed, on a state-led turn too.
+    verdict = turn_runtime.with_set_more(verdict, carried=state_in.focus.set_page)
     # ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): an echo of a row
     # the focus already holds settled is the carry restated, not an axis to rewrite with
     # an unsettled copy.
@@ -6991,23 +6994,15 @@ def _run_stages_body(  # noqa: PLR0915
                 class_terms = turn_runtime.class_scope_terms(verdict)
                 qualifying = int((predicate or {}).get("qualifying_total") or 0)
                 asked = named_count(verdict.get("top_n"))
-                withheld = (
-                    predicate is not None
-                    and plan.fetch
-                    and spec_tier
-                    and qualifying > business_answer.SET_LIST_MAX
-                    and asked is None
-                    and bool((predicate or {}).get("breakdown"))
-                )
-                # Fix round 9 on PR #833: a long set nothing splits lists what fits, and
-                # is carried like a named count so "another N" continues it.
+                # Fix round 9 on PR #833: a long set lists what fits, and is carried like
+                # a named count so "another N" continues it (SET-STOCK-RENDER, owner 16
+                # Oct 2026: every long set, never withheld for a breakdown).
                 listed_to_the_limit = (
                     predicate is not None
                     and plan.fetch
                     and spec_tier
                     and qualifying > business_answer.SET_LIST_MAX
                     and asked is None
-                    and not withheld
                 )
                 # W4 (owner hand test round 2): a set listed only in part (the customer
                 # named fewer than qualify) is carried too, so their own "another N"
@@ -7019,6 +7014,33 @@ def _run_stages_body(  # noqa: PLR0915
                     and asked is not None
                     and min(asked, business_answer.SET_LIST_MAX) < qualifying
                 )
+                # CHAT-COMPOSER: a page cut by the one-message budget leaves products unlisted even
+                # in a set of 50 or fewer; a described set whose leg qualifies nothing names the
+                # first page of its matching products. Both are carried so a bare "more" pages.
+                from app.services.chatbot import composers
+
+                window = envelopes[0].get("set_window") if envelopes else None
+                window_last = (
+                    int(window["last"]) if isinstance(window, dict) and window.get("last") else None
+                )
+                members = (predicate or {}).get("members") if isinstance(predicate, dict) else None
+                members_total = int((members or {}).get("total") or 0) if isinstance(members, dict) else 0
+                members_listed = len((members or {}).get("codes") or []) if isinstance(members, dict) else 0
+                cut_small = bool(
+                    predicate is not None
+                    and plan.fetch
+                    and spec_tier
+                    and window_last is not None
+                    and window_last < qualifying
+                    and not (listed_to_the_limit or partly_listed)
+                )
+                members_paged = bool(
+                    composers.enabled()
+                    and predicate is not None
+                    and plan.fetch
+                    and not qualifying
+                    and members_total > members_listed > 0
+                )
                 paged = bool(plan.fetch) and isinstance(plan.fetch[0].filters.get("set_page"), dict)
                 # ROGUE-CONVO-REVIEW (owner ruling Q4): a set the spec tier read off the
                 # words INSIDE an unplaced product token is not what the customer asked
@@ -7029,9 +7051,15 @@ def _run_stages_body(  # noqa: PLR0915
                 # has cert ZZQ9917") is listed by the reply and stays carried, so the
                 # follow-up count continues it; only the missed code is named beside it.
                 # `miss_on_typed_product` is the one computation beside the resolve outcome.
+                # CHAT-COMPOSER: a page cut to one message listed fewer than the limit; the carry
+                # moves past what was actually printed.
                 if paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
+                    if window_last is not None and isinstance(state_out.focus.set_page, dict):
+                        key = state_out.focus.set_page.get("set_key")
+                        if isinstance(key, dict) and int(key.get("shown") or 0) > window_last:
+                            state_out.focus.set_page = {"set_key": {**key, "shown": window_last}}
                     # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local
                     # copy, 7 Oct 2026): the rows the page LISTED are the subject now.
                     # The page turn never ran the resolver, so nothing settled the focus
@@ -7049,7 +7077,22 @@ def _run_stages_body(  # noqa: PLR0915
                             state_out.focus.extra.pop(kind, None)
                 elif miss_on_typed_product and not class_terms:
                     state_out.focus.set_page = None
-                elif withheld or partly_listed or listed_to_the_limit:
+                elif members_paged:
+                    state_out.focus.set_page = turn_runtime.set_page_carry(
+                        {**predicate, "qualifying_total": members_total},
+                        plan.fetch[0],
+                        class_terms,
+                        access_levels=(envelopes[0].get("access_levels_used") if envelopes else None),
+                        shown=members_listed,
+                    )
+                    if isinstance(state_out.focus.set_page, dict):
+                        # The leg stays in the key: the next page is this miss list's next members.
+                        state_out.focus.set_page["set_key"]["miss_list"] = True
+                        # ...and the offer's team is the first page's, not the "more" message's.
+                        first_team = (verdict.get("routing") or {}).get("suggested_team")
+                        if first_team:
+                            state_out.focus.set_page["set_key"]["offer_team"] = first_team
+                elif partly_listed or listed_to_the_limit or cut_small:
                     state_out.focus.set_page = turn_runtime.set_page_carry(
                         predicate,
                         plan.fetch[0],
@@ -7058,8 +7101,8 @@ def _run_stages_body(  # noqa: PLR0915
                             envelopes[0].get("access_levels_used") if envelopes else None
                         ),
                         shown=(
-                            0
-                            if withheld
+                            window_last
+                            if window_last is not None
                             else business_answer.SET_LIST_MAX
                             if listed_to_the_limit
                             else min(asked, business_answer.SET_LIST_MAX)
@@ -7658,8 +7701,37 @@ def _stock_ask_reply(
         ],
         demand_qty=verdict.get("demand_qty"),
     )
-    state_out.focus.tasks = reply.tasks
-    if [spec.domain for spec in fetch_plan.fetch] != ["inventory"]:
+    from app.services.chatbot import composers
+
+    domains = [spec.domain for spec in fetch_plan.fetch]
+    entities = [e for e in (verdict.get("entities") or []) if isinstance(e, dict)]
+    # CHAT-COMPOSER Q1: a stock leg carried from an earlier turn (no entity of this message)
+    # beside another domain's answer opens no quantity task and prints no bare question.
+    carried_leg = bool(
+        composers.enabled()
+        and domains != ["inventory"]
+        and entities
+        and all(e.get("current_message") is False for e in entities)
+        and not (verdict.get("domain_in_message") is True and verdict.get("domain_hint") == "inventory")
+    )
+    removed = False
+    if carried_leg:
+        from app.services.chatbot.composers import misses as composers_misses
+
+        # The bare question, in English or as the catalogue words it, wherever it sits.
+        asked_forms = composers_misses.bare_question_forms()
+        paragraphs = getattr(answer, "text", "").split("\n\n")
+        kept = [p for p in paragraphs if p.strip() not in asked_forms]
+        removed = len(kept) != len(paragraphs)
+        if removed:
+            answer = dataclasses_replace(answer, text="\n\n".join(kept))
+    # A task is dropped only with its question: never a question without its task.
+    state_out.focus.tasks = (
+        tuple(t for t in reply.tasks if not (t.kind == "stock_qty" and t.opened_at_turn == turn_no))
+        if removed
+        else reply.tasks
+    )
+    if domains != ["inventory"]:
         return answer
     block_seen = any(
         isinstance(envelope, dict) and envelope.get("stock_availability")
@@ -7690,9 +7762,14 @@ def _stock_ask_reply(
     misses = _unplaced_tokens(envelopes)
     if not text and not misses:
         return answer
-    parts = _stock_answer_lines(envelopes)
+    from app.services.chatbot import composers
+    from app.services.chatbot.composers import stock as composers_stock
+
+    parts = _stock_answer_lines(envelopes, full=composers.enabled())
     if misses:
-        parts.append(f"Couldn't find: {', '.join(misses)}.")
+        miss_line = composers_stock.miss_line(misses)
+        if miss_line:
+            parts.append(miss_line)
     if text:
         parts.append(text)
     question = (
@@ -7714,13 +7791,20 @@ def _dealer_names_the_miss(answer: Any, envelopes: list[dict[str, Any]]) -> Any:
     line). A reply without that line (a total miss, already named) is left as it is."""
     text = getattr(answer, "text", "") or ""
     misses = _unplaced_tokens(envelopes)
-    if not misses or not _COMPOSE_MISS.search(text):
+    # CHAT-COMPOSER: compose stamped the exact miss sentence it printed (gate on only).
+    stamped = getattr(answer, "miss_text", "") or ""
+    if stamped and not text.rstrip().endswith(stamped):
+        stamped = ""
+    if not misses or not (stamped or _COMPOSE_MISS.search(text)):
         return answer
     from app.services.chatbot.turn import refer
     from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
-    blocks = _COMPOSE_MISS.sub("", text).rstrip().split("\n\n")
-    line = f"Couldn't find: {', '.join(misses)}."
+    stripped = text.rstrip()[: -len(stamped)] if stamped else _COMPOSE_MISS.sub("", text)
+    blocks = stripped.rstrip().split("\n\n")
+    from app.services.chatbot.composers import stock as composers_stock
+
+    line = composers_stock.miss_line(misses)
     if blocks and blocks[-1].strip() == REFER_TO_SALESMAN:
         # The refer line stays last, printed through its one helper.
         head = "\n\n".join(b for b in blocks[:-1] if b.strip())
@@ -7728,8 +7812,9 @@ def _dealer_names_the_miss(answer: Any, envelopes: list[dict[str, Any]]) -> Any:
     return dataclasses_replace(answer, text="\n\n".join(p for p in (*blocks, line) if p.strip()))
 
 
-def _stock_answer_lines(envelopes: list[dict[str, Any]]) -> list[str]:
-    """The answered lines the presenter printed ("<code> x <Q>: ..."), in the order asked."""
+def _stock_answer_lines(envelopes: list[dict[str, Any]], *, full: bool = False) -> list[str]:
+    """The answered lines the presenter printed ("<code> x <Q>: ..."), in the order asked.
+    `full` (CHAT-COMPOSER) prints each as its whole block: marker and alternatives too."""
     lines: list[str] = []
     for envelope in envelopes or []:
         if not isinstance(envelope, dict) or not envelope.get("stock_availability"):
@@ -7738,7 +7823,12 @@ def _stock_answer_lines(envelopes: list[dict[str, Any]]) -> list[str]:
             flags = item.get("flags") if isinstance(item, dict) else None
             title = item.get("title") if isinstance(item, dict) else None
             if isinstance(flags, dict) and flags.get("branch") and not flags.get("needs_quantity") and title:
-                lines.append(str(title))
+                if full:
+                    from app.services.chatbot.composers import stock as composers_stock
+
+                    lines.append(composers_stock.dealer_block(item))
+                else:
+                    lines.append(str(title))
     return lines
 
 
@@ -10082,26 +10172,9 @@ def _label_attachments(files: list, rows: list[tuple[Any, list[str]]]) -> list:
     PHOTO-SEND-CAP R2: every file is one WhatsApp message, and the same picture uploaded
     twice has two urls and one `fileHash` (sha256 of the bytes). An entry with no hash
     dedupes on its url alone, exactly as before."""
-    kept: list[Any] = []
-    seen_urls: set[Any] = set()
-    seen_hashes: set[str] = set()
-    for entry in files:
-        if not isinstance(entry, dict):
-            kept.append(entry)
-            continue
-        url = entry.get("url")
-        if not jsc.truthy(url):
-            # D9 (8 Sep 2026): a file with no link is listed in the answer (the presenter
-            # says "(file link unavailable right now)") but never sent - a send with no
-            # url is a dead action, not a delivery.
-            continue
-        file_hash = jsc.nullish_str(entry.get("fileHash")).strip()
-        if url in seen_urls or (file_hash and file_hash in seen_hashes):
-            continue
-        seen_urls.add(url)
-        if file_hash:
-            seen_hashes.add(file_hash)
-        kept.append(entry)
+    from app.services.chatbot.composers import files as composers_files
+
+    kept = composers_files.sendable(files)
 
     groups: dict[str, list[int]] = {}
     for index, entry in enumerate(kept):

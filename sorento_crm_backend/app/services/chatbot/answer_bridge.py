@@ -1642,7 +1642,8 @@ def _prefix_zero_note(result: Mapping[str, Any]) -> Mapping[str, Any]:
     if not isinstance(xd, Mapping) or not isinstance(block, Mapping):
         return result
     nothing_codes = {c for c in (block.get("nothing_codes") or []) if isinstance(c, str)}
-    rendered_codes = _block_product_codes(block.get("block"))
+    # CHAT-COMPOSER: the numbered block stamps its codes as data; else read the English rows.
+    rendered_codes = set(block.get("rendered_codes") or ()) or _block_product_codes(block.get("block"))
     codes: list[str] = []
     for m in xd.get("missing") or []:
         if not (isinstance(m, Mapping) and m.get("zero") is True):
@@ -1660,7 +1661,9 @@ def _prefix_zero_note(result: Mapping[str, Any]) -> Mapping[str, Any]:
     # `dh == "inventory"` arm (`lanes/business/answer.py:683-692`), so `origin_domain`
     # (== `dh`) is always "inventory" here; the incoming half of the old ternary was
     # unreachable dead code.
-    note = f"No stock for {', '.join(codes)}."
+    from app.services.chatbot.composers import stock as composers_stock
+
+    note = composers_stock.none_for("stock", codes)
     old_block_text = block.get("block") or ""
     new_block = dict(block)
     new_block["block"] = f"{note}\n\n{old_block_text}" if old_block_text else note
@@ -1696,6 +1699,21 @@ def _apply_crossdomain_render(
     block = render.get("_xdBlock")
     if not isinstance(block, Mapping) or block.get("any") is not True or not block.get("block"):
         return text
+    from app.services.chatbot import composers
+    from app.services.chatbot.composers import misses as composers_misses
+
+    note = block.get("only_other_note")
+    if (
+        not answered
+        and composers.enabled()
+        and isinstance(note, str)
+        and block["block"].startswith(note + "\n\n")
+        and composers_misses.states_absence(text, block.get("only_other_codes") or ())
+    ):
+        # CHAT-COMPOSER: the miss text already says these codes have nothing, so the block's
+        # own "No incoming for X." line would say it twice. A text that only names the codes
+        # (a picker, a found list, an entitlement miss) keeps the line.
+        block = {**block, "block": block["block"][len(note) + 2 :]}
     variables: dict[str, Any] = {"last_result_set": [True]} if answered else {}
     sealed = {"reply": {"text": text, "session_patch": {"user_response": text, "variables": variables}}}
     merged = tail_compose.crossdomain_compose(
