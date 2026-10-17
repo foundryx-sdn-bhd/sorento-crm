@@ -446,11 +446,16 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
             for member in jsc.array(jsc.get(jsc.get(m, "display"), "members")):
                 member_uuid = jsc.get(member, "uuid")
                 if jsc.truthy(member_uuid):
+                    # A member of two typed sets is one entity (fetched once) listed under both.
+                    held = by_uuid.get(member_uuid)
+                    codes = [*(held.get("set_codes") or [])] if held else []
+                    codes.append(jsc.get(m, "canonical_code"))
                     by_uuid[member_uuid] = {
                         "uuid": member_uuid,
                         "entity_type": "product",
                         "code": jsc.get(member, "product_code"),
-                        "set_code": jsc.get(m, "canonical_code"),
+                        "set_code": codes[0],
+                        "set_codes": codes,
                     }
             continue
         if jsc.truthy(m) and jsc.truthy(jsc.get(m, "uuid")):

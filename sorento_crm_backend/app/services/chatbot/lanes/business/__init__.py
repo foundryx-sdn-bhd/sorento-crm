@@ -2258,7 +2258,7 @@ def run_fetch(
         "predicate": gate.get("predicate"),
     }
     set_by_code = {
-        str(e.get("code")).casefold(): str(e["set_code"])
+        str(e.get("code")).casefold(): [str(c) for c in (e.get("set_codes") or [e["set_code"]])]
         for e in entities
         if isinstance(e, dict) and e.get("set_code") and e.get("code")
     }

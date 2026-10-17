@@ -1852,7 +1852,7 @@ _SET_PRICE_KEYS: frozenset[str] = frozenset({"list_price", "selling_price"})
 _SET_PRICE_LABELS: frozenset[str] = frozenset({"List Price", "Selling Price"})
 
 
-def _group_set_rows(e: dict[str, Any], set_by_code: dict[str, str]) -> None:
+def _group_set_rows(e: dict[str, Any], set_by_code: dict[str, list[str]]) -> None:
     """CHAT-CODE-LOOKUP R2 (U2.3): the rows that are members of a typed product set drop their
     price and sit under their own "Set <code>" heading, one block per set; a plain product's
     row keeps its price and sits under no set (its block comes first, with no heading)."""
@@ -1864,15 +1864,16 @@ def _group_set_rows(e: dict[str, Any], set_by_code: dict[str, str]) -> None:
             (jsc.js_string(f.get("value")).casefold() for f in fields or [] if isinstance(f, dict) and f.get("label") == "Product Code"),
             None,
         )
-        owner = set_by_code.get(code) if code else None
-        if owner is None:
+        owners = set_by_code.get(code) if code else None
+        if not owners:
             plain.append(row)
             continue
         row["fields"] = [
             f for f in fields
             if not (isinstance(f, dict) and (f.get("key") in _SET_PRICE_KEYS or (not _has_key(f) and f.get("label") in _SET_PRICE_LABELS)))
         ]
-        by_set.setdefault(owner, []).append(row)
+        for owner in owners:  # a member of two typed sets sits under each
+            by_set.setdefault(owner, []).append(row)
     if not by_set:
         return
     groups = [{"label": f"Set {code}", "items": rows} for code, rows in by_set.items()]

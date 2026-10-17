@@ -678,7 +678,9 @@ def _exact_codes_only(
         # CHAT-CODE-LOOKUP R2: a member of the product set the customer typed (the gate puts
         # `set_code` on its rows) belongs to that token.
         exact = [
-            c for c in candidates if code_of(c) == code or (c.get("set_code") and turn_state.token_key(c["set_code"]) == code)
+            c for c in candidates
+            if code_of(c) == code
+            or any(turn_state.token_key(sc) == code for sc in (c.get("set_codes") or [c.get("set_code")]) if sc)
         ]
         family: list[dict[str, Any]] = []
         if turn_task.code_or_number(code):

@@ -3071,6 +3071,8 @@ def candidates_by_kind(
         if row.get("set_code"):
             # CHAT-CODE-LOOKUP R2: a member of the product set the customer typed.
             built["set_code"] = row["set_code"]
+            if row.get("set_codes"):
+                built["set_codes"] = list(row["set_codes"])
         # Finding 3 (owner, hand-pass 1): the gate carries the resolver's own human
         # label as `display_name` - for customers only, by `gate._display_name`'s rule,
         # because a customer's `canonical_code` is an ACCOUNT code the customer never
