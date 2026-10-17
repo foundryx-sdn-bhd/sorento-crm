@@ -339,5 +339,5 @@ on the form's Item Code column only if the owner asks. Its own small-fix lane.
   (2) Security S-C, option b: `eta_delay_date` shows only to holders of
   `procurement.packing_lists.view_clearance`; anyone else sees `estimated_arrival_date` for the PL
   ETA and the SPO arrival. The board (`project_supply_service.py:9944`) follows in its own lane.
-- Follow-ups: Sample Request swap (above); the board ETA clearance change (ruling 2); the fulfilment board and loading plan count SO the
+- Follow-ups: Sample Request swap (above); the ETA clearance gate (ruling 2) on the other readers that fold `eta_delay_date` in ungated, found by the security review: `project_supply_service.py:9944` (board SPO rows), `procurement_service.py:3151` (SPO document lines), `consolidated_packing_list.py:238` (served by `scm/fulfilment.py:1139`); the fulfilment board and loading plan count SO the
   `demand.py` way, which differs from this panel by design (R4).

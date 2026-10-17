@@ -325,6 +325,12 @@ def test_incoming_pl_matches_by_container_number_alone_iso_6346(scm_app):
     # One digit apart is another container: no match.
     near = _shipment(db, w, container="SEKU1741574 (KUCHING)")
     _pl_line(db, near, p, 20)
+    # The number must stand alone: a letter glued in front or a digit glued behind is not it.
+    # Due earlier, so a false match would take the SPO away from the real packing list.
+    glued_front = _shipment(db, w, container="ASEKU1741573", eta=date(2026, 10, 1))
+    _pl_line(db, glued_front, p, 7)
+    glued_back = _shipment(db, w, container="SEKU17415731", eta=date(2026, 10, 1))
+    _pl_line(db, glued_back, p, 9)
 
     body = _get(app, p)
 
@@ -332,8 +338,10 @@ def test_incoming_pl_matches_by_container_number_alone_iso_6346(scm_app):
     assert (by_no[kuching.shipment_number]["on_spo"], by_no[kuching.shipment_number]["counted"]) == (50, 0)
     assert (by_no[klang.shipment_number]["on_spo"], by_no[klang.shipment_number]["counted"]) == (30, 0)
     assert (by_no[near.shipment_number]["on_spo"], by_no[near.shipment_number]["counted"]) == (0, 20)
+    assert by_no[glued_front.shipment_number]["on_spo"] == 0
+    assert by_no[glued_back.shipment_number]["on_spo"] == 0
     assert body["totals"]["spo_qty"] == 80
-    assert body["totals"]["incoming_pl"] == 20
+    assert body["totals"]["incoming_pl"] == 20 + 7 + 9
 
 
 def _eta_world(scm_app, *, clearance: bool):
@@ -370,6 +378,23 @@ def test_without_the_clearance_read_the_estimated_arrival_shows_never_the_delay(
     assert pl["eta"] == "2026-10-20"
     assert body["spos"][0]["arrival_date"] == "2026-10-20"
     assert "2026-11-05" not in str(body)
+
+
+def test_the_delay_stays_hidden_when_the_permission_lookup_fails(scm_app, monkeypatch):
+    """Security review: the clearance check fails closed. A lookup that raises, or a caller
+    with no id, gets the estimate."""
+    from app.api.v1.inventory.stock_status import _may_see_eta_delay
+    from app.services.user_service import UserPermissionService
+
+    def boom(self, user_id, permission):
+        raise RuntimeError("permission store down")
+
+    monkeypatch.setattr(UserPermissionService, "check_user_has_permission", boom)
+    body, ship = _eta_world(scm_app, clearance=True)
+    pl = next(s for s in body["incoming_pl"] if s["shipment_number"] == ship.shipment_number)
+    assert pl["eta"] == "2026-10-20"
+    assert "2026-11-05" not in str(body)
+    assert _may_see_eta_delay(scm_app[1], {}) is False
 
 
 # ---------------------------------------------------------------- AC-8
