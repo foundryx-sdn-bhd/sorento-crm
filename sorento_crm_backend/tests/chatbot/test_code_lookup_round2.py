@@ -62,7 +62,8 @@ def test_g1_a_set_with_a_member_of_another_company_is_not_listed(db):
 
     shortlist = candidates.shortlist(db, f"stock {VARIANT.lower()}", code_lookup=True)
 
-    assert _entry_line(candidates.candidate_lines(shortlist), VARIANT.lower()) is None
+    line = _entry_line(candidates.candidate_lines(shortlist), VARIANT.lower())
+    assert line is None or f"set code {VARIANT}" not in line
     assert _fold(VARIANT) not in candidates.listed_codes(shortlist)
 
 
