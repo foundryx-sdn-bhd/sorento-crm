@@ -140,13 +140,22 @@ describe('B5 never stuck', () => {
     await waitFor(() => expect(toasted()).toMatch(/Unsaved changes: Save or Cancel/));
   });
 
-  it('with unsaved changes Close keeps the page open and says why', async () => {
+  it('with unsaved changes the one secondary button reads Cancel (never Close beside it) and discards and closes with no PUT', async () => {
     const onOpenChange = vi.fn();
     await renderDialog({ onOpenChange });
     await dirty();
-    fireEvent.click(headerX());
-    expect(onOpenChange).not.toHaveBeenCalledWith(false);
-    await waitFor(() => expect(toasted()).toMatch(/Unsaved changes: Save or Cancel/));
+    await waitFor(() => expect(screen.getByRole('button', { name: /^cancel$/i })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /^close$/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(saveLineSplits).not.toHaveBeenCalled();
+  });
+
+  it('with no changes the button reads Close and there is no Cancel', async () => {
+    await renderDialog();
+    await sheet();
+    expect(screen.getByRole('button', { name: /^close$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^cancel$/i })).toBeNull();
   });
 
   it('with no changes Escape and Close close the page', async () => {
