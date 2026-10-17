@@ -5,7 +5,7 @@ Status: **S0 merged on main via PR #1314 (fcbfa379); S1 built, in review on PR #
 `fin_0002_billing_demand_class` on `fin_0001_billing_documents`). Round 3 (27 Sep): the
 owner's round 2 answers are folded in (section 0.1): Q5 No, Q14 the sales order type, Q15 the
 invoice's own agent, Q16 the Roles screen. Section 3.4 and UAC S1-4, S1-5, S1-9, S1-10 are
-rewritten to the sales order type grouping.** S1 merged (#1321). Lane AC-BILLING (17 Oct, full track): S2 to S4 plus outstanding per invoice and per customer (owner 15 Oct, overrides section 7), design card approved 18 Oct (`CARD-ac-billing-17oct.md`), Phase 2 build in progress; schema reference `REF-autocount-billing-schema.md`.
+rewritten to the sales order type grouping.** S1 merged (#1321). Lane AC-BILLING (17 Oct, full track): S2 to S4 plus outstanding per invoice and per customer (owner 15 Oct, overrides section 7), design card approved 18 Oct (`CARD-ac-billing-17oct.md`); S2, S3 and S5 built on PR #1770 (reviewed, security-reviewed, browser pass PASS), owner hand test pending; S4 and the live checks wait for AutoCount access after 25 Oct; schema reference `REF-autocount-billing-schema.md`.
 Track: full (new module and schema, migration, new permissions, a new external ingest entity).
 Domain: finance. Classification: **MODULE `finance`** (installable per tenant: another AutoCount
 customer would turn it on; `app_modules_catalog` row + `require_module_enabled_with_api_key`).

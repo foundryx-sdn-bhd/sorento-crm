@@ -1,6 +1,6 @@
 # CARD: AC-BILLING, billing documents S2 to S4 plus outstanding (17 Oct)
 
-Status: APPROVED (owner 18 Oct ~05:40, "billing outstanding ok"); Q1 to Q5 all (a): Q2 = anyone with `finance.billing_documents.view` sees outstanding, no new slug (kept as the constant `OUTSTANDING_VIEW_SLUG`). Building: Phase 1 FE mock done, Phase 2 red tests committed, green round in progress. Track: full (migration, contract bump, new ingest entity).
+Status: APPROVED (owner 18 Oct ~05:40, "billing outstanding ok"); Q1 to Q5 all (a): Q2 = anyone with `finance.billing_documents.view` sees outstanding, no new slug (kept as the constant `OUTSTANDING_VIEW_SLUG`). Built on PR #1770: S2, S3, S5 green, reviewer and security review fixes in, browser pass PASS; owner hand test pending. Track: full (migration, contract bump, new ingest entity).
 Lane AC-BILLING, PR #1770, branch `claude/autocount-billing-outstanding-351yyn`.
 Plan: `PLAN-finance-billing-documents-27sep.md` (S0 #1314 and S1 #1321 on main). Schema reference:
 `REF-autocount-billing-schema.md`. Owner 15 Oct ~21:00: the billing sync INCLUDES outstanding per invoice and per
