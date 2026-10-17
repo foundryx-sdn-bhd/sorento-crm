@@ -835,3 +835,49 @@ def test_r6_nit_customer_shells_with_no_code_and_no_uuid_are_dropped_from_the_st
                  verdict(domain_hint="order", state_changes=[_op("keep")]))
     assert out.valid is True
     assert [c.get("canonical_code") for c in out.state.focus.customers] == ["C0001"]
+
+
+# --------------------------------------------------------------------------- #
+# Round 10: a parse field that merely restates a dropped held value does not bring it back
+# --------------------------------------------------------------------------- #
+
+
+def _ranking_state() -> State:
+    return State(
+        focus=Focus(
+            products=[_held("SRT5733")], domains=["sales"], sales_channel="dealer",
+            status="top_selling", sort={"by": "qty", "dir": "desc"},
+        ),
+        turn_no=3,
+    )
+
+
+def _stock_ask(**restated):
+    base = dict(domain_hint="inventory", status="top_selling", sales_channel="dealer", sort_by="qty")
+    base.update(restated)
+    return base
+
+
+def test_r10_restated_dropped_values_do_not_survive_the_switch_to_a_stock_ask():
+    out = _apply(_ranking_state(), verdict(state_changes=[_op("keep")], **_stock_ask()))
+    assert out.valid is True, out.log.get("rejected")
+    focus = out.state.focus
+    assert (focus.sales_channel, focus.status, focus.sort) == (None, None, None)
+    assert [out.verdict.get(k) for k in ("sales_channel", "status", "sort_by")] == [None, None, None]
+    assert [p["canonical_code"] for p in focus.products] == ["SRT5733"]
+
+
+def test_r10_a_different_stated_channel_applies_across_the_switch():
+    out = _apply(_ranking_state(), verdict(state_changes=[_op("keep")], **_stock_ask(sales_channel="project")))
+    assert out.valid is True, out.log.get("rejected")
+    assert out.verdict["sales_channel"] == "project"
+
+
+def test_r10_the_same_channel_with_an_explicit_set_applies_across_the_switch():
+    out = _apply(
+        _ranking_state(),
+        verdict(state_changes=[_op("switch_domain"), _op("set", "channel")], **_stock_ask()),
+    )
+    assert out.valid is True, out.log.get("rejected")
+    assert out.verdict["sales_channel"] == "dealer"
+    assert out.state.focus.sales_channel == "dealer"
