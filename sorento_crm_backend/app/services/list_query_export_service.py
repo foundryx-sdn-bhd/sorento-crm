@@ -14,6 +14,7 @@ from app.models.product import Product
 from app.models.procurement import Supplier
 from app.models.workflow_forms import WorkflowFormDefinition, WorkflowSubmission
 from app.schemas.list_query import ListExportRequest
+from app.services.finance import billing_document_query_service
 from app.services.list_query_metadata_service import ListQueryMetadataService
 from app.services.list_query_registry import require_adapter
 from app.services.product_service import malaysia_day_start_utc
@@ -126,6 +127,20 @@ class ListQueryExportService:
 
     def export_rows(self, req: ListExportRequest) -> List[Dict[str, Any]]:
         require_adapter(req.resource)
+        if req.resource == "finance_billing_documents":
+            return billing_document_query_service.export_rows(
+                self.db,
+                [sel.field_key for sel in req.fields],
+                quick_search=req.quick_search,
+                record_ids=_dedupe_record_ids(req.record_ids),
+                customer_id=req.customer_id if req.customer_id != "all" else None,
+                document_type=req.document_type,
+                status=req.status,
+                agent_code=req.agent_code,
+                date_from=req.date_from,
+                date_to=req.date_to,
+                open_only=bool(req.open_only),
+            )
         resource = self.meta.get_resource(req.resource)
         if not resource:
             raise ValueError(f"Unknown resource: {req.resource}")

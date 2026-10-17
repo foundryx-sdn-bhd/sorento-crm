@@ -32,6 +32,7 @@ from app.api.v1 import (
     dealer_kit,
     reports,
     sales,
+    finance,
     scm,
     connector,
     form_comments,
@@ -116,6 +117,12 @@ api_router.include_router(
     prefix="/sales",
     tags=["sales"],
     dependencies=[Depends(require_module_enabled_with_api_key("sales"))],
+)
+api_router.include_router(
+    finance.router,
+    prefix="/finance",
+    tags=["finance"],
+    dependencies=[Depends(require_module_enabled_with_api_key("finance"))],
 )
 api_router.include_router(
     forms.router,

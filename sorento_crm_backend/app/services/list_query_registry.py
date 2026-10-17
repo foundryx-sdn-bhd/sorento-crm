@@ -186,6 +186,17 @@ ADAPTERS: Dict[str, ListQueryResourceAdapter] = {
         display_name="Tickets",
         description="Ticket list filter/export metadata",
     ),
+    # AC-BILLING S2: the finance Billing Documents list. No model/compile prefix: its export
+    # columns are the list row's own keys (see `billing_document_query_service.export_rows`),
+    # so there is no metadata to sync.
+    "finance_billing_documents": ListQueryResourceAdapter(
+        resource_key="finance_billing_documents",
+        view_slug="finance.billing_documents.view",
+        export_slug="finance.billing_documents.export",
+        serializer=_serialize_passthrough,
+        display_name="Billing Documents",
+        description="Finance billing document list export",
+    ),
     # Chatbot stock ask v2 S5: the customer detail page's Asks tab (column config is keyed
     # by `order_management.customers.view::stock_asks`). The plan builds no export, so the
     # export slug is one no role is granted (`_crud` seeds view/add/edit/delete only).
