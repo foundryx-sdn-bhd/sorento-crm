@@ -42,3 +42,15 @@ def test_guard_but_no_incoming_matched_after_a_listed_code_keeps_shown():
 @pytest.mark.parametrize("tail", ["Couldn't find SRTZ999.", "No products found."])
 def test_guard_plain_dead_end_forms_still_fail(tail):
     assert _spec(f"SRTA100\n\n{tail}")["checks"]["shown"] is False
+
+
+def test_red_b_underscore_qualifier_is_a_dead_end():
+    # the bot writes the internal domain name: "But no master_products matched these."
+    res = _spec("SRTA100\n\nBut no master_products matched these.")
+    assert res["checks"]["shown"] is False, res["checks"]
+
+
+def test_red_c_no_inside_a_word_is_not_a_dead_end():
+    # "Milano" ends in "no": without a word boundary "no basin products matched" would read as a dead end
+    res = _spec("Milano basin products matched: SRTA100")
+    assert res["checks"]["shown"] is True, res["checks"]
