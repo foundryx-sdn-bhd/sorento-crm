@@ -82,7 +82,7 @@ class TestAcP43ContractV21:
         # Bumped again (finance S0, #1309): "2.6" adds `billing_documents`.
         # Bumped again (#1354 S2): "2.7" adds `delivery_orders`, `goods_receive_notes`, `branches`.
         # Bumped again (AC-CONSIGN-CRM): "2.9" adds consignment fields; "2.8" added `cancel_sales_orders`, `cancel_purchase_orders`.
-        assert res.json()["version"] == "2.9"
+        assert res.json()["version"] == "2.10"
 
     def test_contract_lists_fields_added_per_entity(self, env):
         body = env.client.get(CONTRACT_URL).json()

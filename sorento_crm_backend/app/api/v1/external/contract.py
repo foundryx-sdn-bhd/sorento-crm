@@ -43,11 +43,14 @@ from fastapi import APIRouter
 
 from app.api.v1.external.ingest import CONTRACT_VERSION, SUPPORTED_ENTITIES
 from app.schemas.canonical_documents import (
+    CanonicalArOutstanding,
+    CanonicalArOutstandingDocument,
     CanonicalBillingDocument,
     CanonicalBillingDocumentLine,
 )
 from app.services.autocount_cancel_ingest_service import CONTRACT_2_8_WARNINGS
 from app.services.autocount_doc_ingest_service import CONTRACT_2_7_WARNINGS
+from app.services.finance.ar_outstanding_ingest_service import WARN_DOCUMENTS_UNKNOWN
 from app.services.finance.billing_document_ingest_service import (
     WARN_AGENT_UNRESOLVED,
     WARN_PRODUCT_UNRESOLVED,
@@ -147,6 +150,11 @@ FIELDS_ADDED: dict[str, list[str]] = {
                             "Details", "Details.DtlKey", "Details.Seq", "Details.ItemCode",
                             "Details.Location", "Details.Qty", "Details.FromDocType",
                             "Details.FromDocNo", "Details.FromDocDtlKey"],
+    # v2.10 (AC-BILLING): every key of the record and of its documents (`documents.<key>`).
+    "ar_outstanding": [
+        *(key for key in CanonicalArOutstanding.model_fields if key != "source_doc_no"),
+        *(f"documents.{key}" for key in CanonicalArOutstandingDocument.model_fields),
+    ],
     "cancel_sales_orders_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
     "cancel_purchase_orders_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
     "consignments_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
@@ -206,6 +214,18 @@ FIELD_NOTES: dict[str, str] = {
         "company, never created, never retryable: unresolved lands null with the code kept. "
         "status is posted or cancelled; cancelled is an update. /deletions hard-deletes, or "
         "sets cancelled (deactivated) when a credit or debit note still points at it."
+    ),
+    "ar_outstanding": (
+        "v2.10. One record per debtor, the whole truth for that debtor; source_ref is "
+        "{database}:debtor:{AutoKey}. total_outstanding (MYR, AutoCount's own figure) goes to "
+        "customers.ar_outstanding and as_of to ar_as_of. documents lists every open item by its "
+        "billing_documents source_ref (outstanding negative for an unapplied credit note); a "
+        "stored document of the customer with an open balance that is not listed is set to 0. "
+        "A listed ref that is not in the CRM, or is another customer's, is skipped (warning "
+        "documents_unknown). The customer resolves by customer_ref then customer_code inside the "
+        "anchor company, never created: unresolved fails by customer_ref. An older as_of, or an "
+        "identical push, answers unchanged (the older one with stale_ignored). First push of a "
+        "ref is created, later ones updated. No deletions door."
     ),
     "delivery_orders": (
         "v2.7. Each record is the vendor API's DO object with its Details rows, unmapped, and is "
@@ -276,6 +296,8 @@ STATUS_OPTIONAL: dict[str, bool] = {
     "shipping_orders": True,
     # Required: posted or cancelled, AutoCount's Cancelled flag.
     "billing_documents": False,
+    # No status: a debtor record states figures only.
+    "ar_outstanding": False,
     # Cancelled is read off the AutoCount record itself.
     "delivery_orders": False,
     "goods_receive_notes": False,
@@ -313,6 +335,7 @@ WARNINGS: list[str] = sorted(
         WARN_AGENT_UNRESOLVED,
         WARN_PRODUCT_UNRESOLVED,
         WARN_STALE_IGNORED,
+        WARN_DOCUMENTS_UNKNOWN,
         *CONTRACT_2_7_WARNINGS,
         *CONTRACT_2_8_WARNINGS,
         "category_created",

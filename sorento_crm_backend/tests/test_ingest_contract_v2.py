@@ -154,7 +154,7 @@ class TestContractEndpoint:
         # Bumped again (finance S0, #1309): "2.6" adds `billing_documents`.
         # Bumped again (#1354 S2): "2.7" adds `delivery_orders`, `goods_receive_notes`, `branches`.
         # Bumped again (AC-CONSIGN-CRM): "2.9" adds consignment fields; "2.8" added `cancel_sales_orders`, `cancel_purchase_orders`.
-        assert body["version"] == "2.9"
+        assert body["version"] == "2.10"
         entities = set(body["entities"])
         for expected in (
             "sales_orders",

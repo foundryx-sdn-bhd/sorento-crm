@@ -10,8 +10,8 @@ def _contract(env) -> dict:
     return res.json()
 
 
-def test_contract_version_is_2_9(env):
-    assert _contract(env)["version"] == "2.9"
+def test_contract_version_is_2_10(env):
+    assert _contract(env)["version"] == "2.10"
 
 
 def test_consignments_fields_added_lists_the_2_9_fields(env):

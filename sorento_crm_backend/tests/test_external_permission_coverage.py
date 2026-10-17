@@ -89,6 +89,7 @@ class TestCoverage:
             AUTOCOUNT_DOC_ENTITIES,
         )
         from app.services.document_ingest_service import DOCUMENT_ENTITIES
+        from app.services.finance.ar_outstanding_ingest_service import AR_OUTSTANDING_ENTITIES
         from app.services.finance.billing_document_ingest_service import (
             BILLING_DOCUMENT_ENTITIES,
         )
@@ -113,10 +114,13 @@ class TestCoverage:
             # Contract 2.8 (AC-CANCEL-CRM): Cancel SO / Cancel PO, consignments stored only.
             | set(AUTOCOUNT_CANCEL_ENTITIES)
         )
-        assert set(INGEST_PERMISSIONS) == served
-        assert set(READ_PERMISSIONS) == served
+        # Contract 2.10 (AC-BILLING): `ar_outstanding`, pushed and read with the billing slugs.
+        with_outstanding = served | set(AR_OUTSTANDING_ENTITIES)
+        assert set(INGEST_PERMISSIONS) == with_outstanding
+        assert set(READ_PERMISSIONS) == with_outstanding
         # `/{entity}/deletions` (group A4) resolves its second guard from the same
-        # path, so its map has to cover the same set.
+        # path, so its map has to cover the same set, except `ar_outstanding`, which has no
+        # deletions door (the path guard answers it 404).
         assert set(DELETE_PERMISSIONS) == served
 
     def test_ingest_read_and_delete_use_different_slugs_per_entity(self):
@@ -127,14 +131,21 @@ class TestCoverage:
             READ_PERMISSIONS,
         )
 
-        assert len(set(INGEST_PERMISSIONS.values())) == len(INGEST_PERMISSIONS)
-        assert len(set(READ_PERMISSIONS.values())) == len(READ_PERMISSIONS)
+        # `ar_outstanding` shares the billing documents' slugs (card Q2: no slug of its own).
+        shared = {"ar_outstanding"}
+        assert len({v for k, v in INGEST_PERMISSIONS.items() if k not in shared}) == len(
+            INGEST_PERMISSIONS
+        ) - len(shared)
+        assert len({v for k, v in READ_PERMISSIONS.items() if k not in shared}) == len(
+            READ_PERMISSIONS
+        ) - len(shared)
         assert len(set(DELETE_PERMISSIONS.values())) == len(DELETE_PERMISSIONS)
         # ...and reading must not require the write permission, nor removing a
         # record be authorised by the permission to sync one.
         for entity, write_slug in INGEST_PERMISSIONS.items():
             assert READ_PERMISSIONS[entity] != write_slug
-            assert DELETE_PERMISSIONS[entity] != write_slug
+            if entity in DELETE_PERMISSIONS:
+                assert DELETE_PERMISSIONS[entity] != write_slug
 
 
 class TestSlugsAreReal:
