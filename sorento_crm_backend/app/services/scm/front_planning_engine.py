@@ -2016,7 +2016,8 @@ def _options(
                 gives_qty=given,
                 reason=reason,
                 fulfil_date=fulfil,
-                days_late=_days_late(fulfil, required_date),
+                # Wording: a masked delay is counted late from the date the viewer sees.
+                days_late=_days_late(spo_supply.shown_date(fulfil) or fulfil, required_date),
                 debt_so_number=offer.donor_so_number if debt and offer else None,
                 debt_month=(
                     month_key(offer.donor_required_date)

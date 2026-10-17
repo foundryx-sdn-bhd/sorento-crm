@@ -488,7 +488,9 @@ def _round(value: float) -> float:
 
 
 def month_key(value: date) -> str:
-    return value.strftime("%Y-%m")
+    # By the date's own fields, not `strftime`: a masked delay (`spo_supply.MaskedEta`)
+    # PRINTS as its published ETA, and the month it is netted in is the real one.
+    return f"{value.year:04d}-{value.month:02d}"
 
 
 def _month_start(key: str) -> date:

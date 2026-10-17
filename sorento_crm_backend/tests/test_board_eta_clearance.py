@@ -149,6 +149,11 @@ def test_the_stock_drawer_without_view_clearance_dates_the_spo_by_the_published_
 
         refs = _drawer_incoming(response.json())
         assert [ref["expected_date"] for ref in refs] == [PUBLISHED.isoformat()]
+        # Overdue is counted from the published ETA too: from the delay, today less the
+        # count would give the delay date back.
+        assert [ref["overdue_days"] for ref in refs] == [
+            max((date.today() - PUBLISHED).days, 0)
+        ]
         assert DELAYED.isoformat() not in response.text
 
 
@@ -279,3 +284,46 @@ def test_both_viewers_get_the_same_proposal_because_the_engine_plans_on_the_dela
         assert _human(DELAYED) in allowed.text
         assert _human(DELAYED) not in denied.text
         assert _human(PUBLISHED) in denied.text
+
+
+# --------------------------------------------------------------------------- #
+# MaskedEta itself. The ladder steps that print a lateness count off it are switched off
+# today (12 Oct), so the wording rules are pinned here rather than through a board.
+# --------------------------------------------------------------------------- #
+
+
+def test_a_masked_eta_compares_as_the_delay_and_prints_as_the_published_eta():
+    from app.services.scm.spo_supply import MaskedEta, shown_date
+
+    masked = MaskedEta(DELAYED, PUBLISHED)
+
+    assert masked == DELAYED and masked > date(2026, 9, 3)
+    assert masked.isoformat() == str(masked) == PUBLISHED.isoformat()
+    assert f"{masked:%d %b}" == "25 Aug"
+    assert shown_date(masked) == PUBLISHED and type(shown_date(masked)) is date
+    # Shifting keeps the mask on both dates rather than raising.
+    later = masked + timedelta(days=2)
+    assert later == DELAYED + timedelta(days=2)
+    assert later.isoformat() == (PUBLISHED + timedelta(days=2)).isoformat()
+    assert (masked - date(2026, 9, 3)).days == 7
+
+
+def test_a_masked_eta_is_netted_in_its_real_month():
+    from app.services.scm.spo_supply import MaskedEta
+    from app.services.scm.supply_assignment import month_key
+
+    assert month_key(MaskedEta(DELAYED, PUBLISHED)) == "2026-09"
+
+
+def test_a_masked_documents_lateness_reads_from_the_published_eta():
+    from types import SimpleNamespace
+
+    from app.services.project_supply_service import _shown_days_late
+    from app.services.scm.spo_supply import MaskedEta
+
+    as_of = date(2026, 9, 20)
+    masked = SimpleNamespace(stated_at=MaskedEta(DELAYED, PUBLISHED), days_late=10)
+    plain = SimpleNamespace(stated_at=DELAYED, days_late=10)
+
+    assert _shown_days_late(masked, as_of) == (as_of - PUBLISHED).days
+    assert _shown_days_late(plain, as_of) == 10

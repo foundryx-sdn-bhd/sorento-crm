@@ -631,6 +631,18 @@ def _error_detail(exc: Exception) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
     return str(exc), None
 
 
+def _shown_days_late(event: Any, as_of: date) -> int:
+    """How late a counted document READS: from the published ETA when its delay is masked.
+
+    Wording only. Which documents are late, and so assumed, stays the engine's call on the
+    real date (`event.days_late`).
+    """
+    stated = getattr(event, "stated_at", None)
+    if isinstance(stated, spo_supply.MaskedEta):
+        return spo_supply.overdue_days(stated.published, as_of)
+    return int(getattr(event, "days_late", 0) or 0)
+
+
 @dataclass
 class _SpoRow:
     spo_number: str
@@ -2834,7 +2846,7 @@ class ProjectSupplyService:
                 str(fact.product_id)
             )
             memo = {
-                str(event.key): int(getattr(event, "days_late", 0) or 0)
+                str(event.key): _shown_days_late(event, as_of)
                 for event in (result.supply if result is not None else ())
                 if int(getattr(event, "days_late", 0) or 0) > 0
             }

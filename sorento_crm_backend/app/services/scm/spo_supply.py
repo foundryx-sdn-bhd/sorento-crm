@@ -33,7 +33,7 @@ the two readings are deliberately different:
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from sqlalchemy import and_, func, or_, select, text
@@ -182,6 +182,26 @@ class MaskedEta(date):
 
     def replace(self, *args, **kwargs) -> date:
         return date(self.year, self.month, self.day).replace(*args, **kwargs)
+
+    def _plain(self) -> date:
+        return date(self.year, self.month, self.day)
+
+    # `date` rebuilds a subclass as `cls(y, m, d)` after arithmetic, which this one cannot
+    # take: shifting by days keeps the mask, both dates moved alike.
+    def __add__(self, other):
+        if isinstance(other, timedelta):
+            published = self.published + other if self.published else None
+            return MaskedEta(self._plain() + other, published)
+        return NotImplemented
+
+    __radd__ = __add__
+
+    def __sub__(self, other):
+        if isinstance(other, timedelta):
+            return self + (-other)
+        if isinstance(other, date):
+            return self._plain() - other
+        return NotImplemented
 
     def _printed(self) -> str:
         return self.published.isoformat() if self.published else ""
