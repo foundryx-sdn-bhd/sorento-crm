@@ -26,6 +26,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.models.base import company_scope
 from app.models.price_tag import PriceTagRequest, PriceTagRequestLine
 from app.services.error_handler import AppException
+from app.services.project_link import attach_project_display, check_project_link
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,9 @@ class PriceTagRequestService:
                 needed_by_date=data.get("needed_by_date"),
                 notes=data.get("notes"),
                 price_mode=data.get("price_mode") or "list",
+                # FORMS-PROJECT: checked here against the session's company scope; the
+                # portal route also checks it against the contact's own companies.
+                project_id=check_project_link(db, data.get("project_id")),
                 # Who prints (r9 D7). Null on a draft; `submit` refuses until
                 # the salesperson has answered.
                 print_by=data.get("print_by"),
@@ -2085,6 +2089,7 @@ Marketing's own work is not part of the form's payload, so it is captured
             if PriceTagRequestService.is_terminal(request):
                 item.data_changed_tag_count = 0
             items.append(item)
+        attach_project_display(db, items)
         return items
 
     @staticmethod
@@ -2223,7 +2228,14 @@ Marketing's own work is not part of the form's payload, so it is captured
             .items()
         ):
             setattr(response, key, value)
+        attach_project_display(db, [response])
         return response
+
+    @staticmethod
+    def set_project(db: Session, request: PriceTagRequest, project_id: str | None) -> None:
+        """The office linking (or clearing) the request's project (FORMS-PROJECT): only a
+        project visible in the editor's company scope."""
+        request.project_id = check_project_link(db, project_id)
 
     @staticmethod
     def list_requests(
@@ -2259,11 +2271,14 @@ Marketing's own work is not part of the form's payload, so it is captured
         status: str | None,
         search: str | None,
         include_drafts: bool,
+        project_id: str | None = None,
     ):
         """The filtered query both the whole-list and the paged reads run."""
         q = db.query(PriceTagRequest)
         if contact_id:
             q = q.filter(PriceTagRequest.contact_id == contact_id)
+        if project_id:
+            q = q.filter(PriceTagRequest.project_id == str(project_id))
         if not include_drafts:
             q = q.filter(PriceTagRequest.portal_draft_at.is_(None))
         if status:
@@ -2303,6 +2318,7 @@ Marketing's own work is not part of the form's payload, so it is captured
         limit: int = 50,
         sort: str | None = None,
         direction: str = "asc",
+        project_id: str | None = None,
     ) -> tuple[list[PriceTagRequest], int]:
         """One page of requests, and how many there are in total.
 
@@ -2317,6 +2333,7 @@ Marketing's own work is not part of the form's payload, so it is captured
             status=status,
             search=search,
             include_drafts=include_drafts,
+            project_id=project_id,
         )
         total = q.order_by(None).count()
 

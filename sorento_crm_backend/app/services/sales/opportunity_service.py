@@ -26,6 +26,7 @@ from app.services import status_service
 from app.services.dealer_kit.pricing import flyer_price
 from app.services.error_handler import AppException
 from app.services.numbering_service import NumberingService
+from app.services.project_link import attach_project_display, check_project_link
 from app.services.sales import team_service
 
 SALES_OPPORTUNITY_ENTITY = "sales_opportunity"
@@ -313,6 +314,10 @@ def create_opportunity(
         if customer is not None:
             sales_agent_id = customer.sales_agent_id
 
+    # FORMS-PROJECT: only a project visible in this session's company scope. The portal
+    # routes also check it against the contact's own companies before calling this.
+    project_id = check_project_link(db, payload.get("project_id"))
+
     initial = status_service.initial_status(db, SALES_OPPORTUNITY_ENTITY)
     opportunity_no = NumberingService(db).get_next_number(NUMBERING_DOC_TYPE, commit_rule=False)
     if not opportunity_no:
@@ -327,6 +332,7 @@ def create_opportunity(
         opportunity_no=opportunity_no,
         customer_id=customer_id,
         prospect_name=prospect_name,
+        project_id=project_id,
         sales_agent_id=sales_agent_id,
         title=payload["title"],
         status_id=initial.id,
@@ -462,6 +468,8 @@ def update_opportunity(
 
     if "title" in payload:
         opportunity.title = payload["title"]
+    if "project_id" in payload:
+        opportunity.project_id = check_project_link(db, payload["project_id"])
     if payload.get("expected_amount") is not None:
         opportunity.expected_amount = payload["expected_amount"]
     if "expected_close_date" in payload:
@@ -549,6 +557,7 @@ def list_opportunities(
     limit: int = 50,
     sort: str = "created_at",
     dir: str = "desc",
+    project_id: Optional[str] = None,
 ):
     q = db.query(SalesOpportunity)
     if query:
@@ -579,6 +588,8 @@ def list_opportunities(
         q = q.filter(SalesOpportunity.sales_agent_id.in_(list(sales_agent_id)))
     if customer_id:
         q = q.filter(SalesOpportunity.customer_id == customer_id)
+    if project_id:
+        q = q.filter(SalesOpportunity.project_id == str(project_id))
     if close_from:
         q = q.filter(SalesOpportunity.expected_close_date >= close_from)
     if close_to:
@@ -787,7 +798,14 @@ def serialize(db: Session, opportunity: SalesOpportunity) -> dict:
         "stage_changed_at": opportunity.stage_changed_at,
         "lines": _serialize_lines(db, opportunity),
         "available_transitions": transitions,
+        **_project_fields(db, opportunity),
     }
+
+
+def _project_fields(db: Session, opportunity: SalesOpportunity) -> dict:
+    body = {"project_id": opportunity.project_id}
+    attach_project_display(db, [body])
+    return body
 
 
 def serialize_list(db: Session, opportunities: List[SalesOpportunity]) -> List[dict]:
@@ -895,6 +913,8 @@ def serialize_list(db: Session, opportunities: List[SalesOpportunity]) -> List[d
                 "stage_changed_at": opportunity.stage_changed_at,
                 "lines": [],
                 "available_transitions": [],
+                "project_id": opportunity.project_id,
             }
         )
+    attach_project_display(db, out)
     return out

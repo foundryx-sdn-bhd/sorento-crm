@@ -68,7 +68,7 @@ def check_portal_project_link(
     from app.services.sponsorship_link_service import contact_company_ids
 
     value = str(value)
-    company_ids = contact_company_ids(db, contact=contact)
+    company_ids = contact_company_ids(db, contact=contact) if contact is not None else []
     allowed = False
     if company_ids and _is_uuid(value):
         with company_scope(db, frozenset(company_ids)):

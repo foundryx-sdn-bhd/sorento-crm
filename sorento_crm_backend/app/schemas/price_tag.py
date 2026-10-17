@@ -272,6 +272,8 @@ class PriceTagRequestCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # FORMS-PROJECT: the explicit project link; null clears it.
+    project_id: Optional[str] = None
     debtor_code: Optional[str] = None
     debtor_name: Optional[str] = None
     needed_by_date: Optional[date] = None
@@ -305,6 +307,8 @@ class PriceTagRequestUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # FORMS-PROJECT: the explicit project link; null clears it.
+    project_id: Optional[str] = None
     debtor_code: Optional[str] = None
     debtor_name: Optional[str] = None
     needed_by_date: Optional[date] = None
@@ -342,6 +346,8 @@ class PriceTagRequestOfficeUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     print_by: Optional[Literal["office", "self"]] = None
+    # FORMS-PROJECT: the office links (or clears) the request's project.
+    project_id: Optional[str] = None
 
 
 class PriceTagRequestLinePricePatch(BaseModel):
@@ -393,6 +399,9 @@ class PriceTagRequestResponse(BaseModel):
     id: str
     contact_id: str
     company_id: Optional[str] = None
+    project_id: Optional[str] = None
+    project_code: Optional[str] = None
+    project_label: Optional[str] = None  # `CODE - Title`
     debtor_code: Optional[str] = None
     # Optional since D48a: a draft may carry neither, and a non-optional field
     # refuses to serialise a None even though the schema declared it.
@@ -477,6 +486,9 @@ class PriceTagRequestListItem(BaseModel):
 
     id: str
     contact_id: str
+    project_id: Optional[str] = None
+    project_code: Optional[str] = None
+    project_label: Optional[str] = None  # `CODE - Title`
     debtor_code: Optional[str] = None
     debtor_name: Optional[str] = None
     status: str

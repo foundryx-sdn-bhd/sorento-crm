@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Query, status
 from pydantic import BaseModel
@@ -163,6 +164,7 @@ def list_price_tag_requests(
     limit: int = Query(50, ge=1, le=200),
     sort: Optional[str] = Query(None),
     dir: str = Query("asc", pattern="^(asc|desc)$"),
+    project_id: Optional[UUID] = Query(None),
     db: Session = Depends(get_db),
     _user: dict = Depends(_VIEW),
 ):
@@ -185,6 +187,7 @@ def list_price_tag_requests(
         limit=limit,
         sort=sort,
         direction=dir,
+        project_id=str(project_id) if project_id else None,
     )
     # AC-D4 (PLAN price-tag-currency-token-extract-prompt.md section D):
     # refresh the stored product-data-change count for the touched rows on
@@ -403,13 +406,17 @@ def update_price_tag_request(
         raise AppException(
             status_code=404, message="Price tag request not found.", code="NOT_FOUND"
         )
-    if PriceTagRequestService.is_terminal(req):
+    data = payload.model_dump(exclude_unset=True)
+    # FORMS-PROJECT: the project link is bookkeeping, not part of the journey, so the
+    # office may set or clear it at any status; only the print choice is frozen.
+    if "project_id" in data:
+        PriceTagRequestService.set_project(db, req, data["project_id"])
+    if "print_by" in data and PriceTagRequestService.is_terminal(req):
         raise AppException(
             status_code=409,
             message="This request is finished and can no longer be changed.",
             code="INVALID_STATE",
         )
-    data = payload.model_dump(exclude_unset=True)
     if "print_by" in data:
         choice = data["print_by"]
         if choice is not None and choice not in PRINT_BY_CHOICES:
