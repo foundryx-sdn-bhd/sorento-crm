@@ -618,7 +618,8 @@ def test_every_company_id_table_is_registered():
     #   decisions); every read is by snapshot within the company = 164.
     # + 1 (OI-LINE-SPLIT): `so_line_splits`, one company's own delivery splits of an SO line;
     #   read by order within the company = 165.
-    expected_owned = 165
+    # + 1 (SR-CORE #1718): `sample_requests`, one company's sample requests = 166.
+    expected_owned = 166
     assert len(owned) == expected_owned, (
         f"expected {expected_owned} owned tables, found {len(owned)}: {sorted(owned)}"
     )

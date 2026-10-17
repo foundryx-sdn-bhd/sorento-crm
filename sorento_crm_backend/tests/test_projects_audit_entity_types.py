@@ -96,6 +96,9 @@ BORN_AFTER_THE_MOVE = frozenset({
     # born straight into `projects` the same way.
     "stock_debt_snapshots",
     "stock_debt_snapshot_rows",
+    # SR-CORE (#1718, migration sr_0001_sample_requests): born straight into `projects`.
+    "sample_requests",
+    "sample_request_lines",
 })
 
 
