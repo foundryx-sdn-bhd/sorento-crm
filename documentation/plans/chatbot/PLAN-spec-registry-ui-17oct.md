@@ -1,6 +1,6 @@
 # PLAN: spec-registry-ui (owner edits chatbot closed lists from the front end)
 
-Status: Plan (discovery in progress). Track: TBD after discovery (expected full track: permission + audit).
+Status: Plan (card answered 17 Oct, mock drafted on seed rows, waiting on crew data rows). Track: full (size L, one migration).
 crew-lane: SPEC-REGISTRY-UI
 
 ## Owner request (17 Oct)
@@ -60,8 +60,18 @@ Most of this ALREADY SHIPS. The owner's journey is a repair + small extension of
 - G4 MISSING: a word may sit on two different spec fields (no cross-key guard), so "length" can mean two fields.
 - G5 MISSING (optional): no parser-pick view on the spec page; the console shows it per turn.
 
-## Behaviour card
-(pending crew ask)
+## Behaviour card (crew answers 17 Oct, all (a))
+1. One "What this means to the chatbot" text per field: new column `parser_hint` (text, max 200, one line), printed
+   on that field's line in `{{specs}}` (`specification_lines`). Editable on shipped and own fields, never seed-repaired.
+   Needs `master_data.spec_registry.edit`.
+2. One word, one field: saving a word (per-value or `_self`) that is already ANOTHER field's word or name is refused
+   `already a word for <Field>` (409-style AppException, code `spec_registry_word_on_other_key`). Only newly added
+   words are judged; shipped overlaps are listed, not blocked.
+3. An edited Name is the owner's: new `label_overridden` flag (or equivalent) so `seed_spec_registry` never reverts it.
+4. Unit read-only on a saved field, short reason shown beside it; the FE stops sending `unit` on PATCH.
+5. Today's permissions. "Try in chatbot" (record gear) runs the real parser dry-run (console turn path, no reply,
+   no writes outside `chatbot.turns`) and shows the picked field / value / list item.
+6. Gear links to Attachment Types and Lookup Sets. History tab mounts `AuditTrail` for the row.
 
 ## Mock
-(pending)
+`documentation/plans/chatbot/spec-registry-ui-17oct-mock.html` (seed rows; swapped for crew rows when they arrive).
