@@ -70,7 +70,9 @@ def test_u1_incoming_leg_page_two_is_the_same_miss_list(session_factory, monkeyp
     one, two = _bullets(first), _bullets(second)
     assert len(one) == 50 and not set(one) & set(two) and (set(one) | set(two)) == world.codes
     assert "But no incoming matched these." in second
-    assert second.rstrip().endswith(OFFER), second[-160:]
+    offer = re.search(r"Would you like me to escalate to [^?]+ team\?$", first.rstrip())
+    assert offer, first[-160:]
+    assert second.rstrip().endswith(offer.group(0)), second[-160:]
 
 
 def test_u1_variant_families_page_in_the_producers_order(session_factory, monkeypatch, stub_parser, stub_access, world):
