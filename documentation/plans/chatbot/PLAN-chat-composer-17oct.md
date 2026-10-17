@@ -1,6 +1,6 @@
 # PLAN: CHAT-COMPOSER - one composer per answer type
 
-**Status:** Code complete for this PR (17 Oct): S0-S6 + review rounds 1-2, reviewer READY, security PASS, red-first + kill-proof per slice on #1760, L1 replay gate off 0/1506 + 585/585 turn 0 unintended, gate on 125/585 intended; TRAIN paired run main 71/84 vs lane 70/84 (+1 unknown, parser noise), $1.05. Waiting for CI; follow-ups: Sets slice, S3b, S3c, R10 lane, flip PR (`PLAN-chat-composer-flip.md`). Track: L, LEAD pattern (local lane).
+**Status:** 18 Oct: Lists slice in Plan (card delta asked), Sets slice done (#1771). Earlier, code complete for #1760 (17 Oct): S0-S6 + review rounds 1-2, reviewer READY, security PASS, red-first + kill-proof per slice on #1760, L1 replay gate off 0/1506 + 585/585 turn 0 unintended, gate on 125/585 intended; TRAIN paired run main 71/84 vs lane 70/84 (+1 unknown, parser noise), $1.05. Waiting for CI; follow-ups: Sets slice, S3b, S3c, R10 lane, flip PR (`PLAN-chat-composer-flip.md`). Track: L, LEAD pattern (local lane).
 **UAC:** `chat-composer-acceptance-criteria.md`. **Card:** `chat-composer-behaviour-card.md` (discovery, contract, rules R1-R13, per-type changes, slices, Q1-Q4).
 **Lane:** CHAT-COMPOSER, branch `crew/chat-composer`, base origin/main 20c191d86. Step 3 of the 16 Oct chatbot scale
 design (`crew/state/reports/CHATBOT-SCALE-DESIGN-16oct.html`, section 4 row F, section 8 step 3) and reports
@@ -56,7 +56,8 @@ goes to crew in a crew-note so crew can order merges.
 | S4 | files + promotions | done (304602ca5) |
 | S5 | order / document status | done (fa1288252) |
 | S6 | product info + price | done (fa1288252) |
-| Sets | set / list wrapper + one "more" line on every capped list, paging via the parser continuation flag (owner 17 Oct ~15:15) | waits #1744; continuation waits #1747/#1755 |
+| Sets | set / list wrapper + one "more" line on every capped SET list, paging via the parser continuation flag (owner 17 Oct ~15:15) | done, PR #1771 ae10ea38b (draft, lands after owner hand test with #1744) |
+| Lists | the other capped lists (code-lookup cards, outstanding, ref_status, stock pick; find unreachable) end `Reply "more" to see the next N.` and page (owner 17 Oct, crew 18 Oct); design `chat-composer-seam-design-lists.md` | card delta asked 18 Oct; L1 code-lookup cards building (no new rule); stacked on #1771 |
 | S3a | one miss wording, no internal names, carried-stock-leg bare question dropped (parser guard) | done (11f1f5b7b, d3b8adab8) |
 | S3b/S3c | M7 (waits #1744), run_gate:1598 (waits #1755) | waits |
 | R10 | tier question order: own small lane after #1744/#1747/#1755 merge | out of lane |
