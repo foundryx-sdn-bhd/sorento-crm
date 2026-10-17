@@ -36,6 +36,27 @@ Paths: B = `sorento_crm_backend/app/services/chatbot`, M = `sorento_crm_mcp/sore
 - Q4 (a): page 10 lines per "more"; several cut cards: continue the first, then the next.
 - Q5 (a): drop find "Showing X of Y" (unreachable since #1613).
 
+## Crew answers 18 Oct, round 2 (bind; override the designer sections below)
+
+- OL-1 (a): L4 stock pick DROPPED (nothing is cut in practice, KL3). Section 4 is not built.
+- OL-4 (a): never a false count. When the L1 list holds the probe's cap (lead rule LD3 below), no total is printed
+  anywhere and the last page ends `Those are the first 20 matches. Send more of the code to narrow it.` (ms/zh
+  catalogued in LANE_LABELS, gate on).
+- OL-2 (a): L1 pages 2+ reuse the Sets header and the end reuses `That is all N.` (DL2 as written), except under LD3.
+- FYI: the MCP deploys with the backend before any flip; security-reviewer joins this slice.
+
+**LD3 (lead, applying OL-4).** "Capped" = the L1 list holds `entity_resolver.PREFIX_LIMIT` (20) or more distinct codes
+(the probe may have stopped there; exactly 20 real matches also counts, which costs at most a needless narrowing hint and
+never a false count). The carry records `"capped": True`. Under capped: page 1 range `(showing 1 to 9)` (RANGE without
+`{total}`, its own catalogue key), pages 2+ the Sets header with the same total-less range, no `That is all N.`; the
+last page (no more line) ends with the narrow sentence; a "more" past the end replies the narrow sentence alone. The more
+line itself is unchanged (`Reply "more" to see the next N.`, N is known from the carried ids).
+
+**Tester ambiguities resolved (lead, 18 Oct).** Capped keys: `"capped": True` (and `"code_list": True`) on both the carry
+and the predicate `page_the_set` builds; the total-less range is its own catalogue key `(showing {first} to {last})`.
+The narrow sentence sits where the more line would (the last line above the `_Data last updated_` footer). `ref_cards`
+lists only the cut cards, in printed order. A bool `group_offset` is treated as absent.
+
 ## CARD DELTA (crew ask 18 Oct, answered above)
 
 - Q1 L2 outstanding: (a) backend sends an optional `group_offset` tool argument only gate-on; the presenter prints the
