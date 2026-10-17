@@ -58,7 +58,7 @@ from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
 from app.utils.build_info import GIT_SHA
 from app.services.ledger_family import customer_groups
-from app.services.chatbot.head import candidates as candidates_mod, grounding, parser
+from app.services.chatbot.head import candidates as candidates_mod, grounding, held_family, parser
 from app.services.chatbot.head.access import check_access, default_space_id
 from app.services.chatbot.head.build_ctx import build_ctx
 from app.services.chatbot.lanes import business, canned as canned_lanes, casual
@@ -4800,6 +4800,17 @@ def _run_stages_body(  # noqa: PLR0915
             closed_lists=parser_config.closed_lists,
         )
     verdict = closed_lists_verdict(verdict, gate=parser_config.closed_lists)
+    if parser_config.closed_lists and state_in.focus.products:
+        # SPEC-OVER-HELD: a spec said about a held product narrows that product's family
+        # (`head/held_family.py`). A read failure leaves the verdict as it was.
+        try:
+            with _session(session_factory) as family_db:
+                verdict, family_note = held_family.narrow_held_family(family_db, verdict, list(state_in.focus.products))
+        except Exception:  # noqa: BLE001 - an advisory narrowing, never a failed turn
+            logger.warning("chatbot: held family narrowing failed; the turn goes on without it", exc_info=True)
+            family_note = None
+        if family_note:
+            turn_trace.add("held_family", family_note)
     if _ranking_words:
         verdict = {**verdict, "entities": [*(verdict.get("entities") or []), *_ranking_words]}
     if grounding_notes:
