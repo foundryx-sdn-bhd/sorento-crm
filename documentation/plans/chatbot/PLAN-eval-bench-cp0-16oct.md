@@ -413,6 +413,15 @@ price tier before finding any product, five run results, now fail), attachment 6
   - The mark is cleared when the block exits.
   - The L1 replay runs the engine with `offload=False`, so a worker setting cannot move a turn outside the rollback.
 
+## The bench reads under the asker's scope (crew PRIORITY, 18 Oct)
+
+`replay.py` ran `engine.run_turn` in process but never called `register_company_scope_listeners()` (only
+`app/main.py` and `worker.py` do), so every bench run read candidates, resolver hits and set-summary counts with no
+company or brand scope; only the MCP fetch was scoped. Not a production leak. Now `run` and `live` register the
+listeners, the grounding tier opens its session under the row's contact scope, and the preflight, `replay_rows` and
+`live_rows` refuse when the listeners are missing or enforcement is off. Numbers from runs before this fix (CP0 and
+the 17 Oct combined run) are from the unscoped harness.
+
 ## The bench fails loudly (crew PRIORITY, 17 Oct)
 
 #1718's missing column made every replayed turn error the same way in both arms. The gate compared two equally
