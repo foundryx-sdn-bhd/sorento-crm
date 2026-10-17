@@ -801,9 +801,15 @@ def _followup_checks(row, item, kind, gold):
                            if isinstance(e, dict)} | {_val(b) for b in before.get("brands") or []}
             if fv in held_before:
                 held = set()
-            # the whole filter phrase inside ONE argument string of a lookup, never words pooled across arguments or tools
-            carried = bool(_squash(flt.get("value"))) and any(
-                _squash(flt.get("value")) in _squash(x) for t in _tools(row) for x in _strings(t.get("args")))
+            # carried: the whole phrase in one string, or every word in the strings of ONE argument of ONE call; words
+            # pooled across different arguments or tools never count
+            def carries(value: Any) -> bool:
+                strs = [_squash(x) for x in _strings(value)]
+                return bool(_squash(flt.get("value"))) and (
+                    any(_squash(flt.get("value")) in x for x in strs)
+                    or (bool(fwords) and all(any(_squash(w) in x for x in strs) for w in fwords)))
+
+            carried = any(carries(v) for t in _tools(row) for v in (t.get("args") or {}).values())
             words_held = set()
             if fv not in held_before:
                 words_held = (_words_of(*(x for e in (extra.get("specification") or []) + (extra.get("category") or [])
