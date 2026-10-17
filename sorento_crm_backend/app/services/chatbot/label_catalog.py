@@ -589,12 +589,8 @@ LANE_LABELS: dict[str, dict[str, str]] = {
     "No dimensions on record for {product}.": {"ms": 'Tiada dimensi direkodkan untuk {product}.', "zh": '没有 {product} 的尺寸记录。'},
     # Lists L5: the tail `_named` counts the names it left off; filled into the `{names}` value only.
     " and {n} others": {"ms": " dan {n} lagi", "zh": " 等另外 {n} 个"},
-    # Lists L1: the range a cut code-lookup list adds to its intro; `(showing ...)` is the capped list's
-    # total-less form (a list the probe may have stopped short of is never given a count).
-    "({total}, showing {first} to {last})": {
-        "ms": "({total}, menunjukkan {first} hingga {last})",
-        "zh": "（共 {total} 个，显示第 {first} 至 {last} 个）",
-    },
+    # Lists L1: the range a cut code-lookup list adds to its intro; it states no total (the probe
+    # behind such a list may have stopped short of its end).
     "(showing {first} to {last})": {
         "ms": "(menunjukkan {first} hingga {last})",
         "zh": "（显示第 {first} 至 {last} 个）",
@@ -820,7 +816,6 @@ DIRECT_ONLY = (
             "I have {names}.",
             "{code} has no {types}.",
             " and {n} others",
-            "({total}, showing {first} to {last})",
             "(showing {first} to {last})",
         }
     )

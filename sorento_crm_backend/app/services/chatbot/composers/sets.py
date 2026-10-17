@@ -20,11 +20,10 @@ def page_size(named: int | None, cap: int) -> int:
     return min(named, cap) if named else cap
 
 
-#: The range a cut code-lookup list adds to its intro (Lists L1); the capped form states no total,
-#: because the probe behind such a list may have stopped at its cap.
-RANGE = "({total}, showing {first} to {last})"
+#: The range a cut code-lookup list adds to its intro (Lists L1); it states no total, because the
+#: probe behind such a list may have stopped at its cap.
 RANGE_CAPPED = "(showing {first} to {last})"
-#: The last line of a capped list (n = the codes listed): the matches shown may not be all of them.
+#: The last line of a code list (n = the codes listed): the matches shown may not be all of them.
 NARROW = "Those are the first {n} matches. Send more of the code to narrow it."
 
 

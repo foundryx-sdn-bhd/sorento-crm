@@ -719,26 +719,16 @@ def _set_list_size(semantic_input: Any) -> int:
 CODE_LIST_TOOLS = frozenset({"crm_master_products_list", *SET_ROW_LIMIT} - {"crm_marketing_promotion_products_list"})
 
 
-def _code_list_ids(row_items: list[Any], entities: Any) -> tuple[list[dict[str, Any]], bool] | None:
+def _code_list_ids(row_items: list[Any], entities: Any) -> list[dict[str, Any]] | None:
     """CHAT-COMPOSER Lists L1: the product ids behind each printed code, in printed order, or None
     when the list is not one a later "more" can page: fewer than two codes, a code whose rows are
-    not together, or a code with no product entity. The flag says the list is capped (LD4): some typed
-    token holds as many product rows as the resolver's per-type cap, `PREFIX_LIMIT // n_types`, so the
-    probe may have stopped there and no total may be stated."""
-    from app.services.entity_resolver import PREFIX_LIMIT
-
+    not together, or a code with no product entity."""
     if isinstance(entities, str):
         entities = _safe_json(entities)
     by_code: dict[str, list[str]] = {}
-    types: dict[Any, set[Any]] = {}  # typed token -> the entity types the resolver returned for it
-    rows: dict[Any, set[Any]] = {}  # typed token -> its product uuids
     for ent in jsc.array(entities):
-        if not isinstance(ent, dict) or not ent.get("uuid"):
+        if not isinstance(ent, dict) or ent.get("entity_type") != "product" or not ent.get("uuid"):
             continue
-        types.setdefault(ent.get("raw"), set()).add(ent.get("entity_type"))
-        if ent.get("entity_type") != "product":
-            continue
-        rows.setdefault(ent.get("raw"), set()).add(ent["uuid"])
         for field in ("code", "canonical_code"):
             code = jsc.nullish_str(ent.get(field)).strip().casefold()
             if code and ent["uuid"] not in by_code.setdefault(code, []):
@@ -752,8 +742,7 @@ def _code_list_ids(row_items: list[Any], entities: Any) -> tuple[list[dict[str, 
         return None
     if any(not by_code.get(code.casefold()) for code in codes):
         return None
-    capped = any(len(uuids) >= max(1, PREFIX_LIMIT // len(types[raw])) for raw, uuids in rows.items())
-    return [{"code": code, "ids": by_code[code.casefold()]} for code in codes], capped
+    return [{"code": code, "ids": by_code[code.casefold()]} for code in codes]
 
 
 def _without_total(header: str) -> str:
@@ -774,7 +763,6 @@ def _code_list_page(
     loc: Any,
     ctx: dict[str, Any],
     code_ids: list[dict[str, Any]],
-    capped: bool,
 ) -> tuple[str, dict[str, Any] | None, list[Any] | None]:
     """CHAT-COMPOSER Lists L1: a code-lookup list cut to ONE message on a card boundary, the intro
     gaining the range, the page ending with the "more" line and carrying the matched product ids so a
@@ -786,13 +774,12 @@ def _code_list_page(
     total = len(code_ids)
     intro = msg[:rows_start].strip()
     english_intro = jsc.js_string(e.get("intro") or "Here are the results.").strip()
-    fragment = composers_sets.RANGE_CAPPED if capped else composers_sets.RANGE
 
     def header(n: int) -> str:
         if n >= total:
             return intro
         return composers_sets.ranged(
-            lz.text(english_intro), lz.fill(fragment, total=f"{total:,}", first="1", last=str(n))
+            lz.text(english_intro), lz.fill(composers_sets.RANGE_CAPPED, first="1", last=str(n))
         )
 
     rows_msg = msg[rows_start:]
@@ -816,12 +803,11 @@ def _code_list_page(
         total=total,
         build_header=header,
         cap=answer_mod.SET_LIST_MAX,
-        end_note=lz.fill(composers_sets.NARROW, n=f"{total:,}") if capped else "",
     )
     if paged is None:
         return msg, None, None
     if answers is None:
-        return paged, None, None  # all of it fits: the plain list, the narrow sentence under a capped one
+        return paged, None, None
     carry = {
         "code_list": True,
         "set_noun": "matching products",
@@ -829,8 +815,6 @@ def _code_list_page(
         "total": total,
         "shown": window["last"],
     }
-    if capped:
-        carry["capped"] = True
     return paged, {**window, "carry": carry}, answers
 
 
@@ -3949,11 +3933,11 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         from app.services.chatbot import composers
 
         paged_msg = None
-        # CHAT-COMPOSER Lists L1 (LD3): a code list holding the probe's cap prints no total, and its last
-        # page ends with the narrow sentence where the "more" line would be.
+        # CHAT-COMPOSER Lists L1 (LD7): a code list never states a total; its last page ends with the
+        # narrow sentence where the "more" line would be.
         end_note = ""
-        capped = bool(composers.enabled() and predicate.get("code_list") and predicate.get("capped"))
-        if capped:
+        code_list = bool(composers.enabled() and predicate.get("code_list"))
+        if code_list:
             from app.services.chatbot.composers import sets as composers_sets
 
             lz = ctx.get("localizer") or IDENTITY
@@ -3983,7 +3967,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 shown=shown,
                 offset=offset,
                 total=qualifying_total,
-                build_header=lambda n: (_without_total if capped else str)(
+                build_header=lambda n: (_without_total if code_list else str)(
                     answer_mod.build_set_header(
                         qualifying_total,
                         n,
@@ -4012,12 +3996,11 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         from app.services.chatbot import composers
 
         if composers.enabled() and ctx.get("tool") in CODE_LIST_TOOLS and not (plain_lines or stock_ask_render or qs_render or groups_render):
-            listed = _code_list_ids(row_items, ctx.get("entities")) if row_items else None
-            if listed is not None:
-                code_ids, capped_list = listed
+            code_ids = _code_list_ids(row_items, ctx.get("entities")) if row_items else None
+            if code_ids is not None:
                 msg, set_window, page_items = _code_list_page(
                     e=e, msg=msg, rows_start=rows_start, rows_end=rows_end, row_ends=row_ends,
-                    row_items=row_items, row_idx=row_idx, ts=ts, loc=loc, ctx=ctx, code_ids=code_ids, capped=capped_list,
+                    row_items=row_items, row_idx=row_idx, ts=ts, loc=loc, ctx=ctx, code_ids=code_ids,
                 )
 
     final_response = msg.strip()

@@ -1987,7 +1987,8 @@ def lane_parse_output(
       AC-EQ-18 (a fresh, unaccepted question over an open offer) is byte-identical
       to AC-EQ-20 once the arm is gone - folded into it, not duplicated.
     """
-    out = dict(verdict)
+    # The audience and the reference page are the runner's to set (profile, carry), never the verdict's.
+    out = {k: v for k, v in verdict.items() if k not in ('ref_staff', 'ref_page')}
     if domain:
         out["domain_hint"] = domain
 
@@ -4099,8 +4100,8 @@ def make_tool_runner(
                 page_predicate.get("other_brands"), page_predicate.get("require") or {}
             )
             text = f"{said}\n\n{others}" if others else said
-            if page_predicate.get("code_list") and page_predicate.get("capped"):
-                # CHAT-COMPOSER Lists L1 (LD3): a capped list never states a total; the end is the
+            if page_predicate.get("code_list"):
+                # CHAT-COMPOSER Lists L1 (LD7): a code list never states a total; the end is the
                 # narrow sentence alone.
                 from app.services.chatbot.composers import sets as composers_sets
 
@@ -4636,8 +4637,6 @@ def page_the_set(
             "set_noun": key.get("set_noun") or "products",
             "code_list": True,
         }
-        if key.get("capped"):
-            predicate["capped"] = True
         if offset:
             predicate["offset"] = offset
         if total and offset >= total:
