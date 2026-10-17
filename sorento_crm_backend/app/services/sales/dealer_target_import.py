@@ -1884,7 +1884,12 @@ def run(
                 # Several rows of one target name the same ledger (three "A/C I" rows, gate 6).
                 # By position: rows sharing a CUSTOMER CODE share one row key (review B1).
                 twice = next(i for i in ids if ids.count(i) > 1)
-                numbers = sorted(r for r, i in zip(scheme.rows, ids) if i == twice)
+                # Every row of the dealer on that ledger, across all its targets (gate 7: a
+                # quarterly target on two rows beside a yearly one on three).
+                numbers = sorted({
+                    r for other in schemes for r, code in zip(other.rows, other.codes)
+                    if customer_of(code) is not None and customer_of(code).id == twice
+                })
                 listed = ", ".join(str(n) for n in numbers[:-1]) + f" and {numbers[-1]}"
                 problem = f"rows {listed} are one CRM customer; a target lists each account once"
                 break
