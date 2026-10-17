@@ -82,3 +82,21 @@ meant existing code -> answer that code; a bare code after an ETA reply -> the i
 - Live TRAIN (97 code-lookup turns x1, grader f58964a232): main 81/94 86.2%, arm 1 (50495b919e + v160) 83/94 88.3%,
   arm 2 (028fb6b07e + v161) 84/94 89.4%; spend USD 1.19 of the two USD 1 envelopes. "When deliver" passed 1 of 2 runs.
 - Prompt: unlabelled v159, v160, v161 on sorento_cagent_stack; production label v63 untouched.
+
+## Round 2 (crew, 17 Oct evening: "run as much parallel as possible")
+
+Base: #1755 head f0f94bc385 merged in (c90872a779; a merge, not a rebase, because the repo forbids force-pushing a PR
+branch). EVAL-BENCH's answer.py clash patch with #1760 is applied when crew relays it.
+
+- R2-1 "when deliver" reliable (passed 1 of 2 live runs; the parser left status null in arm 2 although the CODE LOOKUP
+  section names it, because v63 ORDER_STATUS FILTER says status comes ONLY from its listed words). Parser-level gold:
+  `scripts/chatbot_eval/gold/parser_when_deliver.jsonl`, synthetic paraphrases (English, Malay, Chinese, typos, with and
+  without a customer) expecting status "outstanding", domain_hint "order", the product entity, no "delivery" attribute,
+  plus negative controls (an arrival / ETA ask stays incoming; "delivered" stays delivered; a dated DO list stays a DO
+  list). A parser-only runner `scripts/chatbot_eval/parser_gold.py` calls only the semantic parser with a pinned
+  unlabelled prompt version, N repeats, metered with a USD cap; its pure grading is unit-tested red-first. Then the
+  section's rule names its words as additions to the ORDER_STATUS FILTER list; measured old (v161 lineage) vs new, N=3.
+- R2-2 the TRAIN code failures left after EVAL-BENCH rounds 32-34 regrade (crew counts: parse 4, retrieval 1, answer 1).
+- R2-3 generalise: crew sends held-out failure CLASSES after the 18 Oct combined run; EVAL-SETS adds ~150 real TRAIN
+  code-lookup items. Never held-out items.
+- Live: cap USD 3 per run; at most 2 stacks machine-wide via crew/state/live-slots/<LANE> (mkdir to take, rmdir on stop).
