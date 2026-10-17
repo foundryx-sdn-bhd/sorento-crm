@@ -607,6 +607,15 @@ def apply_field_access(
     return gated
 
 
+def staff_may_see_clearance(db: Session, current_user: Optional[Mapping[str, Any]]) -> bool:
+    """Whether a staff caller may see the clearance fields (`eta_delay_date` and the rest).
+
+    For a screen that prints one of them outside `apply_field_access`, such as the
+    fulfilment board dating incoming supply. Fails closed like the check it wraps.
+    """
+    return _staff_entitled(db, current_user, CLEARANCE_PERMISSION)
+
+
 def _staff_entitled(
     db: Session,
     current_user: Optional[Mapping[str, Any]],

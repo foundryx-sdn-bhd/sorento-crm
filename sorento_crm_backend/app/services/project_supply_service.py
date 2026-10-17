@@ -631,6 +631,18 @@ def _error_detail(exc: Exception) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
     return str(exc), None
 
 
+def _shown_days_late(event: Any, as_of: date) -> int:
+    """How late a counted document READS: from the published ETA when its delay is masked.
+
+    Wording only. Which documents are late, and so assumed, stays the engine's call on the
+    real date (`event.days_late`).
+    """
+    stated = getattr(event, "stated_at", None)
+    if isinstance(stated, spo_supply.MaskedEta):
+        return spo_supply.overdue_days(stated.published, as_of)
+    return int(getattr(event, "days_late", 0) or 0)
+
+
 @dataclass
 class _SpoRow:
     spo_number: str
@@ -1136,8 +1148,13 @@ def _location_only(candidate: Mapping[str, Any]) -> Dict[str, Any]:
 class ProjectSupplyService:
     """The supply sheet (`proposal_for`) and the atomic commit (`confirm`)."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, *, reveal_eta_delay: bool = True):
         self.db = db
+        # Whether this request's reader may see `eta_delay_date`, a
+        # `procurement.packing_lists.view_clearance` field (owner ruling 17 Oct 2026). The
+        # engine plans on the delay either way; False only makes it PRINT as the published
+        # ETA (`spo_supply.MaskedEta`). Only a read that prints to a viewer passes False.
+        self.reveal_eta_delay = reveal_eta_delay
         # Facts about THIS request, filled by `_facts_for` and read by the helpers below.
         # Per-request rather than per-call because one proposal asks the same "what is
         # free at that location" question once per line and once per borrow candidate.
@@ -2829,7 +2846,7 @@ class ProjectSupplyService:
                 str(fact.product_id)
             )
             memo = {
-                str(event.key): int(getattr(event, "days_late", 0) or 0)
+                str(event.key): _shown_days_late(event, as_of)
                 for event in (result.supply if result is not None else ())
                 if int(getattr(event, "days_late", 0) or 0) > 0
             }
@@ -9940,9 +9957,17 @@ class ProjectSupplyService:
             balance = _dec(row.allocated_quantity) - _dec(row.quantity_received)
             if balance <= _ZERO:
                 continue
-            arrival = (
-                row.eta_delay_date or row.estimated_arrival_date or row.expected_date
-            )
+            published = row.estimated_arrival_date or row.expected_date
+            arrival = row.eta_delay_date or published
+            # How late it reads is wording, so it is worked from the date the viewer sees.
+            shown = arrival
+            if (
+                not self.reveal_eta_delay
+                and row.eta_delay_date
+                and row.eta_delay_date != published
+            ):
+                arrival = spo_supply.MaskedEta(row.eta_delay_date, published)
+                shown = published
             out.setdefault((str(row.product_id), str(row.warehouse_id)), []).append(
                 _SpoRow(
                     spo_number=str(row.spo_number or ""),
@@ -9950,7 +9975,7 @@ class ProjectSupplyService:
                     allocation_id=str(row.id),
                     arrival_date=arrival,
                     qty=balance,
-                    overdue_days=spo_supply.overdue_days(arrival, today),
+                    overdue_days=spo_supply.overdue_days(shown, today),
                     supplier_name=row.shipment_supplier_name or row.spo_supplier_name,
                     ordered_qty=_dec(row.allocated_quantity),
                     received_qty=_dec(row.quantity_received),

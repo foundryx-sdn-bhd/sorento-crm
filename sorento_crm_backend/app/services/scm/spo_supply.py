@@ -33,7 +33,7 @@ the two readings are deliberately different:
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from sqlalchemy import and_, func, or_, select, text
@@ -155,6 +155,78 @@ def supplier_id_for(allocation=SPOAllocation):
         .scalar_subquery()
     )
     return func.coalesce(via_line, via_number, allocation.supplier_id)
+
+
+class MaskedEta(date):
+    """An SPO's delayed ETA, for a viewer who may not see `eta_delay_date`.
+
+    Owner ruling 17 Oct 2026: the delay date is a `procurement.packing_lists.view_clearance`
+    field, but the engine plans on it for EVERY viewer, so what the board suggests is what a
+    Save commits. This value therefore compares, sorts and subtracts as the delayed date
+    (it IS that date to the engine) and prints as `published`, the ETA everyone may see.
+    `shown_date` turns it into the published date wherever a response is assembled.
+
+    Built only by a read that prints dates to such a viewer (`ProjectSupplyService` with
+    `reveal_eta_delay=False`); a write never receives one.
+    """
+
+    published: Optional[date]
+
+    def __new__(cls, delayed: date, published: Optional[date]):
+        value = super().__new__(cls, delayed.year, delayed.month, delayed.day)
+        value.published = published
+        return value
+
+    def __reduce__(self):
+        return (MaskedEta, (date(self.year, self.month, self.day), self.published))
+
+    def replace(self, *args, **kwargs) -> date:
+        return date(self.year, self.month, self.day).replace(*args, **kwargs)
+
+    def _plain(self) -> date:
+        return date(self.year, self.month, self.day)
+
+    # `date` rebuilds a subclass as `cls(y, m, d)` after arithmetic, which this one cannot
+    # take: shifting by days keeps the mask, both dates moved alike.
+    def __add__(self, other):
+        if isinstance(other, timedelta):
+            published = self.published + other if self.published else None
+            return MaskedEta(self._plain() + other, published)
+        return NotImplemented
+
+    __radd__ = __add__
+
+    def __sub__(self, other):
+        if isinstance(other, timedelta):
+            return self + (-other)
+        if isinstance(other, date):
+            return self._plain() - other
+        return NotImplemented
+
+    def _printed(self) -> str:
+        return self.published.isoformat() if self.published else ""
+
+    def isoformat(self) -> str:
+        return self._printed()
+
+    def __str__(self) -> str:
+        return self._printed()
+
+    def __repr__(self) -> str:
+        return f"MaskedEta(published={self.published!r})"
+
+    def __format__(self, spec: str) -> str:
+        return format(self.published, spec) if self.published else ""
+
+    def strftime(self, fmt: str) -> str:
+        return self.published.strftime(fmt) if self.published else ""
+
+
+def shown_date(value: Optional[date]) -> Optional[date]:
+    """The date a viewer is shown: the published ETA in place of a masked delay."""
+    if isinstance(value, MaskedEta):
+        return value.published
+    return value
 
 
 def overdue_days(arrival_date: Optional[date], as_of: Optional[date] = None) -> int:
