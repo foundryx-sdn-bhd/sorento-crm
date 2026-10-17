@@ -24,7 +24,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Warehouse
-from app.models.order import SalesOrderLine
+from app.models.order import SalesOrder, SalesOrderLine
 from app.models.product import Product
 from app.models.project_so import (
     ProjectSalesOrder,
@@ -448,10 +448,23 @@ class LineSplitService:
             "so_number": facts.get("so_number")
             or order.autocount_doc_no
             or order.provisional_ref,
+            # The AutoCount SO document date only (the sheet's SO DATE column, v4 AC-A12):
+            # unlike the email's `so_date` fact it never falls back to a CRM timestamp.
+            "so_date": self._core_order_date(order),
             "customer": facts.get("customer"),
             "project": facts.get("project"),
             "lines": out_lines,
         }
+
+    def _core_order_date(self, order: ProjectSalesOrder) -> Optional[date]:
+        if not order.so_id:
+            return None
+        row = (
+            self.db.query(SalesOrder.order_date)
+            .filter(SalesOrder.id == order.so_id)
+            .first()
+        )
+        return row[0] if row is not None else None
 
     # ------------------------------------------------------------------ write
 

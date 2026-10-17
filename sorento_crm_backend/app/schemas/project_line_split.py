@@ -48,6 +48,8 @@ class LineSplitLineOut(BaseModel):
 class LineSplitsOut(BaseModel):
     pso_id: str
     so_number: Optional[str] = None
+    #: The AutoCount SO document date (the sheet's SO DATE column); `None` when unknown.
+    so_date: Optional[date] = None
     customer: Optional[str] = None
     project: Optional[str] = None
     lines: List[LineSplitLineOut] = []
