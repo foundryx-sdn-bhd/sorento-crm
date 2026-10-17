@@ -42,7 +42,8 @@ export interface SplitLine {
   splits: SplitDraft[];
 }
 
-/** Where a split goes: a date (or `'cancel'`) and the line it sits on. */
+/** Where a split goes: a date (`''` = none yet, staff type it; or `'cancel'`) and the line
+ * it sits on. */
 export interface MoveTarget {
   date: string | 'cancel';
   sitsOnLineId: string | null;
@@ -159,7 +160,8 @@ function editLine(
 /**
  * Move `qty` of a split to `target`. All of it moves the split; part of it makes a new split
  * for the moved qty. Landing where a split of the same line already sits (same date, same
- * sits-on line) merges the two. A cancel has no date and sits on its own line.
+ * sits-on line) merges the two. A cancel has no date and sits on its own line; a target with
+ * no date yet ("New date") never merges.
  */
 export function moveSplit(
   lines: SplitLine[],
@@ -174,15 +176,18 @@ export function moveSplit(
     const moving = Math.min(Math.floor(qty) || 0, split.qty);
     if (moving <= 0) return null;
     const isCancel = target.date === 'cancel';
-    const date = isCancel ? null : (target.date as string);
+    const date = isCancel ? null : target.date || null;
     const on = isCancel ? lineId : target.sitsOnLineId;
-    const existing = splits.find(
-      (candidate) =>
-        candidate !== split &&
-        candidate.isCancel === isCancel &&
-        candidate.deliveryDate === date &&
-        candidate.sitsOnLineId === on,
-    );
+    const existing =
+      isCancel || date
+        ? splits.find(
+            (candidate) =>
+              candidate !== split &&
+              candidate.isCancel === isCancel &&
+              candidate.deliveryDate === date &&
+              candidate.sitsOnLineId === on,
+          )
+        : undefined;
     if (moving >= split.qty) {
       if (existing) {
         existing.qty += split.qty;

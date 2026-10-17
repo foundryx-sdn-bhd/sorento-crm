@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Check, GripVertical, Plus, X } from 'lucide-react';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
+import { Check, CirclePlus, GripVertical, Plus, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DatePicker, parseDateInput } from '@/components/ui/date-picker';
@@ -31,10 +32,20 @@ import { ChangePill, QtyInput, SitsOnSelect } from './lineSplitParts';
 /**
  * OI-LINE-SPLIT v4: the one split sheet (UAC A2 to A12, F1; mock v4
  * `documentation/mockups/OI-LINE-SPLIT/index.html`). Every open line of the SO in one table,
- * one `<tbody>` per line, a split's rows stacked under its line with the line's own cells
- * merged across them. The dialog owns the state and Save; this file only draws and reports
- * edits.
+ * one `<tbody>` per line (its drop target), a split's rows stacked under its line with the
+ * line's own cells merged across them. The dialog owns the state, the drag context and Save;
+ * this file only draws and reports edits.
  */
+
+/** What a grip or a "N left" chip carries into a drag. */
+export type DragSource =
+  | { kind: 'split'; lineId: string; splitId: string }
+  | { kind: 'line'; lineId: string; splitId: string }
+  | { kind: 'rest'; lineId: string };
+
+export const DROP_NEW = 'drop:new';
+export const DROP_CANCEL = 'drop:cancel';
+export const lineDropId = (lineId: string) => `line:${lineId}`;
 
 /** The id the focus helpers find a split's date input by. */
 export const dateInputId = (splitId: string) => `split-date-${splitId}`;
@@ -42,6 +53,11 @@ export const dateInputId = (splitId: string) => `split-date-${splitId}`;
 /** A line AutoCount added in the pending change: nothing of its own to split (base 0). */
 export function isAddedLine(line: SplitLine): boolean {
   return !line.baseQty && line.splits.length === 0;
+}
+
+export interface SheetDrag {
+  source: DragSource;
+  groupKey: string;
 }
 
 export interface SheetHandlers {
@@ -55,6 +71,8 @@ export interface SheetHandlers {
   remove: (line: SplitLine, splitId: string) => void;
   fieldBlur: () => void;
 }
+
+type DataAttributes = { [key: `data-${string}`]: string | undefined };
 
 const DESKTOP_ONLY = 'max-md:hidden';
 const GRIP_STICKY = 'max-md:sticky max-md:left-0';
@@ -99,6 +117,73 @@ function dateToIso(date: Date): string {
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const dd = String(date.getDate()).padStart(2, '0');
   return `${date.getFullYear()}-${mm}-${dd}`;
+}
+
+/** A grip or the "N left" chip: one @dnd-kit draggable (pointer, touch long-press, keyboard). */
+function DragHandle({
+  id,
+  source,
+  label,
+  disabled,
+  className,
+  children,
+  ...rest
+}: {
+  id: string;
+  source: DragSource;
+  label: string;
+  disabled?: boolean;
+  className?: string;
+  children?: React.ReactNode;
+} & DataAttributes) {
+  const { attributes, listeners, setNodeRef } = useDraggable({
+    id,
+    data: source,
+    disabled,
+  });
+  return (
+    <button
+      type="button"
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      {...rest}
+      aria-label={label}
+      data-drag-handle=""
+      className={cn(
+        'touch-none select-none focus-visible:outline-2 focus-visible:outline-primary',
+        disabled ? 'cursor-default opacity-40' : 'cursor-grab',
+        className,
+      )}
+    >
+      {children ?? <GripVertical aria-hidden className="size-3.5" />}
+    </button>
+  );
+}
+
+/** One line block: a `<tbody>` drop target (UAC A8). */
+function DropBody({
+  id,
+  enabled,
+  children,
+  ...rest
+}: {
+  id: string;
+  enabled: boolean;
+  children: React.ReactNode;
+} & React.HTMLAttributes<HTMLTableSectionElement> &
+  DataAttributes) {
+  const { setNodeRef } = useDroppable({ id, disabled: !enabled });
+  return (
+    <tbody
+      ref={setNodeRef}
+      {...rest}
+      data-drop-id={id}
+      data-drop-target={enabled ? 'true' : undefined}
+    >
+      {children}
+    </tbody>
+  );
 }
 
 function DateCell({
@@ -195,6 +280,10 @@ interface LineBlockProps {
   open: boolean;
   itemTop: boolean;
   flash: boolean;
+  dimmed: boolean;
+  target: boolean;
+  source: boolean;
+  over: boolean;
   handlers: SheetHandlers;
 }
 
@@ -208,6 +297,10 @@ const LineBlock = React.memo(function LineBlock({
   open,
   itemTop,
   flash,
+  dimmed,
+  target,
+  source,
+  over,
   handlers,
 }: LineBlockProps) {
   const no = line.lineNo ?? '';
@@ -313,14 +406,15 @@ const LineBlock = React.memo(function LineBlock({
               <Check aria-hidden className="size-3.5" />
             </span>
           ) : gap > 0 ? (
-            <button
-              type="button"
-              aria-label={`Drag the ${gap} left of line ${no}`}
+            <DragHandle
+              id={`drag-rest:${line.lineId}`}
+              source={{ kind: 'rest', lineId: line.lineId }}
+              label={`Drag the ${gap} left of line ${no}`}
               className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-full border border-warning/40 bg-warning/10 py-px ps-1 pe-2 font-semibold tabular-nums text-warning"
             >
               <GripVertical aria-hidden className="size-3" />
               {`${gap} left`}
-            </button>
+            </DragHandle>
           ) : (
             <span className="whitespace-nowrap font-semibold tabular-nums text-destructive">
               {`${-gap} over`}
@@ -358,7 +452,19 @@ const LineBlock = React.memo(function LineBlock({
     const only = splits[0];
     body = (
       <TableRow className="border-0 hover:bg-transparent">
-        <TableCell className={gripCell} />
+        <TableCell className={gripCell}>
+          <DragHandle
+            id={`drag-line:${line.lineId}`}
+            source={{
+              kind: 'line',
+              lineId: line.lineId,
+              splitId: only?.id ?? '',
+            }}
+            label={`Drag line ${no}`}
+            disabled={!only?.qty}
+            className="inline-flex h-7 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          />
+        </TableCell>
         {baseCells}
         <TableCell className={changeCell}>
           <RemainButton
@@ -408,7 +514,16 @@ const LineBlock = React.memo(function LineBlock({
           data-split-id={split.id}
           className="border-0 hover:bg-transparent"
         >
-          <TableCell className={cn(cell, GRIP_STICKY, 'max-md:z-[1] px-0')} />
+          <TableCell className={cn(cell, GRIP_STICKY, 'max-md:z-[1] px-0')}>
+            <DragHandle
+              id={`drag-split:${split.id}`}
+              source={{ kind: 'split', lineId: line.lineId, splitId: split.id }}
+              label={`Drag split ${n} of line ${no}`}
+              disabled={!split.qty}
+              data-grip-split={split.id}
+              className="inline-flex h-7 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            />
+          </TableCell>
           {first ? baseCells : null}
           <TableCell className={cell}>
             <QtyInput
@@ -482,14 +597,59 @@ const LineBlock = React.memo(function LineBlock({
   }
 
   return (
-    <tbody
+    <DropBody
+      id={lineDropId(line.lineId)}
+      enabled={target}
       data-testid={`split-line-${line.lineNo ?? line.lineId}`}
       data-line-id={line.lineId}
+      data-dimmed={dimmed ? 'true' : undefined}
+      data-over={over ? 'true' : undefined}
+      className={cn(
+        dimmed && 'opacity-40',
+        source && '[&>tr>td]:bg-muted/60',
+        over && '[&>tr>td]:bg-primary/10',
+      )}
     >
       {body}
-    </tbody>
+    </DropBody>
   );
 });
+
+function DropRow({
+  id,
+  testId,
+  over,
+  destructive,
+  children,
+}: {
+  id: string;
+  testId: string;
+  over: boolean;
+  destructive?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <DropBody
+      id={id}
+      enabled
+      data-testid={testId}
+      data-over={over ? 'true' : undefined}
+      className={cn(over && '[&>tr>td]:bg-primary/10')}
+    >
+      <TableRow className="border-0 hover:bg-transparent">
+        <TableCell
+          colSpan={COLUMNS.length}
+          className={cn(
+            'h-9 border-b border-dashed border-muted-foreground/50 bg-muted/30 ps-3.5 text-start text-xs',
+            destructive ? 'text-destructive' : 'text-muted-foreground',
+          )}
+        >
+          {children}
+        </TableCell>
+      </TableRow>
+    </DropBody>
+  );
+}
 
 /** Focus a sheet cell: the input or button it is, or holds; a typed value is selected. */
 export function focusCell(cell: Element | null): boolean {
@@ -526,6 +686,8 @@ export function LineSplitSheet({
   soNumber,
   soDate,
   openLineIds,
+  drag,
+  overTarget,
   flashLineId,
   handlers,
 }: {
@@ -536,6 +698,8 @@ export function LineSplitSheet({
   soNumber: string;
   soDate: string;
   openLineIds: ReadonlySet<string>;
+  drag: SheetDrag | null;
+  overTarget: string | null;
   flashLineId: string | null;
   handlers: SheetHandlers;
 }) {
@@ -568,10 +732,12 @@ export function LineSplitSheet({
   /**
    * Excel keys in the cells (UAC A5, A10): Ctrl/Cmd+Enter adds a split under the line,
    * Ctrl/Cmd+Backspace removes the row; Enter or Down goes to the same column one row down,
-   * Shift+Enter or Up one row up.
+   * Shift+Enter or Up one row up. A grip or chip is the drag's own (Space picks up).
    */
   const onKeyDown = (event: React.KeyboardEvent<HTMLTableElement>) => {
+    if (drag) return;
     const target = event.target as HTMLElement;
+    if (target.closest('[data-drag-handle]')) return;
     const lineId = target.closest<HTMLElement>('tbody[data-line-id]')?.dataset
       .lineId;
     const line = lineId ? lineById.get(lineId) : undefined;
@@ -616,6 +782,14 @@ export function LineSplitSheet({
     () => new Set(allLines.map((line) => line.location)).size > 1,
     [allLines],
   );
+  const lastOfDragGroup = drag
+    ? lines.reduce(
+        (last, line, index) =>
+          groupKeyOf(line) === drag.groupKey ? index : last,
+        -1,
+      )
+    : -1;
+
   return (
     <Table
       aria-label="Split delivery sheet"
@@ -647,20 +821,51 @@ export function LineSplitSheet({
       {lines.map((line, index) => {
         const key = groupKeyOf(line);
         const prev = lines[index - 1];
+        const inDrag = drag !== null;
+        const sameGroup = inDrag && drag.groupKey === key;
+        const isSource = inDrag && drag.source.lineId === line.lineId;
         return (
-          <LineBlock
-            key={line.lineId}
-            line={line}
-            groupLines={groups.get(key) ?? [line]}
-            incoming={incoming.get(line.lineId) ?? ''}
-            soNumber={soNumber}
-            soDate={soDate}
-            multiLocation={multiLocation}
-            open={openLineIds.has(line.lineId)}
-            itemTop={!prev || prev.itemCode !== line.itemCode}
-            flash={flashLineId === line.lineId}
-            handlers={handlers}
-          />
+          <React.Fragment key={line.lineId}>
+            <LineBlock
+              line={line}
+              groupLines={groups.get(key) ?? [line]}
+              incoming={incoming.get(line.lineId) ?? ''}
+              soNumber={soNumber}
+              soDate={soDate}
+              multiLocation={multiLocation}
+              open={openLineIds.has(line.lineId)}
+              itemTop={!prev || prev.itemCode !== line.itemCode}
+              flash={flashLineId === line.lineId}
+              dimmed={inDrag && !sameGroup}
+              target={sameGroup && !isSource}
+              source={isSource}
+              over={overTarget === lineDropId(line.lineId)}
+              handlers={handlers}
+            />
+            {index === lastOfDragGroup ? (
+              <>
+                <DropRow
+                  id={DROP_NEW}
+                  testId="drop-new-date"
+                  over={overTarget === DROP_NEW}
+                >
+                  <CirclePlus
+                    aria-hidden
+                    className="me-1.5 inline size-3.5 align-[-2px]"
+                  />
+                  New date
+                </DropRow>
+                <DropRow
+                  id={DROP_CANCEL}
+                  testId="drop-cancel"
+                  over={overTarget === DROP_CANCEL}
+                  destructive
+                >
+                  Cancel this qty
+                </DropRow>
+              </>
+            ) : null}
+          </React.Fragment>
         );
       })}
       {lines.length === 0 ? (

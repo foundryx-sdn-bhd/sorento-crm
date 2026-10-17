@@ -1,6 +1,24 @@
 'use client';
 
 import * as React from 'react';
+import { createPortal } from 'react-dom';
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  MeasuringStrategy,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  pointerWithin,
+  rectIntersection,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+  type KeyboardCoordinateGetter,
+} from '@dnd-kit/core';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,7 +38,10 @@ import {
   formatSplitDate,
   fromPayload,
   gapOf,
+  groupKeyOf,
   lineShort,
+  moveSplit,
+  placeRest,
   readsRemain,
   removeSplit,
   setDate,
@@ -29,13 +50,20 @@ import {
   setSitsOn,
   sortLines,
   splitsOf,
+  targetDateOf,
   toPayload,
+  type MoveTarget,
   type SplitLine,
 } from '../lib/lineSplitModel';
 import {
+  DROP_CANCEL,
+  DROP_NEW,
   LineSplitSheet,
   dateInputId,
   focusCell,
+  lineDropId,
+  type DragSource,
+  type SheetDrag,
   type SheetHandlers,
 } from './LineSplitSheet';
 import { SITS_ON_CANCEL, SITS_ON_NEW } from './lineSplitParts';
@@ -53,10 +81,28 @@ function isTyping(target: EventTarget | null): boolean {
   return Boolean(element && /^(INPUT|SELECT|TEXTAREA)$/.test(element.tagName));
 }
 
+/**
+ * The block under the POINTER wins; only with the pointer over no block does the dragged
+ * handle's own rectangle decide. Matching the handle's rectangle alone dropped one row low
+ * near the bottom of the scrolling sheet (real browser).
+ */
+const splitCollision: CollisionDetection = (args) => {
+  const hits = pointerWithin(args);
+  return hits.length > 0 ? hits : rectIntersection(args);
+};
+
+/** Blocks are re-measured during a drag: the sheet scrolls (autoscroll) under it. */
+const SPLIT_MEASURING = { droppable: { strategy: MeasuringStrategy.Always } };
+
+/** Autoscroll only from a thin edge band, and slowly, so a drop near the edge lands where
+ * it was aimed instead of the sheet still scrolling under it (browser pass). */
+const SPLIT_AUTOSCROLL = { threshold: { x: 0.08, y: 0.08 }, acceleration: 4 };
+
 /** Where focus goes once the sheet has drawn the change. */
 type FocusRequest =
   | { kind: 'qty'; splitId: string; select?: boolean; caretEnd?: boolean }
   | { kind: 'date'; splitId: string; typed?: string }
+  | { kind: 'grip'; splitId: string }
   | { kind: 'line'; lineId: string };
 
 const attr = (value: string) => value.replace(/["\\]/g, '\\$&');
@@ -87,6 +133,14 @@ function runFocus(request: FocusRequest): boolean {
     body.scrollIntoView({ block: 'center' });
     return focusCell(body.querySelector('[data-nav-col]'));
   }
+  if (request.kind === 'grip') {
+    const grip = document.querySelector<HTMLElement>(
+      `[data-grip-split="${attr(request.splitId)}"]`,
+    );
+    if (!grip) return false;
+    grip.focus();
+    return true;
+  }
   if (request.kind === 'date') {
     const input = document.getElementById(
       dateInputId(request.splitId),
@@ -108,11 +162,48 @@ function runFocus(request: FocusRequest): boolean {
   return true;
 }
 
+/** The split that took the moved qty: a new one, one that grew, else the one dragged. */
+function landedSplitId(
+  before: SplitLine,
+  after: SplitLine | undefined,
+  fallback: string | null,
+): string | null {
+  if (!after) return fallback;
+  const prior = new Map(splitsOf(before).map((split) => [split.id, split]));
+  const grown =
+    splitsOf(after).find((split) => !prior.has(split.id)) ??
+    splitsOf(after).find(
+      (split) => split.qty > (prior.get(split.id)?.qty ?? 0),
+    );
+  return grown?.id ?? fallback;
+}
+
+function dragQty(source: DragSource, line: SplitLine): number {
+  if (source.kind === 'rest') return Math.max(0, gapOf(line));
+  return splitsOf(line).find((split) => split.id === source.splitId)?.qty ?? 0;
+}
+
+/** `20/11/2026 · line 608`, `New date`, `Cancel this qty` (the overlay's target, UAC A8). */
+function targetLabel(
+  overId: string | null,
+  lines: SplitLine[],
+  cancelWord = 'Cancel this qty',
+): string | null {
+  if (!overId) return null;
+  if (overId === DROP_NEW) return 'New date';
+  if (overId === DROP_CANCEL) return cancelWord;
+  const to = lines.find((line) => lineDropId(line.lineId) === overId);
+  if (!to) return null;
+  const date = formatSplitDate(targetDateOf(to));
+  return date ? `${date} · ${lineShort(to)}` : lineShort(to);
+}
+
 /**
  * OI-LINE-SPLIT v4: the split sheet page (UAC A, B, F; mock v4
  * `documentation/mockups/OI-LINE-SPLIT/index.html`). Every open line of the SO in one sheet
- * (`LineSplitSheet`). Save sends every line at once and waits while a line does not add up
- * or lacks a date.
+ * (`LineSplitSheet`); a split row, a REMAIN line or a line's "N left" drags (pointer, touch
+ * long-press, keyboard) onto another line of its item and location, a new date or Cancel.
+ * Save sends every line at once and waits while a line does not add up or lacks a date.
  */
 export function LineSplitDialog({
   open,
@@ -143,6 +234,16 @@ export function LineSplitDialog({
     () => new Set(),
   );
   const [flashLineId, setFlashLineId] = React.useState<string | null>(null);
+  const [drag, setDrag] = React.useState<SheetDrag | null>(null);
+  const dragRef = React.useRef<(SheetDrag & { keyboard: boolean }) | null>(
+    null,
+  );
+  const [overTarget, setOverTarget] = React.useState<string | null>(null);
+  const overRef = React.useRef<string | null>(null);
+  const keyboardIndexRef = React.useRef(-1);
+  // dnd-kit's own live region is kept out of the reading order (it would read internal
+  // ids); the status line says what is moving where instead.
+  const [liveHost, setLiveHost] = React.useState<HTMLDivElement | null>(null);
   const switchId = React.useId();
 
   const commit = React.useCallback((next: Draft | null) => {
@@ -185,9 +286,18 @@ export function LineSplitDialog({
     return () => window.clearTimeout(timer);
   }, [flashLineId]);
 
+  const endDrag = React.useCallback(() => {
+    dragRef.current = null;
+    overRef.current = null;
+    keyboardIndexRef.current = -1;
+    setDrag(null);
+    setOverTarget(null);
+  }, []);
+
   React.useEffect(() => {
     if (!open) {
       commit(null);
+      endDrag();
       setOpenLineIds(new Set());
       setSearch('');
       setSplitOnly(false);
@@ -203,7 +313,7 @@ export function LineSplitDialog({
         setFlashLineId(focusLineId);
       }
     }
-  }, [open, query.data, query.isFetching, focusLineId, commit]);
+  }, [open, query.data, query.isFetching, focusLineId, commit, endDrag]);
 
   const lines = draft?.lines ?? null;
   const sorted = React.useMemo(() => (lines ? sortLines(lines) : []), [lines]);
@@ -234,7 +344,7 @@ export function LineSplitDialog({
     if (!open) return undefined;
     const onKey = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.shiftKey) return;
-      if (event.key.toLowerCase() !== 'z') return;
+      if (event.key.toLowerCase() !== 'z' || dragRef.current) return;
       const target = event.target as HTMLElement | null;
       const inSheet = Boolean(target?.closest?.('[data-split-sheet]'));
       if (isTyping(target) && !inSheet) return;
@@ -388,6 +498,152 @@ export function LineSplitDialog({
     [apply, liveLine, requestFocus],
   );
 
+  // ---- drag and drop (UAC A8, A9)
+  const stepKeyboardTarget = React.useCallback((dir: 1 | -1) => {
+    const table = containerRef.current?.querySelector('[data-split-sheet]');
+    const targets = Array.from(
+      table?.querySelectorAll<HTMLElement>('tbody[data-drop-target="true"]') ??
+        [],
+    );
+    if (targets.length === 0) return null;
+    const index =
+      dir > 0
+        ? Math.min(targets.length - 1, keyboardIndexRef.current + 1)
+        : Math.max(0, keyboardIndexRef.current - 1);
+    keyboardIndexRef.current = index;
+    const el = targets[index];
+    const id = el.dataset.dropId ?? null;
+    overRef.current = id;
+    setOverTarget(id);
+    return el;
+  }, []);
+  const stepRef = React.useRef(stepKeyboardTarget);
+  stepRef.current = stepKeyboardTarget;
+
+  /**
+   * Up / Down step through the item's other lines in order, then New date, then Cancel
+   * (UAC A10). The order comes from the sheet, never from measured positions; the overlay
+   * only follows the target when the browser has laid it out.
+   */
+  const keyboardCoordinates = React.useCallback<KeyboardCoordinateGetter>(
+    (event, { currentCoordinates }) => {
+      if (event.code !== 'ArrowDown' && event.code !== 'ArrowUp')
+        return undefined;
+      const el = stepRef.current(event.code === 'ArrowDown' ? 1 : -1);
+      const rect = el?.getBoundingClientRect();
+      if (!rect || !rect.height) return currentCoordinates;
+      return {
+        x: currentCoordinates.x,
+        y: rect.top + Math.min(rect.height / 2, 18) - 14,
+      };
+    },
+    [],
+  );
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      keyboardCodes: {
+        start: ['Space'],
+        cancel: ['Escape'],
+        end: ['Space', 'Enter'],
+      },
+      coordinateGetter: keyboardCoordinates,
+    }),
+  );
+
+  const onDragStart = (event: DragStartEvent) => {
+    const source = event.active.data.current as DragSource | undefined;
+    const line = source ? liveLine(source.lineId) : undefined;
+    if (!source || !line) return;
+    const keyboard =
+      typeof (event.activatorEvent as KeyboardEvent | null)?.key === 'string';
+    const next = { source, groupKey: groupKeyOf(line) };
+    dragRef.current = { ...next, keyboard };
+    overRef.current = null;
+    keyboardIndexRef.current = -1;
+    setDrag(next);
+    setOverTarget(null);
+  };
+  const onDragOver = (event: DragOverEvent) => {
+    if (!dragRef.current || dragRef.current.keyboard) return;
+    const id = event.over ? String(event.over.id) : null;
+    overRef.current = id;
+    setOverTarget(id);
+  };
+
+  const drop = (source: DragSource, overId: string) => {
+    const current = draftRef.current;
+    const line = current?.lines.find((c) => c.lineId === source.lineId);
+    if (!current || !line) return;
+    let target: MoveTarget;
+    if (overId === DROP_NEW) target = { date: '', sitsOnLineId: null };
+    else if (overId === DROP_CANCEL)
+      target = { date: 'cancel', sitsOnLineId: null };
+    else {
+      const to = current.lines.find((c) => lineDropId(c.lineId) === overId);
+      if (
+        !to ||
+        to.lineId === line.lineId ||
+        groupKeyOf(to) !== groupKeyOf(line)
+      )
+        return;
+      target = { date: targetDateOf(to) ?? '', sitsOnLineId: to.lineId };
+    }
+    const qty = dragQty(source, line);
+    if (qty <= 0) return;
+    const done = apply((all) =>
+      source.kind === 'rest'
+        ? placeRest(all, line.lineId, target)
+        : moveSplit(all, line.lineId, source.splitId, qty, target),
+    );
+    if (!done) return;
+    const where = targetLabel(overId, current.lines, 'Cancel');
+    toast(`Moved ${qty} to ${where}`, {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          const now = draftRef.current;
+          if (!now) return;
+          commit(
+            now.lines === done.after
+              ? { lines: done.before, history: now.history.slice(0, -1) }
+              : {
+                  lines: done.before,
+                  history: [...now.history, now.lines].slice(-HISTORY_LIMIT),
+                },
+          );
+        },
+      },
+    });
+    const landed = landedSplitId(
+      line,
+      done.after.find((c) => c.lineId === line.lineId),
+      source.kind === 'rest' ? null : source.splitId,
+    );
+    if (!landed) return;
+    // A new date is typed next (UAC A9); otherwise the keyboard stays on the moved row.
+    requestFocus(
+      target.date === ''
+        ? { kind: 'date', splitId: landed }
+        : { kind: 'grip', splitId: landed },
+    );
+  };
+
+  const onDragEnd = (event: DragEndEvent) => {
+    const active = dragRef.current;
+    const overId = active?.keyboard
+      ? overRef.current
+      : event.over
+        ? String(event.over.id)
+        : null;
+    endDrag();
+    if (active && overId) drop(active.source, overId);
+  };
+
   // ---- the header and status line
   const problems = React.useMemo(
     () =>
@@ -451,6 +707,10 @@ export function LineSplitDialog({
     .filter(Boolean)
     .join(', ');
 
+  const dragLine = drag ? liveLine(drag.source.lineId) : undefined;
+  const dragAmount = drag && dragLine ? dragQty(drag.source, dragLine) : 0;
+  const dragTarget = lines ? targetLabel(overTarget, lines) : null;
+
   return (
     <Dialog
       open={open}
@@ -462,6 +722,10 @@ export function LineSplitDialog({
         variant="fullscreen"
         showCloseButton={false}
         className="gap-0 overflow-hidden p-0 max-md:inset-0 max-md:rounded-none"
+        // Escape during a drag puts the drag back; it never closes the page (UAC A10).
+        onEscapeKeyDown={(event) => {
+          if (dragRef.current) event.preventDefault();
+        }}
       >
         <div
           ref={containerCallback}
@@ -554,6 +818,11 @@ export function LineSplitDialog({
                 </Button>
               </span>
             ))}
+            {drag && dragLine ? (
+              <span className="sr-only">
+                {`Moving ${dragAmount} of ${dragLine.itemCode} from ${lineShort(dragLine)}${dragTarget ? ` → ${dragTarget}` : ''}`}
+              </span>
+            ) : null}
           </div>
 
           <div className="min-h-0 flex-1 [&>[data-slot=table-wrapper]]:h-full">
@@ -580,17 +849,62 @@ export function LineSplitDialog({
                 Loading…
               </div>
             ) : (
-              <LineSplitSheet
-                lines={visible}
-                allLines={sorted}
-                soNumber={query.data?.so_number ?? ''}
-                soDate={soDate}
-                openLineIds={openLineIds}
-                flashLineId={flashLineId}
-                handlers={handlers}
-              />
+              <DndContext
+                sensors={sensors}
+                collisionDetection={splitCollision}
+                measuring={SPLIT_MEASURING}
+                autoScroll={SPLIT_AUTOSCROLL}
+                accessibility={{
+                  container: liveHost ?? undefined,
+                  restoreFocus: false,
+                }}
+                onDragStart={onDragStart}
+                onDragOver={onDragOver}
+                onDragEnd={onDragEnd}
+                onDragCancel={endDrag}
+              >
+                <LineSplitSheet
+                  lines={visible}
+                  allLines={sorted}
+                  soNumber={query.data?.so_number ?? ''}
+                  soDate={soDate}
+                  openLineIds={openLineIds}
+                  drag={drag}
+                  overTarget={overTarget}
+                  flashLineId={flashLineId}
+                  handlers={handlers}
+                />
+                {typeof document !== 'undefined'
+                  ? createPortal(
+                      <DragOverlay dropAnimation={null}>
+                        {drag && dragLine ? (
+                          <div className="pointer-events-none w-max whitespace-nowrap rounded-lg border border-s-[3px] border-border border-s-primary bg-background px-2.5 py-1.5 text-xs shadow-lg">
+                            <b className="tabular-nums">{dragAmount}</b>
+                            {` · ${dragLine.itemCode} `}
+                            <span className="text-muted-foreground">
+                              {`from ${lineShort(dragLine)}`}
+                            </span>
+                            {dragTarget ? (
+                              <span
+                                className={
+                                  overTarget === DROP_CANCEL
+                                    ? 'block text-destructive'
+                                    : 'block text-primary'
+                                }
+                              >
+                                {`→ ${dragTarget}`}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </DragOverlay>,
+                      document.body,
+                    )
+                  : null}
+              </DndContext>
             )}
           </div>
+          <div hidden ref={setLiveHost} />
         </div>
       </DialogContent>
     </Dialog>
