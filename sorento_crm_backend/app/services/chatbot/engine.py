@@ -6880,6 +6880,7 @@ def _run_stages_body(  # noqa: PLR0915
                         dealer_stock_ask=_dealer_stock_ask(state_out, plan),
                         dealer_incoming_ask=_dealer_incoming_ask(state_out, plan),
                         product_token_missed=miss_on_typed_product,
+                        localizer=localizer,
                     )
                     if answer is not None:
                         bridge_answered = True
