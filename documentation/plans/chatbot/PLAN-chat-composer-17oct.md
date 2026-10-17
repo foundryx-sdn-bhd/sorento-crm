@@ -1,6 +1,7 @@
 # PLAN: CHAT-COMPOSER - one composer per answer type
 
-**Status:** Discovery (17 Oct). Behaviour card not yet filed; no code. Track: L, LEAD pattern (local lane).
+**Status:** Card v1 filed to crew (17 Oct), waiting for answers to Q1-Q4; no code. Track: L, LEAD pattern (local lane).
+**Card:** `chat-composer-behaviour-card.md` (discovery, contract, rules R1-R13, per-type changes, slices, Q1-Q4).
 **Lane:** CHAT-COMPOSER, branch `crew/chat-composer`, base origin/main 20c191d86. Step 3 of the 16 Oct chatbot scale
 design (`crew/state/reports/CHATBOT-SCALE-DESIGN-16oct.html`, section 4 row F, section 8 step 3) and reports
 `CHATBOT-SCALE-{A-ARCH,B-FAILURES,E-PATTERNS}-16oct.md` (159 formatters; replies built in many places; failure family F).
@@ -31,7 +32,7 @@ attachments / documents, order and document status, lists / sets, not found / cl
 
 ## Method (brief steps)
 
-1. Discovery with file:line (formatters per answer type, duplicates, divergences, bypasses). In progress.
+1. Discovery with file:line (formatters per answer type, duplicates, divergences, bypasses). Done: card section 1.
 2. Behaviour card as ONE crew ask BEFORE code (answer-type list, composer contract, rules per type, 3-5 TRAIN
    examples per main type, edge cases, at most 5 questions with recommendations).
 3. Plan + red-first slices behind a gate (gate off = byte-identical to main, proven by the $0 L1 replay vs main).
@@ -46,4 +47,5 @@ goes to crew in a crew-note so crew can order merges.
 
 ## Open
 
-- Discovery results, composer contract, gate choice, slice order: filled in after discovery.
+- Composer contract, gate, slice order: card sections 2 and 6 (proposed; final after crew answers).
+- L1 replay baseline (main 20c191d86 vs lane, docs only): grounding 0/1506, turn 0/585 unintended.
