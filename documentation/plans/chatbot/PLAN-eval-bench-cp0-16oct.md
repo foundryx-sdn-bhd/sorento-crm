@@ -353,11 +353,13 @@ price tier before finding any product, five run results, now fail), attachment 6
   (#1755, v158 pinned): 342 turns per arm, USD 4.11.
 - rootcause-r2 (CHAT-STATE, 17 Oct): 4 grader/gold items for this lane (round 31).
   - 34166492fe (grader, round 31a, red-first): the bot holds the order in memory `focus.after.extra.order` with no
-    products, and `_subject_after` read only products, so `subject` failed 8/8. The after-focus order now counts as
-    the subject after when no product code is held. An order held only before the turn does not count.
+    products, and `_subject_after` read only products, so `new_subject` failed 8/8. The after-focus order now counts
+    as the subject after when no product code is held (products first, then the held order, then the lookup's own
+    strings). An order held only before the turn, or an entry with no number, does not count.
   - 620ea78a75 (gold, crew `apply_gold_fixes.py`): the literal "20pcs" was read as a code with no family, which
-    skipped the round-30 family rule. A quantity (`QTY_RE`) is now no code literal, like a size, so the typed code's
-    5-variant family makes the gold `ambiguous`. Re-derived from the original gold: only this item changes.
+    skipped the round-30 family rule. A quantity (`QTY_RE`, unless the literal is itself an exact catalogue code) is
+    now no code literal, like a size, so the typed code's 5-variant family makes the gold `ambiguous`. Re-derived
+    from the original gold: only this item changes.
   - 4dfbcd267e (bench, crew `reexport.py`): ideas-lane items cannot run live (train_followups README), and the train
     export still carried 2 of them (4dfbcd267e, 99bb47ce6d). The export now drops `ideas` items: 86 -> 84.
   - c7ec5f1c31 (crew ruling (a), 17 Oct): grader unchanged, by the round 25 rule (a list left open is a picker except on
