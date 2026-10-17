@@ -194,6 +194,7 @@ from app.models.project_so import (  # noqa: F401
 )
 from app.models.stock_transfer import StockTransfer  # noqa: F401
 from app.models.sample_request import SampleRequest, SampleRequestLine  # noqa: F401
+from app.models.new_product_application import NewProductApplication, NewProductApplicationLine  # noqa: F401
 from app.models.planning_change import PlanningChangeBatch, PlanningChangeRow  # noqa: F401
 
 __all__ = [

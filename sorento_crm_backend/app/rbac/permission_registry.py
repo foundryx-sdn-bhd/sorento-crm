@@ -261,6 +261,13 @@ PERMISSION_REGISTRY.extend([
     {"slug": "procurement.stock_inquiries.reopen", "name": "Reopen rejected stock inquiry", "description": "Reopen a rejected stock inquiry back to its previous state (pending project sales or pending purchasing)."},
     {"slug": "procurement.stock_inquiries.void", "name": "Void Stock Inquiries", "description": "Void a stock inquiry (irreversible; sets status='voided' with a required reason, stops the SLA by config, notifies assignee/handler/salesperson)."},
 ])
+# NEW-PRODUCT-APP: asking purchasing to open new item codes (CARD-new-product-application-17oct.md).
+PERMISSION_REGISTRY.extend([
+    {"slug": "procurement.new_product_applications.view", "name": "View New Product Applications", "description": "See every new product application of your companies, not only your own."},
+    {"slug": "procurement.new_product_applications.create", "name": "Create New Product Applications", "description": "Raise, submit, revise and cancel your own new product applications."},
+    {"slug": "procurement.new_product_applications.approve", "name": "Approve New Product Applications", "description": "Approve or reject a submitted new product application, and revise one. Approvers are told when one is submitted."},
+    {"slug": "procurement.new_product_applications.open_code", "name": "Open Codes for New Product Applications", "description": "Purchasing grant: link each line of an approved application to the product AutoCount sent, or close it as not opening. Told when one is approved."},
+])
 PERMISSION_REGISTRY.extend(_crud("procurement", "purchase_requests", "Purchase Requests"))
 PERMISSION_REGISTRY.extend(_crud("procurement", "sponsorship_forms", "Sponsorship Forms"))
 PERMISSION_REGISTRY.extend([

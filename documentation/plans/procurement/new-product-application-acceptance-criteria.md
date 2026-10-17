@@ -8,8 +8,8 @@ component) or by the browser pass (B).
 ## Create and edit (Draft)
 
 - **AC-NPA-01** A holder of `procurement.new_product_applications.create` creates a Draft; the number is
-  `NPA-000001`, per company, never reissued (highest issued + 1, advisory lock), applicant = the caller.
-- **AC-NPA-02** A Draft saves with any subset of fields; every line field except description may be empty;
+  `NPA-000001`, per company (highest issued + 1 under an advisory lock, never the row count), applicant = the caller.
+- **AC-NPA-02** A Draft saves with any subset of fields (every line field may be empty in a draft);
   an empty number field is stored as NULL (never 0).
 - **AC-NPA-03** Only the applicant edits or deletes their Draft (403 otherwise). Delete draft is the countdown
   pending action `new_product_application.delete` (10 s, hard delete, lines go with it); no confirm dialog.
