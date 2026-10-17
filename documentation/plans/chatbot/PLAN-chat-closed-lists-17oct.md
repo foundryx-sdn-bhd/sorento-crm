@@ -1,6 +1,6 @@
 # PLAN: CHAT-CLOSED-LISTS - chatbot step 2, closed candidate lists
 
-Status: Build (card answered 17 Oct, all (a); S1-S5 green; S6 TRAIN measurement asked of crew). Track: full (size L, LEAD pattern).
+Status: Review (S1-S5, S4b-v2, S4c green; reviewer + security-reviewer running; S6 bench held by crew until the grader pin). Track: full (size L, LEAD pattern).
 Branch `claude/chat-closed-lists-x6ymb5` (the sandbox cannot push `crew/chat-closed-lists`), PR #1755.
 
 Design source: CHATBOT-SCALE-DESIGN-16oct section 8 step 2 + D2 (crew-only): code only SHORTLISTS
@@ -112,7 +112,9 @@ one entity hint value and no new top-level key.
 | S2 candidate shortlist | 63cb35d1 | 91cf60a0 | about 20 ms per message on the 50-key seed registry |
 | S3 section, gate, block, publisher | 7a492b88 | 02eabada | gate = marker in the RAW template |
 | S4a kind lock (c06) | 3d686767 | 1498b51b | ungated: an intended L1 diff under production |
-| S4b list-validated picks, tag-built legs (c04/c19) | d8718250, 60d1762e | 811f22fb, 3c86043c | an item's own word names it; a shared word names none |
+| S4b list-validated picks, tag-built legs (c04/c19) | d8718250, 60d1762e | 811f22fb, 3c86043c | superseded by S4b-v2 |
+| S4b-v2 listed_item enum on the wire (crew dev data check) | 60097592 | 3e3dc50f | only `listed_item`, code/name, or an explicit alias link validate |
+| S4c "which file?" lists the product's own types (Q3 (a)) | 25e88686 | 75cc82ff | a bare "2" fetches that type |
 | S5 no word rewrites under the gate (c27) | (S5 red commit) | 811f22fb | `_category_word_under_documents` off; listed type binds; F4 kept |
 
 Held (crew Q4 (a)): deleting the gate-off rewrites waits for the owner to move the label; each is
@@ -120,6 +122,6 @@ listed with the replay diff it would need. Gated off under the CLOSED LISTS path
 `_category_word_under_documents`, the class split of a listed type pick, the cert regexes and
 the `user_goal` fallback in `derive_require`.
 
-Open: S4c, the "which file?" ask listing the file types that product has (crew Q3 (a)); c06's
+Open: c06's
 "300mm" reads trap_length where the answer key says dim_length (a numeric key choice; no
 candidate covers a number with a unit, trigger: a TRAIN miss family on units).
