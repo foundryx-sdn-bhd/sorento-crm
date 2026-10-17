@@ -732,6 +732,9 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
     if inner is not None and isinstance(inner.setdefault("message", {}), dict):
         key = f"{item['item_id']}|{item.get('run')}"
         inner["message"]["messageId"] = "live-" + hashlib.sha256(key.encode()).hexdigest()[:16]
+        if carry is not None:  # a chained turn is this run's message: it quotes nothing the recorded prod turn quoted
+            inner["message"].pop("replyTo", None)
+            inner["message"].pop("reply_to", None)
     envelope = Envelope(**payload)
     usage, misses, tool_results = _new_usage(), [], []
     with contextlib.ExitStack() as stack:
@@ -767,6 +770,8 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
     db = factory()
     turn = db.query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
     trace = list(turn.trace or []) if turn is not None else []
+    if sink is not None:
+        sink["turn_no"] = _turn_no(trace)
     uuid_codes = _uuid_codes(db, [t.get("args") for t in trace if isinstance(t, dict) and t.get("kind") == "tool"]
                              + [t.get("args") for t in tool_results])
     understood = next(((r.get("facts") or {}) for r in trace if isinstance(r, dict) and r.get("stage") == "understood"), {})
@@ -810,13 +815,29 @@ def _conversations(items: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     """Items grouped by `conv` in order of first appearance, each group in `conv_turn` order; no `conv` = alone."""
     groups: dict[tuple[str, Any], list[dict[str, Any]]] = {}
     for n, item in enumerate(items):
-        groups.setdefault(("conv", item["conv"]) if item.get("conv") is not None else ("item", n), []).append(item)
+        key = ("conv", item["conv"], item.get("run")) if item.get("conv") is not None else ("item", n, None)
+        groups.setdefault(key, []).append(item)   # each run of a conversation is its own chain
     return [sorted(group, key=lambda item: item.get("conv_turn") or 0) for group in groups.values()]
+
+
+def _turn_no(trace: list[Any]) -> int | None:
+    """The turn number the engine recorded for a live turn (the trace record carrying `turn_no` and `quoted_turn`)."""
+    queue: list[Any] = list(trace or [])
+    while queue:
+        node = queue.pop(0)
+        if isinstance(node, dict):
+            if "quoted_turn" in node and isinstance(node.get("turn_no"), int):
+                return node["turn_no"]
+            queue.extend(node.values())
+        elif isinstance(node, list):
+            queue.extend(node)
+    return None
 
 
 def _next_carry(sink: dict[str, Any]) -> dict[str, Any]:
     """What the next chained turn starts from: the memory this turn left and this turn added to the history it saw
-    (L3 is then rendered from those reads, not taken verbatim from a recorded prompt)."""
+    (L3 is then rendered from those reads, not taken verbatim from a recorded prompt). The turn number counts on from
+    the number this turn ran with (its trace), so a first turn with no recorded anchor still counts right."""
     from app.services.chatbot import engine
 
     seen = sink.get("history") or _NO_HISTORY
@@ -824,9 +845,10 @@ def _next_carry(sink: dict[str, Any]) -> dict[str, Any]:
     at = engine._short_day_time(seen["anchor"]) if seen.get("anchor") is not None else ""
     recent = list(seen.get("recent") or []) + ([(message, reply)] if reply else [])
     earlier = list(seen.get("earlier_messages") or []) + [{"created_at": at, "text": message}]
+    ran = sink.get("turn_no") if isinstance(sink.get("turn_no"), int) else int(seen.get("turn_number") or 0)
     return {"memory": sink["memory"], "history": {
         "l3": None, "previous_reply": reply, "recent": recent[-3:], "earlier_messages": earlier[-3:],
-        "turn_number": int(seen.get("turn_number") or 0) + 1, "summaries": list(seen.get("summaries") or []),
+        "turn_number": ran + 1, "summaries": list(seen.get("summaries") or []),
         "read_frames": list(seen.get("read_frames") or [])}}
 
 
