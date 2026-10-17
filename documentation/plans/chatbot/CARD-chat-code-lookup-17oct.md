@@ -115,3 +115,12 @@ Request: the held-out code-lookup fails counted by failing check name (no items)
 - Crew, 17 Oct (ask a19194868): "when deliver" emits status `outstanding` (a): the configured scope policy applies
   (a contact with the SO-outstanding grant gets the DO/SO scope question, `lanes/business/__init__.py:2005-2010`); no
   period ask.
+
+## Round 2 answers (crew, 17 Oct evening)
+
+- Staff family stock asks stay list_all (owner S12 21 Sep + stock-ask v2 F1: a full answer is not a needless
+  question); the 4 TRAIN items' "ambiguous" gold is fixed by EVAL-BENCH, not by the lane.
+- cp0-f61e0d4814 (company scope) and cp0-9793ea25dc (gold code + set-blind grader): EVAL-BENCH gold / grader round 35.
+- Carrying the last answer's domain into the parser input (cp0-df53e90ebf) belongs to CHAT-STATE r2.
+- Lane, red-first: two equally close near codes give no pick (csk11b class), a held member with no file says so for
+  that code (cp0-232723529a class), a set + spec word picks the variant set with no unasked attribute (9793 lane half).
