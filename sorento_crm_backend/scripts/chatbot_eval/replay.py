@@ -2,7 +2,9 @@
 
 usage (cwd = the backend dir of the checkout under test):
   python scripts/chatbot_eval/replay.py run --traces FILE... --out OUT.jsonl
-  python scripts/chatbot_eval/replay.py live --items F --recorded F --out F --max-calls N --max-usd X --require-key-last4 XXXX
+  python scripts/chatbot_eval/replay.py live --items F --recorded F --out F --max-calls N --max-usd X --require-key-last4 XXXX [--prompt-version-id ID]
+      (--prompt-version-id pins the semantic parser prompt to that stored version on every live turn, replacing any recorded
+      override; the output row's provenance then carries prompt_version_id)
       (history is read as of the recorded turn (prod world), not as of now: previous reply, recent exchanges, earlier
       messages, closed-frame summaries, the About this contact block, the quoted turn and the turn number. The
       carried-from-earlier line (engine.py:4108), the fallback history list (engine.py:4013 -> memory.py:381) and the
@@ -381,6 +383,7 @@ SIDE_EFFECT_TOOLS = frozenset({
     "crm_sales_analysis", "crm_order_cancel", "crm_purchase_request_approve", "crm_purchase_request_reject", "crm_ideation_turn",
 })
 PROVENANCE_KEYS = ("code_sha", "prompt_sha256", "prompt_version", "model", "reasoning_effort")
+PARSER_PROMPT_KEY = "chatbot_semantic_parser"  # console_service.PARSER_PROMPT_KEY, literal to skip the import
 
 
 class _CapStop(BaseException):
@@ -689,7 +692,7 @@ def _history_patches(stack: Any, history: dict[str, Any] | None) -> None:
 
 
 def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], Any],
-              total: dict[str, Any]) -> dict[str, Any]:
+              total: dict[str, Any], prompt_version_id: str | None = None) -> dict[str, Any]:
     from app.models.chatbot_turn import ChatbotTurn
     from app.services.chatbot import engine
     from app.services.chatbot.contracts import Envelope
@@ -699,6 +702,8 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
     payload.update(is_test=True, previous_conversation_state=_recorded_memory(row))
     for key in ("mock_reformulator_output", "prompt_overrides", "referenced_result_set"):
         payload.pop(key, None)  # recorded harness keys never carry into a live item
+    if prompt_version_id:
+        payload["prompt_overrides"] = {PARSER_PROMPT_KEY: prompt_version_id}  # replaces any recorded value whole
     if not _set_text(payload, item["message"]):
         return {**out, "skipped": "no_text_slot"}
     inner = payload.setdefault("message", {}) if isinstance(payload.get("message", {}), dict) else None
@@ -736,7 +741,9 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
                              + [t.get("args") for t in tool_results])
     understood = next(((r.get("facts") or {}) for r in trace if isinstance(r, dict) and r.get("stage") == "understood"), {})
     out.update(
-        provenance={k: understood.get(k) for k in PROVENANCE_KEYS},
+        provenance={**{k: understood.get(k) for k in PROVENANCE_KEYS},
+                    **({"prompt_version_id": prompt_version_id}
+                       if prompt_version_id and understood.get("prompt_version") is not None else {})},
         usage=usage, tool_results=tool_results, uuid_codes=uuid_codes,
         turn={"envelope": copy.deepcopy(turn.envelope) if turn is not None else None, "trace": trace,
               "response": copy.deepcopy(turn.response) if turn is not None else None,
@@ -748,14 +755,31 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
     return out
 
 
+def _pin_resolves(session_factory: Callable[[], Any], version_id: str) -> bool:
+    from app.models.ai_prompt import AIPromptVersion
+
+    db = session_factory()
+    try:
+        return db.query(AIPromptVersion.id).filter(AIPromptVersion.id == version_id,
+                                                   AIPromptVersion.name == PARSER_PROMPT_KEY).first() is not None
+    except Exception:  # noqa: BLE001 - a malformed id or an unreadable table is an unresolved pin
+        return False
+    finally:
+        db.close()
+
+
 def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], *,
               session_factory: Callable[[], Any], max_calls: int, max_usd: float,
-              require_key_last4: str, on_row: Callable[[dict[str, Any]], None] | None = None) -> list[dict[str, Any]]:
+              require_key_last4: str, on_row: Callable[[dict[str, Any]], None] | None = None,
+              prompt_version_id: str | None = None) -> list[dict[str, Any]]:
     """Run each item's message through the engine on its recorded state; stop cleanly at a call or spend cap,
     or at "wrong_key" when a provider or embedding key does not end with `require_key_last4` (exactly 4 non-blank
-    characters, else ValueError before any item)."""
+    characters, else ValueError before any item). A `prompt_version_id` that is not a stored version of the parser
+    prompt is a ValueError before any item (the registry would otherwise fall back silently)."""
     if not _valid_last4(require_key_last4):
         raise ValueError("require_key_last4 must be exactly 4 non-blank characters")
+    if prompt_version_id and not _pin_resolves(session_factory, prompt_version_id):
+        raise ValueError("prompt_version_id is not a stored version of the parser prompt")
     by_id = {str(r["id"]): r for r in recorded_rows}
     total = _new_usage()
     total.update(max_calls=max_calls, max_usd=max_usd, stop=None, require_key_last4=require_key_last4)
@@ -778,7 +802,8 @@ def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], 
             else:
                 try:
                     with _rolled_back(session_factory) as factory:
-                        res = _live_one(item, by_id[str(item["recorded_turn_id"])], factory, total)
+                        res = _live_one(item, by_id[str(item["recorded_turn_id"])], factory, total,
+                                        prompt_version_id)
                 except Exception as exc:  # noqa: BLE001 - record the type only; never message text
                     res = {"item_id": item["item_id"], "run": item.get("run"), "error": type(exc).__name__}
             results.append(res)
@@ -889,7 +914,8 @@ def _cmd_live(args: argparse.Namespace) -> int:
             n["stopped" if "stopped" in r else "skipped" if "skipped" in r else "run"] += 1
 
         live_rows(items, recorded, session_factory=SessionLocal, max_calls=args.max_calls, max_usd=args.max_usd,
-                  require_key_last4=args.require_key_last4, on_row=write)
+                  require_key_last4=args.require_key_last4, on_row=write,
+                  prompt_version_id=args.prompt_version_id)
     print(f"live items {len(items)} run {n['run']} stopped {n['stopped']} skipped {n['skipped']}")
     return 0
 
@@ -924,6 +950,7 @@ def main(argv: list[str] | None = None) -> int:
     live.add_argument("--max-calls", type=int, required=True)
     live.add_argument("--max-usd", type=float, required=True)
     live.add_argument("--require-key-last4", type=_last4_arg, required=True)
+    live.add_argument("--prompt-version-id", default=None)
     diff = sub.add_parser("diff")
     diff.add_argument("base")
     diff.add_argument("head")
