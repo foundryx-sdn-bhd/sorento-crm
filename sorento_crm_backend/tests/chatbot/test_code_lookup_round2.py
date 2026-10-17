@@ -230,3 +230,48 @@ def test_g3_a_near_product_scoring_higher_than_a_near_set_is_listed_ahead_of_it(
 
     assert line is not None and f"code {prod}" in line and f"set code {set_code}" in line, line
     assert line.index(f"code {prod}") < line.index(f"set code {set_code}"), line
+
+
+# ---------------------------------------------------------------- round 3 H1: sets that share a member
+
+SHARED = "ZZSHRD-SEAT01"
+A_OWN, B_OWN = "ZZSHRD-AOWN01", "ZZSHRD-BOWN01"
+SET_A, SET_B = "ZZSHRD3301-RL", "ZZSHRD3301-P-RL"
+
+
+@pytest.mark.parametrize("domain, intent", _DOMAINS)
+def test_h1_two_sets_sharing_a_member_list_it_under_each_set_without_price(
+    domain, intent, session_factory, seeded, stub_access, monkeypatch
+):
+    from sqlalchemy import func, select
+
+    from app.models.product_set import ProductSetMember
+
+    db = session_factory()
+    ids = _mk_products(db, [SHARED, A_OWN, B_OWN])
+    _mk_set(db, SET_A, [ids[A_OWN], ids[SHARED]], name="Shared A")
+    _mk_set(db, SET_B, [ids[B_OWN], ids[SHARED]], name="Shared B")
+    db.commit()
+    # seed shape: the seat is a member of both sets
+    n = db.execute(
+        select(func.count()).select_from(ProductSetMember).where(ProductSetMember.product_id == ids[SHARED])
+    ).scalar()
+    assert n == 2, n
+
+    text, calls = _run_multi(
+        session_factory, stub_access, monkeypatch, text=f"details of {SET_A} {SET_B}", codes=[SET_A, SET_B],
+        domain=domain, intent=intent,
+    )
+
+    assert f"Set {SET_A}" in text and f"Set {SET_B}" in text, text
+    assert "List Price" not in text and "MYR" not in text and not re.search(r"\bRM\b", text), text
+    assert _all_ids(calls) == set(ids.values()), calls
+    ids_flat = [i for _n, a in calls for i in (a.get("product_ids") or [])]
+    for pid in ids.values():
+        assert ids_flat.count(pid) <= 1, (pid, calls)
+    # block boundaries: the set whose heading comes first ends where the other begins
+    pos = sorted([(text.index(f"Set {SET_A}"), A_OWN), (text.index(f"Set {SET_B}"), B_OWN)])
+    (lo, first_own), (hi, second_own) = pos
+    first_block, second_block = text[lo:hi], text[hi:]
+    assert _name(first_own) in first_block and _name(SHARED) in first_block, text
+    assert _name(second_own) in second_block and _name(SHARED) in second_block, text
