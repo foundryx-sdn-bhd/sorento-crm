@@ -17,6 +17,7 @@ from app.models.resources import Attachment, AttachmentType
 from app.services.ai_assistant_service import MCPRuntimeClient
 from app.services.chatbot import engine as engine_mod
 from app.services.chatbot.head import parser as parser_mod
+from app.services.chatbot.turn import policy_rows
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._pg_fixture import unique_code
 from tests.chatbot.conftest import session_factory  # noqa: F401
@@ -63,10 +64,22 @@ def _message(text: str, n: int) -> dict[str, Any]:
     }
 
 
-def _turns(session_factory, stub_access, monkeypatch, turns: list[tuple[str, dict]]):
+def _dev_db_policy(monkeypatch) -> None:
+    """Fix round 1 (F5, lead sign-off for this fixture change only): the dev DB carries
+    master_products narrowing {"product": "list_all"} (chatbot_domains.narrowing), while the
+    frozen seed the blank schema falls back to has {}. Seed the dev DB's row."""
+    rows = [
+        {**row, "narrowing": {"product": "list_all"}} if row["name"] == "master_products" else row
+        for row in policy_rows.DEFAULT_DOMAIN_ROWS
+    ]
+    monkeypatch.setattr(policy_rows, "DEFAULT_DOMAIN_ROWS", rows)
+
+
+def _turns(session_factory, stub_access, monkeypatch, turns: list[tuple[str, dict]], *, code_lookup: bool = True):
     def fake_resolve_config(db, *, current_date, override_version_id=None):
+        extra = {"code_lookup": True} if code_lookup else {}
         return parser_mod.ParserConfig(system_prompt="stub", prompt_version=1, provider="openai", model="m", api_key="k",
-                                       closed_lists=True, code_lookup=True)
+                                       closed_lists=True, **extra)
 
     queue = [v for _t, v in turns]
     monkeypatch.setattr(parser_mod, "resolve_config", fake_resolve_config)
@@ -109,6 +122,8 @@ def test_u5_1_held_member_settles_the_family_prefix(
     label, follow_up, domain, intent, tool, extra, session_factory, seeded, stub_access, monkeypatch
 ):
     ids = _seed(session_factory)
+    if domain == "master_products":
+        _dev_db_policy(monkeypatch)
     first = _ask("check_stock", "inventory", _product(HELD))
     second = _ask(intent, domain, _product("zztwc286"), *extra)
 
@@ -127,3 +142,23 @@ def test_u5_2_no_held_member_stays_a_pick(session_factory, seeded, stub_access, 
     [(r, _c)] = _turns(session_factory, stub_access, monkeypatch, [("zztwc286 eta", second)])
 
     assert PICKER in ((r.reply or {}).get("text") or "")
+
+
+@pytest.mark.parametrize("code_lookup", [True, False])
+def test_f5_a_resource_attachment_ask_after_a_held_product_sends_no_product_ids(
+    code_lookup, session_factory, seeded, stub_access, monkeypatch
+):
+    """Fix round 1 (F5): the held-member rule is for product-narrowed domains only. A domain
+    with no product narrowing (resource_attachment: "send me the stock list") reads no held
+    product, gate on or off."""
+    _seed(session_factory)
+    first = _ask("check_stock", "inventory", _product(HELD))
+    second = _ask("get_resource_attachment", "resource_attachment")
+
+    (_r1, _c1), (_r2, c2) = _turns(
+        session_factory, stub_access, monkeypatch,
+        [(HELD, first), ("send me the stock list", second)], code_lookup=code_lookup,
+    )
+
+    own = [a for n, a in c2 if n == "crm_resource_attachments_list"]
+    assert not any(a.get("product_ids") for a in own), c2

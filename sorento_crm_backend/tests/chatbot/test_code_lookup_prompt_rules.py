@@ -50,3 +50,25 @@ def test_f_gate_on_needs_both_markers():
     assert not gate_on(f"x {MARKER}")
     assert not gate_on(f"x {closed_lists_prompt.MARKER}")
     assert not gate_on(None)
+
+
+# ---- fix round 1 (F6, F7, F8): stable phrases of the lead-written prompt text
+
+
+def test_f6_no_pick_never_says_confident_false():
+    assert "confident false" not in S
+
+
+def test_f7_asked_attributes_rule_is_master_products_only():
+    asked = S[S.index("asked attributes."):]
+    asked = asked[: asked.index("a count beside a code.")]
+    assert 'domain_hint "master_products"' in asked
+    assert "every other domain keeps its own rule" in asked
+
+
+def test_f8_a_typed_word_not_on_file_is_never_its_own_canonical_code():
+    assert "never its own canonical_code" in S
+
+
+def test_f8_a_set_whose_name_carries_another_spec_gives_way_to_the_set_that_carries_the_asked_one():
+    assert "pick the listed set or near set code whose name carries the spec" in S
