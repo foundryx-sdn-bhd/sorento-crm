@@ -2373,7 +2373,8 @@ def _r30_refine(reply, flt, entities, *, extra=None, omitted=False):
 
 SMART_ENTITIES = [{"raw": "toilet", "hint": "category"},
                   {"raw": "intelligent", "hint": "specification", "spec_key": "is_smart", "spec_value": True}]
-SMART_EXTRA = {"specification": [{"spec_key": "is_smart", "spec_value": True, "raw": "intelligent"}]}
+SMART_EXTRA = {"specification": [{"spec_key": "is_smart", "spec_value": True, "raw": "intelligent", "spec_label": "Intelligent / smart toilet"}],
+               "category": [{"raw": "toilet", "hint": "category"}]}   # the real 75e516bd40 memory-after extra
 
 
 def test_r30_a_filter_phrase_split_across_a_category_and_a_specification_entity_is_applied():
@@ -2405,3 +2406,54 @@ def test_r30_an_ambiguous_gold_code_allows_a_picker_after_an_and_x_turn():
              tools=[TOOL_A])
     res = grade_turn(r, item("followup", "and_x", fact="inventory", subject_after=["SRTWC286"], ambiguous=True))
     assert "no_picker" not in res["checks"], res["checks"]
+
+
+# round 30b: a filter word must be carried, not just read; header credit only for an omitted payload
+BLACK_SPEC = {"raw": "black", "hint": "specification", "spec_key": "finish", "spec_value": "black"}
+R30B_LIST = "1. *Product Code:* SRTWC100"
+
+
+def _r30b(flt, entities, tools, *, reply=R30B_LIST, extra=None, extra_before=None, omitted=False):
+    tl = [{"name": n, "args": a, "envelope": {"items": []}} for n, a in tools]
+    r = row2(message="refine", verdict={"entities": entities, "reference_positions": []}, apply_omitted=omitted,
+             mem_before=[prod("SRTWC100", UA)], mem_after=[prod("SRTWC100", UA)], mem_extra=extra or {}, tools=tl,
+             prev_bot="Older list: SRTWC100.", reply=reply)
+    if extra_before is not None:
+        for rec in r["trace"]:
+            if rec.get("kind") == "memory" and isinstance(rec.get("focus"), dict) and "before" in rec["focus"]:
+                rec["focus"]["before"]["extra"] = extra_before
+    return grade_turn(r, item("followup", "refine", filter=flt, subject_after=["SRTWC100"]))
+
+
+def test_r30b_a_word_read_only_inside_a_category_phrase_is_not_applied():
+    res = _r30b({"key": "spec", "value": "black matt"}, [BLACK_SPEC, {"raw": "matt basin", "hint": "category"}],
+                [("crm_master_products_list", {"product_ids": [UA], "scope_terms": ["black"]})],
+                extra={"specification": [{"spec_value": "black", "raw": "black"}]})
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30b_a_filter_read_only_in_a_category_entity_with_nothing_carried_is_not_applied():
+    res = _r30b({"key": "spec", "value": "chrome"}, [{"raw": "chrome tap", "hint": "category"}],
+                [("crm_master_products_list", {"product_ids": [UA]})])
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30b_header_credit_needs_an_omitted_payload_and_a_value_new_this_turn():
+    res = _r30b({"key": "spec", "value": "chrome"}, [], [("crm_master_products_list", {"product_ids": [UA]})],
+                reply="Here's what you want: chrome taps (3)\n" + R30B_LIST,
+                extra_before={"specification": [{"spec_value": "chrome", "raw": "chrome"}]})
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30b_words_pooled_across_different_tools_do_not_make_a_carried_phrase():
+    res = _r30b({"key": "spec", "value": "black matt"}, [BLACK_SPEC],
+                [("crm_master_products_list", {"product_ids": [UA], "scope_terms": ["black"]}),
+                 ("crm_inventory_list", {"product_ids": [UA], "query": "matt"})],
+                extra={"specification": [{"spec_value": "black", "raw": "black"}]})
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30b_the_whole_filter_phrase_in_one_argument_string_is_carried():
+    res = _r30b({"key": "spec", "value": "black matt"}, [BLACK_SPEC],
+                [("crm_master_products_list", {"product_ids": [UA], "scope_terms": ["black matt basin"]})])
+    assert res["checks"].get("applied") is True, res["checks"]
