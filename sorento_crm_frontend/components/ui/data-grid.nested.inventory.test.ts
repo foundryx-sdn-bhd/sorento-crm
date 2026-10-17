@@ -87,7 +87,7 @@ const EXPANDED_CONTENT_SITES = new Map<string, string>([
   ],
   [
     'app/(protected)/project-sales/order-inquiries/[id]/components/orderInquiryHeaderLinesColumns.tsx',
-    'NESTED GRID: OrderInquiryStockGrid, a thin wrapper over CellStockTable (the hand-rolled <table> carve-out) whose rows open StockDocumentsPanel (PanelDataGrid). The expansion sits inside the OI detail lines grid\'s own provider, so the context default covers it, AND StockDocumentsPanel passes scrollerMaxHeight={false} itself (S3, PLAN-oi-request-cs-reserve.md, stock grid on the OI page)',
+    'NESTED GRID: StockStatusPanel (STOCK-STATUS, #1752), whose location grid (PanelDataGrid) expands again into its documents grid, see its own entry. The expansion sits inside the OI detail lines grid\'s own provider, so the context default covers it, AND every grid in the panel passes scrollerMaxHeight={false} itself',
   ],
   [
     'app/(protected)/project-sales/sample-requests/components/SampleRequestDetail.tsx',
@@ -100,6 +100,10 @@ const EXPANDED_CONTENT_SITES = new Map<string, string>([
   [
     'app/(protected)/project-sales/sample-requests/components/SampleRequestDetail.tsx',
     'OrderInquiryStockGrid for the line product at BRW (the same thin CellStockTable wrapper as the OI lines grid) under a sample request line. Baseline addition for a site main introduced in #1718, not a behaviour test; the expansion sits inside the lines PanelDataGrid provider, so the context default covers it',
+  ],
+  [
+    'components/stock-status/StockStatusPanel.tsx',
+    'NESTED GRID (STOCK-STATUS, #1752): a location row expands into DocumentsGrid (PanelDataGrid), and an SO totals row into the same DocumentsGrid of its SOs. Covered by the context default AND by scrollerMaxHeight={false} on every grid in the panel',
   ],
   // The primitives themselves: the prop declaration, the renderer, and the
   // wrapper that forwards `expanded`. Not nesting sites.

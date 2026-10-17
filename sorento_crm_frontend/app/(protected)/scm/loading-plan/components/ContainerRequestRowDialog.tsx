@@ -9,6 +9,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { StatCard } from '@/components/scm/StatCard';
+import { StockStatusPanel } from '@/components/stock-status/StockStatusPanel';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatDateInMalaysia } from '@/lib/helpers';
 import { cn } from '@/lib/utils';
 import { EM_DASH, fmtInt } from '../../lib/format';
@@ -71,6 +73,9 @@ export function ContainerRequestRowDialog({
   onClose: () => void;
 }) {
   const title = row.item_code ?? row.product_name ?? 'Product';
+  // On a set row `product_id` is already the driver member's (the type's own note), so the
+  // stock status reads the same item every other figure here does.
+  const stockProductId = row.product_id;
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
@@ -134,149 +139,165 @@ export function ContainerRequestRowDialog({
           </div>
         </DialogHeader>
 
-        <DialogBody className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
-          <section>
-            <h4 className="text-sm font-semibold">Where the stock is</h4>
-            <ScrollArea>
-              <table className="mt-2 w-auto min-w-full text-xs" data-testid="row-locations">
-                <thead>
-                  <tr className="text-muted-foreground">
-                    <th className="py-1 text-start font-medium">Location</th>
-                    <th className="py-1 text-start font-medium">Where</th>
-                    <th className="py-1 text-end font-medium">On hand</th>
-                    <th className="py-1 text-end font-medium">SPO</th>
-                    <th className="py-1 text-end font-medium">Counted</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {row.sites.map((site) => (
-                    <tr key={site.warehouse_code} className="border-t border-border">
-                      <td className="py-1 font-medium">{site.warehouse_code}</td>
-                      <td className="py-1 text-muted-foreground">Site pool</td>
-                      <td className="py-1 text-end tabular-nums">{fmtInt(site.on_hand)}</td>
-                      <td className="py-1 text-end tabular-nums">{fmtInt(site.incoming_spo)}</td>
-                      <td className="py-1 text-end tabular-nums">
-                        {fmtInt(site.on_hand + site.incoming_spo)}
-                      </td>
-                    </tr>
-                  ))}
-                  {/* Counted like any site row now (R7, captain 8 Sep 2026): the ask already
-                      nets this stock, since the demand side counts the project need it
-                      covers. No longer muted - a counted row reads as counted. */}
-                  <tr className="border-t border-border">
-                    <td className="py-1" title={row.group_locations.warehouse_codes.join(', ')}>
-                      {row.group_locations.warehouse_codes.slice(0, 2).join(', ') || EM_DASH}
-                      {row.group_locations.count > 2
-                        ? `, ... (${row.group_locations.count})`
-                        : ''}
-                    </td>
-                    <td className="py-1 text-muted-foreground">Group locations</td>
-                    <td className="py-1 text-end tabular-nums">
-                      {fmtInt(row.group_locations.on_hand)}
-                    </td>
-                    <td className="py-1 text-end tabular-nums">
-                      {fmtInt(row.group_locations.incoming_spo)}
-                    </td>
-                    <td className="py-1 text-end tabular-nums">
-                      {fmtInt(row.group_locations.on_hand + row.group_locations.incoming_spo)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <ScrollBar orientation="horizontal" />
-            </ScrollArea>
-          </section>
-
-          <section>
-            <h4 className="text-sm font-semibold">Ordered, last 12 months (SO booked)</h4>
-            <div className="mt-2">
-              <ContainerRequestHistoryBars history={history} loading={historyLoading} />
-            </div>
-          </section>
-
-          <section>
-            <h4 className="text-sm font-semibold">Incoming, for reference</h4>
-            <ul className="mt-2 space-y-1 text-xs" data-testid="row-incoming">
-              {row.incoming_pl_shipments.map((s) => (
-                <li key={s.shipment_id} className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 break-words">
-                    PL {s.shipment_number ?? 'draft'}
-                    {s.estimated_arrival_date
-                      ? `, ETA ${dateLabel(s.estimated_arrival_date)}`
-                      : ', no ETA'}
-                  </span>
-                  <span className="shrink-0 tabular-nums">{fmtInt(s.qty)}</span>
-                </li>
-              ))}
-              {row.outstanding_po_lines.map((line, i) => (
-                <li
-                  key={`${line.po_number ?? 'po'}-${i}`}
-                  className="flex items-center justify-between gap-2 text-muted-foreground"
-                >
-                  <span className="min-w-0 break-words">
-                    PO {line.po_number ?? EM_DASH}
-                    {line.expected_date ? `, due ${dateLabel(line.expected_date)}` : ''}
-                  </span>
-                  <span className="shrink-0 tabular-nums">{fmtInt(line.qty)}</span>
-                </li>
-              ))}
-              {row.incoming_pl_shipments.length === 0 &&
-              row.outstanding_po_lines.length === 0 ? (
-                <li className="text-muted-foreground">
-                  Nothing on a packing list or an open PO for this product.
-                </li>
-              ) : null}
-            </ul>
-          </section>
-
-          <section>
-            <h4 className="text-sm font-semibold">
-              Contributing lines{soLines.length > 0 ? ` (${soLines.length})` : ''}
-            </h4>
-            {soLines.length === 0 ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                No open sales-order line behind this row.
-              </p>
-            ) : (
-              <ScrollArea>
-                <table className="mt-2 w-auto min-w-full text-xs" data-testid="row-so-lines">
-                  <thead>
-                    <tr className="text-muted-foreground">
-                      <th className="py-1 text-start font-medium">Order</th>
-                      <th className="py-1 text-start font-medium">Customer</th>
-                      <th className="py-1 text-end font-medium">Balance</th>
-                      <th className="py-1 text-end font-medium">Delivery</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {soLines.map((line, i) => (
-                      <tr
-                        key={`${line.so_number ?? 'so'}-${i}`}
-                        className="border-t border-border"
-                      >
-                        <td className="py-1 font-medium">{line.so_number ?? EM_DASH}</td>
-                        <td
-                          className={cn(
-                            'py-1',
-                            line.demand_class === 'project'
-                              ? 'text-foreground'
-                              : 'text-muted-foreground',
-                          )}
-                        >
-                          {line.customer_label ?? EM_DASH}
+        <DialogBody className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+          <Tabs defaultValue="request">
+            <TabsList variant="line" size="sm">
+              <TabsTrigger value="request">Request</TabsTrigger>
+              <TabsTrigger value="stock">Stock status</TabsTrigger>
+            </TabsList>
+            <TabsContent value="request" className="space-y-5 pt-4">
+              <section>
+                <h4 className="text-sm font-semibold">Where the stock is</h4>
+                <ScrollArea>
+                  <table className="mt-2 w-auto min-w-full text-xs" data-testid="row-locations">
+                    <thead>
+                      <tr className="text-muted-foreground">
+                        <th className="py-1 text-start font-medium">Location</th>
+                        <th className="py-1 text-start font-medium">Where</th>
+                        <th className="py-1 text-end font-medium">On hand</th>
+                        <th className="py-1 text-end font-medium">SPO</th>
+                        <th className="py-1 text-end font-medium">Counted</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {row.sites.map((site) => (
+                        <tr key={site.warehouse_code} className="border-t border-border">
+                          <td className="py-1 font-medium">{site.warehouse_code}</td>
+                          <td className="py-1 text-muted-foreground">Site pool</td>
+                          <td className="py-1 text-end tabular-nums">{fmtInt(site.on_hand)}</td>
+                          <td className="py-1 text-end tabular-nums">{fmtInt(site.incoming_spo)}</td>
+                          <td className="py-1 text-end tabular-nums">
+                            {fmtInt(site.on_hand + site.incoming_spo)}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Counted like any site row now (R7, captain 8 Sep 2026): the ask already
+                          nets this stock, since the demand side counts the project need it
+                          covers. No longer muted - a counted row reads as counted. */}
+                      <tr className="border-t border-border">
+                        <td className="py-1" title={row.group_locations.warehouse_codes.join(', ')}>
+                          {row.group_locations.warehouse_codes.slice(0, 2).join(', ') || EM_DASH}
+                          {row.group_locations.count > 2
+                            ? `, ... (${row.group_locations.count})`
+                            : ''}
                         </td>
-                        <td className="py-1 text-end tabular-nums">{fmtInt(line.qty)}</td>
+                        <td className="py-1 text-muted-foreground">Group locations</td>
                         <td className="py-1 text-end tabular-nums">
-                          {dateLabel(line.required_date)}
+                          {fmtInt(row.group_locations.on_hand)}
+                        </td>
+                        <td className="py-1 text-end tabular-nums">
+                          {fmtInt(row.group_locations.incoming_spo)}
+                        </td>
+                        <td className="py-1 text-end tabular-nums">
+                          {fmtInt(row.group_locations.on_hand + row.group_locations.incoming_spo)}
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <ScrollBar orientation="horizontal" />
-              </ScrollArea>
-            )}
-          </section>
+                    </tbody>
+                  </table>
+                  <ScrollBar orientation="horizontal" />
+                </ScrollArea>
+              </section>
+
+              <section>
+                <h4 className="text-sm font-semibold">Ordered, last 12 months (SO booked)</h4>
+                <div className="mt-2">
+                  <ContainerRequestHistoryBars history={history} loading={historyLoading} />
+                </div>
+              </section>
+
+              <section>
+                <h4 className="text-sm font-semibold">Incoming, for reference</h4>
+                <ul className="mt-2 space-y-1 text-xs" data-testid="row-incoming">
+                  {row.incoming_pl_shipments.map((s) => (
+                    <li key={s.shipment_id} className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 break-words">
+                        PL {s.shipment_number ?? 'draft'}
+                        {s.estimated_arrival_date
+                          ? `, ETA ${dateLabel(s.estimated_arrival_date)}`
+                          : ', no ETA'}
+                      </span>
+                      <span className="shrink-0 tabular-nums">{fmtInt(s.qty)}</span>
+                    </li>
+                  ))}
+                  {row.outstanding_po_lines.map((line, i) => (
+                    <li
+                      key={`${line.po_number ?? 'po'}-${i}`}
+                      className="flex items-center justify-between gap-2 text-muted-foreground"
+                    >
+                      <span className="min-w-0 break-words">
+                        PO {line.po_number ?? EM_DASH}
+                        {line.expected_date ? `, due ${dateLabel(line.expected_date)}` : ''}
+                      </span>
+                      <span className="shrink-0 tabular-nums">{fmtInt(line.qty)}</span>
+                    </li>
+                  ))}
+                  {row.incoming_pl_shipments.length === 0 &&
+                  row.outstanding_po_lines.length === 0 ? (
+                    <li className="text-muted-foreground">
+                      Nothing on a packing list or an open PO for this product.
+                    </li>
+                  ) : null}
+                </ul>
+              </section>
+
+              <section>
+                <h4 className="text-sm font-semibold">
+                  Contributing lines{soLines.length > 0 ? ` (${soLines.length})` : ''}
+                </h4>
+                {soLines.length === 0 ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    No open sales-order line behind this row.
+                  </p>
+                ) : (
+                  <ScrollArea>
+                    <table className="mt-2 w-auto min-w-full text-xs" data-testid="row-so-lines">
+                      <thead>
+                        <tr className="text-muted-foreground">
+                          <th className="py-1 text-start font-medium">Order</th>
+                          <th className="py-1 text-start font-medium">Customer</th>
+                          <th className="py-1 text-end font-medium">Balance</th>
+                          <th className="py-1 text-end font-medium">Delivery</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {soLines.map((line, i) => (
+                          <tr
+                            key={`${line.so_number ?? 'so'}-${i}`}
+                            className="border-t border-border"
+                          >
+                            <td className="py-1 font-medium">{line.so_number ?? EM_DASH}</td>
+                            <td
+                              className={cn(
+                                'py-1',
+                                line.demand_class === 'project'
+                                  ? 'text-foreground'
+                                  : 'text-muted-foreground',
+                              )}
+                            >
+                              {line.customer_label ?? EM_DASH}
+                            </td>
+                            <td className="py-1 text-end tabular-nums">{fmtInt(line.qty)}</td>
+                            <td className="py-1 text-end tabular-nums">
+                              {dateLabel(line.required_date)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <ScrollBar orientation="horizontal" />
+                  </ScrollArea>
+                )}
+              </section>
+            </TabsContent>
+            <TabsContent value="stock" className="pt-4">
+              {/* STOCK-STATUS: AutoCount's stock status for the item (a set's driver member). */}
+              {stockProductId ? (
+                <StockStatusPanel productId={stockProductId} showOpenFullPage />
+              ) : (
+                <p className="text-sm text-muted-foreground">No product resolved for this row.</p>
+              )}
+            </TabsContent>
+          </Tabs>
         </DialogBody>
       </DialogContent>
     </Dialog>

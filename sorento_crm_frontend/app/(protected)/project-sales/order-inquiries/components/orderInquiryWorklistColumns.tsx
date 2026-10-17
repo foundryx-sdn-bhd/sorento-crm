@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { StockStatusChip } from '@/components/stock-status/StockStatusChip';
 import { ColumnDef, Table } from '@tanstack/react-table';
 import { CircleCheck, CircleDashed, Info } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -1067,7 +1068,20 @@ export function useOrderInquiryWorklistColumns({
         header: ({ column }) => <DataGridColumnHeader title="Item code" column={column} />,
         size: 180,
         meta: { headerTitle: 'Item code', skeleton: <Skeleton className="h-4 w-24" /> },
-        cell: ({ row }) => <ItemCodeCell row={row.original} />,
+        cell: ({ row }) => (
+          <div className="min-w-0 space-y-1">
+            <ItemCodeCell row={row.original} />
+            {/* STOCK-STATUS: AutoCount's stock status for the item, opened in place. */}
+            {row.original.product_id && row.original.item_code ? (
+              <StockStatusChip
+                productId={row.original.product_id}
+                itemCode={row.original.item_code}
+                lineIds={row.original.core_line_id ? [row.original.core_line_id] : []}
+                openKey={row.original.id}
+              />
+            ) : null}
+          </div>
+        ),
       },
       {
         // Qty carries the handshake now (S1, AC-1.5): a rejection and its reason, or a

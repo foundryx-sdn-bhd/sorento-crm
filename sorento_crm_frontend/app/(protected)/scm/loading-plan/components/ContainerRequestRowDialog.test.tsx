@@ -2,6 +2,17 @@ import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 
+import userEvent from '@testing-library/user-event';
+
+// STOCK-STATUS: the panel has its own suite; here only that the dialog opens it for the row.
+const stockStatusPanelSpy = vi.fn();
+vi.mock('@/components/stock-status/StockStatusPanel', () => ({
+  StockStatusPanel: (props: Record<string, unknown>) => {
+    stockStatusPanelSpy(props);
+    return <div data-testid="stock-status-panel" />;
+  },
+}));
+
 import { ContainerRequestRowDialog } from './ContainerRequestRowDialog';
 import type { ContainerRequestRow } from '../../services/fulfilmentService';
 
@@ -106,6 +117,16 @@ function renderDialog(over: Partial<ContainerRequestRow> = {}, askQty = 2426) {
 }
 
 describe('ContainerRequestRowDialog', () => {
+  it('STOCK-STATUS: a Stock status tab opens the panel for the row item, beside the request', async () => {
+    renderDialog();
+    expect(screen.queryByTestId('stock-status-panel')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Stock status' }));
+    expect(screen.getByTestId('stock-status-panel')).toBeInTheDocument();
+    expect(stockStatusPanelSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ productId: 'p1', showOpenFullPage: true }),
+    );
+  });
+
   it('opens on what is needed and what is being asked for (AC-A2.3)', () => {
     renderDialog();
 

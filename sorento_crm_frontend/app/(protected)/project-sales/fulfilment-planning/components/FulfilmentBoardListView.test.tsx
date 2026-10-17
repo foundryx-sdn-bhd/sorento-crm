@@ -7,6 +7,9 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+// The stock status chip reads through React Query; this suite pins the list's own wiring
+// and renders without a client, so the chip is stubbed (its own suite covers it).
+vi.mock('@/components/stock-status/StockStatusChip', () => ({ StockStatusChip: () => null }));
 import type {
   BoardContribution,
   BoardDecision,

@@ -44,6 +44,15 @@ vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
   useListingColumnPreferences: () => ({ resetToDefaults: vi.fn(), isLoading: false }),
 }));
 
+// STOCK-STATUS: the panel has its own suite; here only what the line expand hands it.
+const stockStatusPanelSpy = vi.fn();
+vi.mock('@/components/stock-status/StockStatusPanel', () => ({
+  StockStatusPanel: (props: Record<string, unknown>) => {
+    stockStatusPanelSpy(props);
+    return <div data-testid="stock-status-panel" />;
+  },
+}));
+
 import { useOrderInquiryHeaderLinesColumns } from './orderInquiryHeaderLinesColumns';
 import { foldInquiryLines, toLineRows } from '../../../_shared/lib/orderInquiryLineFold';
 import { formatDateInMalaysia } from '@/lib/helpers';
@@ -893,5 +902,32 @@ describe('State sorts on the line State, not the primary row state', () => {
       'line_cancelled',
       'nothing_to_buy',
     ]);
+  });
+});
+
+
+describe('STOCK-STATUS: a line expands onto the stock status panel', () => {
+  function expandedContentOf() {
+    const { result } = renderHook(() => useOrderInquiryHeaderLinesColumns());
+    const expand = result.current.find((column) => headerTitleOf(column) === 'Expand') as {
+      meta: { expandedContent: (row: OrderInquiryWorklistRow) => React.ReactNode };
+    };
+    return expand.meta.expandedContent;
+  }
+
+  it("hands the panel the line's product and its own core SO line, with the full-page link", () => {
+    const content = expandedContentOf();
+    renderWithClient(<>{content(linesRow({ product_id: 'prod-1', core_line_id: 'core-9' }))}</>);
+    expect(screen.getByTestId('stock-status-panel')).toBeInTheDocument();
+    expect(stockStatusPanelSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ productId: 'prod-1', lineIds: ['core-9'], showOpenFullPage: true }),
+    );
+  });
+
+  it('says so when the line has no product yet, and opens no panel', () => {
+    const content = expandedContentOf();
+    renderWithClient(<>{content(linesRow({ product_id: null }))}</>);
+    expect(screen.queryByTestId('stock-status-panel')).not.toBeInTheDocument();
+    expect(screen.getByText('No product resolved for this line yet.')).toBeInTheDocument();
   });
 });
