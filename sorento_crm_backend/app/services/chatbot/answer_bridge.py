@@ -1790,6 +1790,7 @@ def answer_for(
     dealer_stock_ask: bool = False,
     dealer_incoming_ask: bool = False,
     product_token_missed: bool = False,
+    localizer: Any = None,
 ) -> turn_compose.Answer | None:
     """The MISS seam (R4): `None` outside its own two triggers (see module docstring),
     so a hit, an `access_denied` refusal, an infrastructure error and a multi-domain plan
@@ -1818,6 +1819,7 @@ def answer_for(
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     # #1262 fix lane round 3, B1-r2: the brand the fetch sent, for the miss header.
     gate = dict(scope_block.with_brand_names(gate, envelope) or {})
+    held_none = _held_member_no_file(parser, gate, via_fetched_empty, localizer)
     # #1262 fix lane round 3, S5: the words the turn could not place
     # (`envelope["unresolved"]`, `turn_runtime.resolve_kinds`'s `unplaced`) are the
     # resolver's own `unresolved_tokens` plus one thing only the chatbot knows - a
@@ -1963,7 +1965,11 @@ def answer_for(
         product_token_missed=product_token_missed,
         granted_keys=((ctx.get("access") or {}).get("attributes") if isinstance(ctx, Mapping) else None),
     )
-    offer = miss_mod.run_miss_lane(
+    if held_none is not None:
+        # R2-2: the held member's own "has no <type>" line, then the same unplaced-word line and
+        # escalate offer the normal miss ends with; no did-you-mean (the member is on file).
+        not_found = {**not_found, "escalate_message": _held_miss_text(held_none, resolved, parser, not_found, localizer)}
+    offer = {} if held_none is not None else miss_mod.run_miss_lane(
         not_found,
         parser=parser,
         resolved=resolved,
@@ -2153,7 +2159,59 @@ def answer_for(
     alternative_lines = fetch_item.get("alternative_lines") if isinstance(fetch_item, Mapping) else None
     if alternative_lines:
         text = with_alternative_lines(text, alternative_lines)
-    return turn_compose.Answer(text=text, question=question)
+    rows = offer.get("suggest_last_result_set") if isinstance(offer, Mapping) else None
+    options = [_roster_option(row, kind="product_pick", position=i + 1) for i, row in enumerate(rows or []) if isinstance(row, Mapping)]
+    listed = [str(o["code"]) for o in options if o and o.get("entity_type") in ("product", "product_set") and o.get("code")]
+    return turn_compose.Answer(text=text, question=question, shown_codes=listed or None)
+
+
+def _held_member_no_file(
+    parser: Any, gate: Mapping[str, Any], fetched_empty: bool, localizer: Any = None
+) -> str | None:
+    """CHAT-CODE-LOOKUP R2-2: a file ask the gate settled on the held family member, whose fetch
+    came back empty, is an honest none for that member, not a product miss plus a did-you-mean.
+    None unless the version carries CODE LOOKUP and the only product in scope is the held one.
+    The line is the catalogue's "{code} has no {types}." in the contact's language."""
+    if not (fetched_empty and isinstance(parser, Mapping) and parser.get("code_lookup") is True):
+        return None
+    if parser.get("domain_hint") != "product_attachment":
+        return None
+    products = [
+        e for e in gate.get("compatible_entities") or [] if isinstance(e, Mapping) and e.get("entity_type") == "product"
+    ]
+    if len(products) != 1 or products[0].get("held_member") is not True or not products[0].get("code"):
+        return None
+    asked = next(
+        (
+            str(e.get("canonical_code") or e.get("raw") or "").strip()
+            for e in parser.get("entities") or []
+            if isinstance(e, Mapping) and e.get("hint") == "attachment_type"
+        ),
+        "",
+    )
+    if localizer is None:
+        from app.services.chatbot.label_catalog import IDENTITY as localizer
+    return localizer.fill("{code} has no {types}.", code=str(products[0]["code"]), types=asked or "attachment")
+
+
+def _held_miss_text(
+    line: str, resolved: Mapping[str, Any], parser: Any, not_found: Mapping[str, Any], localizer: Any = None
+) -> str:
+    """The held member's line, the words the turn could not place (labelled as the normal miss
+    labels them), and the escalate sentence the normal miss message closes with (absent for staff)."""
+    parts = [line]
+    unplaced = [t for t in resolved.get("unresolved_tokens") or [] if t]
+    if unplaced:
+        if localizer is None:
+            from app.services.chatbot.label_catalog import IDENTITY as localizer
+        entities = parser.get("entities") if isinstance(parser, Mapping) else None
+        label_token = answer_mod.token_labeller(resolved, entities if isinstance(entities, list) else [])[2]
+        parts.append(localizer.fill("Couldn't find: {names}.", names=", ".join(label_token(t) for t in unplaced)))
+    message = str(not_found.get("escalate_message") or "")
+    _head, found, offer = message.rpartition("Would you like me to escalate")
+    if found:
+        parts.append(found + offer)
+    return "\n\n".join(parts)
 
 
 def with_alternative_lines(text: str, lines: Any) -> str:

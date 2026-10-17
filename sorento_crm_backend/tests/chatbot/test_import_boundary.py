@@ -53,6 +53,7 @@ ALLOWED = {
     # reads the same marker. A developer tool, not core, not on any request path; it never
     # moves a label.
     "scripts/publish_closed_lists_prompt.py",
+    "scripts/publish_code_lookup_prompt.py",
     # CHAT-STATE (#1747): a maintenance script that publishes an unlabelled parser prompt
     # version (`head/chat_state_prompt`). Not core, not on any request path.
     "scripts/publish_chat_state_prompt.py",
@@ -61,12 +62,14 @@ ALLOWED = {
     # has no seam for a recorded parse. A developer tool and its own test, not core, not on any
     # request path. Listed by file, not by directory, like the parity script above.
     "scripts/chatbot_eval/replay.py",
+    "scripts/chatbot_eval/parser_gold.py",
     "tests/chatbot_eval/test_replay.py",
     # EVAL-BENCH (#1745) live replay test: drives `replay.py live` through the real engine and
     # patches `engine`, `head.parser` and `lanes.ideate` directly to block the network and the
     # ideation offload; `/chat/turn` has no seam for those. Bench tooling, not core, not on a
     # request path. Listed by file, like `test_replay.py` above.
     "tests/chatbot_eval/test_replay_live.py",
+    "tests/chatbot_eval/test_parser_gold.py",
     # Bench tooling, not core, not on a request path: it patches the engine's run_turn to pin offload=False.
     "tests/chatbot_eval/test_replay_guard.py",
     # Bench tooling, not core, not on a request path: it stubs the engine's run_turn to return a failed-status turn.

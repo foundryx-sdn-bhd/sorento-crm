@@ -111,6 +111,8 @@ class ResolveGateServices:
     access_types: AccessTypesFn
     resolve_entity: ResolveEntityFn
     probe: ProbeFn
+    #: CHAT-CODE-LOOKUP R2: which product set ids the contact may be told about (None: unread).
+    visible_sets: Callable[[list[str]], set[str]] | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -531,6 +533,15 @@ def resolve_warehouse_token(db: Session, token: str) -> list[str]:
     ]
 
 
+def _visible_sets(db: Session) -> Callable[[list[str]], set[str]]:
+    def call(ids: list[str]) -> set[str]:
+        from app.services.chatbot.head.candidates import visible_set_ids
+
+        return visible_set_ids(db, ids)
+
+    return call
+
+
 def production_services(db: Session, *, space_id: str | None = None) -> ResolveGateServices:
     """The bundle the engine uses. One session, bound at the call site.
 
@@ -543,6 +554,7 @@ def production_services(db: Session, *, space_id: str | None = None) -> ResolveG
         access_types=_access_types(db, default_space_id=space_id),
         resolve_entity=_resolve_entity(db),
         probe=_probe(db),
+        visible_sets=_visible_sets(db),
     )
 
 

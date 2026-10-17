@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -36,6 +36,10 @@ MAX_PHRASE_WORDS = 3
 #: Near spellings, as pg_trgm scores them: a spec phrase from 4 characters, a code from 3.
 NEAR_PHRASE = 0.55
 NEAR_CODE = 0.5
+#: CHAT-CODE-LOOKUP R1: under the gate a coded word with no exact code on file lists codes
+#: from this similarity up (the resolver's floor, `entity_resolver.ENTITY_MISS_SUGGEST_FLOOR`),
+#: not holding the word; the parser still chooses.
+NEAR_CODE_NO_EXACT = 0.30
 MIN_NEAR_CHARS = 4
 MIN_CODE_CHARS = 3
 
@@ -55,6 +59,12 @@ class WordCandidates:
     gram: str
     position: int
     items: list[str] = field(default_factory=list)
+    #: Candidate line text -> the product code it lists (code lines only).
+    codes: dict[str, str] = field(default_factory=dict)
+    #: CHAT-CODE-LOOKUP R2-4, code lines of a coded word: code -> its folded similarity to the
+    #: typed word, and the codes that HOLD the word. What grounding checks a pick against.
+    scores: dict[str, float] = field(default_factory=dict)
+    holds: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -232,20 +242,92 @@ def _value_candidates(db: "Session", tokens: list[str]) -> list[WordCandidates]:
     return list(by_gram.values()) + numbered
 
 
-def _code_label(code: str, name: str | None, holds: bool) -> str:
+def _code_label(code: str, name: str | None, holds: bool, kind: str = "code") -> str:
     from app.services.chatbot_prompt_vars import _one_line
 
     # Product rows are staff / import text: one line each, so a stored newline can never
     # start a line of its own in the user turn (security review, 17 Oct 2026).
     code, name = _one_line(code), _one_line(name or "")
-    label = f"code {code} ({name})" if name else f"code {code}"
+    label = f"{kind} {code} ({name})" if name else f"{kind} {code}"
     return label if holds else f"near {label}"
 
 
-def _code_candidates(db: "Session", tokens: list[str]) -> list[WordCandidates]:
+def _fold_code(code: str) -> str:
+    return re.sub(r"[-\s]+", "", code).casefold()
+
+
+def _visible_set_clauses(db: "Session") -> list:
+    """The filters that leave only the product sets this contact may be told about: active,
+    with members, and EVERY member id among the products they may see (chat-searchable, the
+    set's own company, brand scope through the ORM listener). Checked positively, so a member
+    the scope hides fails the set instead of dropping out of a "hidden" read."""
+    from sqlalchemy import not_
+
+    from app.models.product import Product, chat_searchable_products
+    from app.models.product_set import ProductSet, ProductSetMember
+
+    members = db.query(ProductSetMember.id).filter(ProductSetMember.product_set_id == ProductSet.id)
+    visible = (
+        db.query(Product.id)
+        .filter(chat_searchable_products(), Product.company_id == ProductSet.company_id)
+        .correlate(ProductSet)
+    )
+    unseen = members.filter(not_(ProductSetMember.product_id.in_(visible.scalar_subquery())))
+    return [ProductSet.is_active.is_(True), members.exists(), not_(unseen.exists())]
+
+
+def visible_set_ids(db: "Session", set_ids: list[str]) -> set[str]:
+    """Which of `set_ids` pass `_visible_set_clauses` for the contact the session is scoped to."""
+    from app.models.product_set import ProductSet
+
+    if not set_ids:
+        return set()
+    rows = db.query(ProductSet.id).filter(ProductSet.id.in_(set_ids), *_visible_set_clauses(db)).all()
+    return {str(row[0]) for row in rows}
+
+
+def _set_rows(db: "Session", word: str) -> list[tuple[str, str | None]]:
+    """CHAT-CODE-LOOKUP R2: the visible product sets (`_visible_set_clauses`) whose code holds
+    `word` or is spelt near it. `NEAR_CODE_NO_EXACT` is the widest floor the caller uses."""
+    from sqlalchemy import func, or_
+
+    from app.models.product_set import ProductSet
+
+    norm = func.lower(func.regexp_replace(ProductSet.set_code, r"[-\s]+", "", "g"))
+    return [
+        (code, name)
+        for code, name in db.query(ProductSet.set_code, ProductSet.name)
+        .filter(
+            or_(norm.contains(word, autoescape=True), func.similarity(norm, word) >= NEAR_CODE_NO_EXACT),
+            *_visible_set_clauses(db),
+        )
+        .order_by(ProductSet.set_code)
+        .limit(CAP_PER_WORD * 4)
+        .all()
+    ]
+
+
+def _ranked(word: str, rows: list[tuple[str, str | None, str]], floor: float) -> list[tuple[str, str | None, bool, str]]:
+    """Product and set rows ranked together (exact, prefix, contains, near by similarity;
+    a set before a product on an exact tie), the near ones kept from `floor` up, capped."""
+    typed = trigrams(word)
+    keyed = []
+    for code, name, kind in rows:
+        folded = _fold_code(code)
+        score = similarity(typed, trigrams(folded))
+        rank = 0 if folded == word else 1 if folded.startswith(word) else 2 if word in folded else 3
+        if rank == 3 and score < floor:
+            continue
+        keyed.append(((rank, -score, kind != "set code", code), (code, name, rank < 3, kind)))
+    return [row for _key, row in sorted(keyed)][:CAP_PER_WORD]
+
+
+def _code_candidates(db: "Session", tokens: list[str], *, code_lookup: bool = False) -> list[WordCandidates]:
     """Codes on file under each word: the whole code for any word, in ONE query for the
     whole message; for a word with a digit (the first `CODE_WORDS_PER_MESSAGE` of them) also
-    every code holding it and the codes spelt near it, one query each."""
+    every code holding it and the codes spelt near it, one query each. `code_lookup`
+    (CHAT-CODE-LOOKUP): such a word with no exact code on file also lists the codes spelt
+    near it from `NEAR_CODE_NO_EXACT` up."""
     from sqlalchemy import case, func, or_
 
     from app.models.product import Product, chat_searchable_products
@@ -286,28 +368,87 @@ def _code_candidates(db: "Session", tokens: list[str]) -> list[WordCandidates]:
                 .limit(CAP_PER_WORD)
                 .all()
             )
-            items = [_code_label(code, name, holds) for code, name, holds in rows]
+            sets = _set_rows(db, word) if code_lookup else []
+            set_exact = any(_fold_code(code) == word for code, _name in sets)
+            if code_lookup and not set_exact and not any(_fold_code(code) == word for code, _name, _holds in rows):
+                held = [(code, name, True) for code, name, holds in rows if holds]
+                rows = held + [
+                    (code, name, False)
+                    for code, name in db.query(Product.product_code, Product.product_name)
+                    .filter(chat_searchable_products(), ~norm.contains(word, autoescape=True), norm.op("%")(word), sim >= NEAR_CODE_NO_EXACT)
+                    .order_by(sim.desc(), Product.product_code)
+                    .limit(CAP_PER_WORD)
+                    .all()
+                ]
+            labelled = [(_code_label(code, name, holds), code) for code, name, holds in rows]
+            meta = [(code, holds) for code, _name, holds in rows]
+            if sets:
+                exact = set_exact or any(_fold_code(code) == word for code, _name, _holds in rows)
+                merged = _ranked(
+                    word,
+                    [(code, name, "code") for code, name, _holds in rows] + [(code, name, "set code") for code, name in sets],
+                    NEAR_CODE if exact else NEAR_CODE_NO_EXACT,
+                )
+                labelled = [(_code_label(code, name, holds, kind), code) for code, name, holds, kind in merged]
+                meta = [(code, holds) for code, _name, holds, _kind in merged]
         else:
-            items = [_code_label(code, name, True) for code, name in by_word.get(word, [])]
-        if items:
-            out.append(WordCandidates(gram=token, position=position, items=items))
+            labelled = [(_code_label(code, name, True), code) for code, name in by_word.get(word, [])]
+            meta = []
+        if labelled:
+            typed = trigrams(word)
+            out.append(WordCandidates(
+                gram=token, position=position, items=[text for text, _code in labelled], codes=dict(labelled),
+                scores={code: similarity(typed, trigrams(_fold_code(code))) for code, _holds in meta},
+                holds=[code for code, holds in meta if holds],
+            ))
     return out
 
 
-def shortlist(db: "Session", message: str) -> list[WordCandidates]:
+def shortlist(db: "Session", message: str, *, code_lookup: bool = False) -> list[WordCandidates]:
     """The candidates for every word of `message` that has any, in message order."""
     tokens = _tokens(message)
     if not tokens:
         return []
     merged: dict[str, WordCandidates] = {}
-    for entry in _value_candidates(db, tokens) + _code_candidates(db, list(dict.fromkeys(tokens))):
+    for entry in _value_candidates(db, tokens) + _code_candidates(
+        db, list(dict.fromkeys(tokens)), code_lookup=code_lookup
+    ):
         held = merged.setdefault(entry.gram, WordCandidates(gram=entry.gram, position=entry.position))
         held.items.extend(item for item in entry.items if item not in held.items)
+        held.codes.update(entry.codes)
+        held.scores.update(entry.scores)
+        held.holds.extend(code for code in entry.holds if code not in held.holds)
     ordered = sorted(merged.values(), key=lambda e: (e.position, -len(e.gram)))
     for entry in ordered:
         exact = [i for i in entry.items if not i.startswith("near ")]
         entry.items = (exact + [i for i in entry.items if i.startswith("near ")])[:CAP_PER_WORD]
     return ordered
+
+
+def listed_codes(entries: list[WordCandidates]) -> frozenset[str]:
+    """The folded codes of the code lines `candidate_lines` renders (the caps applied):
+    what grounding checks a product pick against under the gate."""
+    from app.services.chatbot.turn.state import token_key
+
+    shown = [entry for entry in entries if entry.items][:CAP_LINES]
+    return frozenset(token_key(entry.codes[item]) for entry in shown for item in entry.items if item in entry.codes)
+
+
+def pick_info(entries: list[WordCandidates]) -> dict[str, dict[str, Any]]:
+    """What grounding needs to refuse an unsafe product pick, per rendered word (keyed by the
+    word's folded key): the folded code -> similarity of each code line, and the folded codes
+    that hold the word."""
+    from app.services.chatbot.turn.state import token_key
+
+    shown = [entry for entry in entries if entry.items][:CAP_LINES]
+    out: dict[str, dict[str, Any]] = {}
+    for entry in shown:
+        listed = {code for item, code in entry.codes.items() if item in entry.items}
+        out[token_key(entry.gram)] = {
+            "scores": {token_key(c): s for c, s in entry.scores.items() if c in listed},
+            "holds": [token_key(c) for c in entry.holds if c in listed],
+        }
+    return out
 
 
 def candidate_lines(entries: list[WordCandidates]) -> list[str]:

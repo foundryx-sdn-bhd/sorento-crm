@@ -676,7 +676,13 @@ def _exact_codes_only(
         # compared here ("TAP SRTWT5608" with canonical_code null: the token is
         # "tapsrtwt5608", the placed code "srtwt5608"); the maps stay keyed by the token.
         code = (read_values or {}).get(fold) or fold
-        exact = [c for c in candidates if code_of(c) == code]
+        # CHAT-CODE-LOOKUP R2: a member of the product set the customer typed (the gate puts
+        # `set_code` on its rows) belongs to that token.
+        exact = [
+            c for c in candidates
+            if code_of(c) == code
+            or any(turn_state.token_key(sc) == code for sc in (c.get("set_codes") or [c.get("set_code")]) if sc)
+        ]
         family: list[dict[str, Any]] = []
         if turn_task.code_or_number(code):
             family = [c for c in candidates if code_of(c).startswith(code)] or [
@@ -1088,17 +1094,37 @@ def closed_lists_verdict(verdict: dict[str, Any], *, gate: bool) -> dict[str, An
     return {k: v for k, v in verdict.items() if k != "closed_lists"} if "closed_lists" in verdict else verdict
 
 
-def _candidate_lines(db: Session, latest_user_message: str) -> list[str] | None:
+def code_lookup_verdict(verdict: dict[str, Any], *, gate: bool) -> dict[str, Any]:
+    """CHAT-CODE-LOOKUP: a verdict parsed by a CODE LOOKUP version says so, so later lanes
+    can read it. Like `closed_lists_verdict`, the key is the engine's alone."""
+    if gate:
+        return {**verdict, "code_lookup": True}
+    return {k: v for k, v in verdict.items() if k != "code_lookup"} if "code_lookup" in verdict else verdict
+
+
+def _candidate_lines(
+    db: Session, latest_user_message: str, *, code_lookup: bool = False
+) -> tuple[list[str] | None, frozenset[str], dict[str, dict[str, Any]]]:
     """The candidate block for the message's OWN first line (the quoted reply under it is
     not this message's words, the line grounding reads too). It only advises the parser,
-    so a failure leaves it out and the turn goes on (savepoint: the session stays usable)."""
+    so a failure leaves it out and the turn goes on (savepoint: the session stays usable).
+    Also the codes the block lists, for grounding's product pick check under CODE LOOKUP."""
     message = latest_user_message.split("\n", 1)[0]
     try:
         with db.begin_nested():
-            return candidates_mod.candidate_lines(candidates_mod.shortlist(db, message))
+            entries = (
+                candidates_mod.shortlist(db, message, code_lookup=True)
+                if code_lookup
+                else candidates_mod.shortlist(db, message)
+            )
+            return (
+                candidates_mod.candidate_lines(entries),
+                candidates_mod.listed_codes(entries),
+                candidates_mod.pick_info(entries) if code_lookup else {},
+            )
     except Exception:  # noqa: BLE001 - advisory block, never a failed turn
         logger.warning("chatbot: candidate shortlist failed; parsing without it", exc_info=True)
-        return None
+        return None, frozenset(), {}
 
 
 def _scoped_factory(
@@ -4476,7 +4502,7 @@ def _run_stages_body(  # noqa: PLR0915
                 "replied",
                 summary=f"Replied: {reply_text}" if reply_text else "Sent no reply; the burst repeat stayed silent.",
                 why="The reply is the media intake's own denial text, never the customer's words.",
-                facts={"lane": "media_denied", "sections": 0, "asking": None, "files": 0},
+                facts={"lane": "media_denied", "sections": 0, "asking": None, "files": 0, "shown_codes": None},
                 raw={"reply": {"text": reply_text}},
             )
             turn_trace.record(
@@ -4536,10 +4562,10 @@ def _run_stages_body(  # noqa: PLR0915
         product_details = turn_runtime.product_detail_values(db)
         # CHAT-CLOSED-LISTS: what is on file under the words of this message, for a
         # version carrying the CLOSED LISTS section only (code shortlists, the parser picks).
-        candidate_lines = (
-            _candidate_lines(db, latest_user_message)
+        candidate_lines, listed_codes, pick_info = (
+            _candidate_lines(db, latest_user_message, code_lookup=parser_config.code_lookup)
             if parser_config.closed_lists and isinstance(latest_user_message, str)
-            else None
+            else (None, frozenset(), {})
         )
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
@@ -4868,8 +4894,11 @@ def _run_stages_body(  # noqa: PLR0915
             verdict,
             message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None,
             closed_lists=parser_config.closed_lists,
+            listed_codes=listed_codes if parser_config.code_lookup else None,
+            pick_info=pick_info if parser_config.code_lookup else None,
         )
     verdict = closed_lists_verdict(verdict, gate=parser_config.closed_lists)
+    verdict = code_lookup_verdict(verdict, gate=parser_config.code_lookup)
     if parser_config.closed_lists and state_in.focus.products:
         # SPEC-OVER-HELD: a spec said about a held product narrows that product's family
         # (`head/held_family.py`). A read failure leaves the verdict as it was.
@@ -6851,6 +6880,7 @@ def _run_stages_body(  # noqa: PLR0915
                         dealer_stock_ask=_dealer_stock_ask(state_out, plan),
                         dealer_incoming_ask=_dealer_incoming_ask(state_out, plan),
                         product_token_missed=miss_on_typed_product,
+                        localizer=localizer,
                     )
                     if answer is not None:
                         bridge_answered = True
@@ -7671,6 +7701,21 @@ def _without_escalation_offer(answer: Any) -> Any:
     return dataclasses_replace(answer, text=text, question=question, offer=None)
 
 
+def _shown_codes(question: Any) -> list[str] | None:
+    """CHAT-CODE-LOOKUP R2-7 (trace only): the product codes a picker, did-you-mean or related list
+    shows, in display order, read off the question built from that same list; None when none."""
+    if question is None:
+        return None
+    # The escalation lane's own product did-you-mean is a team_pick over product options that keep
+    # their code in the payload.
+    codes = []
+    for o in question.options:
+        code = o.get("code") or (o.get("payload") or {}).get("product_code")
+        if o.get("entity_type") in ("product", "product_set") and code:
+            codes.append(str(code))
+    return codes or None
+
+
 def _dealer_refers_to_salesman(answer: Any, localizer: Any = None) -> Any:
     from app.services.chatbot import dealer_stock as dealer_mod
 
@@ -7935,6 +7980,7 @@ def _run_answer(
             # any of them did not go as links (owner hand test, 9 Oct 2026).
             "file_mode": file_mode,
             "file_mode_fallback": file_fallback,
+            "shown_codes": _shown_codes(answer.question) or getattr(answer, "shown_codes", None),
         },
         raw={"reply": reply},
     )
@@ -10370,6 +10416,7 @@ def run_tail(
             "file_mode": file_mode,
             "file_mode_fallback": file_fallback,
             "files": len(src_files) if isinstance(src_files, list) else 0,
+            "shown_codes": _shown_codes(question),
         },
         raw={"reply": reply},
     )
@@ -10757,7 +10804,7 @@ def _complete_canned_lane(
             "replied",
             summary=f"Refused: {trace_mod.lane_words(branch_kind).lower()}.",
             why="The contact is not granted the agent this turn would have used.",
-            facts={"lane": branch_kind},
+            facts={"lane": branch_kind, "shown_codes": None},
             raw={"reply": reply},
         )
         turn_trace.record(

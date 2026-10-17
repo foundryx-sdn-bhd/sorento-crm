@@ -2257,6 +2257,15 @@ def run_fetch(
         # stay byte-inert for every non-HAS turn.
         "predicate": gate.get("predicate"),
     }
+    set_by_code = {
+        str(e.get("code")).casefold(): [str(c) for c in (e.get("set_codes") or [e["set_code"]])]
+        for e in entities
+        if isinstance(e, dict) and e.get("set_code") and e.get("code")
+    }
+    if set_by_code:
+        # CHAT-CODE-LOOKUP R2: member rows of a product set the customer typed; the reply
+        # groups them under their set and prints no price (`output_structurer`).
+        trigger["set_by_code"] = set_by_code
     if tool_name == "crm_portal_link_get":
         # DEV-FAILURES RC-B: the intro names the form the link opens, in the reply language.
         templates = reply_copy.resolve(db) if db is not None else reply_copy.fallback_copy()

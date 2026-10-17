@@ -68,6 +68,8 @@ class Answer:
     files: list[dict[str, Any]] = field(default_factory=list)
     actions: list[dict[str, Any]] = field(default_factory=list)
     text: str = ""
+    #: Trace only (R2-7): product codes the reply lists when no pick question carries them.
+    shown_codes: list[str] | None = None
 
 
 def _codes_without_rows(entities: list[Any], figures: list[dict[str, Any]]) -> list[str]:
@@ -397,7 +399,7 @@ def _did_you_mean_per_code(
     ctx: Any,
     *,
     lane_asked: bool,
-) -> tuple[str, Any, bool]:
+) -> tuple[str, Any, bool, list[str]]:
     """MULTI-CODE-DYM: the reply's unplaced tokens, each as it would be answered alone.
 
     A token with suggestions (`envelope["unresolved_suggestions"]`, the single-code
@@ -411,7 +413,8 @@ def _did_you_mean_per_code(
     Returns the text, the question to store - one `product_pick` over every offered code
     (AC-1691: two or more), a team offer when one code was offered with the escalation,
     None when a lane already asked this turn's question - and whether any did-you-mean
-    was listed (when none was, the miss offer arm offers the escalation instead).
+    was listed (when none was, the miss offer arm offers the escalation instead), and the codes
+    listed, in display order (trace only).
     """
     localizer = getattr(ctx, "localizer", None) or IDENTITY
     suggestions: dict[str, dict[str, Any]] = {}
@@ -460,7 +463,7 @@ def _did_you_mean_per_code(
     if not paragraphs:
         if plain:
             text += "\n" + f"I could not find {_join_words(plain, localizer)}."
-        return text, None, False
+        return text, None, False, []
 
     domain, team = None, None
     for env in envelopes:
@@ -486,8 +489,9 @@ def _did_you_mean_per_code(
     unsuggested = f"\n\nI could not find {_join_words(plain, localizer)}." if plain else ""
     text += "\n\n" + "\n\n".join(paragraphs) + unsuggested + "\n" + closing
 
+    listed_codes = [str(o["code"]) for o in options]
     if lane_asked:
-        return text, None, True
+        return text, None, True, listed_codes
     agent = getattr(ctx, "suggested_agent", None) if offered else None
     brand = _routing_brand(ctx) if offered else None
     if len(options) >= 2:
@@ -497,10 +501,10 @@ def _did_you_mean_per_code(
             team=team if offered else None,
             asked_at_turn=getattr(state, "turn_no", None),
             payload={"domain": domain, "escalate_offered": offered, "agent": agent, "brand_code": brand},
-        ), True
+        ), True, listed_codes
     if offered:
-        return text, _team_pick_question([domain], policy, agent=agent, brand=brand), True
-    return text, None, True
+        return text, _team_pick_question([domain], policy, agent=agent, brand=brand), True, listed_codes
+    return text, None, True, listed_codes
 
 
 def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: Any) -> Answer:
@@ -795,13 +799,14 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
     lane_question = _lane_question(envelopes, getattr(state, "turn_no", None))
     dym_question = None
     dym_listed = False
+    dym_codes: list[str] = []
     if unplaced and (text.strip() or spared_unplaced):
         # MULTI-CODE-DYM (owner, 4 Oct 2026, "treat each product code individually"): a
         # token with a did-you-mean gets the one it gets when asked alone; the rest keep
         # this sentence.
         carried = getattr(state, "pending", None)
         asked_this_turn = carried is not None and carried.asked_at_turn == getattr(state, "turn_no", None)
-        text, dym_question, dym_listed = _did_you_mean_per_code(
+        text, dym_question, dym_listed, dym_codes = _did_you_mean_per_code(
             text,
             unplaced,
             envelopes,
@@ -982,7 +987,8 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             text += "\n\n" + _ATTACHED_SENTENCE
 
     return Answer(
-        sections=sections, question=question, offer=offer, canned=[], files=files, actions=actions, text=text
+        sections=sections, question=question, offer=offer, canned=[], files=files, actions=actions, text=text,
+        shown_codes=dym_codes or None,
     )
 
 

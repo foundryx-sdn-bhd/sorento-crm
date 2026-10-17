@@ -1,0 +1,24 @@
+{"id": "wd-pos-01", "message": "SRTWB8001 when deliver?", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTWB8001"}}
+{"id": "wd-pos-02", "message": "when will SRTKT1636SS-GM be delivered", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTKT1636SS-GM"}}
+{"id": "wd-pos-03", "message": "SRTWT5724 when deliver to ZZ Demo Trading", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTWT5724", "customer": true}}
+{"id": "wd-pos-04", "message": "bila hantar SRTSS8710 ke ZZ Demo Trading", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTSS8710", "customer": true}}
+{"id": "wd-pos-05", "message": "bila sampai ke kedai SRTWB8003?", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTWB8003"}}
+{"id": "wd-pos-06", "message": "SRTWB7018-PJ 几时送?", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTWB7018-PJ"}}
+{"id": "wd-pos-07", "message": "SRTWT4016 什么时候送货给 ZZ Demo Trading", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTWT4016", "customer": true}}
+{"id": "wd-pos-08", "message": "wen deliver SRTWB8004", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTWB8004"}}
+{"id": "wd-pos-09", "message": "SRTWT5814 wen will it be deliverd to ZZ Demo Trading", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTWT5814", "customer": true}}
+{"id": "wd-pos-10", "message": "ZZ Demo Trading asked when SRTWT5879-GM will be delivered", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTWT5879-GM", "customer": true}}
+{"id": "wd-pos-11", "message": "when is SRTWT1401 going to be delivered to us?", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTWT1401"}}
+{"id": "wd-pos-12", "message": "bila SRTJC8030 akan dihantar?", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTJC8030"}}
+{"id": "wd-pos-14", "message": "SRTWT5818 whn deliver pls", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTWT5818"}}
+{"id": "wd-pos-15", "message": "几时可以送 SRTDR8011 去 ZZ Demo Trading", "expect": {"status": "outstanding", "domain_hint": "order", "product": "SRTDR8011", "customer": true}}
+{"id": "wd-neg-01", "message": "when SRTWB8001 arrive", "expect": {"domain_hint": "incoming", "not_status": ["outstanding"], "product": "SRTWB8001"}}
+{"id": "wd-neg-02", "message": "ETA for SRTKT1636SS-GM", "expect": {"domain_hint": "incoming", "not_status": ["outstanding"], "product": "SRTKT1636SS-GM"}}
+{"id": "wd-neg-03", "message": "bila SRTSS8710 sampai dari kilang", "expect": {"domain_hint": "incoming", "not_status": ["outstanding"]}}
+{"id": "wd-neg-04", "message": "SRTWT4016 什么时候到货", "expect": {"domain_hint": "incoming", "not_status": ["outstanding"]}}
+{"id": "wd-neg-05", "message": "was SRTWT5724 delivered to ZZ Demo Trading", "expect": {"status": "delivered", "product": "SRTWT5724", "customer": true}}
+{"id": "wd-neg-06", "message": "has SRTWT5814 been delivered to ZZ Demo Trading yet", "expect": {"not_status": [null], "customer": true}}
+{"id": "wd-neg-07", "message": "DO for SRTWB8003 last month", "expect": {"not_status": ["outstanding"], "product": "SRTWB8003"}}
+{"id": "wd-neg-08", "message": "list DOs of SRTWB7018-PJ in September", "expect": {"not_status": ["outstanding"]}}
+{"id": "wd-neg-09", "message": "SRTWB8004 stock?", "expect": {"domain_hint": "inventory", "not_status": ["outstanding"], "product": "SRTWB8004"}}
+{"id": "wd-neg-10", "message": "how many SRTJC8030 do we have", "expect": {"domain_hint": "inventory", "not_status": ["outstanding"]}}
