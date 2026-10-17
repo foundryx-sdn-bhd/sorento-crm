@@ -21,7 +21,7 @@ from app.services.chatbot.turn.pending import ask
 from app.services.chatbot.turn.state import Focus, State
 from tests.chatbot._turn_helpers import entity, verdict
 
-DOMAINS = ["inventory", "incoming", "order", "sales"]
+DOMAINS = ["inventory", "incoming", "order", "sales", "product_attachment"]
 KINDS = ["product", "customer", "brand"]
 BRANDS = ["SORENTO", "MOCHA"]
 
@@ -229,10 +229,10 @@ def test_replacing_one_held_product_keeps_that_rows_quantity_when_the_message_ga
     assert len(rows) == 1 and rows[0]["quantity"] == 10
 
 
-@pytest.mark.parametrize("op,survives", [(_op("keep"), False), (_op("set", "product"), True)])
-def test_entities_not_named_by_this_message_are_dropped(op, survives):
-    """Restated held rows always go; a current-message entity survives only when a `set`
-    names its kind (design A2 (b))."""
+@pytest.mark.parametrize("op", [_op("keep"), _op("set", "product")])
+def test_entities_not_named_by_this_message_are_dropped(op):
+    """A restated held row (current_message false) always goes; a current-message entity
+    applies as stated, with or without a `set` op (owner/lead ruling, round 9)."""
     state = State(focus=Focus(products=[_held("SRT5733")]), turn_no=3)
     v = verdict(
         state_changes=[op],
@@ -241,14 +241,14 @@ def test_entities_not_named_by_this_message_are_dropped(op, survives):
     out = _apply(state, v)
     codes = [e.get("canonical_code") for e in out.verdict["entities"]]
     assert "SRT5733" not in codes
-    assert ("MWB8051" in codes) is survives
+    assert "MWB8051" in codes
 
 
-def test_r8_a_reference_to_the_held_subject_drops_entities_no_set_op_names():
+def test_r8_a_reference_to_the_held_subject_is_dropped_when_the_parser_marks_it_not_current():
     state = State(focus=Focus(products=[_held("SRT5733")], domains=["inventory"]), turn_no=3)
     stray = [
-        entity("that one", "customer", canonical_code=None),
-        entity("that one", "form", canonical_code=None),
+        entity("that one", "customer", canonical_code=None, current_message=False),
+        entity("that one", "form", canonical_code=None, current_message=False),
     ]
     out = _apply(state, verdict(domain_hint="inventory", entities=stray, state_changes=[_op("keep")]))
     assert out.valid is True, out.log.get("rejected")
@@ -257,15 +257,34 @@ def test_r8_a_reference_to_the_held_subject_drops_entities_no_set_op_names():
     assert out.log.get("dropped_entities"), out.log
 
 
-def test_r8_only_the_kind_a_set_op_names_survives():
+def test_r9_a_stated_attachment_type_applies_under_switch_domain_and_keep_without_a_set_op():
     state = State(focus=Focus(products=[_held("SRT5733")], domains=["inventory"]), turn_no=3)
-    stray = [
-        entity("Customer Y", "customer", canonical_code="C0002"),
-        entity("that one", "form", canonical_code=None),
-    ]
-    out = _apply(state, verdict(domain_hint="inventory", entities=stray, state_changes=[_op("set", "customer")]))
+    video = entity("video", "attachment_type", canonical_code="Product Videos")
+    out = _apply(
+        state,
+        verdict(domain_hint="product_attachment", entities=[video],
+                state_changes=[_op("switch_domain"), _op("keep")]),
+    )
     assert out.valid is True, out.log.get("rejected")
-    assert [e["hint"] for e in out.verdict["entities"]] == ["customer"]
+    assert [e["hint"] for e in out.verdict["entities"]] == ["attachment_type"]
+    assert not out.log.get("dropped_entities")
+    assert [p["canonical_code"] for p in out.state.focus.products] == ["SRT5733"]
+
+
+def test_r9_a_stated_customer_under_keep_applies_and_replaces_the_held_one():
+    state = State(focus=Focus(customers=[_customer()], domains=["order"]), turn_no=3)
+    new = entity("Customer Y", "customer", canonical_code="C0002")
+    out = _apply(state, verdict(domain_hint="order", entities=[new], state_changes=[_op("keep")]))
+    assert out.valid is True, out.log.get("rejected")
+    assert [e["canonical_code"] for e in out.verdict["entities"]] == ["C0002"]
+
+
+@pytest.mark.parametrize("field,value", [("sales_channel", "dealer"), ("sort_by", "date")])
+def test_r9_a_stated_scalar_under_keep_applies_without_a_set_op(field, value):
+    state = State(focus=Focus(products=[_held("SRT5733")], domains=["sales"]), turn_no=3)
+    out = _apply(state, verdict(domain_hint="sales", state_changes=[_op("keep")], **{field: value}))
+    assert out.valid is True
+    assert out.verdict[field] == value
 
 
 def test_apply_changes_is_pure_and_takes_no_message_text():
