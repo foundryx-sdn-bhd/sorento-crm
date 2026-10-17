@@ -169,3 +169,33 @@ C6 `scripts/publish_specs_token_prompt.py`: `publish(session, from_version=None)
   SystemExit "refused: N baked specification blocks"; base already containing `{{specs}}` -> SystemExit refused.
   Publishes next version (max+1), same type/config, `variables` = base variables + `"specs"` (deduped), UNLABELLED;
   idempotent (an existing version with the identical template -> returns None). Never touches `ai_prompt_labels`.
+
+## Frontend contract (Phase 2, binding for tester + coder)
+Base: `sorento_crm_frontend/app/(protected)/master-data-management/product-specifications/`.
+F1 Types (`types/productSpec.types.ts`): `SpecRegistryKey` gains `parser_hint: string | null`, `label_owned: boolean`,
+   `also_on?: Record<string, string[]>`.
+F2 `hooks/useSpecKeyRecord.ts`: draft gains `parserHint: string` (from `row.parser_hint ?? ''`); the PATCH body sends
+   `parser_hint: draft.parserHint.trim() || null` and NO LONGER sends `unit` (drop draft.unit from the payload).
+   A 409 with code `spec_registry_word_on_other_key` surfaces its message (via `extractApiError`) as the save error toast,
+   and the draft stays in edit mode.
+F3 `components/record/HeaderTab.tsx`: Unit is ALWAYS text (no input in edit mode) followed by a muted
+   `Fixed once saved` (exact text). A new field labelled `What this means to the chatbot` sits after Highest believable
+   value (numeric) / after In use (others), before Other names: view mode = the hint or `-`; edit mode = `Textarea`
+   (`components/ui/textarea`) with `aria-label="What this means to the chatbot"`, `maxLength={200}`, and a counter
+   `<n> / 200`.
+F4 `components/WordsDataGrid.tsx`: when the row's `also_on[word]` is non-empty, the word row shows muted
+   `Also on: <labels joined by ", ">`. Needs an optional prop `alsoOn?: Record<string, string[]>`; HeaderTab and
+   ValuesAndWordsTab pass `row.also_on`.
+F5 `components/SpecKeyRecordDetail.tsx`: a fifth tab `History` (value `history`) after Products, rendering
+   `<AuditTrail entityType="product_spec_registry" entityId={row.id} title="History" />` (`components/audit/AuditTrail.tsx`).
+F6 `actions.tsx` `useSpecKeyActions`: secondary items, before Delete: `Try in chatbot` (key `spec_key.try_chatbot`,
+   only with `master_data.spec_registry.view`, opens the dialog), `Attachment Types` (key `spec_key.open_attachment_types`,
+   router.push('/resource-management/attachment-types')), `Lookup Sets` (key `spec_key.open_lookup_sets`,
+   router.push('/master-data-management/lookup-sets')). The dialog is returned through the hook's `dialogs` slot.
+F7 `components/TryInChatbotDialog.tsx` (new, modelled on `TryPhraseDialog.tsx`): title `Try in chatbot`, an Input
+   `aria-label="Customer message"` (maxLength 500), a `Run` button disabled while empty or running; calls
+   `tryInChatbot(text)` from `services/productSpecService.ts` -> `POST /api/v1/system/chatbot/parser-try` via apiFetch,
+   errors through `extractApiError`. Result: a DataGrid with columns `Words` (raw), `Read as` (field_label, else kind),
+   `Value`; no picks -> empty state heading `Nothing picked`; an error -> an Alert with the message; muted line
+   `Dry run. Nothing is sent and nothing is saved.`. DataGrid: tableLayout fixed + columnsResizable, explicit sizes,
+   truncate + title.
