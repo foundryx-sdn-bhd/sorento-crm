@@ -7,7 +7,10 @@
 from __future__ import annotations
 
 import json
+import uuid
+from types import SimpleNamespace
 
+from app.services.chatbot import engine as engine_mod
 from scripts.chatbot_eval import replay as replay_mod
 from tests.chatbot.conftest import session_factory  # noqa: F401
 from tests.chatbot.test_engine import seeded, stub_access  # noqa: F401
@@ -141,9 +144,10 @@ def test_red_cli_live_exits_3_and_prints_the_count_and_first_ids_on_an_error_rat
 
 
 # ------------------------------------------------------------------ 3. the alembic preflight
-def _preflight(monkeypatch, db, code):
+def _preflight(monkeypatch, db, code, known=True):
     monkeypatch.setattr(replay_mod, "_db_revisions", lambda sf: set(db), raising=False)
     monkeypatch.setattr(replay_mod, "_code_heads", lambda d: set(code), raising=False)
+    monkeypatch.setattr(replay_mod, "_revision_known", lambda d, rev: known, raising=False)
 
 
 def _cli(cmd, tmp_path, session_factory, row, monkeypatch):
@@ -191,3 +195,67 @@ def test_guard_equal_revisions_pass_the_preflight(tmp_path, session_factory, rec
     _preflight(monkeypatch, {"a1"}, {"a1"})
     rc, _ = _cli("run", tmp_path, session_factory, recorded, monkeypatch)
     assert rc == 0, capsys.readouterr()
+
+
+# ------------------------------------------------------------------ round 2: failed-status turns
+def _failed_result():
+    return SimpleNamespace(duplicate=False, turn_id=uuid.uuid4(), branch_kind="business_query",
+                           reply={"text": "Sorry, something went wrong."}, status="failed", stage="answer",
+                           error="ProgrammingError")
+
+
+def test_red_a_turn_the_engine_closes_as_failed_is_recorded_with_an_error_miss(session_factory, recorded, monkeypatch):
+    monkeypatch.setattr(engine_mod, "run_turn", lambda envelope, **kw: _failed_result())
+    row = replay_mod.replay_rows([recorded], session_factory=session_factory)[0]
+    assert any("error" in m for m in row["misses"]), row
+    res = replay_mod.diff_rows([row], [dict(row)])
+    assert [b[:2] for b in res.get("broken", [])] == [(row["case_id"], row["turn_id"])], res
+
+
+def test_red_a_live_result_whose_turn_status_is_failed_counts_as_an_error(session_factory, recorded, live_env, monkeypatch):
+    def fake(item, row, factory, total, prompt_version_id=None):
+        turn = {"trace": [{"kind": "tool"}], "response": {"reply": {"text": "x"}}, "branch_kind": "b"}
+        if item["item_id"] in {"it-1", "it-2", "it-3"}:
+            turn["status"] = "failed"
+        return {"item_id": item["item_id"], "run": 2, "turn": turn}
+
+    monkeypatch.setattr(replay_mod, "_live_one", fake)
+    res = replay_mod.live_rows(items_for(recorded, n=100), [recorded], session_factory=session_factory,
+                               max_calls=1000, max_usd=100.0, require_key_last4=LAST4)
+    assert res[-1].get("stopped") == "error_rate" and res[-1].get("errors") == 3, res[-1]
+
+
+# ------------------------------------------------------------------ round 2: nothing compared
+def test_red_a_diff_that_compares_nothing_exits_3_and_says_compared_0(tmp_path, capsys):
+    rc, out = _diff_cli(tmp_path, [], [], capsys)
+    assert rc == 3 and "compared 0" in out, (rc, out)
+
+
+def test_red_a_diff_with_no_key_in_common_compares_nothing(tmp_path, capsys):
+    rc, out = _diff_cli(tmp_path, [_row("t1")], [_row("t2")], capsys)
+    assert rc == 3 and "compared 0" in out, (rc, out)
+
+
+def test_guard_one_compared_clean_row_exits_0(tmp_path, capsys):
+    rc, out = _diff_cli(tmp_path, [_row("t1")], [_row("t1")], capsys)
+    assert rc == 0, out
+
+
+# ------------------------------------------------------------------ round 2: preflight across migration lanes
+def test_red_a_db_ahead_of_the_arm_passes_with_a_warning_naming_the_revision(
+        tmp_path, session_factory, recorded, live_env, monkeypatch, capsys):
+    _preflight(monkeypatch, {"zz_9999_future"}, {"new_0002"}, known=False)
+    rc, _ = _cli("run", tmp_path, session_factory, recorded, monkeypatch)
+    text = capsys.readouterr()
+    assert rc == 0, text.out + text.err
+    assert "zz_9999_future" in text.err, text.err
+
+
+def test_red_a_db_behind_the_arm_is_refused_with_the_upgrade_command(
+        tmp_path, session_factory, recorded, live_env, monkeypatch, capsys):
+    _preflight(monkeypatch, {"old_0001"}, {"new_0002"}, known=True)
+    rc, out = _cli("run", tmp_path, session_factory, recorded, monkeypatch)
+    text = capsys.readouterr()
+    assert rc == 2, text.out + text.err
+    assert "alembic upgrade head" in text.out + text.err
+    assert _no_row_written(out)
