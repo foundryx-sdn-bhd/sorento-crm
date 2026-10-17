@@ -469,3 +469,32 @@ def test_guard_i_pins_the_date_my_newline_change():
     # DATE_MY `[^\S\n]+`: without it "Nov\n2026" reads as one month-year
     r = _results(row2(reply="Due Nov\n2026", tools=[]), "Nov; 2026")
     assert made_up_facts(r) == [], made_up_facts(r)
+
+
+# ------------------------------------------------------------------ a looked-up parked set keeps its members as the subject
+PARKED = {"raw": "SRTSET1", "canonical_code": "SRTSET1"}
+
+
+def _parked_row(term="SRTSET1", codes=("SRTM1", "SRTM2"), extra=None):
+    return row2(message="srtset1", reply="Set found.", mem_before=[prod("SRTOLD1", UB)], mem_after=[],
+                mem_extra=extra or {"product_set": [PARKED]},
+                looked=[{"tool": "t", "entities": list(codes), "product_codes": list(codes)}],
+                tools=[{"name": "crm_inventory_list", "args": {"scope_terms": [term]}}])
+
+
+def test_red_h_parked_set_looked_up_keeps_its_lookup_members_as_the_subject():
+    res = grade_turn(_parked_row(), item("followup", "switch", subject_after=["SRTM1", "SRTM2"]))
+    assert res["checks"]["new_subject"] is True, res["checks"]   # since 0e2b69dc2b the set code takes the subject and is dropped
+
+
+def test_red_h_parked_set_looked_up_keeps_a_held_order_as_the_subject():
+    held = {"raw": "SO-1001", "hint": "customer_order", "uuid": None, "canonical_code": "SO-1001"}
+    r = _parked_row(extra={"product_set": [PARKED], "order": [held]}, codes=())
+    res = grade_turn(r, item("followup", "switch", subject_after=["SO-1001"]))
+    assert res["checks"]["new_subject"] is True, res["checks"]
+
+
+def test_guard_h_parked_set_with_a_lookup_for_another_product_still_fails():
+    r = _parked_row(term="SRTOLD1", codes=("SRTOLD1",))
+    res = grade_turn(r, item("followup", "switch", subject_after=["SRTM1", "SRTM2"]))
+    assert res["checks"]["new_subject"] is False, res["checks"]
