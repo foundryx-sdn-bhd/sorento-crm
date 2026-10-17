@@ -443,7 +443,9 @@ def _classify(chain: List[str], year: int) -> Optional[_Column]:
         col.kind, col.number = "M", month
     elif yearly:
         col.kind, col.window = "Y", window
-        if re.fullmatch(r"PERIOD|WINDOW|DATES?", up[-1]):
+        # A yearly "PERIOD" or "Special Remark" column states the block's window, never a
+        # threshold (gate 8: Sorento's remark, merged over the accounts, holds "DEC'25-NOV'26").
+        if re.fullmatch(r"PERIOD|WINDOW|DATES?", up[-1]) or re.search(r"\bREMARKS?\s*$", up[-1]):
             col.role = "window"
     elif quarterly and is_rate:
         # One INCENTIVE under a QUARTERLY block: every quarter's rate (number 0 = all).
@@ -992,7 +994,13 @@ def _group_schemes(
             per_account, dealer_cols = split
             dealer = _group_schemes(ctx, kind, points, dealer_cols, window_col, by_role)
             if not dealer:
-                return []
+                # No dealer tier ("NIL" merged over the accounts): each account keeps its own
+                # tiers as its own target, never dropped (gate 8).
+                out = []
+                for r in ctx.rows:
+                    single = _Ctx(grid, ctx.sheet, [r], results, ctx.dealer_labels, ctx.year)
+                    out.extend(_group_schemes(single, kind, points, per_account, window_col, by_role))
+                return out
             out = list(dealer)
             for r in ctx.rows:
                 single = _Ctx(grid, ctx.sheet, [r], results, ctx.dealer_labels, ctx.year)
@@ -1037,9 +1045,15 @@ def _group_schemes(
         sources = ([window_col] if window_col else []) + list(kind_cols)
         for col in sources:
             for r in ctx.rows:
-                win = _window(_text(grid.value(r, col.index))[:MAX_CELL_TEXT], ctx.year)
+                text = _text(grid.value(r, col.index))[:MAX_CELL_TEXT]
+                win = _window(text, ctx.year)
                 if win:
                     stated = win
+                elif text and col is window_col:
+                    # A remark that states no period is told, never read as a figure (gate 8).
+                    note = f'{col.header}: "{text[:60]}" is not a period; read as a remark'
+                    if note not in results[r].warnings:
+                        results[r].warnings.append(note)
         header_window = next((c.window for c in kind_cols if c.window), None)
         # Account targets split off a dealer's block take the dealer's window when neither a row
         # cell nor their own headers state one (gate 3).

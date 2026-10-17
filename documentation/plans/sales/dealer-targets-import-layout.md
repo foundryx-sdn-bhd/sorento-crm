@@ -137,3 +137,11 @@ mapped and every sheet was read (`gate_passes`).
   "- [CERAMIC]" ledger and A/C III its "- [IBORN]" ledger (`ACCOUNT_LABEL_LEDGERS`). The rule
   only adds an account label to a ledger of the same dealer name; it never matches across
   names. Every other company reads A/C II / A/C III as account levels only.
+
+## Eighth real-file gate (17 Oct, round 7)
+
+- A yearly column whose header ends in REMARK(S) ("Yearly / Special Remark") is the yearly
+  window, like PERIOD: a period in it ("DEC'25-NOV'26") moves the yearly target, and other text is
+  a remark, said as a warning on the row, never read as a threshold or figure.
+- A block whose dealer side has no tiers ("NIL" merged over the accounts) keeps each account's
+  own tiers as that account's target; they are never dropped.
