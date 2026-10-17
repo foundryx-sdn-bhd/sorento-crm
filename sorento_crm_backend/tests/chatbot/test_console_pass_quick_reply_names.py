@@ -29,7 +29,7 @@ from app.services.chatbot import console_service, turn_runtime
 from app.services.chatbot.head import parser as parser_mod
 from tests._mc_lookup_seed import customer as seed_customer
 from tests.chatbot._r9_engine_console import _present_response, _seed_products, product, stock
-from tests.chatbot._turn_helpers import do_window
+from tests.chatbot._turn_helpers import do_window, make_office_access_type
 from tests.chatbot.test_engine import CONTACT_ID, _envelope, _parser_output, stub_access  # noqa: F401 - fixture
 from tests.chatbot.test_rearch_s3_attribute_first import SORENTO, _link_contact_company
 from tests.chatbot.test_rearch_s3_roster_from_resolver import _seed_contact
@@ -54,6 +54,8 @@ class _Console:
         self.run_id = f"ZZT-console-pass-{uuid.uuid4().hex[:8]}"
 
         _seed_contact(session_factory, phone="+60000000071")
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         _link_contact_company(session_factory, company_id=SORENTO)
         self.codes = _seed_products(session_factory, DYM_CODES)
         db = session_factory()

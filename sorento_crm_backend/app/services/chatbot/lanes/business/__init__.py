@@ -605,6 +605,20 @@ def _nothing_live_of_kind(
     return {**_fixed_reply(text), "kind_none": True} if text else None
 
 
+#: V1-DOC-SCOPE: the tools that list customer documents (DOs, and SOs on the report).
+_DOC_TOOLS: frozenset[str] = fetch_mod.ORDER_TOOLS | {"crm_outstanding_report"}
+
+
+def _scope_refusal(customer_scope: dict[str, Any]) -> str:
+    """The contact's scope refusal line; a contact with no links (no scope read at all) gets
+    the same line over no names ("I can only check on your own account")."""
+    from app.services import contact_customer_scope as scope_mod
+
+    return str(customer_scope.get("refusal") or "") or scope_mod.refusal_line(
+        scope_mod.ContactCustomerScope(linked=(), staff=False)
+    )
+
+
 def _fixed_reply(
     text: str,
     *,
@@ -1466,7 +1480,16 @@ def run_fetch(
         if db is not None:
             from app.services.chatbot import so_status
 
-            linked = list(customer_scope.get("linked") or []) if customer_scope.get("enforced") else None
+            # V1-DOC-SCOPE: an enforced contact is held to its links first (as the resolver's
+            # `engine._reference_scope` holds it, whatever its tier); otherwise only staff
+            # (`doc_staff`: the tier, an office access type or a staff CRM user) are unscoped, and an unlinked
+            # non-staff contact is held to its (empty) links, so every SO is refused.
+            # V1-DOC-SCOPE-SALES: a linked staff CRM user is enforced yet document staff (the
+            # scope's `staff`), so it is not held to its links here.
+            if customer_scope.get("enforced") and customer_scope.get("staff") is not True:
+                linked = list(customer_scope.get("linked") or [])
+            else:
+                linked = None if parse_output.get("doc_staff") is True else list(customer_scope.get("linked") or [])
             looked = so_status.lookup(db, so_numbers, linked=linked)
             if trace is not None:
                 trace.add(
@@ -1481,7 +1504,7 @@ def run_fetch(
             fragment = _fixed_reply(
                 so_status.reply_text(
                     looked,
-                    refusal=str(customer_scope.get("refusal") or ""),
+                    refusal=_scope_refusal(customer_scope),
                     kind_word="Sales order" if parse_output.get("so_placed") is True else None,
                 )
             )
@@ -1510,7 +1533,12 @@ def run_fetch(
             from app.services.chatbot import so_status
 
             # REF-PROBES: staff carry no customer links and no enforced scope (`ref_staff`).
-            linked = None if parse_output.get("ref_staff") is True else list(customer_scope.get("linked") or [])
+            # V1-DOC-SCOPE: an enforced contact is held to its links whatever its tier, as in
+            # the SO number arm above.
+            if customer_scope.get("enforced"):
+                linked = list(customer_scope.get("linked") or [])
+            else:
+                linked = None if parse_output.get("ref_staff") is True else list(customer_scope.get("linked") or [])
             looked = so_status.lookup_po_refs(db, po_refs, linked=linked)
             if trace is not None:
                 trace.add(
@@ -1571,6 +1599,12 @@ def run_fetch(
             own = {str(i) for i in customer_scope["ids"]}
             customer_ids = [u for u in customer_ids if str(u) in own] or list(customer_scope["ids"])
     if parse_output.get("so_list") is True and parse_output.get("domain_hint") == "order" and customer_ids and db is not None:
+        if parse_output.get("doc_staff") is not True and not customer_scope.get("ids"):
+            # V1-DOC-SCOPE: a non-staff contact with no links owns no sales order; a customer
+            # it named is another customer.
+            if trace is not None:
+                trace.add("so_list", {"refused": "no_links"})
+            return _fixed_reply(_scope_refusal(customer_scope))
         access_ctx = ctx.get("access") if isinstance(ctx.get("access"), dict) else {}
         granted_raw = access_ctx.get("attributes")
         granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
@@ -2223,6 +2257,19 @@ def run_fetch(
         if _OUTSTANDING_SO_GRANT not in granted:
             semantic_input["order_status"] = "outstanding"
             semantic_input["so_bucket_refused"] = True
+
+    # V1-DOC-SCOPE (owner rule: unlinked != customer): a non-staff contact with no customer
+    # links owns no delivery order, so an orders read (or the outstanding report, whose rows
+    # carry DO / SO numbers and customer names) would only ever list other customers'.
+    # Refused before any fetch; the routes themselves scope only an enforced contact.
+    if (
+        tool_name in _DOC_TOOLS
+        and parse_output.get("doc_staff") is not True
+        and not customer_scope.get("ids")
+    ):
+        if trace is not None:
+            trace.add("customer_scope", {"refused": "no_links", "tool": tool_name})
+        return _fixed_reply(_scope_refusal(customer_scope))
 
     # DO-ASK-SIMPLIFY security S1 (PR #1433): a transporter named on a DO list ask would
     # filter the rows by it, telling the contact who carried each one. Without the

@@ -55,7 +55,7 @@ from app.services.chatbot.turn.state import Focus, Profile
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._mc_lookup_seed import customer as seed_customer
 from tests._pg_fixture import unique_code
-from tests.chatbot._turn_helpers import do_window
+from tests.chatbot._turn_helpers import do_window, make_office_access_type
 from tests.chatbot.test_engine import CONTACT_ID, _parser_output
 from tests.chatbot.test_engine_company_scope import _seed_product
 from tests.chatbot.test_outstanding_lane import (
@@ -75,6 +75,8 @@ def _seed_contact_and_get(session_factory) -> None:
     `respond_contacts` bound to `DEFAULT_COMPANY_ID` via a workspace at space_id
     "364817" (`_run_turn` hardcodes `default_space_id -> "364817"`)."""
     _seed_business_contact(session_factory, variables={})
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
 
 
 def _grant_contact_company(session_factory, company_id: Any) -> None:

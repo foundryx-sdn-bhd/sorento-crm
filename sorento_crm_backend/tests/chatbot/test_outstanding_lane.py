@@ -159,6 +159,7 @@ from app.services.chatbot.lanes.business.services import (
     ResolveGateServices,
 )
 from app.services.company_scope import DEFAULT_COMPANY_ID
+from tests.chatbot._turn_helpers import make_office_access_type, make_office_tier
 from tests._mc_lookup_seed import customer as mc_customer
 from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.conftest import set_chatbot_switches, validating_resolve_entity
@@ -685,6 +686,8 @@ class TestLocationTokenPipeline:
     def test_location_token_in_message_reaches_tool_as_warehouse_codes(self, session_factory, monkeypatch) -> None:
         self._seed_warehouses(session_factory)
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -722,6 +725,8 @@ class TestLocationTokenPipeline:
     def test_exact_code_token_in_message_reaches_tool(self, session_factory, monkeypatch) -> None:
         self._seed_warehouses(session_factory)
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -777,6 +782,8 @@ class TestExactProductCodeWinsOverSiblings:
     def test_the_typed_code_is_what_the_report_runs_for(self, session_factory, monkeypatch) -> None:
         self._seed_products(session_factory)
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -854,6 +861,8 @@ class TestExactProductCodeWinsOverSiblings:
         answer "3", and the report runs for what the customer typed."""
         self._seed_products(session_factory)
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         _run_turn(
             session_factory,
             monkeypatch,
@@ -973,7 +982,8 @@ class TestToolPick:
             "gate": {"compatible_entities": entities},
             "tier_gate": None,
             "ctx": {
-                "parse": {"output": _qf(order_status=order_status, entities=[])},
+                # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+                "parse": {"output": {**_qf(order_status=order_status, entities=[]), "doc_staff": True}},
                 "contact": {"id": CONTACT_ID},
                 "access": {"attributes": attributes or ["sales_orders.outstanding"]},
             },
@@ -1005,6 +1015,8 @@ class TestToolPick:
 
         call, captured = _capturing_mcp()
         payload = self._payload(order_status="so_outstanding", entities=[])
+        # V1-DOC-SCOPE: an unlinked contact reads the orders book only as staff.
+        payload["ctx"]["parse"]["output"]["doc_staff"] = True
         run_fetch(payload, services=FetchServices(mcp_call=call))
         assert captured, "no MCP tool was ever called"
         name, _args = captured[0]
@@ -1049,6 +1061,8 @@ class TestWarehouseOnAPlainOrderAsk:
                 "access": {"attributes": []},
             },
         }
+        # V1-DOC-SCOPE: an unlinked contact reads the orders book only as staff.
+        payload["ctx"]["parse"]["output"]["doc_staff"] = True
         run_fetch(payload, services=FetchServices(mcp_call=call))
         assert captured, "no MCP tool was ever called"
         name, args = captured[0]
@@ -1081,7 +1095,8 @@ class TestCustomerEntityBecomesCustomerIds:
             },
             "tier_gate": None,
             "ctx": {
-                "parse": {"output": _qf(order_status="outstanding", entities=[])},
+                # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+                "parse": {"output": {**_qf(order_status="outstanding", entities=[]), "doc_staff": True}},
                 "contact": {"id": CONTACT_ID},
                 "access": {"attributes": ["sales_orders.outstanding"]},
             },
@@ -1114,7 +1129,8 @@ class TestFieldRevealGateBeforeFetch:
             },
             "tier_gate": None,
             "ctx": {
-                "parse": {"output": _qf(order_status=order_status, entities=[])},
+                # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+                "parse": {"output": {**_qf(order_status=order_status, entities=[]), "doc_staff": True}},
                 "contact": {"id": CONTACT_ID},
                 "access": {"attributes": attributes},
             },
@@ -1141,6 +1157,8 @@ class TestFieldRevealGateBeforeFetch:
         BEFORE the DO block. Composition is a full-turn concern - see module docstring for
         why only this pinned line is asserted, not the DO block's own content."""
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -1227,6 +1245,8 @@ class TestBareOutstandingWithKeyArmsScopeQuestion:
         suppressed the scope-ask signal. Resetting the session made the question fire,
         which is what named the pending as the cause."""
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         _r1, captured1 = _run_turn(
             session_factory,
             monkeypatch,
@@ -1293,6 +1313,8 @@ def _seed_open_outstanding_scope(session_factory, *, filters: dict[str, Any] | N
             "pending": {"kind": "outstanding_scope"},
         },
     )
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
 
 
 class TestScopeAnswerRunsReportWithCarriedFilters:
@@ -1560,6 +1582,8 @@ class TestScopeQuestionGuardsAgainstAStrayPositionWithAnEntity:
         original "delivery to hanlim" regression needs; the word-matching half of that
         regression is retired with D16 and re-verified live by the console case."""
         _seed_open_outstanding_scope(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -1600,6 +1624,8 @@ class TestScopeQuestionGuardsAgainstAStrayPositionWithAnEntity:
 class TestHitArmsOutstandingDetailAndNoEscalateOffer:
     def test_hit_arms_detail_offer_and_no_escalate_text(self, session_factory, monkeypatch) -> None:
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -1630,6 +1656,8 @@ class TestHitArmsOutstandingDetailAndNoEscalateOffer:
         must NOT print above a report that carries its own Product / Customer / Location
         / Order date lines. The console check read both, one under the other."""
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, _captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -1684,6 +1712,8 @@ class TestTotalMissEscalates:
         presenter's envelope has to carry it, or every miss reads as a hit and the
         customer is left with "No open sales order." and no way forward."""
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -1713,6 +1743,8 @@ class TestTotalMissEscalates:
         want" bullets, which say nothing about sales orders or delivery orders and drop
         the two lines the owner signed off on."""
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, _captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -1771,6 +1803,8 @@ def _seed_open_outstanding_detail(
             "pending": {"kind": "outstanding_detail"},
         },
     )
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
 
 
 class TestDetailPickRerunsToolWithDetail:
@@ -1830,6 +1864,8 @@ class TestDetailPickRerunsToolWithDetail:
         yet win over the generic business-query read on THIS call path (waiting on
         coder 12's contract 38/39 wiring, per the coordinator's own routing)."""
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         _result1, captured1 = _run_turn(
             session_factory,
             monkeypatch,
@@ -1916,6 +1952,8 @@ class TestDetailPickRerunsToolWithDetail:
                 "pending": {"kind": "outstanding_detail"},
             },
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -2105,6 +2143,8 @@ class TestDetailOfferIsSticky:
         `variables` dict, which is invisible to the current engine (same finding as
         this class's other real-turn-1 ports)."""
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         _result0, captured0 = _run_turn(
             session_factory,
             monkeypatch,
@@ -2191,6 +2231,8 @@ class TestDetailAnswerByPositionOnly:
                 "pending": {"kind": "outstanding_detail"},
             },
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -2284,6 +2326,8 @@ class TestNoSoKeyCustomerOnlySoAskFallsToDoBucket:
 
     def test_no_so_key_customer_only_so_ask_falls_to_do_bucket(self, session_factory, monkeypatch) -> None:
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -2325,6 +2369,8 @@ class TestNoSoKeyCustomerOnlySoAskFallsToDoBucket:
     def test_with_the_grant_the_so_bucket_runs_unredirected(self, session_factory, monkeypatch) -> None:
         """The grant is the ONLY thing the gate reads - same ask, held key, no redirect."""
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -2606,6 +2652,8 @@ class TestAnswerTurnTakesItsSubjectFromTheStoredFilters:
                 "pending": {"kind": "outstanding_scope"},
             },
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
 
     def test_scope_answer_with_customer_only_filters_runs_the_report(
         self, session_factory, monkeypatch
@@ -2666,6 +2714,8 @@ class TestAnswerTurnTakesItsSubjectFromTheStoredFilters:
                 "pending": {"kind": "outstanding_detail"},
             },
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -2695,6 +2745,8 @@ class TestCustomerOnlyOutstandingAskReachesTheReport:
         bare "outstanding" ask never arms the scope question at all - it falls
         through to the plain order-list tool / the legacy so_outstanding bucket."""
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -2748,7 +2800,8 @@ class TestCustomerOnlyOutstandingAskReachesTheReport:
             "tier_gate": None,
             "ctx": {
                 "parse": {
-                    "output": _parser_output(
+                    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+                    "output": {**_parser_output(
                         domain_hint="order", intent_hint="check_order", order_status="do_outstanding",
                         entities=[
                             {
@@ -2756,7 +2809,7 @@ class TestCustomerOnlyOutstandingAskReachesTheReport:
                                 "current_message": True, "confident": True,
                             },
                         ],
-                    )
+                    ), "doc_staff": True}
                 },
                 "contact": {"id": CONTACT_ID},
                 "access": {"attributes": ["sales_orders.outstanding"]},
@@ -2811,6 +2864,8 @@ class TestCustomerOnlyOutstandingAskReachesTheReport:
                 "access": {"attributes": ["sales_orders.outstanding"]},
             },
         }
+        # V1-DOC-SCOPE: an unlinked contact reads the orders book only as staff.
+        payload["ctx"]["parse"]["output"]["doc_staff"] = True
         run_fetch(payload, services=FetchServices(mcp_call=call))
         assert captured, "the plain order ask must still be answered"
         name, _args = captured[0]
@@ -3294,6 +3349,8 @@ def _seed_open_outstanding_customer_pick(session_factory) -> None:
             "pending": None,
         },
     )
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
 
 
 class TestOwnerRoundFivePickerAndOfferScope:
@@ -3633,6 +3690,8 @@ class TestScopeQuestionCarriesTheFullHeader:
         cust = mc_customer(db, company_id=DEFAULT_COMPANY_ID, name=CUSTOMER_NAME)
         db.commit()
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -3948,6 +4007,8 @@ class TestOutstandingAskPickerHasNoDeliveryHint:
             }
 
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -3994,6 +4055,8 @@ class TestOutstandingAskPickerHasNoDeliveryHint:
             return {"items": [], "has_result": False}
 
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -4079,6 +4142,8 @@ class TestScopeQuestionCustomerLineMatchesReportHeader:
                 "pending": None,
             },
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         pick_result, pick_captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -4227,6 +4292,8 @@ def _seed_open_outstanding_three_family_picker(session_factory) -> tuple[str, st
             "pending": None,
         },
     )
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
     return c1.id, c2.id, c3.id
 
 
@@ -4364,6 +4431,8 @@ class TestAllOnTheCustomerPickerKeepsTheQuestion:
                 "pending": None,
             },
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -4696,6 +4765,8 @@ class TestABusinessQueryUnderAnOpenOfferIsANewAsk:
         _seed_open_outstanding_detail(
             session_factory, rows=[{"idx": 1, "label": "Sales order list", "value": "so"}],
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -4756,6 +4827,8 @@ class TestABusinessQueryUnderAnOpenOfferIsANewAsk:
                 "location_token": None,
             },
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,

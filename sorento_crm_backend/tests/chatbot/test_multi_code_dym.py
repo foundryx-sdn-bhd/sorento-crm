@@ -15,6 +15,8 @@ from app.services.chatbot.turn.compose import compose
 from app.services.chatbot.turn.policy import Policy
 from app.services.chatbot.turn.state import Focus, Profile, State
 
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot._turn_helpers import TIER_ORDER_FIXTURE, _domain_row
 
 SUGGEST = [
@@ -422,6 +424,8 @@ class TestRealResolverPartialMiss:
             seed_product(db, company_id=DEFAULT_COMPANY_ID, code=code)
         db.commit()
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
 
         def entity(raw: str) -> dict[str, Any]:
             return {"raw": raw, "hint": "product", "canonical_code": None, "current_message": True, "confident": True}

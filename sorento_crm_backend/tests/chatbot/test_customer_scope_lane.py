@@ -229,14 +229,16 @@ class TestWhoIsScoped:
         assert captured == []
 
     def test_unlinked_contact_is_unchanged(self, session_factory, monkeypatch) -> None:
-        """AC-CS-03: no link, no office type -> today's behaviour: the picker, no refusal,
-        no forced customer ids."""
+        """AC-CS-03, flipped by V1-DOC-SCOPE slice 3 (owner rule: unlinked != customer): no
+        link, no office type, not a salesperson or office tier -> another customer's word is
+        refused before the resolver with the no-link line; no picker names other customers."""
         _seed_contact(session_factory, variables={})
         reply, captured = _turn(
             session_factory, monkeypatch, _ask([_ent("hanlim")]), resolve_services=_hanlim_services(),
         )
-        assert "Which one do you mean?" in reply, reply
-        assert "under your account" not in reply
+        assert "Which one do you mean?" not in reply, reply
+        assert "HANLIM" not in reply.upper(), reply
+        assert reply.strip() == "Sorry, that isn't under your account. I can only check on your own account.", reply
         assert captured == []
 
     def test_inactive_office_type_does_not_make_staff(self, session_factory, monkeypatch) -> None:
@@ -358,11 +360,19 @@ class TestUpstreamBlock:
         assert "SOMEONE ELSE" not in reply
 
     def test_foreign_do_number_is_a_miss_inside_the_scope(self, session_factory, monkeypatch) -> None:
-        """AC-CS-15: a DO number that resolves to an order uuid goes to the orders list
-        with that `order_ids` AND the links as `customer_ids`; the route (not the lane)
-        answers "no rows", so the reply is the ordinary miss text, never the refusal."""
+        """AC-CS-15, tightened by V1-DOC-SCOPE: a DO number whose order is not under the
+        links (here: no such order row at all) is dropped from the resolver's matches before
+        any fetch (`turn_runtime._without_foreign_sales_orders`), so no orders call carries
+        it, and the reply is the ordinary miss text, never the refusal."""
+        from app.models.order import Order
+
         _seed_contact(session_factory, variables={})
         (own_id,) = _link_customers(session_factory, OWN_A)
+        # A real order behind the uuid, another customer's, so the drop is the scope rule
+        # at work and not a missing row.
+        db = session_factory()
+        db.add(Order(id=ORDER_UUID, order_number="DO-ZZT-1", customer_id=_other_customer(session_factory, "ZZT SOMEONE ELSE DO"), company_id=DEFAULT_COMPANY_ID))
+        db.commit()
         reply, captured = _turn(
             session_factory, monkeypatch,
             _parser_output(
@@ -373,8 +383,9 @@ class TestUpstreamBlock:
             matches={"DO-ZZT-1": {"uuid": ORDER_UUID, "entity_type": "customer_order", "canonical_code": "DO-ZZT-1"}},
         )
         (args,) = _calls(captured, ORDERS)
-        assert args["order_ids"] == [ORDER_UUID], args
+        assert "order_ids" not in args, args
         assert args["customer_ids"] == [own_id], args
+        assert reply.startswith('Couldn\'t find: "DO-ZZT-1"'), reply
         assert reply.strip()
         assert "under your account" not in reply, reply
 

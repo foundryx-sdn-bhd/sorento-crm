@@ -770,3 +770,45 @@ def test_extractor_parser_product_entities_add_no_product_line_to_a_chat_report(
     lowered = text.lower()
     assert not any(m in lowered for m in MISS_LINES), text
     assert calls == []
+
+
+# --------------------------------------------------------------------------- V1-DOC-SCOPE slice 3
+
+
+def _hanlim_book(monkeypatch) -> list[dict[str, Any]]:
+    """The resolver answers "hanlim" with TWO other customers (the R18 HANLIM book), so the
+    gate would build a customer picker; returns the picker's DO probe calls."""
+    from tests.chatbot.test_outstanding_lane import _ambiguous_hanlim_resolve_services
+
+    probes: list[dict[str, Any]] = []
+
+    def probe(**kwargs):
+        probes.append(kwargs)
+        return {"items": [], "has_result": False}
+
+    services = _ambiguous_hanlim_resolve_services(probe)
+    monkeypatch.setattr(engine_mod.business_services, "production_services", lambda db, *, space_id=None: services)
+    return probes
+
+
+@pytest.mark.parametrize("hint", ["customer", "brand"])
+def test_v1_doc_scope_an_ungranted_unlinked_contact_gets_no_customer_names(console_no_grant, monkeypatch, hint) -> None:
+    """V1-DOC-SCOPE slice 3 (crew ruling (b), 15 Oct): without `chatbot.analytics` an unlinked
+    contact that is not document staff gets no other customer's name on a chat report ask,
+    however the parser tagged the word, and no DO probe runs. (With the grant the owner's CA-3
+    Q5(a) stands: the unmarked `test_a_customer_name_resolves_to_its_id` above.)"""
+    probes = _hanlim_book(monkeypatch)
+    text, calls = console_no_grant.say(_chat(_e("hanlim", hint)), "top 5 questions from hanlim this week")
+    assert "HANLIM" not in text.upper(), text
+    assert "Which one do you mean?" not in text, text
+    assert probes == [] and calls == [], (probes, calls)
+
+
+
+
+def test_v1_doc_scope_a_granted_unlinked_contact_runs_no_do_probe(console, monkeypatch) -> None:
+    """The chat grant opens the chat report's customers, never their delivery orders: no DO
+    probe runs for a granted unlinked contact (security review on 70bd1c303)."""
+    probes = _hanlim_book(monkeypatch)
+    console.say(_chat(_e("hanlim", "customer")), "top 5 questions from hanlim this week")
+    assert probes == [], probes

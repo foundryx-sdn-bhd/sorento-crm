@@ -62,7 +62,7 @@ from app.services.company_scope import DEFAULT_COMPANY_ID
 from app.services.company_scope_resolver import apply_company_scope
 from tests._mc_lookup_seed import MOCHA_ID, customer, product, seed_mocha, warehouse
 from tests.chatbot.conftest import validating_resolve_entity
-from tests.chatbot._turn_helpers import DO_WINDOW_DATE, do_window
+from tests.chatbot._turn_helpers import DO_WINDOW_DATE, do_window, make_office_access_type
 from tests.chatbot.test_engine import CONTACT_ID, _parser_output
 from tests.chatbot.test_samantha_27sep_r5_do_list_carry import ORDERS_LIST, REPORT, _order_ask, _Replay
 from tests.test_orders_brand_filter import _seed_superadmin
@@ -189,6 +189,8 @@ class _OwnerChat(_Replay):
 
     def _seed(self, session_factory) -> None:
         db = session_factory()
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(self.session_factory, CONTACT_ID)
         set_company_scope(db, BOTH)
         seed_mocha(db)
         db.execute(

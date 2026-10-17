@@ -19,6 +19,8 @@ from typing import Any
 from sqlalchemy import text
 
 from app.services.chatbot.lanes.business.services import ResolveGateServices
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot.conftest import validating_resolve_entity
 from tests.chatbot.test_account_ledger_staff import T_1, T_3, T_4, TRADING, _acct, _seed_book, _services
 from tests.chatbot.test_customer_scope_lane import (
@@ -99,6 +101,8 @@ def test_s1_truncated_list_without_the_level_never_refuses(session_factory, monk
 
 def test_s1_truncated_list_with_the_level_still_narrows(session_factory, monkeypatch) -> None:
     _seed_contact(session_factory, variables={})
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
     rows = _seed_book(session_factory)
     reply, captured = _staff_turn(
         session_factory, monkeypatch, _truncating(rows, {"soon heng trading": [T_3, T_4, T_1]}),
@@ -113,6 +117,8 @@ def test_s1_truncated_list_with_the_level_still_narrows(session_factory, monkeyp
 
 def test_s4_staff_narrowing_keys_on_the_canonical_code_token(session_factory, monkeypatch) -> None:
     _seed_contact(session_factory, variables={})
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
     rows = _seed_book(session_factory)
     entity = _acct("soon heng trading", 1)
     entity["canonical_code"] = "300-S254"
@@ -165,6 +171,8 @@ def test_s3_linked_answer_with_its_own_account_uses_that_one(session_factory, mo
 
 def test_s3_staff_answer_is_narrowed_as_if_the_account_was_typed(session_factory, monkeypatch) -> None:
     _seed_contact(session_factory, variables={})
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
     rows = _hanlim_staff_book(session_factory)
     services = _services(rows, {"hanlim": [H_1, H_2, H_BARE]})
     q, _c1 = _turn(
@@ -182,6 +190,8 @@ def test_s3_staff_answer_is_narrowed_as_if_the_account_was_typed(session_factory
 
 def test_s3_an_unrelated_turn_drops_the_account_so_the_next_is_not_narrowed(session_factory, monkeypatch) -> None:
     _seed_contact(session_factory, variables={})
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
     rows = _hanlim_staff_book(session_factory)
     services = _services(rows, {"hanlim": [H_1, H_2, H_BARE]})
     _turn(
@@ -218,6 +228,8 @@ def test_n1_unnamed_question_traces_account_unnamed(session_factory, monkeypatch
 
 def test_n1_staff_level_refusal_traces_account_level_absent(session_factory, monkeypatch) -> None:
     _seed_contact(session_factory, variables={})
+    # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+    make_office_access_type(session_factory, CONTACT_ID)
     rows = _seed_book(session_factory)
     events = _events(
         session_factory, monkeypatch, _ask([_acct("Soon Heng Trading", 2)]), "soon heng trading account 2",

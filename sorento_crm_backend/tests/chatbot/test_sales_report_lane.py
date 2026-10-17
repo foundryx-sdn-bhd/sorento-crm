@@ -67,6 +67,8 @@ import pytest
 
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business.services import FetchServices, ResolveGateServices
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot.conftest import validating_resolve_entity
 from tests.chatbot.test_outstanding_lane import (
     CUSTOMER_NAME,
@@ -216,6 +218,8 @@ class TestToolPickSalesVsOutstanding:
             entities=[{"uuid": PRODUCT_UUID, "entity_type": "product", "canonical_code": PRODUCT_CODE}],
             attributes=["sales_orders.outstanding"],
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        payload["ctx"]["parse"]["output"]["doc_staff"] = True
         run_fetch(payload, services=FetchServices(mcp_call=call))
         assert captured, (order_status, "no MCP tool was ever called")
         name, _args = captured[0]
@@ -512,6 +516,8 @@ def _seed_open_detail(
             "pending": {"kind": kind},
         },
     )
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
 
 
 class TestDetailOfferLifecycle:
@@ -877,6 +883,8 @@ def _seed_open_sales_report_customer_pick(session_factory) -> None:
             "pending": None,
         },
     )
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
 
 
 class TestPickerNoDoHintAndPickContinues:
@@ -1838,6 +1846,8 @@ class TestReportAskNeverAnsweredByTheDeliveryOrderMissProbe:
         self, session_factory, monkeypatch, order_status, attributes, tool
     ) -> None:
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory, monkeypatch,
             qf=_parser_output(
@@ -1905,6 +1915,8 @@ class TestReportOrderStatusAlwaysReachesTheReportDespiteAWrongDomainHint:
         self, session_factory, monkeypatch, order_status, attributes, tool, mock_hit
     ) -> None:
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory, monkeypatch,
             qf=_parser_output(

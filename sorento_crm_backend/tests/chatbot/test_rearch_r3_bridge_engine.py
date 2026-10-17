@@ -52,6 +52,8 @@ from app.services.chatbot.lanes.business.services import ResolveGateServices
 from app.services.chatbot.lanes.business.tier_gate import recompose
 from app.services.chatbot.tail import reply_ladder
 from app.services.chatbot.turn import compose as turn_compose
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import (
     PRODUCT_CODE,
@@ -350,6 +352,8 @@ class TestCustomerAskUsesTheOneCustomerPicker:
             return {"items": [], "has_result": False}
 
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,

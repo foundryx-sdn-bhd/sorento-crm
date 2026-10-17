@@ -1176,6 +1176,11 @@ def test_a_dealer_refine_over_a_held_staff_frame_is_refused_locally(console) -> 
 
 def test_a_frame_does_not_survive_another_ask(console) -> None:
     """ranking, then an order ask, then a refine: the old ranking is gone, so it is a fresh ask."""
+    # V1-DOC-SCOPE slice 3: the middle turn is an ORDER ask naming a customer, which an
+    # unlinked contact holding only the report grant may not make; this one plays office.
+    from tests.chatbot._turn_helpers import make_office_access_type
+
+    make_office_access_type(console.session_factory, CONTACT_ID)
     _t1(console)
     console.say(_order_ask(_e(CUSTOMER_NAME, "customer")), f"orders for {CUSTOMER_NAME}")
     text, calls = console.say(_refine(top_n=5), "5")

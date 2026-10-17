@@ -406,6 +406,10 @@ class TestLastMonthAfterAResolvedPickKeepsTheCustomerScope:
     def test_the_order_tool_call_carries_the_picked_customer_and_the_date_window(
         self, seeded, session_factory, monkeypatch
     ):
+        from tests.chatbot._turn_helpers import make_office_tier
+
+        # V1-DOC-SCOPE: an unlinked contact picking any customer's orders is staff.
+        make_office_tier(session_factory, CONTACT_ID)
         customer_id, company_id = _seed_customers_and_orders(session_factory)
         _seed_prior_disambiguation_state(session_factory, customer_id=customer_id, company_id=company_id)
         calls = _wire(session_factory, monkeypatch)

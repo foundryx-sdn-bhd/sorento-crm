@@ -133,11 +133,12 @@ def _lines_by_so(db: Session, so_ids: list[Any]) -> dict[str, list[tuple[Any, An
 
 
 def _scope_check(
-    db: Session, sos: list[SalesOrder], linked: Iterable[tuple[str, str, str]] | None
-) -> Callable[[SalesOrder], bool]:
-    """Is an SO inside the contact's links? `linked` None means no scope is enforced. In
-    scope: the SO's customer is a link, or it has no customer and its debtor code is the
-    code of a link IN THE SAME COMPANY."""
+    db: Session, sos: list[Any], linked: Iterable[tuple[str, str, str]] | None
+) -> Callable[[Any], bool]:
+    """Is an SO (or a DO, an `orders` row: the same `customer_id` / `company_id` /
+    `debtor_code`, V1-DOC-SCOPE) inside the contact's links? `linked` None means no scope is
+    enforced. In scope: the document's customer is a link, or it has no customer and its
+    debtor code is the code of a link IN THE SAME COMPANY."""
     links = list(linked) if linked is not None else None
     link_ids = {str(i) for i, _n, _c in links} if links is not None else set()
     link_codes: set[tuple[str, str]] = set()

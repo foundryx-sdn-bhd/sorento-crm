@@ -44,6 +44,7 @@ from app.services.chatbot import engine as engine_mod
 from app.services.chatbot.lanes import escalation as escalation_mod
 from app.services.chatbot.lanes.escalation import _next_assignee_body, escalation_context
 from app.services.chatbot.turn import compose as turn_compose
+from tests.chatbot._turn_helpers import make_office_access_type
 from tests.chatbot.test_engine import _parser_output, stub_access, stub_parser  # noqa: F401
 from tests.chatbot.test_engine_company_scope import (
     _scope_envelope,
@@ -94,6 +95,9 @@ def _chain(session_factory, *, product_order: tuple[str, str] = ("mocha", "soren
     _seed_contact(
         session_factory, contact_id=CONTACT, phone="+60000000966", workspace_id=workspace, company_ids=[a, b]
     )
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff (by an office
+    # access type, so the escalation offer under test is unchanged).
+    make_office_access_type(session_factory, CONTACT)
     return ids
 
 

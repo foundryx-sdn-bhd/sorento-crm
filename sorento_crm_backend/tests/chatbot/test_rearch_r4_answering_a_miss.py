@@ -96,6 +96,7 @@ import pytest
 from sqlalchemy import text
 
 from app.services.chatbot import engine as engine_mod
+from tests.chatbot._turn_helpers import make_office_tier
 from tests.chatbot.test_engine import CONTACT_ID, _envelope, _parser_output
 from tests.chatbot.test_r3_pending_end_to_end import _session_of, _stub_parser
 from tests.chatbot.test_outstanding_lane import (
@@ -280,6 +281,8 @@ class TestAC1700AnsweringAMemberOfferMiss:
         from app.services.chatbot.turn.state import Focus, focus_to_wire
 
         _seed_bare_contact(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         customer_uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
         focus = Focus(
             customers=[{"uuid": customer_uuid, "hint": "customer", "current_message": False}],

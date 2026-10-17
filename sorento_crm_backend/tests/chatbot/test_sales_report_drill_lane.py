@@ -23,6 +23,8 @@ from typing import Any
 
 import pytest
 
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import (
     CUSTOMER_NAME,
@@ -91,6 +93,8 @@ def _ask(
             "sales_channel": "project",
         }
     _seed_contact(session_factory, variables={})
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
     result, captured = _run_turn(
         session_factory, monkeypatch,
         qf=_qf(order_status="sales_report", entities=entities, **overrides),

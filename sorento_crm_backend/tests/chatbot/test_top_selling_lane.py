@@ -1255,3 +1255,30 @@ class TestConsoleShowsTheParts:
 
         body = {"reply": {"text": "one"}, "actions": [{"kind": "send_message", "text": "one"}, {"kind": "send_message", "text": "two"}]}
         assert _customer_texts(body) == ("one", ["two"])
+
+
+# --------------------------------------------------------------------------- #
+# V1-DOC-SCOPE slice 3 (security review): top selling is no exemption
+# --------------------------------------------------------------------------- #
+
+
+class TestV1DocScopeUnlinkedTopSelling:
+    """V1-DOC-SCOPE slice 3, crew ruling (b) 15 Oct (owner CA-3 Q5(a)): top selling is a sales
+    report ask, so an unlinked contact holding `sales_orders.sales_report` keeps the customer
+    picker (`TestCustomerPicker`, unmarked). WITHOUT the grant no customer name is shown."""
+
+    def test_an_ungranted_unlinked_contact_gets_no_customer_names(self, session_factory, monkeypatch, route) -> None:
+        _seed_contact(session_factory, variables={})
+        reply, captured = _turn(
+            session_factory, monkeypatch,
+            _ts(
+                rank_by="amount", top_n=4, sales_channel="dealer",
+                entities=[{"raw": "hanlim", "hint": "customer", "canonical_code": None, "current_message": True, "confident": True}],
+            ),
+            "top 4 for hanlim dealer by amount",
+            attributes=(),
+            resolve_services=_ambiguous_hanlim_resolve_services(lambda **_: {"items": [], "has_result": False}),
+        )
+        assert _calls(captured) == []
+        assert "Which one do you mean?" not in reply, reply
+        assert "HANLIM" not in reply.upper(), reply

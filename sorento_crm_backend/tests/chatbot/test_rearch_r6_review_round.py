@@ -45,6 +45,7 @@ from app.services.chatbot.turn import narrow as narrow_mod
 from app.services.chatbot.turn.policy import default_policy
 from app.services.chatbot.turn.state import Focus, Profile
 from app.services.company_scope import DEFAULT_COMPANY_ID
+from tests.chatbot._turn_helpers import make_office_access_type
 from tests._pg_fixture import unique_code
 from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.test_engine import (
@@ -1151,6 +1152,8 @@ class TestMultiDomainAmbiguousCustomerUsesGatesOwnHeader:
             return {"items": [], "has_result": False}
 
         _seed_business_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn_fake_resolver(
             session_factory, monkeypatch,
             qf=_parser_output(

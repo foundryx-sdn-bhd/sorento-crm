@@ -31,7 +31,7 @@ from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import gate as gate_mod
 from app.services.chatbot.lanes.business.services import FetchServices, ResolveGateServices
 from app.services.company_scope import DEFAULT_COMPANY_ID
-from tests.chatbot._turn_helpers import do_window
+from tests.chatbot._turn_helpers import do_window, make_office_access_type
 from tests.chatbot.conftest import set_chatbot_switches, validating_resolve_entity
 from tests.chatbot.test_engine import CONTACT_ID, _envelope, _parser_output, stub_access  # noqa: F401
 
@@ -126,6 +126,8 @@ def _seed_contact_scoped_to_sorento(session_factory) -> None:
         {"cid": str(CONTACT_ID), "company_id": DEFAULT_COMPANY_ID},
     )
     db.commit()
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
 
 
 def _open_question_of(session_factory) -> dict[str, Any]:

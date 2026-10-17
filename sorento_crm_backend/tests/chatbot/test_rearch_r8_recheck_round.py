@@ -26,6 +26,8 @@ from app.services.chatbot import engine as engine_mod
 from app.services.chatbot.lanes.business import resolve_gate
 from app.services.chatbot.lanes.business.services import AnswerServices, FetchServices
 from app.services.company_scope import DEFAULT_COMPANY_ID
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests._pg_fixture import unique_code
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_engine_company_scope import _seed_product
@@ -321,6 +323,8 @@ class TestFanOutDomainInjectionNeverDropsTheAmbiguousEntity:
             return {"items": [], "has_result": False}
 
         _seed_business_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, _captured = _run_turn_fake_resolver(
             session_factory, monkeypatch,
             qf=_parser_output(
@@ -358,6 +362,8 @@ class TestFanOutDomainInjectionNeverDropsTheAmbiguousEntity:
             return {"items": [], "has_result": False}
 
         _seed_business_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, _captured = _run_turn_fake_resolver(
             session_factory, monkeypatch,
             qf=_parser_output(
