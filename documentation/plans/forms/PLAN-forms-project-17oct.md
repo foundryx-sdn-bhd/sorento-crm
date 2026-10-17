@@ -1,7 +1,7 @@
 # PLAN: link every form to a project (FORMS-PROJECT)
 
-Status: Build (Q2-Q5 answered 17 Oct; Q1 scope with the owner, (a) built meanwhile). Track: full
-(migration + multi-company write check).
+Status: Review passed, awaiting owner hand test (Q2-Q5 answered 17 Oct; Q1 scope with the owner,
+(a) built). Track: full (migration + multi-company write check).
 
 Owner 15 Oct: "Forms not connected to projects: sponsorship form, complaint, stock inquiry, all the
 forms -> link to project." Fixes #1689 (staff PR/SF form drops project_id).
@@ -13,7 +13,7 @@ Behaviour card: `forms-project-behaviour-card.md`. UAC: `forms-project-acceptanc
 
 ## Slices
 
-1. **#1689** (done): staff check `app/services/project_link.py` (`check_project_link`,
+1. **#1689** (done, staff create + edit card): staff check `app/services/project_link.py` (`check_project_link`,
    `apply_project_link`) on PR/SF + complaint create / update / update-and-reply; FE
    `toRequestBody` sends `project_id`.
 2. **Schema** (done): migration `fp_0001_form_project_links` + model columns on
@@ -30,6 +30,12 @@ Behaviour card: `forms-project-behaviour-card.md`. UAC: `forms-project-acceptanc
 6. **Portal FE**: `AsyncCombobox` + `lookupProjects` on the five portal forms.
 7. **Project page**: "Forms" tab, one section per form type, each section the form's own list
    service with `project_id`, gated by that form's view permission.
+
+## Known limit
+
+- The project Forms tab loads up to 200 forms per type per project and pages them in the browser.
+  Trigger for server paging: any project section passing 200 rows (no project has any linked
+  form on the 15 Oct data).
 
 ## Not doing
 
