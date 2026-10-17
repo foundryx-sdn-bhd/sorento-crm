@@ -1,6 +1,6 @@
 # PLAN: split one SO line into delivery tranches in Order Inquiries (OI-LINE-SPLIT)
 
-Status: Build v4 (owner OK on mock v4 17 Oct 14:10, Q1 drag yes, Q2-Q4 (a), Q5 (a) no box; after the 17 Oct hand-test FAIL of the v2 grid). See "Build v4" at the bottom; UAC section A/F rewritten. Before that: PR #1749 head c3a4b4acd: CI green, reviewer READY, security ready. Track: full (L): migration, new
+Status: Hand test v4 (head 569f23b1b: reviewer READY, kill-proofs posted, browser 1280/375 PASS + re-check PASS, ci labelled; hand test filed laneboard/scripts/1749.md; owner OK on mock v4 17 Oct 14:10, Q1 drag yes, Q2-Q4 (a), Q5 (a) no box; after the 17 Oct hand-test FAIL of the v2 grid). See "Build v4" at the bottom; UAC section A/F rewritten. Before that: PR #1749 head c3a4b4acd: CI green, reviewer READY, security ready. Track: full (L): migration, new
 endpoint with RBAC, engine change. Lead pattern: tester red tests, one coder (Opus: tangled engine in
 a 13k-line service), reviewer + security-reviewer, browser pass 1280/375. Stacked on #1748
 (OI Excel one sheet; merged into this branch at c1f8f57d8).
