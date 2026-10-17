@@ -482,6 +482,7 @@ STOCK_WORDS_RE = re.compile(r"\b(?:stock|in stock|available|availability|ada|rea
 QUANTITY_ASK_RE = re.compile(r"how\s+many|berapa|多少", re.I)
 
 
+SPEC_REFINE_KEYS = frozenset({"spec", "size", "colour"})   # a refine on these asks for spec info; brand / warehouse do not
 FILES_PROMO_SPEC_FACTS = frozenset({"product_attachment", "promotion", "master_products"})
 FILES_PROMO_SPEC_LABELS = frozenset({"files", "promotions", "product_info"})
 SENTENCE_RE = re.compile(r"(?<=[.?!])\s+|(?<=[？。])")
@@ -513,7 +514,9 @@ def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None,
         return ("no_qty_ask", True, "The bot asked how many instead of giving the answer.")
     g = gold or {}
     label = _norm(g.get("fact_label"))
-    answer_ask = (g.get("fact") in FILES_PROMO_SPEC_FACTS or label in FILES_PROMO_SPEC_LABELS
+    flt = g.get("filter") if isinstance(g.get("filter"), dict) else {}
+    spec_refine = slice_name == "followup" and flt.get("key") in SPEC_REFINE_KEYS
+    answer_ask = (spec_refine or g.get("fact") in FILES_PROMO_SPEC_FACTS or label in FILES_PROMO_SPEC_LABELS
                   or bool(label and label not in KNOWN_FACT_LABELS) or slice_name == "attachment"
                   or (slice_name == "spec" and not STOCK_WORDS_RE.search(user_message(row))))
     if answer_ask:
@@ -652,7 +655,10 @@ def _subject_check(want: set[str], after: set[str]) -> tuple[str, bool | None, s
 
 def _followup(row, item):
     kind, gold = item.get("kind"), item.get("gold") or {}
-    return _followup_checks(row, item, kind, gold) + _needless(row, gold, menu=kind in {"and_x", "switch"}, slice_name="followup")
+    needless = _needless(row, gold, menu=kind in {"and_x", "switch"}, slice_name="followup")
+    # a how-many that replaces the answer is reported before the slice's own misses
+    first = [c for c in needless if c[0] == "no_qty_ask" and c[1] is False]
+    return first + _followup_checks(row, item, kind, gold) + [c for c in needless if c not in first]
 
 
 def _followup_checks(row, item, kind, gold):
@@ -758,6 +764,12 @@ def _followup_checks(row, item, kind, gold):
             held = {_val(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
             held |= {_val(b) for b in (_mem_focus(row, "after").get("brands") or [])}
             fv = _val(flt.get("value"))
+            # a value already held before the turn proves nothing from memory after: only a lookup's args carry it
+            before = _mem_focus(row, "before")
+            held_before = {_val(e.get("spec_value") or e.get("raw")) for e in (before.get("extra") or {}).get("specification") or []
+                           if isinstance(e, dict)} | {_val(b) for b in before.get("brands") or []}
+            if fv in held_before:
+                held = set()
             carried = bool(_squash(flt.get("value"))) and any(_squash(flt.get("value")) in _squash(_dump(t.get("args")))
                                                               for t in _tools(row))
             checks.append(("applied", fv in held or carried, "The filter was read but never applied to a lookup."))
