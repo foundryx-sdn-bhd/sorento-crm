@@ -1291,7 +1291,7 @@ def test_a_trailing_quantity_question_fails_a_code_lookup():
 
 
 def test_a_trailing_quantity_question_fails_a_spec_item():
-    r = _qty_row(row2(verdict=SPEC_V, reply="Here are white taps: SRTKT100."))
+    r = _qty_row(row2(message="white taps with soft close", verdict=SPEC_V, reply="Here are white taps: SRTKT100."))
     assert grade_turn(r, item("spec", **SPEC_ITEM))["passed"] is False
 
 
@@ -1372,10 +1372,11 @@ def test_a_quantity_question_is_right_on_a_stock_ask_for_an_availability_only_co
 
 
 @pytest.mark.parametrize("mode", ["detailed", "compact"])
-def test_the_same_quantity_question_fails_for_a_detailed_or_compact_stock_contact(mode):
+def test_the_same_quantity_question_is_fine_for_a_detailed_or_compact_stock_contact(mode):
     res = grade_turn(_stock_lookup(mode, "SRTA100 has 40 pcs. How many units do you need?"), item("code_lookup", **GOLD_CL))
     assert res["checks"]["code"] is True and res["checks"]["tool_ran"] is True, res["checks"]
-    assert res["passed"] is False, res["checks"]
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+    assert res["passed"] is True, res["checks"]
 
 
 def test_a_quantity_question_after_a_promo_answer_fails_an_and_x_item():
@@ -1462,7 +1463,7 @@ def test_a_promo_answer_followup_asking_how_many_fails_even_if_the_bot_widened_i
 def test_a_pick_followup_asking_how_many_on_a_non_stock_gold_fails():
     v = {"entities": [], "reference_positions": [1], "open_question_answer": {"mode": None, "items": [], "picked": []}}
     r = row2(verdict=v, state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)],
-             tools=[_stock_tool("availability")], reply="SRTA100 is RM 90. How many units?")
+             tools=[_stock_tool("availability")], reply="The promo price is RM 90. How many units?")
     res = grade_turn(r, item("followup", "pick", position=1, code="SRTA100", fact="promotion"))
     assert res["checks"]["position"] is True, res["checks"]
     assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
@@ -1567,10 +1568,10 @@ def test_a_pick_on_a_stock_picker_may_ask_how_many_in_availability_mode():
     check(res, True)
 
 
-def test_a_how_many_after_a_non_stock_pick_still_fails():
+def test_a_how_many_after_a_pick_of_unknown_type_is_fine():
     res = grade_turn(_pick_two(PLAIN_PICK_Q), item("followup", "pick", position=2, code="SRTA200"))
     assert res["checks"]["position"] is True, res["checks"]
-    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
 
 
 # 2. a reply that shows 2+ product codes and leaves a list open is not a needless picker, on every slice and kind
@@ -1644,9 +1645,9 @@ def test_a_refine_of_a_stock_answer_may_ask_how_many_in_availability_mode():
     assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
 
 
-def test_a_refine_of_a_promo_answer_may_not_ask_how_many():
+def test_a_refine_of_a_promo_answer_may_ask_how_many_when_the_ask_type_is_unknown():
     res = _refine_how_many("promotion")
-    assert res["checks"].get("no_qty_ask") is False, res["checks"]
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
 
 
 # ------------------------------------------------------------------ review round 27 (stock carry only after a stock answer)
@@ -1663,7 +1664,7 @@ def test_a_dealer_answer_to_a_tier_question_followed_by_how_many_is_not_a_stock_
         if rec.get("kind") == "memory":
             rec["focus"]["before"]["domains"] = ["inventory"]
     res = grade_turn(r, item("followup", "answer", option="Dealer"))
-    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
 
 
 def test_a_refine_after_a_stock_answer_in_availability_mode_may_ask_how_many_and_says_so():
@@ -1671,9 +1672,9 @@ def test_a_refine_after_a_stock_answer_in_availability_mode_may_ask_how_many_and
     assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
 
 
-def test_a_refine_after_a_non_stock_answer_with_an_inventory_domain_is_not_a_stock_carry():
+def test_a_refine_after_a_non_stock_answer_with_an_inventory_domain_may_ask_how_many_when_the_ask_type_is_unknown():
     res = _refine_how_many("inventory", prev_bot="Here is the promotion price list for SRTA100.")
-    assert res["checks"].get("no_qty_ask") is False, res["checks"]
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
 
 
 def test_no_quantity_ask_is_reported_as_no_qty_ask_true():
@@ -2031,3 +2032,92 @@ def test_r28c_a_leak_fails_a_spec_tier_ask_whose_found_products_are_on_spec():
     r = _r28_tier_row(R28_UUIDS, R28_SPEC_CODES, reply=f"{R28_TIER_ASK}\nref {UA}")
     res = grade_turn(r, item("spec", spec_products=R28_SPEC_CODES, **SPEC_ITEM))
     assert res["passed"] is False and res["reason"] == "The reply shows an internal id.", (res["passed"], res["reason"])
+
+
+# round 29: owner ruling, a how-many ask fails only when it replaces a files, promo or spec-info answer
+QTY_BLOCKED = "The bot asked how many instead of giving the answer."
+TIER3_Q = {"kind": "tier_pick", "expects": "choice", "payload": {}, "asked_at_turn": 1,
+           "options": [{"label": "Office"}, {"label": "Dealer"}, {"label": "End user"}]}
+
+
+def test_r29_a_how_many_ask_of_unknown_type_passes_on_a_scope_item():
+    r = row2(message="u help me check", reply="How many units of SRTWF12C-NEW?",
+             prev_bot="Sorry, that isn't under your account. I can only check on CUSTOMER A.")
+    res = grade_turn(r, item("scope"))
+    assert res["checks"].get("qty_ask_ok") is True, res["checks"]
+    assert res["passed"] is True, (res["reason"], res["checks"])
+
+
+def test_r29_a_how_many_ask_with_an_answered_promo_file_passes_a_tier_answer():
+    reply = ("How many units do you need?\n\nI have attached the file(s) below.\n\n"
+             "1. *Promotion:* CABANA COMBINE PROMO DEALER_08072026.pdf")
+    r = row2(message="Dealer", verdict=_picks([2]), state_oq=TIER3_Q, oq={"before": TIER3_Q, "after": None, "writer": "engine"},
+             prev_bot="Which access level do you need?\n1. Office\n2. Dealer\n3. End user", reply=reply, files=1)
+    res = grade_turn(r, item("followup", "answer", option="dealer"))
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+    assert res["passed"] is True, (res["reason"], res["checks"])
+
+
+def test_r29_a_stock_ask_in_detailed_mode_may_ask_how_many():
+    res = grade_turn(_stock_lookup("detailed", "SRTA100 has 40 pcs. How many units?"), item("code_lookup", **GOLD_CL))
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+
+
+def test_r29_a_stock_ask_with_no_stock_lookup_may_ask_how_many():
+    r = row2(message="stock of srta100", reply="How many units of SRTA100?")
+    res = grade_turn(r, item("scope"))
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+
+
+def test_r29_a_files_ask_answered_only_by_how_many_fails_with_the_new_reason():
+    r = row2(message="send me the brochure of SRTMCB21616", reply="How many units of SRTMCB21616?")
+    res = grade_turn(r, item("scope", fact="product_attachment", fact_label="files"))
+    assert res["checks"].get("no_qty_ask") is False, res["checks"]
+    assert res["passed"] is False and res["reason"] == QTY_BLOCKED, res["reason"]
+
+
+def test_r29_a_spec_item_that_lists_products_with_a_how_many_ask_passes():
+    reply = "How many units for each?\n1. SPSRTSS1217 - \n2. SRTWT2634-BL - "
+    r = row2(message="white tap with soft close", verdict=SPEC_V, reply=reply)
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+
+
+def test_r29_a_spec_item_with_no_stock_word_answered_only_by_how_many_fails():
+    r = row2(message="white tap with soft close", verdict=SPEC_V, reply="How many units of SRTWC8152-SH?")
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+
+
+def test_r29_a_promotion_ask_answered_only_by_how_many_fails():
+    r = row2(message="any promo for SRTA100", reply="How many units do you need?")
+    res = grade_turn(r, item("scope", fact="promotion"))
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+
+
+def test_r29_an_attribute_ask_answered_only_by_how_many_fails():
+    r = row2(message="SRTKT1636SS-GM check weight ?", reply="How many units of SRTKT1636SS-GM?")
+    res = grade_turn(r, item("scope", fact_label="weight"))
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+
+
+# the set header may sit below a prefix line the bot writes (turn_runtime.py:4105)
+def test_r29_a_set_header_below_a_prefix_line_is_found_and_a_summary_under_it_fails():
+    reply = ("pink does not match gunmetal - dropped, showing gunmetal on its own:\n\n"
+             "Here's what you want: gunmetal wash basins with stock (550)\n• Sorento gunmetal wash basins: 282")
+    res = _r28c_refine(reply)
+    assert res["checks"].get("set_list") is False, res["checks"]
+    assert res["passed"] is False and res["reason"] == "The set reply showed no product.", res["reason"]
+
+
+def test_r29_a_what_you_want_line_below_a_prefix_with_no_count_is_not_a_set_header():
+    reply = "Showing gunmetal on its own:\n\nHere's what you want: gunmetal wash basins\n1. *Product Code:* BRBC22101W"
+    res = _r28b_spec(reply)
+    assert "set_list" not in res["checks"], res["checks"]
+
+
+# a number in the words after the attribute is a value, not a none statement
+def test_r29_a_number_after_the_attribute_word_is_a_value_even_beside_a_none_phrase():
+    result = _r28_result([{"key": "spec:weight", "label": "Weight", "value": "25 kg"}])
+    res = grade_turn(_r28_attr_row("SRTKT1636SS-GM weight 25 kg not available in stock.", result), item("code_lookup", **R28_GOLD))
+    assert res["checks"]["attribute_value"] is True, res["checks"]
