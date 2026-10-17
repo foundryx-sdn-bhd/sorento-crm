@@ -1078,6 +1078,12 @@ def _contact_brand_scope(factory: SessionFactory, contact_respond_id: str) -> fr
         db.close()
 
 
+def closed_lists_verdict(verdict: dict[str, Any], *, gate: bool) -> dict[str, Any]:
+    """CHAT-CLOSED-LISTS: a verdict parsed by a CLOSED LISTS version says so, so the lanes
+    read the parser's listed picks and none of the word fallbacks (card R2/R5)."""
+    return {**verdict, "closed_lists": True} if gate else verdict
+
+
 def _scoped_factory(
     factory: SessionFactory, scope: frozenset, brand_scope: frozenset | None = None
 ) -> SessionFactory:
@@ -4772,8 +4778,12 @@ def _run_stages_body(  # noqa: PLR0915
     verdict, _ranking_words = _report_ask.hold_words(verdict)
     with _session(session_factory) as grounding_db:
         verdict, grounding_notes = grounding.ground(
-            grounding_db, verdict, message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None
+            grounding_db,
+            verdict,
+            message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None,
+            closed_lists=parser_config.closed_lists,
         )
+    verdict = closed_lists_verdict(verdict, gate=parser_config.closed_lists)
     if _ranking_words:
         verdict = {**verdict, "entities": [*(verdict.get("entities") or []), *_ranking_words]}
     if grounding_notes:

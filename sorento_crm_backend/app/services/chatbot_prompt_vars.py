@@ -374,6 +374,18 @@ def render_certification_types(db: Session) -> str:
     return "\n".join(_one_line(line) for line in lines)
 
 
+def closed_list_items(db: Session) -> dict[str, dict[str, str]]:
+    """The items `{{attachment_types}}` and `{{certification_types}}` render, by list:
+    `{"file_type" | "cert_kind" | "cert_scheme": {casefolded item: item as listed}}`. Read
+    by grounding to validate a parser pick against what the prompt showed (CHAT-CLOSED-LISTS
+    card R5): the same readers, so the check and the prompt cannot list different items."""
+    return {
+        "file_type": {str(r["code"] or r["type_name"]).casefold(): str(r["code"] or r["type_name"]) for r in _file_type_rows(db)},
+        "cert_kind": {str(r["code"] or r["type_name"]).casefold(): str(r["code"] or r["type_name"]) for r in _cert_kind_rows(db)},
+        "cert_scheme": {name.casefold(): name for name, _words in _cert_schemes(db)},
+    }
+
+
 def _find_filter_count() -> int:
     from app.services.product_find import FILTERS
 

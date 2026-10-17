@@ -133,6 +133,18 @@ def _vocabulary(db: "Session") -> tuple[dict[str, list[_Value]], dict[str, list[
     return phrases, numeric
 
 
+def type_values(db: "Session") -> dict[str, str]:
+    """The product types a candidate line can name (`product type T (K = V)`), as
+    `{casefolded V: T}`: what grounding checks a class pick against under the gate."""
+    phrases, _numeric = _vocabulary(db)
+    return {
+        value.value.casefold(): value.display
+        for values in phrases.values()
+        for value in values
+        if value.kind == "product type"
+    }
+
+
 def _is_number(word: str) -> bool:
     return bool(re.fullmatch(r"\d+(\.\d+)?", word))
 
