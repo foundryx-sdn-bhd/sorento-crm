@@ -32,7 +32,7 @@ def _seed_wc(session_factory) -> None:
     db.add_all([category, uom])
     db.flush()
     product = Product(
-        id=str(uuid.uuid4()), product_code=unique_code("SRTZW", alpha=True), product_name="ZZT one piece water closet",
+        id=str(uuid.uuid4()), product_code=unique_code("SRTZQ", alpha=True), product_name="ZZT one piece water closet",
         category_id=category.id, base_uom_id=uom.id, list_price=1, company_id=DEFAULT_COMPANY_ID,
     )
     cert = AttachmentType(

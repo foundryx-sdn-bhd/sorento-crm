@@ -224,7 +224,7 @@ def test_parse_sends_the_configs_own_schema(monkeypatch):
     sent: list[dict] = []
 
     class _Result:
-        content = json.dumps(_parser_output())
+        content = json.dumps({**_parser_output(), "asks": None, "topic_reset": None})
         prompt_tokens = completion_tokens = total_tokens = cached_tokens = 0
 
     def chat(*args, **kwargs):

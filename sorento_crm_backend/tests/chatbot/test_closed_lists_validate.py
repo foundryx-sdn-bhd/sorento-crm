@@ -153,12 +153,17 @@ def test_a_word_two_items_share_names_neither(db):
     db.flush()
     db.add(PA(id=str(uuid.uuid4()), product_id=product_id, attachment_id=att.id, company_id=DEFAULT_COMPANY_ID))
     db.flush()
-    # "spec" is no word here; give both file types the word "sheet".
+    # The owner links the word "sheet" to both file types in the alias set.
     from app.models.lookup import LookupOption, LookupOptionKeyword
 
-    for option in db.query(LookupOption).all():
+    drawing_option = db.query(LookupOption).one()
+    photo_option = LookupOption(
+        id=str(uuid.uuid4()), set_id=drawing_option.set_id, value="Product Photos", label="Product Photos", sort_order=1,
+    )
+    db.add(photo_option)
+    db.flush()
+    for option in (drawing_option, photo_option):
         db.add(LookupOptionKeyword(id=str(uuid.uuid4()), option_id=option.id, keyword="sheet"))
-    photos.description = "photo, image, sheet"
     db.flush()
 
     assert _ground(db, _file_entity("sheet", "sheet")) == []

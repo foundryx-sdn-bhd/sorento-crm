@@ -718,13 +718,15 @@ def _on_closed_lists(entity: dict[str, Any], items: dict[str, dict[str, str]]) -
     compared whole with case aside; the customer's words never are."""
     if entity.get("confident") is False:
         return None
-    pick = str(entity.get("canonical_code") or "").strip()
-    if not pick:
-        return None
-    for listed in ("file_type", "cert_kind", "cert_scheme"):
-        item = items.get(listed, {}).get(pick.casefold())
-        if item is not None:
-            return {**entity, "canonical_code": item, "listed": listed}
+    # The parser's `listed_item` first (the gated schema holds it to the rendered items),
+    # then its `canonical_code`: an item's code or name, or an explicit alias link.
+    for pick in (str(entity.get("listed_item") or "").strip(), str(entity.get("canonical_code") or "").strip()):
+        if not pick:
+            continue
+        for listed in ("file_type", "cert_kind", "cert_scheme"):
+            item = items.get(listed, {}).get(pick.casefold())
+            if item is not None:
+                return {**entity, "canonical_code": item, "listed": listed}
     return None
 
 

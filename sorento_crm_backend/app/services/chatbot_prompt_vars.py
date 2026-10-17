@@ -415,49 +415,59 @@ def render_certification_types(db: Session) -> str:
 
 def closed_list_items(db: Session) -> dict[str, dict[str, str]]:
     """The items `{{attachment_types}}` and `{{certification_types}}` render, by list:
-    `{"file_type" | "cert_kind" | "cert_scheme": {casefolded item: item as listed}}`. Read
+    `{"file_type" | "cert_kind" | "cert_scheme": {casefolded key: item as listed}}`. Read
     by grounding to validate a parser pick against what the prompt showed (CHAT-CLOSED-LISTS
-    card R5): the same readers, so the check and the prompt cannot list different items."""
+    card R5): the same readers, so the check and the prompt cannot list different items.
+
+    A key is an item's code or name, or a keyword the owner linked to it explicitly in the
+    `attachment_type_alias` lookup set. Description text is shown to the parser only and is
+    never a key (crew's dev data check, 17 Oct 2026). An alias two items share names
+    neither, and an item's own code or name, in any list, is never another item's alias."""
     aliases = _alias_words(db)
 
-    def by_word(rows: list[dict]) -> dict[str, str]:
-        # An item's code and name name it; so does each of its own words, unless another
-        # item of these lists holds the same word (then the word names neither).
+    def by_name(rows: list[dict]) -> tuple[dict[str, str], dict[str, set[str]]]:
         named: dict[str, str] = {}
-        worded: dict[str, set[str]] = {}
+        linked: dict[str, set[str]] = {}
         for r in rows:
             item = str(r["code"] or r["type_name"])
             for key in (item, str(r["type_name"])):
                 named[key.casefold()] = item
-            for word in _type_words(r, aliases):
-                worded.setdefault(word.casefold(), set()).add(item)
-        return named, worded
+            keys = {str(r.get(k) or "").strip().casefold() for k in ("code", "type_name")} - {""}
+            for word in (w for key in keys for w in aliases.get(key, [])):
+                linked.setdefault(word.casefold(), set()).add(item)
+        return named, linked
 
-    file_named, file_worded = by_word(_file_type_rows(db))
-    kind_named, kind_worded = by_word(_cert_kind_rows(db))
-    schemes: dict[str, str] = {}
-    scheme_worded: dict[str, set[str]] = {}
+    file_named, file_linked = by_name(_file_type_rows(db))
+    kind_named, kind_linked = by_name(_cert_kind_rows(db))
+    schemes = {name.casefold(): name for name, _words in _cert_schemes(db)}
+    scheme_linked: dict[str, set[str]] = {}
     for name, words in _cert_schemes(db):
-        schemes[name.casefold()] = name
         for word in words:
-            scheme_worded.setdefault(word.casefold(), set()).add(name)
+            scheme_linked.setdefault(word.casefold(), set()).add(name)
     shared: dict[str, int] = {}
-    for worded in (file_worded, kind_worded, scheme_worded):
-        for word, items in worded.items():
+    for linked in (file_linked, kind_linked, scheme_linked):
+        for word, items in linked.items():
             shared[word] = shared.get(word, 0) + len(items)
-    # An item's own code or name, in any list, is that item: never another item's word
-    # ("PPS" is the scheme, though the Certification type's words hold it too).
     every_name = set(file_named) | set(kind_named) | set(schemes)
 
-    def one_word(named: dict[str, str], worded: dict[str, set[str]]) -> dict[str, str]:
-        out = {w: next(iter(items)) for w, items in worded.items() if shared[w] == 1 and w not in every_name}
+    def keyed(named: dict[str, str], linked: dict[str, set[str]]) -> dict[str, str]:
+        out = {w: next(iter(items)) for w, items in linked.items() if shared[w] == 1 and w not in every_name}
         return {**out, **named}
 
     return {
-        "file_type": one_word(file_named, file_worded),
-        "cert_kind": one_word(kind_named, kind_worded),
-        "cert_scheme": one_word(schemes, scheme_worded),
+        "file_type": keyed(file_named, file_linked),
+        "cert_kind": keyed(kind_named, kind_linked),
+        "cert_scheme": keyed(schemes, scheme_linked),
     }
+
+
+def closed_list_enum(db: Session) -> list[str]:
+    """Every item the two lists render, once, in list order (file types, certificate kinds,
+    schemes): the values the gated parser schema holds `listed_item` to."""
+    items = [str(r["code"] or r["type_name"]) for r in _file_type_rows(db)]
+    items += [str(r["code"] or r["type_name"]) for r in _cert_kind_rows(db)]
+    items += [name for name, _words in _cert_schemes(db)]
+    return list(dict.fromkeys(items))
 
 
 def _find_filter_count() -> int:
