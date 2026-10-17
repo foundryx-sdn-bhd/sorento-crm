@@ -332,10 +332,12 @@ on the form's Item Code column only if the owner asks. Its own small-fix lane.
   share it. Below 448px of room under the chip the popover asks for the side with more room,
   and its height is capped at the room on that side, so it neither shrinks to a strip low on the
   screen nor runs off a small one.
-- Open, owner ruling: (1) container text such as "SEKU1741573 (KUCHING)" on a packing list does
-  not equal the SPO's "SEKU1741573", so the exact match leaves 50 units of PL-2609-040 in both
-  SPO and Incoming PL (1 of 359 open shipments); matching unchanged until the ruling.
-  (2) Security S-C: the effective ETA folds in `eta_delay_date`, which the registry lists as a
-  `procurement.packing_lists.view_clearance` field; the board does the same today.
-- Follow-ups: Sample Request swap (above); the fulfilment board and loading plan count SO the
+- Owner rulings 17 Oct (~21:00 and ~21:15):
+  (1) An unlinked SPO matches a packing list by container NUMBER only (ISO 6346, 4 letters + 7
+  digits, exact): "SEKU1741573 (KUCHING)" on PL-2609-040 matches SPO-2026/10-0024's "SEKU1741573",
+  so its 50 units stop counting in both SPO and Incoming PL.
+  (2) Security S-C, option b: `eta_delay_date` shows only to holders of
+  `procurement.packing_lists.view_clearance`; anyone else sees `estimated_arrival_date` for the PL
+  ETA and the SPO arrival. The board (`project_supply_service.py:9944`) follows in its own lane.
+- Follow-ups: Sample Request swap (above); the board ETA clearance change (ruling 2); the fulfilment board and loading plan count SO the
   `demand.py` way, which differs from this panel by design (R4).
