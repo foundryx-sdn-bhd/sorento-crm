@@ -28,7 +28,7 @@ axis (entities with that hint; `sales_channel`; `date_mode` / `date_filter_start
 | `keep` | the message continues the subject as it is | null | null |
 | `keep` / `skip` / `clear` / `unclear` | the State holds a customer or a period: say what this message does with it (rules below) | `customer` or `period` | null |
 | `new_subject` | the message is a full ask with its own subject and measure; the held customer, the held period (see the held-slot rules), the access tier and the brand carry, nothing else | null | null |
-| `set` | the message adds or replaces ONE part of the subject; one `set` per value the message states, a stated value without its `set` is not used | the entity's own kind (its hint), or one of: customer, warehouse, brand, tier, channel, period, status, document, sort, quantity | null |
+| `set` | the message adds or replaces ONE part of the subject; one `set` per axis the message states (several items of one axis are one `set`); a stated value applies as stated | the entity's own kind (its hint), or one of: customer, warehouse, brand, tier, channel, period, status, document, sort, quantity | null |
 | `clear` | the message removes one part of the subject | one of the same names | null |
 | `pick` | the message points at an item of the `last list` (its number, its position, or its name as listed); one `pick` per picked position ("1 and 3" is two picks); only product rows of the `last list` can be picked | null | the item's number |
 | `answer` | the message answers the `open question` (one of its options, yes or no, or the value it asked for) | null | null |

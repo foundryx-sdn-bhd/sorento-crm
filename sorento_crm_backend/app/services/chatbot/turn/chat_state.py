@@ -67,15 +67,6 @@ _DOMAIN_BOUND = (
 #: Keys that are machine identity, never printed.
 _HIDDEN_KEYS = frozenset({"uuid", "uuids", "id", "key", "payload"})
 
-#: Verdict scalars per axis, nulled when the axis is not named by a `set`.
-_SCALARS: dict[str, dict[str, Any]] = {
-    "channel": {"sales_channel": None},
-    "sort": {"sort_by": None, "sort_dir": None},
-    "status": {"status": None, "order_status": None},
-    "document": {"document": []},
-    "tier": {"access_levels": []},
-    "quantity": {"demand_qty": None},
-}
 
 
 # --------------------------------------------------------------------------- #
@@ -769,24 +760,10 @@ def apply_changes(
             slot_ask, pending = _hand_over(state), None
         else:
             slot_ask = _period_ask(state, focus.date_window, (switch_to or focus.domains or [None])[0])
-    if not new_subject and "answer" not in ops:
-        for axis, nulls in _SCALARS.items():
-            if axis not in set_axes:
-                out.update(copy.deepcopy(nulls))
     held_products = list(state.focus.products)
+    # Values come from the parse as stated; a restated held row (current_message false) goes.
+    dropped_entities = [{"kind": e.get("hint")} for e in _entities(out) if e.get("current_message") is False]
     entities = [copy.deepcopy(e) for e in _entities(out) if e.get("current_message") is not False]
-    dropped_entities: list[dict[str, Any]] = []
-    if not (new_subject or answering or period_answer):
-        # A kind no `set` names is not this message's to write (a reference to the held
-        # subject is not an entity); `quantity` rides on the product entity.
-        named = set(set_axes) | ({"product"} if "quantity" in set_axes else set())
-        kept_entities = []
-        for e in entities:
-            if e.get("hint") in named:
-                kept_entities.append(e)
-            else:
-                dropped_entities.append({"kind": e.get("hint")})
-        entities = kept_entities
     if "product" in set_axes and len(held_products) == 1 and held_products[0].get("quantity") is not None:
         mine = [e for e in entities if e.get("hint") == "product"]
         if len(mine) == 1 and mine[0].get("quantity") is None and out.get("demand_qty") is None:
