@@ -2243,3 +2243,51 @@ def test_r29c_a_promotion_answer_block_beside_a_how_many_is_an_answer():
     reply = "How many units do you need?\n\n1. *Promotion:* CABANA COMBINE PROMO DEALER_08072026.pdf"
     res = _r29c(reply, message="any promo for SRTA100", fact="promotion")
     assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+
+
+# round 29d: a spec refine answered by a how-many, and a filter held before the turn, do not pass
+R29D_PREV = "CB94SS-BL x 20: ✅ Only 1 got stock."
+R29D_SPEC = {"entities": [{"raw": "chrome", "hint": "specification", "spec_key": "finish", "spec_value": "chrome"}],
+             "reference_positions": []}
+R29D_BRAND = {"entities": [{"raw": "sorento", "hint": "brand", "canonical_code": "sorento"}], "reference_positions": []}
+
+
+def _r29d(reply, *, held_before, args=None, verdict=R29D_SPEC, extra_value="chrome", flt=None, brands=()):
+    tool = {"name": "crm_inventory_list", "args": args if args is not None else {"product_ids": [UA]},
+            "envelope": {"items": [{"code": "CB94SS-BL", "qty": 1}]}}
+    spec = [{"spec_value": extra_value, "raw": extra_value}] if extra_value else []
+    r = row2(message="in chrome", verdict=verdict, mem_before=[prod("CB94SS-BL", UA)], mem_after=[prod("CB94SS-BL", UA)],
+             mem_extra={"specification": spec}, mem_brands=list(brands), tools=[tool], prev_bot=R29D_PREV, reply=reply)
+    for rec in r["trace"]:
+        if rec.get("kind") == "memory":
+            rec["focus"]["before"]["extra"] = {"specification": spec if held_before else []}
+    flt = flt or {"key": "spec", "kind": "spec", "value": "chrome"}
+    return grade_turn(r, item("followup", "refine", subject_after=["CB94SS-BL"], filter=flt))
+
+
+def test_r29d_a_spec_refine_answered_by_a_how_many_alone_fails():
+    res = _r29d("How many units of CB94SS-BL?", held_before=True)
+    assert res["checks"].get("no_qty_ask") is False, res["checks"]
+    assert res["passed"] is False and res["reason"] == "The bot asked how many instead of giving the answer.", res["reason"]
+
+
+def test_r29d_a_filter_held_before_the_turn_is_applied_only_when_a_lookup_carries_it():
+    res = _r29d("CB94SS-BL x 20: ❌ No stock.", held_before=True)
+    assert res["checks"].get("applied") is False, res["checks"]
+    assert res["passed"] is False
+
+
+def test_r29d_a_filter_new_this_turn_and_held_after_is_applied_from_memory():
+    res = _r29d("CB94SS-BL x 20: ❌ No stock.", held_before=False)
+    assert res["checks"].get("applied") is True, res["checks"]
+
+
+def test_r29d_a_filter_held_before_and_carried_in_the_lookup_args_is_applied():
+    res = _r29d("CB94SS-BL x 20: ❌ No stock.", held_before=True, args={"product_ids": [UA], "scope_terms": ["chrome"]})
+    assert res["checks"].get("applied") is True, res["checks"]
+
+
+def test_r29d_a_brand_refine_answered_by_a_how_many_alone_is_unchanged():
+    res = _r29d("How many units of CB94SS-BL?", held_before=False, verdict=R29D_BRAND, extra_value=None, brands=["sorento"],
+                flt={"key": "brand", "kind": "brand", "value": "sorento"})
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
