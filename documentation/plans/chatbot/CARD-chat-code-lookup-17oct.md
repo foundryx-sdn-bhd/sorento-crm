@@ -129,3 +129,12 @@ Request: the held-out code-lookup fails counted by failing check name (no items)
   (another listed near code with an equal shortlist score) or a partial code held by 2+ listed codes with none exact;
   never when one code beats the rest. Code never chooses. Prove both directions on TRAIN. Set + other spec stays
   prompt-only. When-deliver class wording approved on an unlabelled version.
+
+## Round 2, R2-3 (crew, 18 Oct, ask a59234050)
+
+- Held-out class "reply lists family member codes no tool ran for": TRAIN $0 repro finds only deterministic resolver
+  lists (did-you-mean answer.py:5269-5367, Related products :4875, Which product gate.py:1036) naming scoped catalogue
+  candidates that are in the trace looked_up / uuid_codes but not in tool_results; no LLM-text path (the #1760 composer
+  writes none). Crew decision: default (a) grader gap, no bot change, if EVAL-BENCH finds the 11 held-out tokens in
+  that turn's looked_up / uuid_codes; a token missing there comes back as a shape and gets a red-first fix. Never (c):
+  did-you-mean stays (owner wants it).
