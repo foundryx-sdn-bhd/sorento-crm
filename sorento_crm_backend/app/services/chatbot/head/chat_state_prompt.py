@@ -30,8 +30,8 @@ axis (entities with that hint; `sales_channel`; `date_mode` / `date_filter_start
 | `new_subject` | the message is a full ask with its own subject and measure; the held customer, the held period (see the held-slot rules), the access tier and the brand carry, nothing else | null | null |
 | `set` | the message adds or replaces ONE part of the subject; one `set` per axis the message states (several items of one axis are one `set`); a stated value applies as stated | the entity's own kind (its hint), or one of: customer, warehouse, brand, tier, channel, period, status, document, sort, quantity | null |
 | `clear` | the message removes one part of the subject | one of the same names | null |
-| `pick` | the message points at an item of the `last list` (its number, its position, or its name as listed); one `pick` per picked position ("1 and 3" is two picks); only product rows of the `last list` can be picked | null | the item's number |
-| `answer` | the message answers the `open question` (one of its options, yes or no, or the value it asked for) | null | null |
+| `pick` | the message points at one of the options of the `open question` or at an item of the `last list` (its number, its position, or its name as listed); one `pick` per picked position ("1 and 3" is two picks); only product rows of the `last list` can be picked | null | the item's number |
+| `answer` | the message answers the `open question` with yes or no, or with the value it asked for | null | null |
 | `switch_domain` | the message asks a different kind of fact about the same subject; the new domain is the `domain_hint` you fill as usual | null | null |
 | `close_question` | the `open question` is still owed (it asked for something) and the message leaves it unanswered; never for a question that was already answered | null | null |
 

@@ -360,7 +360,10 @@ def _clear_axis(focus: Focus, axis: str) -> None:
 def _write_set(focus: Focus, axis: str, verdict: dict[str, Any]) -> None:
     """The scalar axes a `set` writes onto the focus; entity axes are written by the
     existing kind rules from the parse's entities."""
-    if axis == "channel":
+    if axis in ("product", "customer", "warehouse", "brand") or axis in (focus.extra or {}):
+        # The stated entities replace the held value of this axis; the kind rules write them.
+        _clear_axis(focus, axis)
+    elif axis == "channel":
         focus.sales_channel = verdict.get("sales_channel")
     elif axis == "sort":
         focus.sort = {k: verdict.get(f"sort_{k}") for k in ("by", "dir") if verdict.get(f"sort_{k}")}
@@ -572,8 +575,9 @@ def apply_changes(
     def fail(op: Any, reason: str) -> None:
         rejected.append({"op": op, "reason": reason})
 
+    # A `keep` that names no slot (no axis, "null", or any other axis) is a plain keep.
     plain_keeps = sum(
-        1 for c in changes if isinstance(c, dict) and c.get("op") == "keep" and c.get("axis") is None
+        1 for c in changes if isinstance(c, dict) and c.get("op") == "keep" and c.get("axis") not in SLOT_AXES
     )
     if plain_keeps + ops.count("new_subject") > 1:
         fail("keep", "keep and new_subject are exclusive")
@@ -599,6 +603,8 @@ def apply_changes(
             ignored.append({"axis": axis, "reason": f"{op} {axis} dropped: the message states its own"})
         elif op not in OPS and op not in SLOT_OPS:
             fail(op, "unknown op")
+        elif op == "keep" and axis not in SLOT_AXES:
+            pass
         elif op in ("set", "clear") or (op in SLOT_OPS and axis is not None) or op == "skip" or op == "unclear":
             if op in ("skip", "unclear", "keep") and axis not in SLOT_AXES:
                 fail(op, f"{op} takes customer or period, not {axis}")
@@ -781,6 +787,22 @@ def apply_changes(
         mine = [e for e in entities if e.get("hint") == "product"]
         if len(mine) == 1 and mine[0].get("quantity") is None and out.get("demand_qty") is None:
             mine[0]["quantity"] = held_products[0]["quantity"]
+    picked_kinds = {"product" for _ in data_picks}
+    if pending is not None or state.pending is not None:
+        for position in roster_picks:
+            option = next((o for o in (state.pending.options if state.pending else []) if o.get("position") == position), None)
+            if option and option.get("entity_type"):
+                picked_kinds.add(str(option["entity_type"]))
+    if picked_kinds:
+        # A pick consumes the name it points at: a typed entity of the picked kind that no
+        # `set` claims is not a second subject.
+        kept_entities = []
+        for e in entities:
+            if e.get("hint") in picked_kinds and e.get("hint") not in set_axes:
+                dropped_entities.append({"kind": e.get("hint")})
+            else:
+                kept_entities.append(e)
+        entities = kept_entities
     for row in data_picks:
         # The code only: a stored key is never trusted, the resolver settles the code fresh
         # under the contact's current scope.
