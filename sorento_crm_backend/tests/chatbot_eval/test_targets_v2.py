@@ -2550,3 +2550,19 @@ def test_r30e_a_uuid_segment_is_not_a_carried_filter_word():
 def test_r30e_a_phrase_spelled_with_or_without_a_space_is_carried(term):
     res = _r30d("p_trap", {"scope_terms": [term]})
     assert res["checks"].get("applied") is True, res["checks"]
+
+
+# round 30f: a decimal size stays one number
+def test_r30f_a_decimal_size_with_its_unit_in_a_search_term_is_carried():
+    res = _r30d("1.5m", {"scope_terms": ["1.5m bathtub"]})
+    assert res["checks"].get("applied") is True, res["checks"]
+
+
+def test_r30f_a_decimal_size_with_a_spaced_unit_is_carried():
+    res = _r30d("1.2m", {"scope_terms": ["1.2 m basin"]})
+    assert res["checks"].get("applied") is True, res["checks"]
+
+
+def test_r30f_a_different_number_is_not_the_decimal():
+    res = _r30d("1.5m", {"scope_terms": ["15 m"]})
+    assert res["checks"].get("applied") is False, res["checks"]
