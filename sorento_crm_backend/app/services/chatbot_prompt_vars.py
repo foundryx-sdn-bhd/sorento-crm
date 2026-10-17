@@ -311,14 +311,52 @@ def _file_type_rows(db: Session) -> list[dict]:
     ]
 
 
-def _listed_line(head: str, words: str | None) -> str:
-    words = _one_line(words or "")
-    return f"{head}. Words: {words}." if words else f"{head}."
+_WORD_SEPARATORS = _re_mod.compile(r"\s*[,;/]\s*")
+
+
+def _alias_words(db: Session) -> dict[str, list[str]]:
+    """The owner's `attachment_type_alias` lookup set (System > Lookup Sets): per option
+    value (an attachment type's name or code, case aside) its keywords."""
+    out: dict[str, list[str]] = {}
+    rows = db.execute(
+        sql(
+            "SELECT o.value, k.keyword FROM lookup_sets s "
+            "JOIN lookup_options o ON o.set_id = s.id AND o.is_active "
+            "JOIN lookup_option_keywords k ON k.option_id = o.id "
+            "WHERE s.set_key = 'attachment_type_alias' AND s.is_active "
+        )
+    )
+    for value, keyword in rows:
+        if value and keyword and keyword.strip():
+            out.setdefault(value.strip().casefold(), []).append(keyword.strip())
+    # Sorted here, case aside, not by SQL: a collation must not reorder the prompt's text.
+    return {value: sorted(words, key=lambda w: (w.casefold(), w)) for value, words in out.items()}
+
+
+def _type_words(row: dict, aliases: dict[str, list[str]]) -> list[str]:
+    """A type's own words: its description's comma / slash / semicolon parts, then the alias
+    set's keywords for it, deduped with case aside."""
+    words: list[str] = []
+    seen: set[str] = set()
+    parts = _WORD_SEPARATORS.split(str(row.get("description") or ""))
+    keys = {str(row.get(k) or "").strip().casefold() for k in ("code", "type_name")} - {""}
+    for word in [*parts, *(w for key in keys for w in aliases.get(key, []))]:
+        word = word.strip()
+        if word and word.casefold() not in seen:
+            seen.add(word.casefold())
+            words.append(word)
+    return words
+
+
+def _listed_line(head: str, words: list[str] | str | None) -> str:
+    text = _one_line(", ".join(words) if isinstance(words, list) else (words or ""))
+    return f"{head}. Words: {text}." if text else f"{head}."
 
 
 def render_attachment_types(db: Session) -> str:
+    aliases = _alias_words(db)
     return "\n".join(
-        _one_line(_listed_line(f'File type {r["code"] or r["type_name"]}: {r["type_name"]}', r["description"]))
+        _one_line(_listed_line(f'File type {r["code"] or r["type_name"]}: {r["type_name"]}', _type_words(r, aliases)))
         for r in _file_type_rows(db)
     )
 
@@ -366,8 +404,9 @@ def _cert_schemes(db: Session) -> list[tuple[str, list[str]]]:
 
 
 def render_certification_types(db: Session) -> str:
+    aliases = _alias_words(db)
     lines = [
-        _listed_line(f'Certificate kind {r["code"] or r["type_name"]}: {r["type_name"]}', r["description"])
+        _listed_line(f'Certificate kind {r["code"] or r["type_name"]}: {r["type_name"]}', _type_words(r, aliases))
         for r in _cert_kind_rows(db)
     ]
     lines += [_listed_line(f"Certificate scheme {name}", ", ".join(words)) for name, words in _cert_schemes(db)]
@@ -379,10 +418,45 @@ def closed_list_items(db: Session) -> dict[str, dict[str, str]]:
     `{"file_type" | "cert_kind" | "cert_scheme": {casefolded item: item as listed}}`. Read
     by grounding to validate a parser pick against what the prompt showed (CHAT-CLOSED-LISTS
     card R5): the same readers, so the check and the prompt cannot list different items."""
+    aliases = _alias_words(db)
+
+    def by_word(rows: list[dict]) -> dict[str, str]:
+        # An item's code and name name it; so does each of its own words, unless another
+        # item of these lists holds the same word (then the word names neither).
+        named: dict[str, str] = {}
+        worded: dict[str, set[str]] = {}
+        for r in rows:
+            item = str(r["code"] or r["type_name"])
+            for key in (item, str(r["type_name"])):
+                named[key.casefold()] = item
+            for word in _type_words(r, aliases):
+                worded.setdefault(word.casefold(), set()).add(item)
+        return named, worded
+
+    file_named, file_worded = by_word(_file_type_rows(db))
+    kind_named, kind_worded = by_word(_cert_kind_rows(db))
+    schemes: dict[str, str] = {}
+    scheme_worded: dict[str, set[str]] = {}
+    for name, words in _cert_schemes(db):
+        schemes[name.casefold()] = name
+        for word in words:
+            scheme_worded.setdefault(word.casefold(), set()).add(name)
+    shared: dict[str, int] = {}
+    for worded in (file_worded, kind_worded, scheme_worded):
+        for word, items in worded.items():
+            shared[word] = shared.get(word, 0) + len(items)
+    # An item's own code or name, in any list, is that item: never another item's word
+    # ("PPS" is the scheme, though the Certification type's words hold it too).
+    every_name = set(file_named) | set(kind_named) | set(schemes)
+
+    def one_word(named: dict[str, str], worded: dict[str, set[str]]) -> dict[str, str]:
+        out = {w: next(iter(items)) for w, items in worded.items() if shared[w] == 1 and w not in every_name}
+        return {**out, **named}
+
     return {
-        "file_type": {str(r["code"] or r["type_name"]).casefold(): str(r["code"] or r["type_name"]) for r in _file_type_rows(db)},
-        "cert_kind": {str(r["code"] or r["type_name"]).casefold(): str(r["code"] or r["type_name"]) for r in _cert_kind_rows(db)},
-        "cert_scheme": {name.casefold(): name for name, _words in _cert_schemes(db)},
+        "file_type": one_word(file_named, file_worded),
+        "cert_kind": one_word(kind_named, kind_worded),
+        "cert_scheme": one_word(schemes, scheme_worded),
     }
 
 
@@ -466,7 +540,8 @@ VARIABLES: dict[str, RegistryVariable] = {
         RegistryVariable(
             # CHAT-CLOSED-LISTS: the file types the parser picks an `attachment_type` from.
             "attachment_types", "File types", "Attachment Types", "/resource-management/attachment-types",
-            ("attachment_types",), render_attachment_types, lambda db: len(_file_type_rows(db)),
+            ("attachment_types", "lookup_options", "lookup_option_keywords"), render_attachment_types,
+            lambda db: len(_file_type_rows(db)),
         ),
         RegistryVariable(
             # CHAT-CLOSED-LISTS: cert kinds + schemes on file + the `certificate_scheme` set.

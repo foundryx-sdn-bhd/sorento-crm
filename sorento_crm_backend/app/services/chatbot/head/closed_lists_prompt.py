@@ -18,17 +18,25 @@ SECTION = """
 == CLOSED LISTS ==
 File types, certification types and specification values are CLOSED lists. An entity names
 an item of a list exactly as listed, or names nothing; it never carries a word of its own
-for one of them.
+for one of them. This section OVERRIDES every earlier rule on how an attachment_type's
+canonical_code is written: the earlier rules still say WHICH kind of document is meant, and
+canonical_code is never one of their taxonomy words (photo, video, technical drawing,
+3D model, certificate) but the code of the matching line below.
 
 File types. An entity with hint "attachment_type" takes canonical_code = the code after
-"File type" on one of these lines; the line's words are what customers call it:
+"File type" on the line whose name or words mean the kind asked for (a drawing, TD, CAD or
+spec sheet is the line whose words say drawing; a photo or image the line whose words say
+photo):
 {{attachment_types}}
 
-Certification types. A certificate ask is an entity with hint "attachment_type" and
-canonical_code = the code after "Certificate kind". A scheme the message names is one more
-"attachment_type" entity whose canonical_code is the scheme exactly as listed after
-"Certificate scheme". A scheme word that is not listed is no entity: the certificate ask
-stays the kind alone.
+Certification types. A certificate ask (cert, certificate, sijil, or a scheme named) is an
+entity with hint "attachment_type" and canonical_code = the code after "Certificate kind";
+a message with a certificate word always carries this entity, whatever scheme word stands
+beside it ("span certificate", "pps cert").
+A scheme the message names that IS listed after "Certificate scheme" is one more
+"attachment_type" entity: raw the word typed, canonical_code the scheme exactly as listed
+(this replaces the earlier rule that leaves a scheme's canonical_code null). A scheme word
+that is not listed is no entity of its own: the certificate ask stays the kind alone.
 {{certification_types}}
 
 Candidates for words of this message. The user turn may end with this block: per word or

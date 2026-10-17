@@ -136,7 +136,7 @@ def test_the_alias_lookup_set_adds_its_words_to_the_type_it_names(db):
     db.flush()
 
     assert pv.render_value(db, "attachment_types") == (
-        "File type technical_specifications: Technical Specifications. Words: Spec, technical drawing, TD."
+        "File type technical_specifications: Technical Specifications. Words: Spec, TD, technical drawing."
     )
 
 
