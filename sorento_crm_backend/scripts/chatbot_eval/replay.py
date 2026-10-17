@@ -278,14 +278,32 @@ def _tools(trace: list[dict[str, Any]]) -> list[list[str]]:
     ]
 
 
+def _scope_refusal() -> str | None:
+    """Why this process would read the DB unscoped (None when the company/brand filter is live)."""
+    from app.services import company_scope
+
+    if not company_scope._ENFORCE:
+        return "company scope enforcement is off (COMPANY_SCOPE_ENFORCE=0); the replay would read every company and brand"
+    if not company_scope._INSTALLED:
+        return "the company scope listeners are not registered; the replay would read every company and brand unscoped"
+    return None
+
+
+def _require_scope() -> None:
+    why = _scope_refusal()
+    if why:
+        raise RuntimeError(why)
+
+
 def _require_rolled_back(factory: Callable[[], Any]) -> None:
-    """Refuse, before any DB use, a factory that `_rolled_back` did not yield (or has since closed)."""
+    """Refuse, before any DB use, a factory that `_rolled_back` did not yield (or has since closed), or an unscoped process."""
+    _require_scope()
     if not getattr(factory, "_rolled_back", False):
         raise RuntimeError("a replay needs a factory from _rolled_back; call replay_rows or live_rows")
 
 
 def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | None = None,
-                vocab_box: list[Any] | None = None) -> dict[str, Any]:
+                vocab_box: dict[Any, Any] | None = None) -> dict[str, Any]:
     _require_rolled_back(factory)
     from app.models.chatbot_turn import ChatbotTurn
     from app.services.chatbot import engine
@@ -307,13 +325,23 @@ def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | No
     if stage == "grounding":
         from app.services.chatbot.head import grounding
 
-        db = factory()
+        from app.services.chatbot import engine
+        from app.services.chatbot.contracts import Envelope
+
+        # The contact's company and brand scope, as run_turn stamps it: an unset scope reads nothing.
+        contact = engine._contact_respond_id(Envelope(**copy.deepcopy(row.get("envelope") or {})))
+        scope, brand = engine._contact_company_scope(factory, contact), engine._contact_brand_scope(factory, contact)
+        db = engine._scoped_factory(factory, scope, brand)()
         g_misses: list[dict[str, Any]] = []
         try:
             with _patched({}, g_misses):
-                if vocab_box is not None and not vocab_box:
-                    vocab_box.append(grounding.load_vocabulary(db))
-                vocab = vocab_box[0] if vocab_box else None
+                if vocab_box is None:
+                    vocab = None
+                else:
+                    key = (scope, brand)
+                    if key not in vocab_box:
+                        vocab_box[key] = grounding.load_vocabulary(db)
+                    vocab = vocab_box[key]
                 out["stages"] = {"grounded": _ground_one(row, parse, db, vocab)}
         except Exception as exc:  # noqa: BLE001 - the replay records, never raises
             g_misses.append({"error": type(exc).__name__})
@@ -365,8 +393,9 @@ def replay_rows(rows: list[dict[str, Any]], *, session_factory: Callable[[], Any
                 stage: str | None = None, on_row: Callable[[dict[str, Any]], None] | None = None) -> list[dict[str, Any]]:
     """`stage="grounding"` runs only `grounding.ground()` per row (vocabulary loaded once per call)
     and returns `stages.grounded` alone; None runs the whole turn."""
+    _require_scope()
     results = []
-    vocab_box: list[Any] = []
+    vocab_box: dict[Any, Any] = {}
     # No log record may carry message or reply text (the engine and resolver log both on errors).
     previous_disable = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
@@ -799,6 +828,7 @@ def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], 
     or at "wrong_key" when a provider or embedding key does not end with `require_key_last4` (exactly 4 non-blank
     characters, else ValueError before any item). A `prompt_version_id` that is not a stored version of the parser
     prompt is a ValueError before any item (the registry would otherwise fall back silently)."""
+    _require_scope()
     if not _valid_last4(require_key_last4):
         raise ValueError("require_key_last4 must be exactly 4 non-blank characters")
     if prompt_version_id and not _pin_resolves(session_factory, prompt_version_id):
@@ -971,11 +1001,9 @@ def _preflight(session_factory: Callable[[], Any]) -> int | None:
     """Refuse (2) a replay DB that is not at this checkout's alembic head: a stale schema fails every turn quietly.
 
     Also refuses (2) when the scope listeners are not installed: unscoped reads would skew the bench quietly."""
-    from app.services import company_scope
-
-    if not company_scope._INSTALLED:
-        print("refused: the company scope listeners are not registered; the replay would read every company "
-              "and brand unscoped", file=sys.stderr)
+    why = _scope_refusal()
+    if why:
+        print(f"refused: {why}", file=sys.stderr)
         return 2
     current, heads = _db_revisions(session_factory), _code_heads(os.getcwd())
     if current == heads:
