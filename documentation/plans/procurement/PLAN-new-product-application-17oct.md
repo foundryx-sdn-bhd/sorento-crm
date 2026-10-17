@@ -1,7 +1,7 @@
 # PLAN - New product application (NEW-PRODUCT-APP)
 
-Lane NEW-PRODUCT-APP, size L, cloud. Status: Plan. Card + mock v2 filed 17 Oct (crew answered Q2-Q5; Q1 with the
-owner); mock refill on a real masked case pending crew's rows; no code until the owner OKs card + mock.
+Lane NEW-PRODUCT-APP, size L, cloud. Status: Plan. Card + mock v3 (real case SI26-0153) filed 17 Oct (crew answered Q2-Q5; Q1 with the
+owner); no code until the owner OKs card + mock.
 Track: full (migration + new permissions). PR #1769, branch `claude/new-product-application-0u631d`.
 
 Owner 15 Oct: stock inquiry about a new product code -> inquiry responded -> new product application ->
@@ -9,7 +9,7 @@ purchasing opens the product code after receiving the application.
 
 - Behaviour card: `CARD-new-product-application-17oct.md` (the rules; this plan does not restate them).
 - UAC: `new-product-application-acceptance-criteria.md`.
-- Mock: `mockups/new-product-application-v2.html` (v1 kept for the record).
+- Mock: `mockups/new-product-application-v3.html` (v1, v2 kept for the record).
 
 ## Design (simplest thing)
 

@@ -108,15 +108,26 @@ One record, **New Product Application** `NPA-000001`, under Procurement Manageme
 10. **Company scoped** (`CompanyScopedMixin`, fail closed). The linked product must be in the same company.
 11. **Print**: none in this lane (no paper form exists for this). Download PDF can follow if asked.
 
-## Examples (shape; real rows come from the pending `crew-data-request` and stay out of the repo)
+## Data facts (crew-data-request on the dev copy, 17 Oct; rows stay off the repo, aggregates only)
+
+- 16 of 89 stock inquiries carry a product code the master does not have (13 responded, 3 rejected).
+- 6 of the 14 responded ones hold several codes or a variant note in one field ("A & B", "flange only", "(MATT
+  FINISH)"). So the pre-fill copies the text into line 1 and the applicant splits it; nothing splits or guesses.
+- Only one asked-about code later appeared in the master, 69 days after the inquiry: today nothing ties the two.
+- Active products: item type 99%, brand 77%, cost 41%, barcode 1 product, weight none. So the form asks item type
+  and brand, keeps cost optional, and does not ask barcode or weight.
+- Real case used by mock v3: SI26-0153 (responded; purchasing: "please issue new product code application form
+  for us to create new code"), two kitchen sinks SRTKS2433 and SRTKS2406 in one code field.
+
+## Examples (A on the real case SI26-0153; the rest shape the rules)
 
 | # | Input | Result |
 |---|---|---|
-| A | Inquiry SI26-xxxx, `responded`, product code `XY-1234-MB` (not in products), "matt black basin mixer", qty 40, project text "Residensi Example, Tower B". Project sales presses Create from the inquiry | New form: inquiry link set, project text copied, customer typed text shown as "No debtor code" until a debtor is picked, line 1 = proposed `XY-1234-MB`, description, expected qty 40. Item group / UOM empty |
+| A | SI26-0153, `responded`, code field "SRTKS2433 & SRTKS2406" (neither in products), two 540x440x230 kitchen sinks, qty 55, WESTIN RESIDENCE / VST GROUP OF COMPANIES. Project sales presses Create from the inquiry | New form: inquiry link set, project copied, customer typed text with "No debtor code" until a debtor is picked, line 1 = proposed "SRTKS2433 & SRTKS2406" + description + qty 55. The applicant edits line 1 to SRTKS2433 and adds line 2 SRTKS2406 |
 | A2 | Submit A without Item group | Refused: "Line 1: choose an item group". Draft kept |
-| A3 | Item group Basin Mixer, UOM UNIT, supplier picked, cost 185.00, submit; manager approves | Approved, locked. Purchasing gets "NPA-000001: 1 new code to open" |
-| A4 | Purchasing opens `XY1234MB` in AutoCount; ESB sends it; purchasing types "xy1234" in Link product | List shows `XY1234MB`; purchasing picks it. Application Completed; applicant notified; inquiry page shows NPA-000001 -> `XY1234MB` |
-| B | Same as A but searched before the ESB push | "xy1234 is not in the product list yet ..."; line stays open; nothing breaks |
+| A3 | Item group Kitchen Sink and UOM UNIT on both lines, item type KITCHEN SINK, brand Sorento, supplier and cost left empty, submit; an approver approves | Approved, locked. Purchasing gets "NPA-000001: 2 new codes to open" |
+| A4 | Purchasing opens `SRTKS2433` and `SRTKS2406` in AutoCount; ESB sends them; purchasing types "srtks2433" in Link product on line 1, then line 2 | Each search lists the code; purchasing picks it. After line 2 the application is Completed; applicant notified; SI26-0153 shows NPA-000001 -> SRTKS2433, SRTKS2406 |
+| B | Same as A4 but line 2 searched before the ESB push | "srtks2406 is not in the product list yet ..."; line 2 stays open, the application stays Approved (1 of 2 done); nothing breaks |
 | C | Application with 3 colour lines (CP / MB / BG); supplier discontinues BG | Purchasing links CP and MB, marks BG Not opening "supplier dropped BG". Completed |
 | D | Approved application, sales notices wrong UOM | Revise, reason "UOM is SET not UNIT": back to Draft, fix, Submit, approve again. The audit trail shows the reason and the old UOM |
 | D2 | Rejected "supplier price too high, find another" | Applicant changes supplier and cost, presses Submit: Submitted again, approvers notified again |
