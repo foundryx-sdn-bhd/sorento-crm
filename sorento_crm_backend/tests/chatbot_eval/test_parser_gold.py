@@ -212,7 +212,7 @@ def test_committed_gold_file():
     assert len(pos) >= 12
     assert len(neg) >= 6
     for r in pos:
-        assert r["expect"].get("no_attribute") == "delivery", r["id"]
+        assert r["expect"].get("status") == "outstanding", r["id"]
         assert r["expect"].get("domain_hint") == "order", r["id"]
         assert r["expect"].get("product"), r["id"]
     for r in rows:
