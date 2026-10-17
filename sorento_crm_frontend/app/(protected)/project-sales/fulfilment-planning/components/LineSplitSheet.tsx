@@ -8,6 +8,10 @@ import { Button } from '@/components/ui/button';
 import { DatePicker, parseDateInput } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import {
+  COARSE_HIT_TARGET_CLASS,
+  PRESSED_CLASS,
+} from '@/components/ui/primitive-classes';
+import {
   Table,
   TableBody,
   TableCell,
@@ -152,6 +156,8 @@ function DragHandle({
       data-drag-handle=""
       className={cn(
         'touch-none select-none focus-visible:outline-2 focus-visible:outline-primary',
+        COARSE_HIT_TARGET_CLASS,
+        PRESSED_CLASS,
         disabled ? 'cursor-default opacity-40' : 'cursor-grab',
         className,
       )}
@@ -262,7 +268,11 @@ const RemainButton = ({
       event.stopPropagation();
       handlers.open(line, cell, event.key);
     }}
-    className="h-7 w-full cursor-text rounded-md border border-dashed border-transparent text-2xs font-semibold tracking-wide text-muted-foreground hover:border-input hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+    className={cn(
+      'h-7 w-full cursor-text rounded-md border border-dashed border-transparent text-2xs font-semibold tracking-wide text-muted-foreground hover:border-input hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary',
+      COARSE_HIT_TARGET_CLASS,
+      PRESSED_CLASS,
+    )}
   >
     REMAIN
   </button>

@@ -19,7 +19,9 @@ import {
   type DragStartEvent,
   type KeyboardCoordinateGetter,
 } from '@dnd-kit/core';
+import { ListLoadFailure } from '@/components/common/ListLoadFailure';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
+import { SectionSkeleton } from '@/components/common/SectionSkeleton';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -680,7 +682,7 @@ export function LineSplitDialog({
   };
 
   const requestClose = () => {
-    // Escape, Close and the scrim never throw edits away; Cancel does (UAC B5).
+    // Escape and the scrim never throw edits away; the Cancel button does (UAC B5, A12).
     if (dirty) {
       toast('Unsaved changes: Save or Cancel');
       return;
@@ -766,18 +768,15 @@ export function LineSplitDialog({
                 </label>
               </div>
               <div className="ms-auto flex items-center gap-2">
-                <Button type="button" variant="ghost" onClick={requestClose}>
-                  Close
+                {/* ONE secondary button (UAC A12): Close, or Cancel once there is
+                    something to discard. Escape still refuses while dirty. */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => onOpenChange(false)}
+                >
+                  {dirty ? 'Cancel' : 'Close'}
                 </Button>
-                {dirty ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => onOpenChange(false)}
-                  >
-                    Cancel
-                  </Button>
-                ) : null}
                 <Button
                   type="button"
                   disabled={!lines || problems.length > 0 || save.isPending}
@@ -827,27 +826,14 @@ export function LineSplitDialog({
 
           <div className="min-h-0 flex-1 [&>[data-slot=table-wrapper]]:h-full">
             {query.isError && !lines ? (
-              <div
-                role="alert"
-                className="flex h-full flex-col items-center justify-center gap-3 p-6 text-sm"
-              >
-                <span className="text-destructive">
-                  {(query.error as Error | null)?.message ||
-                    'Failed to load the splits'}
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void query.refetch()}
-                >
-                  Retry
-                </Button>
+              <div className="flex h-full items-center justify-center p-6 text-sm">
+                <ListLoadFailure
+                  error={query.error}
+                  onRetry={() => void query.refetch()}
+                />
               </div>
             ) : !lines ? (
-              <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-                Loading…
-              </div>
+              <SectionSkeleton rows={6} className="p-4" />
             ) : (
               <DndContext
                 sensors={sensors}

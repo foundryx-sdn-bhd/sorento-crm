@@ -308,6 +308,9 @@ export function removeSplit(
   lineId: string,
   splitId: string,
 ): SplitLine[] {
+  // A line with no stored splits has nothing to remove (no no-op Undo step).
+  if (!lines.find((candidate) => candidate.lineId === lineId)?.splits.length)
+    return lines;
   return editLine(lines, lineId, (splits) => {
     const next = splits.filter((candidate) => candidate.id !== splitId);
     return next.length === splits.length ? null : next;
@@ -320,9 +323,10 @@ export function targetDateOf(line: SplitLine): string | null {
 }
 
 /**
- * Sits on another line, a new line (`null`) or `'cancel'` (UAC A7). Another line also gives
- * the split that line's date; leaving Cancel takes the base date; its own line or a new line
- * keeps the date it has.
+ * Sits on another line, a new line (`null`) or `'cancel'` (UAC A7). Another line does what a
+ * drop does: the split takes that line's date and merges into a split of its own line already
+ * there (qty added, remarks joined). Leaving Cancel takes the base date; its own line or a new
+ * line keeps the date it has.
  */
 export function setSitsOn(
   lines: SplitLine[],
@@ -334,6 +338,16 @@ export function setSitsOn(
     on && on !== 'cancel' && on !== lineId
       ? lines.find((candidate) => candidate.lineId === on)
       : undefined;
+  const date = target ? targetDateOf(target) : null;
+  const origin = lines.find((candidate) => candidate.lineId === lineId);
+  const moving = origin
+    ? splitsOf(origin).find((candidate) => candidate.id === splitId)
+    : undefined;
+  if (target && date && moving && moving.qty > 0)
+    return moveSplit(lines, lineId, splitId, moving.qty, {
+      date,
+      sitsOnLineId: target.lineId,
+    });
   return editLine(lines, lineId, (splits, line) => {
     const split = splits.find((candidate) => candidate.id === splitId);
     if (!split) return null;

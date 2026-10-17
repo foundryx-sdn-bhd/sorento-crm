@@ -74,6 +74,13 @@ const ALLOWLIST: Record<string, string> = {
   // onto PanelDataGrid adds its card, search and pager inside the dialog, an owner-visible change.
   'components/common/ParkedSendDialog.tsx':
     'pending migration: the send-all dialog\'s recipient summary, with spanning "No recipient" rows and a totals row',
+
+  // Not a list (OI-LINE-SPLIT v4, owner-approved mock): an Excel-like sheet whose split rows
+  // stack under their SO line with the line's own cells merged across them (rowSpan), one
+  // <tbody> per line as its drop target. A DataGrid's one-row-per-record model cannot merge
+  // cells across rows; precedent scm/components/SupplierSheet.tsx.
+  'app/(protected)/project-sales/fulfilment-planning/components/LineSplitSheet.tsx':
+    'merged rowSpan split rows under each SO line cannot be a DataGrid row model (precedent scm/components/SupplierSheet.tsx)',
 };
 
 /**
