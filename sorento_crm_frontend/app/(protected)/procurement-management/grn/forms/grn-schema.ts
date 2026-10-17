@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import { requiredNumber } from '@/lib/number-field-schema';
 
 export const pickingLineSchema = z.object({
   product_id: z.string().min(1, 'Product is required'),
-  quantity_expected: z.coerce.number().int().min(0, 'Quantity expected must be 0 or more'),
-  quantity_picked: z.coerce.number().int().min(0, 'Quantity received must be 0 or more'),
+  quantity_expected: requiredNumber({ min: 0, integer: true }),
+  quantity_picked: requiredNumber({ min: 0, integer: true }),
   source_warehouse_id: z.string().min(1, 'Location is required'),
   spo_allocation_id: z.string().optional(),
   // Carried, never edited: it is what the imported sheet said this line was

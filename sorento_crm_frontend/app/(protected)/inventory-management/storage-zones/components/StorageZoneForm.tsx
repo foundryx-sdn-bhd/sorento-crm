@@ -19,6 +19,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { requiredNumber } from '@/lib/number-field-schema';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Button } from '@/components/ui/button';
 import { useCreateStorageZone, useUpdateStorageZone } from '../hooks/useStorageZones';
@@ -32,7 +34,7 @@ const StorageZoneSchema = z.object({
   zone_code: z.string().min(1, 'Zone code is required').max(50),
   zone_name: z.string().max(150).optional().nullable(),
   zone_type: z.enum(['shelf', 'rack', 'bin', 'pallet']),
-  capacity: z.number().int().positive('Capacity must be a positive number'),
+  capacity: requiredNumber({ min: 1, integer: true }),
   is_active: z.boolean(),
 });
 
@@ -182,10 +184,12 @@ export default function StorageZoneForm({ open, onOpenChange, zoneId }: StorageZ
                 <FormItem>
                   <FormLabel>Capacity *</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                    <NumberInput
+                      name={field.name}
+                      ref={field.ref}
+                      onBlur={field.onBlur}
+                      value={field.value}
+                      onValueChange={field.onChange}
                     />
                   </FormControl>
                   <FormMessage />

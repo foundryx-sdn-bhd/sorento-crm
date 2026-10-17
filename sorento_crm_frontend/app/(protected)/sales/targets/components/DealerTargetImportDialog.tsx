@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { CountTile } from '@/components/common/CountTile';
 import { FileDropzone } from '@/components/common/FileDropzone';
@@ -123,9 +123,8 @@ export default function DealerTargetImportDialog({
               <Label htmlFor="dealer-import-year" className="text-xs text-muted-foreground">
                 Year
               </Label>
-              <Input
+              <NumberInput
                 id="dealer-import-year"
-                type="number"
                 min={2000}
                 max={2100}
                 value={year}

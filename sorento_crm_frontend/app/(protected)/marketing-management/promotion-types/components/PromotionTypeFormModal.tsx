@@ -22,6 +22,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -225,14 +226,11 @@ export default function PromotionTypeFormModal({
                         <FormItem>
                           <FormLabel>Max age (days)</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
+                            <NumberInput
                               min={0}
                               placeholder="No limit"
                               value={field.value ?? ''}
-                              onChange={(e) =>
-                                field.onChange(e.target.value === '' ? null : Number(e.target.value))
-                              }
+                              onChange={(e) => field.onChange(e.target.value)}
                               disabled={isSaving}
                             />
                           </FormControl>
@@ -274,11 +272,10 @@ export default function PromotionTypeFormModal({
                       <FormItem>
                         <FormLabel>Match priority</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             min={0}
                             value={field.value}
-                            onChange={(e) => field.onChange(Number(e.target.value))}
+                            onChange={(e) => field.onChange(e.target.value)}
                             disabled={isSaving}
                           />
                         </FormControl>
@@ -294,11 +291,10 @@ export default function PromotionTypeFormModal({
                       <FormItem>
                         <FormLabel>Sort order</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             min={0}
                             value={field.value}
-                            onChange={(e) => field.onChange(Number(e.target.value))}
+                            onChange={(e) => field.onChange(e.target.value)}
                             disabled={isSaving}
                           />
                         </FormControl>

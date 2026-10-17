@@ -11,6 +11,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -48,7 +50,11 @@ export default function StatusFormDialog({
   status,
 }: Props) {
   const isEdit = Boolean(status);
-  const [form, setForm] = useState(BLANK);
+  // The order box holds what was typed, so it may be empty until Save checks it.
+  type FormState = Omit<typeof BLANK, 'sort_order'> & { sort_order: number | null };
+  const [form, setForm] = useState<FormState>(BLANK);
+  const [checked, setChecked] = useState(false);
+  const sortError = numberFieldError(form.sort_order, { integer: true });
 
   const createMutation = useCreateStatus(entityType, scopeId);
   const updateMutation = useUpdateStatus(entityType, scopeId);
@@ -56,6 +62,7 @@ export default function StatusFormDialog({
 
   useEffect(() => {
     if (!open) return;
+    setChecked(false);
     setForm(
       status
         ? {
@@ -75,18 +82,22 @@ export default function StatusFormDialog({
     );
   }, [open, status]);
 
-  const set = <K extends keyof typeof BLANK>(field: K, value: (typeof BLANK)[K]) =>
+  const set = <K extends keyof FormState>(field: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
+    if (sortError) {
+      setChecked(true);
+      return;
+    }
     const payload = {
       key: form.key.trim(),
       label: form.label.trim(),
       category: form.category.trim() || null,
       color_hex: form.color_hex.trim() || null,
       description: form.description.trim() || null,
-      sort_order: Number(form.sort_order) || 0,
+      sort_order: Number(form.sort_order),
       is_initial: form.is_initial,
       is_terminal: form.is_terminal,
       is_active: form.is_active,
@@ -151,11 +162,11 @@ export default function StatusFormDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
               <Label htmlFor="status-order">Order</Label>
-              <Input
+              <NumberInput
                 id="status-order"
-                type="number"
                 value={form.sort_order}
-                onChange={(e) => set('sort_order', Number(e.target.value))}
+                onValueChange={(v) => set('sort_order', v)}
+                error={checked ? sortError : undefined}
               />
             </div>
             <div className="grid gap-2">

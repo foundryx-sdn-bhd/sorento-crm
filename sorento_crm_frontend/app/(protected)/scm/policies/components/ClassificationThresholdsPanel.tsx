@@ -5,10 +5,14 @@ import { LoaderCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardHeading, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { numberFieldError } from '@/lib/number-field';
 import { useClassification, useSaveClassification } from '../hooks/usePolicies';
+
+const PCT_RULES = { min: 0, minExclusive: true, max: 100 };
+const CV_RULES = { min: 0, minExclusive: true };
 
 /**
  * Global ABC-XYZ classification thresholds (single row). ABC splits items by
@@ -24,6 +28,14 @@ export function ClassificationThresholdsPanel() {
   const [xyzX, setXyzX] = useState('');
   const [xyzY, setXyzY] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  // Set by a Save that found a wrong number; the sentences then follow the typing.
+  const [checked, setChecked] = useState(false);
+  const errors = {
+    abcA: numberFieldError(abcA, PCT_RULES),
+    abcB: numberFieldError(abcB, PCT_RULES),
+    xyzX: numberFieldError(xyzX, CV_RULES),
+    xyzY: numberFieldError(xyzY, CV_RULES),
+  };
 
   useEffect(() => {
     if (!data) return;
@@ -34,6 +46,11 @@ export function ClassificationThresholdsPanel() {
   }, [data]);
 
   const onSave = async () => {
+    if (Object.values(errors).some(Boolean)) {
+      setChecked(true);
+      setFormError(null);
+      return;
+    }
     const a = Number(abcA);
     const b = Number(abcB);
     const x = Number(xyzX);
@@ -109,28 +126,28 @@ export function ClassificationThresholdsPanel() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label className="mb-1 block">Class A ≤ (% of cumulative value)</Label>
-              <Input type="number" min={1} max={99} inputMode="numeric" value={abcA} onChange={(e) => setAbcA(e.target.value)} />
+              <NumberInput min={1} max={99} inputMode="numeric" value={abcA} onChange={(e) => setAbcA(e.target.value)} error={checked ? errors.abcA : undefined} />
               <p className="mt-1 text-2xs text-muted-foreground">
                 Items making up the top share of value are class A.
               </p>
             </div>
             <div>
               <Label className="mb-1 block">Class B ≤ (% of cumulative value)</Label>
-              <Input type="number" min={1} max={99} inputMode="numeric" value={abcB} onChange={(e) => setAbcB(e.target.value)} />
+              <NumberInput min={1} max={99} inputMode="numeric" value={abcB} onChange={(e) => setAbcB(e.target.value)} error={checked ? errors.abcB : undefined} />
               <p className="mt-1 text-2xs text-muted-foreground">
                 The next share up to this cut is class B; the remainder is class C.
               </p>
             </div>
             <div>
               <Label className="mb-1 block">Class X ≤ (demand CV)</Label>
-              <Input type="number" min={0} step="0.05" inputMode="decimal" value={xyzX} onChange={(e) => setXyzX(e.target.value)} />
+              <NumberInput min={0} step="0.05" inputMode="decimal" value={xyzX} onChange={(e) => setXyzX(e.target.value)} error={checked ? errors.xyzX : undefined} />
               <p className="mt-1 text-2xs text-muted-foreground">
                 Coefficient of variation. Lower = steadier demand. Items at/under this are class X.
               </p>
             </div>
             <div>
               <Label className="mb-1 block">Class Y ≤ (demand CV)</Label>
-              <Input type="number" min={0} step="0.05" inputMode="decimal" value={xyzY} onChange={(e) => setXyzY(e.target.value)} />
+              <NumberInput min={0} step="0.05" inputMode="decimal" value={xyzY} onChange={(e) => setXyzY(e.target.value)} error={checked ? errors.xyzY : undefined} />
               <p className="mt-1 text-2xs text-muted-foreground">
                 Items above X but at/under this are class Y; anything higher is class Z.
               </p>

@@ -6,11 +6,12 @@
  */
 
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
-import type { FormState } from '@/lib/sample-request-form';
+import { WHOLE_AT_LEAST_ONE, type FormState } from '@/lib/sample-request-form';
 import {
   DELIVERY_MODE_LABELS,
   GOODS_FROM_LABELS,
@@ -53,14 +54,15 @@ export function SampleRequestFooterFields({
       <div className="space-y-1.5">
         <Label htmlFor="sr-loan">Loan Period</Label>
         <div className="flex flex-wrap items-center gap-3">
-          <Input
+          <NumberInput
             id="sr-loan"
-            type="number"
             inputMode="numeric"
             min={1}
             className="w-24"
             disabled={disabled}
             value={state.loan_value}
+            error={errors.loan_value ? numberFieldError(state.loan_value, WHOLE_AT_LEAST_ONE) : undefined}
+            errorClassName="w-full"
             onChange={(e) => set('loan_value', e.target.value)}
           />
           <RadioGroup

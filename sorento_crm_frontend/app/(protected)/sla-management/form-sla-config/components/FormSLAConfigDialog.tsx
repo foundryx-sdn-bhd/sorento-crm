@@ -20,6 +20,8 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import {
@@ -152,6 +154,8 @@ export default function FormSLAConfigDialog({
   // never been configured keeps following the system setting rather than pinning
   // itself to "no grace" forever.
   const [graceSeconds, setGraceSeconds] = useState('');
+  const [graceChecked, setGraceChecked] = useState(false);
+  const graceError = numberFieldError(graceSeconds, { min: 0, max: 600, integer: true, optional: true });
 
   useEffect(() => {
     if (existing) {
@@ -192,6 +196,10 @@ export default function FormSLAConfigDialog({
       setGraceSeconds('');
     }
   }, [existing, open]);
+
+  useEffect(() => {
+    if (open) setGraceChecked(false);
+  }, [open, existing]);
 
   const policiesQuery = useQuery({
     queryKey: ['sla-policies', 'select'],
@@ -236,6 +244,10 @@ export default function FormSLAConfigDialog({
     if (!policyId) return toast.error('Policy required');
     if (!agentCode.trim()) return toast.error('Agent code required');
     if (!startEvent) return toast.error('Start event required');
+    if (graceError) {
+      setGraceChecked(true);
+      return;
+    }
     saveMut.mutate({
       source_entity_type: sourceType,
       stage_code: stageCode.trim(),
@@ -430,15 +442,15 @@ export default function FormSLAConfigDialog({
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="grace-seconds">Undo grace window (seconds)</Label>
-            <Input
+            <NumberInput
               id="grace-seconds"
-              type="number"
               min={0}
               max={600}
               inputMode="numeric"
               placeholder="Leave blank to use the system default"
               value={graceSeconds}
               onChange={(e) => setGraceSeconds(e.target.value)}
+              error={graceChecked ? graceError : undefined}
             />
             <span className="text-xs text-muted-foreground">
               How long an in-app action on this stage waits before it applies. During

@@ -12,7 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -250,16 +251,22 @@ export function AddEditPolicyModal({
       if (v.trim() !== '' && !(Number(v) > 0)) errs[key] = err;
     }
 
+    // Overrides are optional but never negative.
+    for (const key of ['min_override', 'max_override'] as const) {
+      const problem = numberFieldError(form[key], { min: 0, optional: true });
+      if (problem) errs[key] = problem;
+    }
+
     // Min ≤ Max when both provided (AC-VAL-5).
     const min = numOrNull(form.min_override);
     const max = numOrNull(form.max_override);
-    if (min != null && max != null && min > max) {
+    if (!errs.max_override && min != null && max != null && min > max) {
       errs.max_override = 'Max must be greater than or equal to Min.';
     }
 
     // Priority must be a whole number ≥ 0.
     const priority = Number(form.priority);
-    if (!Number.isInteger(priority) || priority < 0) {
+    if (numberFieldError(form.priority, { min: 0, integer: true })) {
       errs.priority = 'Priority must be a whole number of 0 or more.';
     }
 
@@ -429,8 +436,7 @@ export function AddEditPolicyModal({
                 help="The odds of not stocking out during the lead time. Higher = more buffer. Required for statistical safety stock."
                 error={errors.service_level}
               >
-                <Input
-                  type="number"
+                <NumberInput
                   min={1}
                   max={99}
                   inputMode="numeric"
@@ -449,8 +455,7 @@ export function AddEditPolicyModal({
                 }
                 error={errors.safety_days}
               >
-                <Input
-                  type="number"
+                <NumberInput
                   min={1}
                   inputMode="numeric"
                   value={form.safety_days}
@@ -468,8 +473,7 @@ export function AddEditPolicyModal({
               help="Fallback lead time used when a supplier has no measured or declared lead time."
               error={errors.lead_time_default_days}
             >
-              <Input
-                type="number"
+              <NumberInput
                 min={1}
                 inputMode="numeric"
                 value={form.lead_time_default_days}
@@ -484,8 +488,7 @@ export function AddEditPolicyModal({
                 help="How often stock is reviewed and topped up under a periodic-review policy."
                 error={errors.review_period_days}
               >
-                <Input
-                  type="number"
+                <NumberInput
                   min={1}
                   inputMode="numeric"
                   value={form.review_period_days}
@@ -505,8 +508,7 @@ export function AddEditPolicyModal({
                 help="The floor. When net position drops to or below Min, reorder up to Max."
                 error={errors.min_override}
               >
-                <Input
-                  type="number"
+                <NumberInput
                   min={0}
                   inputMode="numeric"
                   value={form.min_override}
@@ -519,8 +521,7 @@ export function AddEditPolicyModal({
                 help="The ceiling the min-max policy replenishes up to."
                 error={errors.max_override}
               >
-                <Input
-                  type="number"
+                <NumberInput
                   min={0}
                   inputMode="numeric"
                   value={form.max_override}
@@ -538,8 +539,7 @@ export function AddEditPolicyModal({
               help="No movement beyond this flags the SKU as dead stock for disposition."
               error={errors.dead_stock_days}
             >
-              <Input
-                type="number"
+              <NumberInput
                 min={1}
                 inputMode="numeric"
                 value={form.dead_stock_days}
@@ -552,8 +552,7 @@ export function AddEditPolicyModal({
               help="Cover beyond this many days of demand flags the SKU as overstocked."
               error={errors.overstock_days}
             >
-              <Input
-                type="number"
+              <NumberInput
                 min={1}
                 inputMode="numeric"
                 value={form.overstock_days}
@@ -570,8 +569,7 @@ export function AddEditPolicyModal({
               help="How far back demand is averaged to forecast future usage. Longer smooths noise; shorter reacts faster."
               error={errors.forecast_window_days}
             >
-              <Input
-                type="number"
+              <NumberInput
                 min={1}
                 inputMode="numeric"
                 value={form.forecast_window_days}
@@ -584,8 +582,7 @@ export function AddEditPolicyModal({
               help="How many months of retail orders decide whether demand is rising or dying off."
               error={errors.trajectory_window_retail_months}
             >
-              <Input
-                type="number"
+              <NumberInput
                 min={1}
                 inputMode="numeric"
                 value={form.trajectory_window_retail_months}
@@ -598,8 +595,7 @@ export function AddEditPolicyModal({
               help="Project demand is erratic, so its window is longer."
               error={errors.trajectory_window_project_months}
             >
-              <Input
-                type="number"
+              <NumberInput
                 min={1}
                 inputMode="numeric"
                 value={form.trajectory_window_project_months}
@@ -612,8 +608,7 @@ export function AddEditPolicyModal({
               help="A last purchase older than this gets a re-quote suggestion."
               error={errors.price_stale_after_days}
             >
-              <Input
-                type="number"
+              <NumberInput
                 min={1}
                 inputMode="numeric"
                 value={form.price_stale_after_days}
@@ -626,8 +621,7 @@ export function AddEditPolicyModal({
               help="Flags a moved price, and gates the cheaper-supplier suggestion."
               error={errors.price_movement_threshold_pct}
             >
-              <Input
-                type="number"
+              <NumberInput
                 min={0.1}
                 step={0.1}
                 inputMode="decimal"
@@ -681,8 +675,7 @@ export function AddEditPolicyModal({
               help="When two policies share the same scope, the higher priority wins the tie."
               error={errors.priority}
             >
-              <Input
-                type="number"
+              <NumberInput
                 min={0}
                 inputMode="numeric"
                 value={form.priority}

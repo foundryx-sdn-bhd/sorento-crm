@@ -28,6 +28,7 @@ import {
   blankLine,
   payloadFromState,
   stateFromDetail,
+  numberErrors,
   validate,
   type FormState,
 } from '@/lib/sample-request-form';
@@ -139,9 +140,11 @@ export default function SampleRequestForm({
   };
 
   const handleSaveDraft = async () => {
-    setSaving(true);
     setServerMessage(null);
-    setErrors({});
+    const numberProblems = numberErrors(state);
+    setErrors(numberProblems);
+    if (Object.keys(numberProblems).length > 0) return;
+    setSaving(true);
     try {
       const saved = await save();
       toast.success('Draft saved');

@@ -11,10 +11,12 @@ import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { AsyncCombobox } from '@/app/(auth)/portal/components/AsyncCombobox';
 import { codeWithName } from '@/lib/product-display';
-import type { DraftLine, FormState } from '@/lib/sample-request-form';
+import { numberFieldError } from '@/lib/number-field';
+import { WHOLE_AT_LEAST_ONE, type DraftLine, type FormState } from '@/lib/sample-request-form';
 import type { SampleRequestProductHit } from '@/types/sampleRequest';
 
 export interface SampleRequestLinesProps {
@@ -133,13 +135,13 @@ export function SampleRequestLines({
                   )}
                 </td>
                 <td className="px-2 py-2">
-                  <Input
-                    type="number"
+                  <NumberInput
                     inputMode="numeric"
                     min={1}
                     aria-label="Quantity"
                     disabled={disabled}
                     value={line.qty}
+                    error={errors[`qty_${line.key}`] ? numberFieldError(line.qty, WHOLE_AT_LEAST_ONE) : undefined}
                     onChange={(e) => patchLine(line.key, { qty: e.target.value })}
                   />
                 </td>

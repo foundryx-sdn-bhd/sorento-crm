@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
+import { numberFieldError } from '@/lib/number-field';
 import {
   seedValuesFor,
   seedWordsFor,
@@ -34,6 +35,8 @@ export interface SpecKeyDraft {
   isActive: boolean;
   /** Input string; '' clears the cap (AC-D.3 of the folded plan). */
   maxValue: string;
+  /** Set by a refused Save; follows the field from then on. */
+  maxValueError?: string;
   /** `allowed_values` currently in force. */
   liveValues: string[];
   /** Shipped values taken away. Survives a save that was not about them. */
@@ -188,6 +191,11 @@ export function useSpecKeyRecord(row: SpecRegistryKey | undefined): UseSpecKeyRe
 
   const save = useCallback(async () => {
     if (!row || !draft) return false;
+    const maxValueError = numberFieldError(draft.maxValue, { min: 0, optional: true });
+    if (maxValueError) {
+      setDraftState((current) => (current ? { ...current, maxValueError } : current));
+      return false;
+    }
     try {
       const body = buildPatchBody(row, draft);
       const updated = await update.mutateAsync({ specKey: row.spec_key, body });

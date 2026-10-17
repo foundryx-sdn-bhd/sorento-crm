@@ -6,7 +6,8 @@ import { Alert, AlertIcon, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { SpecSearchPolicyRow } from '@/app/(protected)/master-data-management/product-specifications/types/productSpec.types';
 import { useSearchPolicyMutations } from '../../hooks/useSearchPolicyMutations';
@@ -22,6 +23,8 @@ export function SearchRankingSettings() {
   const policyQuery = useSearchPolicyQuery();
   const { save } = useSearchPolicyMutations();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  // Rows whose Save found a wrong number; their sentence then follows the typing.
+  const [checkedKeys, setCheckedKeys] = useState<Set<string>>(() => new Set());
 
   // Seed a draft the first time a row is seen; never overwrite one the operator
   // is mid-edit, including across the refetch a save triggers.
@@ -42,9 +45,11 @@ export function SearchRankingSettings() {
 
   const doSave = (row: SpecSearchPolicyRow) => {
     const draft = drafts[row.policy_key] ?? String(row.value);
-    const numericDraft = draft.trim() === '' ? NaN : Number(draft);
-    if (!Number.isFinite(numericDraft)) return;
-    save.mutate({ policyKey: row.policy_key, value: numericDraft });
+    if (numberFieldError(draft, { min: 0 })) {
+      setCheckedKeys((current) => new Set(current).add(row.policy_key));
+      return;
+    }
+    save.mutate({ policyKey: row.policy_key, value: Number(draft) });
   };
 
   if (policyQuery.isError) {
@@ -81,9 +86,9 @@ export function SearchRankingSettings() {
         ) : (
           policyQuery.data.map((row) => {
             const draft = drafts[row.policy_key] ?? String(row.value);
-            const numericDraft = draft.trim() === '' ? NaN : Number(draft);
-            const isValidDraft = Number.isFinite(numericDraft);
-            const dirty = isValidDraft && numericDraft !== row.value;
+            // A blank or half-typed draft is a change too, so Save stays live and says what is wrong.
+            const parsed = parseNumberDraft(draft);
+            const dirty = parsed === null ? draft.trim() !== String(row.value) : parsed !== row.value;
             const saving = save.isPending && save.variables?.policyKey === row.policy_key;
             return (
               <div
@@ -102,16 +107,22 @@ export function SearchRankingSettings() {
                   <p className="mt-0.5 text-xs text-muted-foreground">{row.help_text}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    className="w-24 tabular-nums"
-                    value={draft}
-                    onChange={(e) =>
-                      setDrafts((current) => ({ ...current, [row.policy_key]: e.target.value }))
-                    }
-                  />
+                  <div className="w-28">
+                    <NumberInput
+                      step="0.5"
+                      min="0"
+                      className="tabular-nums"
+                      value={draft}
+                      onChange={(e) =>
+                        setDrafts((current) => ({ ...current, [row.policy_key]: e.target.value }))
+                      }
+                      error={
+                        checkedKeys.has(row.policy_key)
+                          ? numberFieldError(draft, { min: 0 })
+                          : undefined
+                      }
+                    />
+                  </div>
                   <Button
                     size="sm"
                     variant={dirty ? 'primary' : 'outline'}

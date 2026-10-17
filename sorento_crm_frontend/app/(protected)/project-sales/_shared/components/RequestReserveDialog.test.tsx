@@ -50,6 +50,7 @@ vi.mock('../hooks/useReserveRowOptions', () => ({
     ),
 }));
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const createSpy = vi.fn(async (_inquiryId: string, _payload: unknown) => ({
   id: 'rr-1',
   ordinal: 1,
@@ -217,16 +218,16 @@ describe('reviewer fix round (moved): date format and typed 0', () => {
     expect(screen.queryByText(/2026-10-01/)).not.toBeInTheDocument();
   });
 
-  it('typing 0 into Requested disables Send, or clamps the value up to 1', async () => {
+  it('typing 0 into Requested keeps the 0, leaves Send enabled and blocks with a message (NUMBER-FIELDS)', async () => {
     renderDialog({ rows: [ROWS[0]] as never });
     const requestedInput = (await screen.findByLabelText(/requested/i)) as HTMLInputElement;
     fireEvent.change(requestedInput, { target: { value: '0' } });
+    expect(requestedInput.value).toBe('0');
     const sendButton = screen.getByRole('button', { name: /send request/i });
-    if (requestedInput.value === '0') {
-      expect(sendButton).toBeDisabled();
-    } else {
-      expect(requestedInput.value).toBe('1');
-    }
+    expect(sendButton).toBeEnabled();
+    fireEvent.click(sendButton);
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(await screen.findByText('Enter a whole number between 1 and 90.')).toBeInTheDocument();
   });
 });
 

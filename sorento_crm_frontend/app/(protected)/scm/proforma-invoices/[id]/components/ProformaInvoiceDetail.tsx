@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { toast } from '@/lib/toast';
+import { numberFieldError } from '@/lib/number-field';
 import {
   Boxes,
   Download,
@@ -40,6 +41,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import type { SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { Field } from '@/components/common/Field';
@@ -189,6 +191,11 @@ function perUnitCbm(row: DraftLine): number | null {
   const qty = num(row.qty);
   if (total != null && qty) return total / qty;
   return null;
+}
+
+/** A typed optional figure is never negative; blank is fine. Told on the box at once. */
+function figureError(value: string): string | undefined {
+  return numberFieldError(value, { min: 0, optional: true });
 }
 
 export function ProformaInvoiceDetail({ id }: { id: string }) {
@@ -461,6 +468,21 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
       if (qty == null || qty < 0) {
         toast.error(`${row.itemCode || 'A new line'}: enter a quantity of zero or more.`);
         return;
+      }
+      // The optional figures may stay blank, but a typed one is never negative.
+      const optionalFigures: [string, string][] = [
+        ['cartons', row.cartons],
+        ['CBM per unit', row.cbmPerUnit],
+        ['unit price', row.unitPrice],
+        ['net weight', row.netWeight],
+        ['gross weight', row.grossWeight],
+      ];
+      for (const [label, value] of optionalFigures) {
+        const message = numberFieldError(value, { min: 0, optional: true });
+        if (message) {
+          toast.error(`${row.itemCode || 'A new line'} ${label}: ${message}`);
+          return;
+        }
       }
     }
     // ONE call. Rows with an id update, rows without create, and a line the array no longer
@@ -807,8 +829,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
           return (
             <div className="flex flex-col items-end gap-0.5">
               {editing ? (
-                <Input
-                  type="number"
+                <NumberInput
                   min={0}
                   value={line.qty}
                   onChange={(e) => patchLine(line.key, { qty: e.target.value })}
@@ -913,10 +934,10 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
         cell: ({ row }) => {
           const line = row.original;
           return editing ? (
-            <Input
-              type="number"
+            <NumberInput
               min={0}
               value={line.cartons}
+              error={figureError(line.cartons)}
               onChange={(e) => patchLine(line.key, { cartons: e.target.value })}
               className="h-8 w-20 text-right tabular-nums"
               aria-label={`Cartons for ${line.itemCode || `line ${row.index + 1}`}`}
@@ -942,11 +963,11 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
         cell: ({ row }) => {
           const line = row.original;
           return editing ? (
-            <Input
-              type="number"
+            <NumberInput
               min={0}
               step="0.001"
               value={line.cbmPerUnit}
+              error={figureError(line.cbmPerUnit)}
               onChange={(e) => patchLine(line.key, { cbmPerUnit: e.target.value })}
               className="h-8 w-24 text-right tabular-nums"
               aria-label={`CBM per unit for ${line.itemCode || `line ${row.index + 1}`}`}
@@ -991,11 +1012,11 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
         cell: ({ row }) => {
           const line = row.original;
           return editing ? (
-            <Input
-              type="number"
+            <NumberInput
               min={0}
               step="0.01"
               value={line.unitPrice}
+              error={figureError(line.unitPrice)}
               onChange={(e) => patchLine(line.key, { unitPrice: e.target.value })}
               className="h-8 w-24 text-right tabular-nums"
               aria-label={`Unit price for ${line.itemCode || `line ${row.index + 1}`}`}
@@ -1036,11 +1057,11 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
         cell: ({ row }) => {
           const line = row.original;
           return editing ? (
-            <Input
-              type="number"
+            <NumberInput
               min={0}
               step="0.01"
               value={line.netWeight}
+              error={figureError(line.netWeight)}
               onChange={(e) => patchLine(line.key, { netWeight: e.target.value })}
               className="h-8 w-20 text-right tabular-nums"
               aria-label={`Net weight for ${line.itemCode || `line ${row.index + 1}`}`}
@@ -1066,11 +1087,11 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
         cell: ({ row }) => {
           const line = row.original;
           return editing ? (
-            <Input
-              type="number"
+            <NumberInput
               min={0}
               step="0.01"
               value={line.grossWeight}
+              error={figureError(line.grossWeight)}
               onChange={(e) => patchLine(line.key, { grossWeight: e.target.value })}
               className="h-8 w-20 text-right tabular-nums"
               aria-label={`Gross weight for ${line.itemCode || `line ${row.index + 1}`}`}

@@ -3,6 +3,8 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import {
   type Predicate,
@@ -126,11 +128,21 @@ export function PredicateBuilder({
                     emptyMessage="No options."
                     disabled={disabled}
                   />
+                ) : meta?.type === 'numeric' ? (
+                  <NumberInput
+                    className="h-9"
+                    inputMode="decimal"
+                    value={p.value}
+                    error={p.value.trim() ? numberFieldError(p.value) : undefined}
+                    onChange={(e) => update(i, { value: e.target.value })}
+                    placeholder="Value"
+                    disabled={disabled}
+                    aria-label="Predicate value"
+                  />
                 ) : (
                   <Input
                     className="h-9"
-                    type={meta?.type === 'numeric' ? 'number' : 'text'}
-                    inputMode={meta?.type === 'numeric' ? 'decimal' : undefined}
+                    type="text"
                     value={p.value}
                     onChange={(e) => update(i, { value: e.target.value })}
                     placeholder="Value"

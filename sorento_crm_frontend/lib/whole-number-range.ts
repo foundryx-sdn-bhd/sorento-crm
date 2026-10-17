@@ -1,3 +1,5 @@
+import { numberFieldError } from '@/lib/number-field';
+
 /**
  * One validator for every operator-typed whole number the media settings surfaces
  * hold to the backend's bounds (system settings and the per-contact overrides).
@@ -12,9 +14,9 @@ export function wholeNumberRangeError(
 ): string | undefined {
   const trimmed = raw.trim();
   if (trimmed === '' && options.allowBlank) return undefined;
-  const message = options.allowBlank
-    ? `Enter a whole number between ${min} and ${max}, or leave it blank.`
-    : `Enter a whole number between ${min} and ${max}.`;
+  // NaN is never valid, so this returns the shared sentence for the bounds.
+  const message =
+    numberFieldError(NaN, { min, max, integer: true, optional: options.allowBlank }) ?? '';
   if (!/^\d+$/.test(trimmed)) return message;
   const value = Number(trimmed);
   return value < min || value > max ? message : undefined;

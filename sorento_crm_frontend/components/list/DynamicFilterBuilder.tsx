@@ -3,6 +3,7 @@
 import { Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { cn } from '@/lib/utils';
 import {
@@ -59,15 +60,13 @@ function ValueInput<TRow>({
     const bounds = Array.isArray(condition.value) ? condition.value : ['', ''];
     return (
       <div className="flex items-center gap-2">
-        <Input
-          type="number"
+        <NumberInput
           placeholder="Min"
           value={bounds[0] ?? ''}
           onChange={(e) => onChange([e.target.value, bounds[1] ?? ''])}
         />
         <span className="text-xs text-muted-foreground">and</span>
-        <Input
-          type="number"
+        <NumberInput
           placeholder="Max"
           value={bounds[1] ?? ''}
           onChange={(e) => onChange([bounds[0] ?? '', e.target.value])}
@@ -105,12 +104,23 @@ function ValueInput<TRow>({
     );
   }
 
+  const singleValue =
+    typeof condition.value === 'string' || typeof condition.value === 'number' ? condition.value : '';
+  if (field.type === 'number') {
+    return (
+      <NumberInput
+        placeholder="Value"
+        value={singleValue}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
   return (
     <Input
-      type={field.type === 'number' ? 'number' : 'text'}
+      type="text"
       placeholder="Value"
-      value={typeof condition.value === 'string' || typeof condition.value === 'number' ? condition.value : ''}
-      onChange={(e) => onChange(field.type === 'number' ? e.target.value : e.target.value)}
+      value={singleValue}
+      onChange={(e) => onChange(e.target.value)}
     />
   );
 }

@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { formatLocalDateToYyyyMmDd, todayMalaysiaYyyyMmDd } from '@/lib/helpers';
 import { usePointRatios, useSavePointRatio } from '../hooks/useSalesTargets';
@@ -59,9 +59,8 @@ export default function PointRatioDialog({
               <Label htmlFor="point-ratio-value" className="text-xs text-muted-foreground">
                 RM per point
               </Label>
-              <Input
+              <NumberInput
                 id="point-ratio-value"
-                type="number"
                 min={0}
                 step="any"
                 value={ratio}

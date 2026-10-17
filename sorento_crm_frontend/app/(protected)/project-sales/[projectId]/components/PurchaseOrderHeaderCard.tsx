@@ -4,10 +4,12 @@ import * as React from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { formatDateInMalaysia } from '@/lib/helpers';
+import { numberFieldError } from '@/lib/number-field';
 import { useProjectParties, useQuotations, versionsKey } from '../../_shared/hooks/useProjects';
 import { listQuotationVersions } from '../../_shared/services/projectService';
 import { formatMyrExact } from '../../_shared/lib/money';
@@ -32,6 +34,9 @@ import { SOURCE_LABELS } from './PurchaseOrdersPanel';
  * `liveTotal` is what the lines currently on screen come to, so the figure moves with them
  * instead of stating the last save's answer.
  */
+/** The PO amount may stay blank; a typed one is never negative or unreadable. */
+export const PO_AMOUNT_RULES = { min: 0, optional: true } as const;
+
 const SOURCES: { value: PoSource; label: string; description: string }[] = [
   {
     value: 'contractor_direct',
@@ -82,6 +87,7 @@ export function PurchaseOrderHeaderCard({
   projectId,
   po,
   liveTotal = null,
+  showAmountError = false,
   onChange,
 }: {
   projectId: string;
@@ -93,6 +99,8 @@ export function PurchaseOrderHeaderCard({
   po: ProjectPurchaseOrder;
   /** What the lines on screen come to, including edits nobody has saved yet. */
   liveTotal?: string | null;
+  /** A save was refused on the PO amount: the box shows its sentence, live until fixed. */
+  showAmountError?: boolean;
   /**
    * Set only in an edit session. Absent means this is a read. Typing here writes nothing: it
    * stages onto the header draft, and the screen's one Save sends it with the lines.
@@ -230,12 +238,12 @@ export function PurchaseOrderHeaderCard({
                 label="PO amount (RM)"
                 hint="Only needed when you are not entering lines."
               >
-                <Input
+                <NumberInput
                   id="po-amount"
-                  type="number"
                   step="0.01"
                   min="0"
                   value={po.po_amount ?? ''}
+                  error={showAmountError ? numberFieldError(po.po_amount, PO_AMOUNT_RULES) : undefined}
                   onChange={(event) => onChange({ po_amount: event.target.value || null })}
                   placeholder="0.00"
                 />

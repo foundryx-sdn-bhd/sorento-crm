@@ -1403,3 +1403,19 @@ describe('S2 - the Product select carries a matched line through edit, and UoM c
     expect(uomCombo).toHaveTextContent('BOX');
   });
 });
+
+describe('ProformaInvoiceDetail - a refused optional figure marks its field (S9)', () => {
+  it('a negative Cartons is refused on the box itself with aria-invalid and the sentence, nothing saved', () => {
+    state.data = detail();
+    renderDetail();
+    beginEdit();
+    openTab('Lines');
+    const box = screen.getByLabelText('Cartons for ITEM-1');
+    fireEvent.change(box, { target: { value: '-5' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Save proforma invoice$/i }));
+
+    expect(writes.save).not.toHaveBeenCalled();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a number of at least 0, or leave it blank.')).toBeInTheDocument();
+  });
+});

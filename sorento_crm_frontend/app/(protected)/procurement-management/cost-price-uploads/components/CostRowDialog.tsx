@@ -11,7 +11,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { DatePicker } from '@/components/ui/date-picker';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { toast } from '@/lib/toast';
@@ -66,6 +67,8 @@ export function CostRowDialog({
   const [startDate, setStartDate] = React.useState<Date | undefined>(fromDateOnly(cost?.start_date ?? null));
   const [endDate, setEndDate] = React.useState<Date | undefined>(fromDateOnly(cost?.end_date ?? null));
   const [saving, setSaving] = React.useState(false);
+  // The cost is checked when Save is pressed; afterwards the message follows the box.
+  const [checked, setChecked] = React.useState(false);
 
   const deleteAction = useDeferredAction({
     actionKey: 'product_supplier_cost.delete',
@@ -82,14 +85,17 @@ export function CostRowDialog({
   });
 
   const endBeforeStart = Boolean(startDate && endDate && endDate < startDate);
-  const canSave = unitCost.trim() !== '' && Number(unitCost) >= 0 && Boolean(currency) && !endBeforeStart;
+  const canSave = Boolean(currency) && !endBeforeStart;
+  const costError = checked ? numberFieldError(unitCost, { min: 0 }) : undefined;
 
   const onSave = async () => {
     if (!canSave) return;
+    setChecked(true);
+    if (numberFieldError(unitCost, { min: 0 })) return;
     setSaving(true);
     try {
       const input = {
-        unit_cost: Number(unitCost),
+        unit_cost: parseNumberDraft(unitCost) as number,
         currency,
         start_date: toDateOnly(startDate),
         end_date: toDateOnly(endDate),
@@ -118,13 +124,13 @@ export function CostRowDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="cost-row-price">Cost</Label>
-              <Input
+              <NumberInput
                 id="cost-row-price"
-                type="number"
                 min={0}
                 step="0.01"
                 value={unitCost}
                 onChange={(e) => setUnitCost(e.target.value)}
+                error={costError}
               />
             </div>
             <div className="space-y-1.5">

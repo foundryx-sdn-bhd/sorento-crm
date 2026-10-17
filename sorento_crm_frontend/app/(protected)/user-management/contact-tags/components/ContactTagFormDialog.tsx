@@ -13,6 +13,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { useContactTagMutations } from '../hooks/useContactTags';
 import type { ContactTag } from '../types/contactTag.types';
@@ -36,6 +38,7 @@ export default function ContactTagFormDialog({
 
   useEffect(() => {
     if (!open) return;
+    setSortChecked(false);
     setForm(
       tag
         ? {
@@ -48,19 +51,21 @@ export default function ContactTagFormDialog({
     );
   }, [open, tag]);
 
-  const sort = Number(form.sort_order);
-  const invalid =
-    !form.name.trim() ||
-    form.sort_order.trim() === '' ||
-    !Number.isInteger(sort);
+  const sortError = numberFieldError(form.sort_order, { integer: true });
+  const [sortChecked, setSortChecked] = useState(false);
+  const invalid = !form.name.trim();
   const busy = create.isPending || update.isPending;
 
   const save = () => {
+    if (sortError) {
+      setSortChecked(true);
+      return;
+    }
     const body = {
       name: form.name.trim(),
       description: form.description.trim() || null,
       is_active: form.is_active,
-      sort_order: sort,
+      sort_order: Number(form.sort_order),
     };
     if (tag) update.mutate({ id: tag.id, body });
     else create.mutate(body);
@@ -105,13 +110,13 @@ export default function ContactTagFormDialog({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="contact-tag-sort">Sort order</Label>
-              <Input
+              <NumberInput
                 id="contact-tag-sort"
-                type="number"
                 value={form.sort_order}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, sort_order: e.target.value }))
                 }
+                error={sortChecked ? sortError : undefined}
               />
             </div>
             <div className="flex items-center gap-2">

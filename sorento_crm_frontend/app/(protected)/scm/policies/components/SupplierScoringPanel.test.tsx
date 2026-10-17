@@ -82,4 +82,28 @@ describe('SupplierScoringPanel', () => {
       min_sample_size: 5,
     });
   });
+
+  it('NUMBER-FIELDS: a blank grace blocks the save with a sentence under the field, never saved as 0', () => {
+    hooks.useSupplierScoring.mockReturnValue({ data: DATA, isLoading: false, isError: false });
+    render(<SupplierScoringPanel />);
+
+    fireEvent.change(screen.getByLabelText(/On-time grace/i), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save scoring/i }));
+
+    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(screen.getByText(/^Enter a number of at least 0/)).toBeInTheDocument();
+  });
+
+  it('NUMBER-FIELDS: a blank weight keeps Save enabled and says why', () => {
+    hooks.useSupplierScoring.mockReturnValue({ data: DATA, isLoading: false, isError: false });
+    render(<SupplierScoringPanel />);
+
+    fireEvent.change(screen.getByLabelText(/Delivery weight/i), { target: { value: '' } });
+    const save = screen.getByRole('button', { name: /Save scoring/i });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+
+    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(screen.getByText(/^Enter a number between 0 and 100/)).toBeInTheDocument();
+  });
 });

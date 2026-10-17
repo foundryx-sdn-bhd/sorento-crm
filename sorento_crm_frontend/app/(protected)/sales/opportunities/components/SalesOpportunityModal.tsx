@@ -12,10 +12,18 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { useSaveSalesOpportunity } from '../hooks/useSalesOpportunities';
-import { OpportunityLineRow, nextLineKey, sumLineAmounts, type LineDraft } from './OpportunityLineRow';
+import { numberFieldError } from '@/lib/number-field';
+import {
+  OpportunityLineRow,
+  lineHasNumberError,
+  nextLineKey,
+  sumLineAmounts,
+  type LineDraft,
+} from './OpportunityLineRow';
 import {
   BLOCKED_VALUE,
   PROSPECT_PREFIX,
@@ -57,6 +65,7 @@ export default function SalesOpportunityModal({
   const [amountTouched, setAmountTouched] = useState(false);
   const [expectedCloseDate, setExpectedCloseDate] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([]);
+  const [showErrors, setShowErrors] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -66,6 +75,7 @@ export default function SalesOpportunityModal({
     setAmountTouched(false);
     setExpectedCloseDate('');
     setLines([]);
+    setShowErrors(false);
   }, [open, presetCustomerId]);
 
   const customerOptions = useMemo(
@@ -92,13 +102,19 @@ export default function SalesOpportunityModal({
   const canSave =
     customerOrProspect !== BLOCKED_VALUE &&
     title.trim().length > 0 &&
-    !!effectiveAmount &&
     !!expectedCloseDate &&
     !save.isPending;
+
+  const amountError = numberFieldError(effectiveAmount, { min: 0 });
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canSave) return;
+    // Only the final values are checked: a bad amount or product row stays on screen as typed.
+    if (amountError || lines.some(lineHasNumberError)) {
+      setShowErrors(true);
+      return;
+    }
     const payload = {
       title: title.trim(),
       expected_amount: effectiveAmount,
@@ -160,12 +176,12 @@ export default function SalesOpportunityModal({
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="opportunity-amount">Expected amount</Label>
-              <Input
+              <NumberInput
                 id="opportunity-amount"
-                type="number"
                 min="0"
                 step="0.01"
                 value={effectiveAmount}
+                error={showErrors ? amountError : undefined}
                 onChange={(e) => {
                   setExpectedAmount(e.target.value);
                   setAmountTouched(true);
@@ -199,6 +215,7 @@ export default function SalesOpportunityModal({
                       line={line}
                       onChange={(patch) => updateLine(line.key, patch)}
                       onRemove={() => removeLine(line.key)}
+                      showErrors={showErrors}
                     />
                   ))}
                 </div>

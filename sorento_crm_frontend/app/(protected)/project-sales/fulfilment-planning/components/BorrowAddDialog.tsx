@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { fromMinor, toMinor } from '../../_shared/lib/supplyComposition';
 import { drawAcross } from '../../_shared/lib/boardAmend';
@@ -51,6 +53,11 @@ import type { BorrowCandidate } from '../../_shared/types/fulfilmentPlanning.typ
  * dialog asks who did. Free text, required only on that donor, and folded into the reason
  * stored beside the quantity - one field to read later, not two.
  */
+/** A quantity to add must be a number above zero. */
+function qtyError(raw: string) {
+  return numberFieldError(raw, { min: 0, minExclusive: true });
+}
+
 export function BorrowAddDialog({
   lineNo,
   itemCode,
@@ -128,8 +135,9 @@ export function BorrowAddDialog({
   );
   const authorised = authorisation.trim();
   const needsAuthorisation = Boolean(selected?.same_agent);
-  const amount = Number.parseFloat(qty);
-  const typed = Number.isFinite(amount) && amount > 0 ? amount : null;
+  const quantityMessage = qtyError(qty);
+  const [showErrors, setShowErrors] = React.useState(false);
+  const typed = quantityMessage ? null : Number.parseFloat(qty);
 
   // S4/review S3: `rowKey`/`label` are CellStockTable's own opt-in fields for a donor
   // picker - every OTHER caller (the Grid Location table) sets neither and keys/labels
@@ -155,7 +163,6 @@ export function BorrowAddDialog({
   const valid =
     hasDonors &&
     Boolean(selected) &&
-    typed !== null &&
     (!needsAuthorisation || Boolean(authorised));
 
   const badges = React.useMemo(() => {
@@ -181,6 +188,10 @@ export function BorrowAddDialog({
           onSubmit={(event) => {
             event.preventDefault();
             if (!valid || !selected) return;
+            if (quantityMessage) {
+              setShowErrors(true);
+              return;
+            }
             const reason = storedReason(selected, authorised);
             const members = binStock(bins.get(candidateKey(selected)) ?? []);
             if (members.length < 2) {
@@ -265,12 +276,12 @@ export function BorrowAddDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor={`borrow-qty-${lineNo}`}>Quantity</Label>
-              <Input
+              <NumberInput
                 id={`borrow-qty-${lineNo}`}
-                type="number"
                 min="0"
                 step="any"
                 value={qty}
+                error={showErrors ? quantityMessage : undefined}
                 onChange={(event) => setQty(event.target.value)}
                 className="h-9 w-40 tabular-nums"
               />

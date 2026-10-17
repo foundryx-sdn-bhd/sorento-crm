@@ -584,3 +584,62 @@ describe('PriceTagRequestDetail - a parts sub-row spans the header width minus i
     expect(Number(spannedCell!.getAttribute('colspan'))).toBe(headerCount - 1);
   });
 });
+
+// --------------------------------------------------------------------------- N3
+describe('PriceTagRequestDetail - a refused manual price stays until the value is valid (N3)', () => {
+  it('keeps the sentence through a still-invalid keystroke, clears it once valid', async () => {
+    mockGet.mockResolvedValue({
+      ...baseRequest,
+      lines: [
+        {
+          id: 'line-1',
+          line_type: 'product',
+          product_id: 'prod-1',
+          product_set_id: null,
+          name: 'Kitchen Sink',
+          code: 'SRT-1',
+          show_promo_price: false,
+          quantity: 1,
+          included_accessories: null,
+          sort_order: 0,
+          list_price: 500,
+          sell_price: null,
+          parts: [],
+          package_warning: null,
+          promotion_id: null,
+          promotion_name: null,
+          manual_sell_price: null,
+          sell_price_basis: 'list',
+          tags: [],
+        },
+      ],
+    } as never);
+    mockLookupLinePricing.mockResolvedValue([
+      {
+        key: 'line-1',
+        list_price: 500,
+        promotion_options: [],
+        auto_promotion_id: null,
+        sell_price: null,
+        sell_price_basis: 'list',
+        parts_at_list: [],
+        candidates: [],
+      },
+    ]);
+    renderDetail();
+    await screen.findByRole('heading', { name: /PT-202608-0001/, level: 1 });
+    switchTab('Lines');
+    const input = await screen.findByLabelText('Selling price for SRT-1');
+
+    fireEvent.change(input, { target: { value: '-1' } });
+    fireEvent.blur(input);
+    const sentence = 'Enter a number of at least 0.01, or leave it blank.';
+    expect(await screen.findByText(sentence)).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: '-12' } });
+    expect(screen.getByText(sentence)).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: '12' } });
+    expect(screen.queryByText(sentence)).not.toBeInTheDocument();
+  });
+});

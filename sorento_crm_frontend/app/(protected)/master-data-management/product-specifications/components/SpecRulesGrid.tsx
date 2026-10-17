@@ -12,7 +12,8 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -94,6 +95,47 @@ const editableFindKinds = new Set(['words', 'code', 'size', 'product']);
 /** Tailwind's `sm` is 640px: below it the grid keeps Order, What to find and Value
  *  it sets (AC-S1.14) and scrolls inside its own frame. */
 const BELOW_SM_QUERY = '(max-width: 639px)';
+
+/**
+ * The numeric value cell. It saves on blur, and only a real figure is saved: an emptied or
+ * unreadable cell stays open with what was typed and says why (Escape leaves it as it was).
+ */
+function NumericValueCell({
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  initial: string;
+  onCommit: (value: number) => void;
+  onCancel: () => void;
+}) {
+  const [error, setError] = useState<string | undefined>(undefined);
+  // Once a sentence has been shown it follows the typing in both directions.
+  const [follow, setFollow] = useState(false);
+  return (
+    <NumberInput
+      autoFocus
+      defaultValue={initial}
+      error={error}
+      // A shown sentence follows the typing and goes only when the figure is usable.
+      onChange={(e) => {
+        if (follow) setError(numberFieldError(e.target.value));
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onCancel();
+      }}
+      onBlur={(e) => {
+        const message = numberFieldError(e.target.value);
+        if (message) {
+          setError(message);
+          setFollow(true);
+          return;
+        }
+        onCommit(parseNumberDraft(e.target.value) as number);
+      }}
+    />
+  );
+}
 
 function useBelowSm(): boolean {
   const [below, setBelow] = useState(false);
@@ -365,13 +407,11 @@ export function SpecRulesGrid({
     if (editing && canEdit) {
       if (spec.data_type === 'numeric') {
         return (
-          <Input
-            type="number"
-            autoFocus
-            defaultValue={String(builder.value ?? '')}
-            onBlur={(e) => {
-              const value = Number(e.target.value);
-              patchBuilderValue(Number.isFinite(value) ? value : builder.value);
+          <NumericValueCell
+            initial={String(builder.value ?? '')}
+            onCancel={() => setEditingCell(null)}
+            onCommit={(value) => {
+              patchBuilderValue(value);
               setEditingCell(null);
             }}
           />

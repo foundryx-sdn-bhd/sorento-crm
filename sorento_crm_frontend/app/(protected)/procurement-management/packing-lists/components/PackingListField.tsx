@@ -1,6 +1,7 @@
 'use client';
 
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 
 /**
  * One field, read or typed IN THE SAME PLACE.
@@ -17,7 +18,9 @@ export function PackingListField({
   draft,
   onChange,
   type = 'text',
+  numeric = false,
   step,
+  error,
 }: {
   label: string;
   name: string;
@@ -26,20 +29,35 @@ export function PackingListField({
   draft: Record<string, string>;
   onChange: (name: string, value: string) => void;
   type?: string;
+  /** A number box (NumberInput) rather than a text one. */
+  numeric?: boolean;
   step?: string;
+  /** The sentence under a number box, once a Save has been refused on it. */
+  error?: string;
 }) {
   return (
     <div className="min-w-0">
       <p className="text-sm text-muted-foreground">{label}</p>
       {editing ? (
-        <Input
-          className="mt-1"
-          type={type}
-          step={step}
-          value={draft[name] ?? ''}
-          onChange={(e) => onChange(name, e.target.value)}
-          aria-label={label}
-        />
+        numeric ? (
+          <NumberInput
+            className="mt-1"
+            step={step}
+            value={draft[name] ?? ''}
+            onChange={(e) => onChange(name, e.target.value)}
+            aria-label={label}
+            error={error}
+          />
+        ) : (
+          <Input
+            className="mt-1"
+            type={type}
+            step={step}
+            value={draft[name] ?? ''}
+            onChange={(e) => onChange(name, e.target.value)}
+            aria-label={label}
+          />
+        )
       ) : (
         <p className="font-medium break-words">{view}</p>
       )}

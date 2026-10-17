@@ -44,7 +44,8 @@ import { Card, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridTable } from '@/components/ui/data-grid-table';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -135,9 +136,14 @@ function fmtSigned(value: number): string {
   return value < 0 ? `-${s}` : s;
 }
 
-type SplitState = { warehouseId: string; qty: number };
+/** `qtyText` is set while the box holds something that is not a usable quantity (blank or
+ *  negative): the figure then counts as 0 on screen, the box keeps what was typed, and the
+ *  buttons that send refuse it with a message. */
+type SplitState = { warehouseId: string; qty: number; qtyText?: string };
 type LineState = {
   qty: number;
+  /** See `SplitState.qtyText`. */
+  qtyText?: string;
   /** What the operator TYPED, held apart from what is currently sendable. Null until they
    *  type one, and the quantity is then a derived default that follows the ticked takes.
    *  Kept separate because the sendable figure is clamped to what is ticked, and writing
@@ -161,6 +167,11 @@ type LineState = {
   soOrder: string[];
 };
 type ScheduleView = 'po' | 'so';
+
+/** The sentence for a quantity box that holds something unusable; nothing for a good one. */
+function quantityMessage(text: string | undefined): string | undefined {
+  return text === undefined ? undefined : numberFieldError(text, { min: 0 });
+}
 
 /** A `po_takes` row occupied by ANOTHER SPO entirely (S5) - `qty: 0` is never this
  *  cascade's own take, so the row can never be ticked. */
@@ -389,6 +400,12 @@ export function SpoPlannerTable({
    */
   const stateRef = useRef(state);
   stateRef.current = state;
+  /** A send (Create SPO / Save changes) was refused on a quantity box: from then on the boxes
+   *  show their sentence, live, until every figure is usable. Read by the cells through a ref
+   *  for the same reason as `stateRef`. */
+  const [qtyRefused, setQtyRefused] = useState(false);
+  const qtyRefusedRef = useRef(qtyRefused);
+  qtyRefusedRef.current = qtyRefused;
   /** Which lines have their destinations open (R22). Closed to start with: the table is a
    *  ranked reading first, and every row open turns it into a form. */
   const [expanded, setExpanded] = useState<ExpandedState>({});
@@ -501,7 +518,7 @@ export function SpoPlannerTable({
       [ln.shipment_line_id]: { ...stateFor(ln), ...next },
     }));
 
-  const setQty = (ln: SpoSuggestionLine, qty: number) => {
+  const setQty = (ln: SpoSuggestionLine, qty: number, qtyText?: string) => {
     const current = stateFor(ln);
     // The split follows the quantity, because it is derived from the ticks against it -
     // leaving a stale split behind is how Create SPO refuses with "the split has to add up"
@@ -510,6 +527,7 @@ export function SpoPlannerTable({
     // one is less surprising than a stale number nobody chose for this total.
     patch(ln, {
       qty,
+      qtyText,
       typedQty: qty,
       soTakeOverrides: {},
       splits: splitsFromTicks(ln, current.soKeys, {}, qty, current.soOrder),
@@ -650,6 +668,20 @@ export function SpoPlannerTable({
     [lines, state],
   );
   const includedCount = confirmLines.filter((l) => l.include).length;
+  /** Any quantity box holding a blank or negative figure. Sending is refused until fixed. */
+  const hasUnusableQty = lines.some((ln) => {
+    const st = stateFor(ln);
+    return !ln.cannot_convert && (st.qtyText !== undefined || st.splits.some((sp) => sp.qtyText !== undefined));
+  });
+  const sendIfUsable = (send: () => void) => {
+    // A refused send is what makes the boxes tell their sentence; nothing is said while typing.
+    if (hasUnusableQty) {
+      setQtyRefused(true);
+      return;
+    }
+    setQtyRefused(false);
+    send();
+  };
 
   // A split must sum to exactly the line's SPO qty (the backend's own hard rule, mirroring
   // `allocation_suggestion_service.approve`) - checked here too so Create SPO is disabled
@@ -741,8 +773,7 @@ export function SpoPlannerTable({
   };
 
   const renderQtyInput = (ln: SpoSuggestionLine, short: boolean) => (
-    <Input
-      type="number"
+    <NumberInput
       min={0}
       step={1}
       className={
@@ -750,7 +781,8 @@ export function SpoPlannerTable({
           ? 'h-8 w-24 border-destructive tabular-nums focus-visible:ring-destructive/40'
           : 'h-8 w-24 tabular-nums'
       }
-      value={qtyFor(ln)}
+      value={stateFor(ln).qtyText ?? qtyFor(ln)}
+      error={qtyRefusedRef.current ? quantityMessage(stateFor(ln).qtyText) : undefined}
       disabled={ln.cannot_convert}
       aria-label="SPO qty"
       // A test hook, not a live tooltip (the `title` this used to carry was the explanatory
@@ -760,8 +792,11 @@ export function SpoPlannerTable({
       // not depend on that tree.
       data-testid="spo-qty-input"
       onChange={(e) => {
-        const raw = Math.max(0, Number(e.target.value) || 0);
-        setQty(ln, raw);
+        const text = e.target.value;
+        const typed = parseNumberDraft(text);
+        // A usable figure is kept exactly; a blank or negative one is held as typed.
+        if (typed !== null && typed >= 0) setQty(ln, typed);
+        else setQty(ln, 0, text);
       }}
     />
   );
@@ -1179,6 +1214,7 @@ export function SpoPlannerTable({
               qty={qtyFor(ln)}
               disabled={cannotSplit(ln)}
               mismatch={splitMismatchRef.current.has(ln.shipment_line_id)}
+              showQtyMessage={qtyRefusedRef.current}
               onChange={(next) => setSplits(ln, next)}
             />
           ),
@@ -1441,12 +1477,14 @@ export function SpoPlannerTable({
             <Button
               size="sm"
               onClick={() =>
-                revise.mutate(confirmLines, { onSuccess: () => setEditPoId(null) })
+                sendIfUsable(() =>
+                  revise.mutate(confirmLines, { onSuccess: () => setEditPoId(null) }),
+                )
               }
               disabled={
                 // S5: an SPO cannot be emptied by a revision - Delete is the action for
                 // that, and the server refuses it (422) for the same reason.
-                !includedCount ||
+                (!includedCount && !hasUnusableQty) ||
                 splitMismatch.size > 0 ||
                 soTakeMismatch.size > 0 ||
                 takesWithoutLocation.size > 0 ||
@@ -1468,9 +1506,9 @@ export function SpoPlannerTable({
             // Creates on the click (captain, 4 Sep): the server caps every line at its own
             // remainder and writes the uncovered part without a PO pull, so there is nothing
             // to confirm - no review dialog.
-            onClick={() => create.mutate(confirmLines)}
+            onClick={() => sendIfUsable(() => create.mutate(confirmLines))}
             disabled={
-              !includedCount ||
+              (!includedCount && !hasUnusableQty) ||
               splitMismatch.size > 0 ||
               soTakeMismatch.size > 0 ||
               takesWithoutLocation.size > 0 ||
@@ -1740,6 +1778,7 @@ function LocationSplitPanel({
   qty,
   disabled,
   mismatch,
+  showQtyMessage,
   onChange,
 }: {
   line: SpoSuggestionLine;
@@ -1747,6 +1786,8 @@ function LocationSplitPanel({
   qty: number;
   disabled: boolean;
   mismatch: boolean;
+  /** A send was refused on a quantity: the boxes now show their message. */
+  showQtyMessage: boolean;
   onChange: (splits: SplitState[]) => void;
 }) {
   const options = line.location_options.map((o: SpoLocationOption) => ({
@@ -1811,15 +1852,23 @@ function LocationSplitPanel({
                         clearable
                       />
                     </div>
-                    <Input
-                      type="number"
-                      min={0}
-                      step={1}
-                      className="h-8 w-20 tabular-nums"
-                      aria-label={`Quantity for destination ${i + 1}`}
-                      value={split.qty}
-                      onChange={(e) => updateRow(i, { qty: Math.max(0, Number(e.target.value) || 0) })}
-                    />
+                    <div>
+                      <NumberInput
+                        min={0}
+                        step={1}
+                        className="h-8 w-20 tabular-nums"
+                        aria-label={`Quantity for destination ${i + 1}`}
+                        value={split.qtyText ?? split.qty}
+                        error={showQtyMessage ? quantityMessage(split.qtyText) : undefined}
+                        errorClassName="w-24 whitespace-normal"
+                        onChange={(e) => {
+                          const text = e.target.value;
+                          const typed = parseNumberDraft(text);
+                          if (typed !== null && typed >= 0) updateRow(i, { qty: typed, qtyText: undefined });
+                          else updateRow(i, { qty: 0, qtyText: text });
+                        }}
+                      />
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"
