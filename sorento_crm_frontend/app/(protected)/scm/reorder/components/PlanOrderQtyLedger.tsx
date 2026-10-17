@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import {
   EM_DASH,
   fmtDate,
@@ -29,7 +29,6 @@ import {
 import { describePoBook, type PoReceipt } from '../lib/poCover';
 import { moqGap, moqGapNote, type ProductEconomics } from '../lib/productHealth';
 import {
-  clampForecastQty,
   composeMixture,
   daysTerm,
   forecastAddOn,
@@ -149,15 +148,23 @@ function ToggleLine({
 function ForecastAddOnLine({
   checked,
   onToggle,
-  qty,
-  onQtyChange,
+  value,
+  onCommit,
+  onValidityChange,
+  showMessage,
+  label,
   cap,
   detail,
 }: {
   checked: boolean;
   onToggle: () => void;
-  qty: number;
-  onQtyChange: (value: number) => void;
+  /** The figure in force (the last valid entry). */
+  value: number;
+  onCommit: (value: number) => void;
+  onValidityChange?: (valid: boolean) => void;
+  showMessage?: boolean;
+  /** The tick's own accessible name, built from the last valid figure. */
+  label: string;
   cap: number;
   detail: string;
 }) {
@@ -168,21 +175,24 @@ function ForecastAddOnLine({
         checked={checked}
         onCheckedChange={onToggle}
         className="mt-0.5"
-        aria-label={checked ? `Added ${fmtInt(qty)}` : `Add ${fmtInt(qty)}`}
+        aria-label={label}
       />
       <div className="min-w-0 flex-1 space-y-0.5">
         <div
           className={`flex flex-wrap items-baseline gap-1.5 ${checked ? 'font-medium' : 'text-muted-foreground'}`}
         >
           <span>{checked ? 'Added' : '+ Add'}</span>
-          <Input
-            type="number"
+          <LiveNumberInput
             variant="sm"
             min={0}
             max={cap}
             step={1}
-            value={qty}
-            onChange={(e) => onQtyChange(e.target.valueAsNumber)}
+            rules={{ min: 0, max: cap, integer: true }}
+            value={value}
+            onCommit={onCommit}
+            onValidityChange={onValidityChange}
+            showMessage={showMessage}
+            errorClassName="basis-full"
             className="h-6 w-20 tabular-nums"
             aria-label="Forecast add-on quantity"
           />
@@ -209,33 +219,35 @@ function CoverSourceLine({
   code,
   free,
   max,
-  qty,
-  onQtyChange,
+  value,
+  onCommit,
 }: {
   code: string;
   /** What the location holds - a fact about the location, stated as such. */
   free: number;
   /** What this field may actually be set to: `free`, capped by what the row still needs. */
   max: number;
-  qty: number;
-  onQtyChange: (value: number) => void;
+  /** The figure in force (the last valid entry). */
+  value: number;
+  onCommit: (value: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 text-xs">
+    <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs">
       <span className="min-w-0 flex-1 truncate" title={code}>
         {code}
       </span>
       <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
         {`${fmtInt(free)} free`}
       </span>
-      <Input
-        type="number"
+      <LiveNumberInput
         variant="sm"
         min={0}
         max={max}
         step={1}
-        value={qty}
-        onChange={(e) => onQtyChange(e.target.valueAsNumber)}
+        rules={{ min: 0, max, integer: true }}
+        value={value}
+        onCommit={onCommit}
+        errorClassName="basis-full text-end"
         className="h-6 w-20 shrink-0 tabular-nums"
         aria-label={`Use from ${code}`}
       />
@@ -638,7 +650,12 @@ export function OrderQtyLedger({
   // feedback, 2026-08-12: "what if I don't want to buy 1,200 more, what if 1,500?
   // editable here"). The trend-aware proposal is only ever the STARTING value - once the
   // popover mounts, the buyer's typed figure is the one that gets applied.
+  // The figure in force (the last VALID entry); the box keeps what was typed and commits
+  // nothing for a blank or out-of-range entry, so the recorded buy never rests on a figure
+  // the buyer did not give.
   const [forecastQty, setForecastQty] = useState<number>(() => addOn?.qty ?? 0);
+  const [forecastInvalid, setForecastInvalid] = useState(false);
+  const [forecastRefused, setForecastRefused] = useState(false);
   const forecastCap = forecastQtyCap(addOn?.qty ?? 0);
   // `qty` can be 0 (a falling trend ate the whole flat proposal) - that renders a disabled
   // line, never a checkbox, so it can never actually be toggled on.
@@ -714,27 +731,25 @@ export function OrderQtyLedger({
   const togglePo = () => commit({ stockOn, poOn: !poOn, forecastOn, forecastQty, edits: sourceEdits });
   const toggleForecast = () => {
     const next = !forecastOn;
+    if (next && forecastInvalid) {
+      setForecastRefused(true);
+      return;
+    }
     setForecastOn(next);
     commit({ stockOn, poOn, forecastOn: next, forecastQty, edits: sourceEdits });
   };
   // Editing a location re-applies immediately, exactly as the forecast input does: the
   // input IS the edit, there is no separate Record step in this ledger (UAC B4).
-  const changeSourceQty = (warehouseId: string, raw: number) => {
-    // What the LOCATION holds free, and what the ROW still needs once the other locations are
-    // counted - the second half was missing, so 40 could be typed against a gap of 10 and the
-    // 30 units this row could never use were withdrawn from every other row of the product.
-    const max = maxSourceEdit(cover, warehouseId, sourceEdits);
-    const clamped = Number.isFinite(raw) ? Math.max(0, Math.min(max, Math.floor(raw))) : 0;
-    const edits = { ...sourceEdits, [warehouseId]: clamped };
+  const changeSource = (warehouseId: string, figure: number) => {
+    const edits = { ...sourceEdits, [warehouseId]: figure };
     setSourceEdits(edits);
     if (stockOn) commit({ stockOn, poOn, forecastOn, forecastQty, edits });
   };
   // Editing while ticked re-applies immediately - the input IS the edit, there is no
   // separate "Record" step (mirrors the ledger's own UAC B4 non-goal for the toggles).
-  const changeForecastQty = (raw: number) => {
-    const clamped = clampForecastQty(raw, forecastCap);
-    setForecastQty(clamped);
-    if (forecastOn) commit({ stockOn, poOn, forecastOn, forecastQty: clamped, edits: sourceEdits });
+  const changeForecast = (value: number) => {
+    setForecastQty(value);
+    if (forecastOn) commit({ stockOn, poOn, forecastOn, forecastQty: value, edits: sourceEdits });
   };
 
   const noCoverAvailable = stockPart <= 0 && cover.coverQty <= 0 && poQty <= 0;
@@ -903,8 +918,8 @@ export function OrderQtyLedger({
                             code={s.warehouse_code}
                             free={s.qty}
                             max={maxSourceEdit(cover, s.warehouse_id, sourceEdits)}
-                            qty={sourceEdits[s.warehouse_id] ?? 0}
-                            onQtyChange={(v) => changeSourceQty(s.warehouse_id, v)}
+                            value={sourceEdits[s.warehouse_id] ?? 0}
+                            onCommit={(v) => changeSource(s.warehouse_id, v)}
                           />
                         ))}
                       </div>
@@ -939,8 +954,11 @@ export function OrderQtyLedger({
               <ForecastAddOnLine
                 checked={forecastOn}
                 onToggle={toggleForecast}
-                qty={forecastQty}
-                onQtyChange={changeForecastQty}
+                value={forecastQty}
+                onCommit={changeForecast}
+                onValidityChange={(valid) => setForecastInvalid(!valid)}
+                showMessage={forecastRefused}
+                label={forecastOn ? `Added ${fmtInt(forecastQty)}` : `Add ${fmtInt(forecastQty)}`}
                 cap={forecastCap}
                 detail={addOnDetail(addOn)}
               />

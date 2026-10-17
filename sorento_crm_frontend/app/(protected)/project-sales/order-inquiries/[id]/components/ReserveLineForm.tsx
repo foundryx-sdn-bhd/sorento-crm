@@ -11,8 +11,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { bareLocationCode } from '../../../_shared/lib/orderInquiryReserve';
 
 /**
@@ -97,18 +99,18 @@ export function ReserveLineForm({
   const max = maxQty != null ? Number(maxQty) : requested;
 
   const [location, setLocation] = React.useState(() => defaultLocationId ?? '');
-  const [qty, setQty] = React.useState(() =>
-    mode === 'amend' ? Math.max(0, Number(initialQty || '0')) : Math.max(0, requested),
+  // What the operator typed, kept as typed; the final value is checked on Save.
+  const [qtyText, setQtyText] = React.useState(() =>
+    String(mode === 'amend' ? Math.max(0, Number(initialQty || '0')) : Math.max(0, requested)),
   );
   const [reason, setReason] = React.useState('');
+  const [showErrors, setShowErrors] = React.useState(false);
 
-  function handleQtyChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const raw = Number(event.target.value);
-    setQty(Math.min(Math.max(Number.isFinite(raw) ? raw : 0, 0), max));
-  }
+  const qtyError = numberFieldError(qtyText, { min: 0, max });
+  const qty = parseNumberDraft(qtyText);
 
   // AC-RS-85 / 6e.4: Reason appears, and is required, whenever Reserved < Requested.
-  const showReason = qty < requested;
+  const showReason = (qty ?? requested) < requested;
   const canStage = !showReason || reason.trim().length > 0;
 
   // AC-RS-85: "options = the row's pools with availability" - the availability reads
@@ -131,6 +133,10 @@ export function ReserveLineForm({
   );
 
   function handleStage() {
+    if (qtyError || qty === null) {
+      setShowErrors(true);
+      return;
+    }
     const cleanReason = showReason ? reason.trim() || null : null;
     if (mode === 'reserve') {
       onStage(
@@ -174,14 +180,14 @@ export function ReserveLineForm({
           )}
           <div className="space-y-1">
             <Label htmlFor="reserve-line-qty">Reserved</Label>
-            <Input
+            <NumberInput
               id="reserve-line-qty"
-              type="number"
               min={0}
               max={max}
               step="any"
-              value={qty}
-              onChange={handleQtyChange}
+              value={qtyText}
+              error={showErrors ? qtyError : undefined}
+              onChange={(event) => setQtyText(event.target.value)}
             />
           </div>
           {showReason ? (

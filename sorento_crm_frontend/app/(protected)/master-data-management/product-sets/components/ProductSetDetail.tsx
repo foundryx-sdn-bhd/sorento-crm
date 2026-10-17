@@ -22,6 +22,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Skeleton } from '@/components/ui/skeleton';
 import DetailActions from '@/components/common/DetailActions';
 import { productSetsPagerQuery } from '../hooks/useProductSets';
@@ -85,11 +87,13 @@ function PriceBlock({
   editing,
   overrideDraft,
   onOverrideChange,
+  overrideError,
 }: {
   set: ProductSetDetailType;
   editing: boolean;
   overrideDraft: string;
   onOverrideChange: (value: string) => void;
+  overrideError?: string;
 }) {
   const { computed, is_overridden, reason, override_set_by_name } = set.price;
 
@@ -101,16 +105,18 @@ function PriceBlock({
         </Label>
         <div className="flex items-center gap-1.5">
           <span className="text-sm text-muted-foreground">RM</span>
-          <Input
-            id="product-set-override"
-            type="number"
-            min={0}
-            step="0.01"
-            className="h-8 w-32"
-            placeholder={computed === null ? 'No basis' : String(computed)}
-            value={overrideDraft}
-            onChange={(e) => onOverrideChange(e.target.value)}
-          />
+          <div>
+            <NumberInput
+              id="product-set-override"
+              min={0}
+              step="0.01"
+              className="h-8 w-32"
+              placeholder={computed === null ? 'No basis' : String(computed)}
+              value={overrideDraft}
+              onChange={(e) => onOverrideChange(e.target.value)}
+              error={overrideError}
+            />
+          </div>
           {overrideDraft !== '' ? (
             <Button
               mode="icon"
@@ -173,6 +179,7 @@ export default function ProductSetDetail({ id }: { id: string }) {
   const [codeDraft, setCodeDraft] = useState('');
   const [nameDraft, setNameDraft] = useState('');
   const [overrideDraft, setOverrideDraft] = useState('');
+  const [checked, setChecked] = useState(false);
   const [draftMembers, setDraftMembers] = useState<DraftMember[]>([]);
   const [pickedCode, setPickedCode] = useState('');
   const [pickedOption, setPickedOption] = useState<ProductSetMemberOption | null>(null);
@@ -216,6 +223,7 @@ export default function ProductSetDetail({ id }: { id: string }) {
     setDraftMembers(toDraft(set.members));
     setPickedCode('');
     setPickedOption(null);
+    setChecked(false);
     setEditing(true);
   }
 
@@ -223,24 +231,27 @@ export default function ProductSetDetail({ id }: { id: string }) {
     setEditing(false);
   }
 
-  const quantitiesValid = draftMembers.every((m) => {
-    const q = Number(m.quantity);
-    return m.quantity.trim() !== '' && Number.isFinite(q) && q > 0;
-  });
-  const canSave =
-    codeDraft.trim().length > 0 && nameDraft.trim().length > 0 && quantitiesValid && !update.isPending;
+  // A member quantity has to be a number above zero; the field's min of 0 is only its floor.
+  function quantityProblem(raw: string): string | undefined {
+    return numberFieldError(raw, { min: 0, minExclusive: true });
+  }
+  const overrideProblem = numberFieldError(overrideDraft, { min: 0, optional: true });
+  const canSave = codeDraft.trim().length > 0 && nameDraft.trim().length > 0 && !update.isPending;
 
   async function handleSave() {
     if (!set || !canSave) return;
+    // Numbers are checked when Save is pressed; afterwards the messages follow the fields.
+    setChecked(true);
+    if (overrideProblem || draftMembers.some((m) => quantityProblem(m.quantity))) return;
     await update.mutateAsync({
       id: set.id,
       data: {
         set_code: codeDraft.trim(),
         name: nameDraft.trim(),
-        list_price_override: overrideDraft.trim() === '' ? null : Number(overrideDraft),
+        list_price_override: parseNumberDraft(overrideDraft),
         members: draftMembers.map((m, idx) => ({
           product_code: m.product_code,
-          quantity: Number(m.quantity),
+          quantity: parseNumberDraft(m.quantity) as number,
           contributes_to_price: m.contributes_to_price,
           sort_order: idx,
         })),
@@ -336,6 +347,7 @@ export default function ProductSetDetail({ id }: { id: string }) {
               set={set}
               editing={editing}
               overrideDraft={overrideDraft}
+              overrideError={checked ? overrideProblem : undefined}
               onOverrideChange={setOverrideDraft}
             />
             <div>
@@ -486,14 +498,14 @@ export default function ProductSetDetail({ id }: { id: string }) {
                       <td className="py-3 pe-3 tabular-nums">{money(member.list_price)}</td>
                       <td className="py-3 pe-3">
                         {editing ? (
-                          <Input
-                            type="number"
+                          <NumberInput
                             min={0}
                             step="0.01"
                             className="h-8 w-20"
                             value={member.quantity}
                             aria-label={`Quantity for ${member.product_code}`}
                             onChange={(e) => updateMember(member.key, { quantity: e.target.value })}
+                            error={checked ? quantityProblem(member.quantity) : undefined}
                           />
                         ) : (
                           <span className="tabular-nums">{member.quantity}</span>

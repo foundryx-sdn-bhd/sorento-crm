@@ -60,6 +60,7 @@ import {
   statusLabel,
 } from '../lib/portal-client';
 import { listRequestsAsSummaries } from '../lib/price-tag-request-service';
+import { listSampleRequestsAsSummaries } from '../lib/sample-request-service';
 import { listOpportunitiesAsSummaries } from '../lib/sales-opportunity-landing';
 import { MyTargetPanel } from './MyTargetPanel';
 import {
@@ -127,6 +128,7 @@ const EMPTY_LISTS: Record<PortalLandingKind, PortalSubmissionSummary[]> = {
   purchase_request: [],
   sponsorship_form: [],
   price_tag_request: [],
+  sample_request: [],
   sales_opportunity: [],
   customer_asks: [],
   conversation: [],
@@ -207,7 +209,11 @@ function pickCardMeta(row: PortalSubmissionSummary): {
       customer: row.project_customer ?? undefined,
     };
   }
-  if (row.kind === 'price_tag_request' || row.kind === 'sales_opportunity') {
+  if (
+    row.kind === 'price_tag_request' ||
+    row.kind === 'sales_opportunity' ||
+    row.kind === 'sample_request'
+  ) {
     return { customer: row.customer_name ?? undefined };
   }
   return {
@@ -383,7 +389,9 @@ export function PortalLanding({ slug }: { slug?: string }) {
           kinds.map((k) =>
             k === 'price_tag_request'
               ? listRequestsAsSummaries(q)
-              : k === 'sales_opportunity'
+              : k === 'sample_request'
+                ? listSampleRequestsAsSummaries(q)
+                : k === 'sales_opportunity'
                 ? listOpportunitiesAsSummaries(q)
                 : k === 'customer_asks'
                   ? listCustomerAsks({ page: 1, limit: 1, state: 'open', q }).then((page) => {
@@ -476,6 +484,7 @@ export function PortalLanding({ slug }: { slug?: string }) {
       purchase_request: 0,
       sponsorship_form: 0,
       price_tag_request: 0,
+      sample_request: 0,
       sales_opportunity: 0,
       customer_asks: 0,
       conversation: 0,

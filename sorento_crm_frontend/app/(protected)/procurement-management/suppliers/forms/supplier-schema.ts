@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { requiredNumber } from '@/lib/number-field-schema';
 
 export const SupplierSchema = z.object({
   supplier_code: z
@@ -22,11 +23,7 @@ export const SupplierSchema = z.object({
   state: z.string().max(100, { message: 'State must not exceed 100 characters.' }).optional().nullable(),
   postal_code: z.string().max(20, { message: 'Postal code must not exceed 20 characters.' }).optional().nullable(),
   country_id: z.string().uuid().optional().nullable(),
-  payment_terms_days: z
-    .number()
-    .int({ message: 'Payment terms must be a whole number.' })
-    .min(0, { message: 'Payment terms cannot be negative.' })
-    .max(365, { message: 'Payment terms cannot exceed 365 days.' }),
+  payment_terms_days: requiredNumber({ min: 0, max: 365, integer: true }),
   is_active: z.boolean(),
 });
 

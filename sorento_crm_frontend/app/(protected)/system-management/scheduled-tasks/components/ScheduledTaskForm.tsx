@@ -6,6 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { requiredNumber } from '@/lib/number-field-schema';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -38,7 +40,7 @@ const schema = z
     name: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
     enabled: z.boolean(),
-    interval_value: z.number().min(1),
+    interval_value: requiredNumber({ min: 1 }),
     interval_unit: z.enum(['seconds', 'minutes', 'hours', 'days']),
     timezone: z.string().optional(),
     start_at: z.date().nullable().optional(),
@@ -286,9 +288,8 @@ export function ScheduledTaskForm({ task, onSubmit, isSubmitting }: ScheduledTas
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="space-y-2">
           <Label htmlFor="interval_value">Interval value</Label>
-          <Input
+          <NumberInput
             id="interval_value"
-            type="number"
             min={1}
             {...register('interval_value', { valueAsNumber: true })}
           />
@@ -318,9 +319,8 @@ export function ScheduledTaskForm({ task, onSubmit, isSubmitting }: ScheduledTas
 
       <div className="space-y-2">
         <Label htmlFor="grace_percent">Grace period (%)</Label>
-        <Input
+        <NumberInput
           id="grace_percent"
-          type="number"
           min={0}
           max={1000}
           placeholder={

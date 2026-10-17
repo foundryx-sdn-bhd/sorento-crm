@@ -15,6 +15,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -34,6 +36,7 @@ import {
 import { useSalesOpportunityActions } from '../../actions';
 import {
   OpportunityLineRow,
+  lineHasNumberError,
   nextLineKey,
   sumLineAmounts,
   type LineDraft,
@@ -95,6 +98,7 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
   const [amountTouched, setAmountTouched] = useState(false);
   const [expectedCloseDate, setExpectedCloseDate] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([]);
+  const [showErrors, setShowErrors] = useState(false);
 
   useEffect(() => {
     setPending(null);
@@ -185,6 +189,7 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
     const storedAmount = Number(opportunity.expected_amount);
     const storedSum = sumLineAmounts(seededLines);
     setAmountTouched(!(Number.isFinite(storedAmount) && storedAmount.toFixed(2) === storedSum.toFixed(2)));
+    setShowErrors(false);
     setIsEditing(true);
   };
 
@@ -207,12 +212,18 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
   const canSaveEdit =
     customerOrProspect !== BLOCKED_VALUE &&
     title.trim().length > 0 &&
-    !!effectiveAmount &&
     !!expectedCloseDate &&
     !save.isPending;
 
+  const amountError = numberFieldError(effectiveAmount, { min: 0 });
+
   const handleSaveEdit = async () => {
     if (!canSaveEdit) return;
+    // Only the final values are checked: a bad amount or product row stays as typed.
+    if (amountError || lines.some(lineHasNumberError)) {
+      setShowErrors(true);
+      return;
+    }
     try {
       await save.mutateAsync({
         id,
@@ -384,12 +395,12 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="opportunity-edit-amount">Expected amount</Label>
-                    <Input
+                    <NumberInput
                       id="opportunity-edit-amount"
-                      type="number"
                       min="0"
                       step="0.01"
                       value={effectiveAmount}
+                      error={showErrors ? amountError : undefined}
                       onChange={(e) => {
                         setExpectedAmount(e.target.value);
                         setAmountTouched(true);
@@ -493,6 +504,7 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
                         line={line}
                         onChange={(patch) => updateLine(line.key, patch)}
                         onRemove={() => removeLine(line.key)}
+                        showErrors={showErrors}
                       />
                     ))}
                   </div>

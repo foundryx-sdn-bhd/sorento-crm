@@ -4,6 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SquarePen, Trash2, Upload } from 'lucide-react';
+import { numberFieldError } from '@/lib/number-field';
 import { toast } from '@/lib/toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,7 +38,7 @@ import type {
 import { POIntakeUploadDialog } from '../../../components/POIntakeUploadDialog';
 import { POIntakeVersionsStrip } from '../../../components/POIntakeVersionsStrip';
 import { POToSalesOrderStep } from '../../../components/POToSalesOrderStep';
-import { PurchaseOrderHeaderCard } from '../../../components/PurchaseOrderHeaderCard';
+import { PurchaseOrderHeaderCard, PO_AMOUNT_RULES } from '../../../components/PurchaseOrderHeaderCard';
 import {
   PurchaseOrderLinesEditor,
   stagedPoLinesToBody,
@@ -85,6 +86,7 @@ export function PurchaseOrderDetailClient({
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [confirmRemovals, setConfirmRemovals] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [amountRefused, setAmountRefused] = React.useState(false);
 
   const po = (purchaseOrders.data ?? []).find((row) => row.id === poId) ?? null;
   const canEdit = Boolean(project.data?.can_edit);
@@ -196,6 +198,10 @@ export function PurchaseOrderDetailClient({
   }
 
   function requestSave() {
+    if (numberFieldError(shown.po_amount, PO_AMOUNT_RULES)) {
+      setAmountRefused(true);
+      return;
+    }
     if (!(shown.po_number ?? '').trim()) {
       // The server refuses this with a 422; saying it here saves the round trip and points at
       // the field rather than at the whole record.
@@ -370,6 +376,7 @@ export function PurchaseOrderDetailClient({
         projectId={projectId}
         po={shown}
         liveTotal={liveTotal}
+        showAmountError={amountRefused}
         onChange={isEditing ? edit.stageHeader : undefined}
       />
 

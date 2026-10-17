@@ -3,6 +3,7 @@
 their JSON column; a non-empty problem list = 422. Runtime stays fail-closed
 (D5) for trees that go stale AFTER save.
 """
+import math
 from typing import Any, Dict, List, Optional, Sequence
 
 from app.rule_engine.evaluator import _MAX_DEPTH, CROSS_FACT_OPERATORS
@@ -116,7 +117,7 @@ def _validate_condition(
         return
     if _blank(value):
         problems.append(f"'{fact.label}' needs a value.")
-    elif fact.type == "number" and operator in ("gt", "gte", "lt", "lte") and not _numeric(value):
+    elif fact.type == "number" and operator in ("eq", "neq", "gt", "gte", "lt", "lte") and not _numeric(value):
         problems.append(f"'{fact.label}' needs a numeric value.")
 
 
@@ -127,12 +128,13 @@ def _blank(value: Any) -> bool:
 def _numeric(value: Any) -> bool:
     if isinstance(value, bool):
         return False
-    if isinstance(value, (int, float)):
+    if isinstance(value, int):
         return True
+    if isinstance(value, float):
+        return math.isfinite(value)
     if isinstance(value, str):
         try:
-            float(value)
-            return True
+            return math.isfinite(float(value))
         except ValueError:
             return False
     return False

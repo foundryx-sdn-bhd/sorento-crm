@@ -5,6 +5,8 @@ import { LoaderCircleIcon } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useCreateModelPrice, useUpdateModelPrice } from '../../hooks/useModelPrices';
@@ -43,10 +45,6 @@ function toDraft(price: ModelPrice | null, lockedModel?: string | null): Draft {
   return { ...BLANK, model: lockedModel ?? '' };
 }
 
-function isPrice(value: string): boolean {
-  return value.trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0;
-}
-
 export default function ModelPriceModal({
   open,
   onOpenChange,
@@ -54,6 +52,8 @@ export default function ModelPriceModal({
   lockedModel,
 }: ModelPriceModalProps) {
   const [draft, setDraft] = useState<Draft>(BLANK);
+  // Set by a Save that found a wrong price; the sentences then follow the typing.
+  const [checked, setChecked] = useState(false);
   const create = useCreateModelPrice();
   const update = useUpdateModelPrice();
   const isEdit = price !== null;
@@ -64,6 +64,7 @@ export default function ModelPriceModal({
   useEffect(() => {
     if (!open) return;
     setDraft(toDraft(price, lockedModel));
+    setChecked(false);
     create.reset?.();
     update.reset?.();
     // Re-derive only when the modal opens on a different record.
@@ -73,15 +74,17 @@ export default function ModelPriceModal({
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
 
-  const canSave =
-    draft.model.trim() !== '' &&
-    isPrice(draft.input) &&
-    isPrice(draft.output) &&
-    (draft.cached.trim() === '' || isPrice(draft.cached)) &&
-    !saving;
+  const inputError = numberFieldError(draft.input, { min: 0 });
+  const cachedError = numberFieldError(draft.cached, { min: 0, optional: true });
+  const outputError = numberFieldError(draft.output, { min: 0 });
+  const canSave = draft.model.trim() !== '' && !saving;
 
   const handleSave = () => {
     if (!canSave) return;
+    if (inputError || cachedError || outputError) {
+      setChecked(true);
+      return;
+    }
     const input: ModelPriceInput = {
       model: draft.model.trim(),
       input_usd_per_1m: Number(draft.input),
@@ -115,35 +118,35 @@ export default function ModelPriceModal({
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="price-input">Input (USD per 1M)</Label>
-              <Input
+              <NumberInput
                 id="price-input"
-                type="number"
                 min={0}
                 step="any"
                 value={draft.input}
                 onChange={(e) => set('input', e.target.value)}
+                error={checked ? inputError : undefined}
               />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="price-cached">Cached input (USD per 1M)</Label>
-              <Input
+              <NumberInput
                 id="price-cached"
-                type="number"
                 min={0}
                 step="any"
                 value={draft.cached}
                 onChange={(e) => set('cached', e.target.value)}
+                error={checked ? cachedError : undefined}
               />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="price-output">Output (USD per 1M)</Label>
-              <Input
+              <NumberInput
                 id="price-output"
-                type="number"
                 min={0}
                 step="any"
                 value={draft.output}
                 onChange={(e) => set('output', e.target.value)}
+                error={checked ? outputError : undefined}
               />
             </div>
           </div>

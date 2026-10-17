@@ -33,6 +33,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
@@ -687,17 +688,13 @@ const UserProfileEditDialog = ({
                 <FormItem>
                   <FormLabel className="text-lg font-semibold">Tier</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
+                    <NumberInput
                       min={1}
                       step={1}
                       placeholder="Conversation SLA policy tier (e.g. 1, 2)"
                       {...field}
                       value={field.value ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        field.onChange(v === '' ? undefined : (Number(v) || undefined));
-                      }}
+                      onChange={(e) => field.onChange(e.target.value)}
                       className="border-2"
                     />
                   </FormControl>

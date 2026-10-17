@@ -70,6 +70,7 @@ PRODUCTS = "master_data.products.view"
 STOCK_INQUIRIES = "procurement.stock_inquiries.view"
 PACKING_LISTS = "procurement.packing_lists.view"
 TICKETS = "tickets.tickets.view"
+SAMPLE_REQUESTS = "projects.sample_requests.view"
 KPI = "sla.kpi.view"
 UPLOAD = "resource.attachments.upload"
 STOCK = "inventory.stock.view"
@@ -140,6 +141,8 @@ CROSS_MODULE_READERS = [
     (f"/api/v1/marketing/promotion-attachments/promotion/{RID}", PROMOTIONS, "detail"),
     (f"{TRACKING}/by-source?source_entity_type=complaint&source_entity_id={RID}", COMPLAINTS, "list"),
     (f"{TRACKING}/by-source?source_entity_type=stock_inquiry&source_entity_id={RID}", STOCK_INQUIRIES, "list"),
+    # SR-CORE (#1718): the sample request detail page's SLA tab reads its own trackers.
+    (f"{TRACKING}/by-source?source_entity_type=sample_request&source_entity_id={RID}", SAMPLE_REQUESTS, "list"),
     (f"{TRACKING}/event-logs?tracking_id={TRACK_FORM}", COMPLAINTS, "list"),
     (f"{TRACKING}/{TRACK_FORM}", COMPLAINTS, "list"),
     (f"{TRACKING}/{TRACK_FORM}", KPI, "list"),
@@ -163,6 +166,8 @@ NOT_ENOUGH = [
     (f"{TRACKING}/{TRACK_CONV}", COMPLAINTS),
     (f"{TRACKING}/event-logs?tracking_id={TRACK_FORM}", TICKETS),
     (f"{TRACKING}/by-source?source_entity_type=complaint&source_entity_id={RID}", TICKETS),
+    (f"{TRACKING}/by-source?source_entity_type=complaint&source_entity_id={RID}", SAMPLE_REQUESTS),
+    (f"{TRACKING}/{TRACK_FORM}", SAMPLE_REQUESTS),
     (f"{ATT}/drive", COMPLAINTS),
     ("/api/v1/marketing/promotions/", PRODUCTS),
 ]
@@ -469,6 +474,7 @@ def test_source_type_readers_cover_every_form_sla_type():
         "ticket": [TICKETS],
         "workflow_submission": ["workflow_forms.submissions.view"],
         "price_tag_request": ["dealer_kit.price_tag_requests.view"],
+        "sample_request": [SAMPLE_REQUESTS],
     }
 
 

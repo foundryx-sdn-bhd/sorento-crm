@@ -26,7 +26,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
+import { useStableColumns } from '@/hooks/useStableColumns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridTable } from '@/components/ui/data-grid-table';
@@ -68,6 +70,10 @@ const TIER_LABEL: Record<number, string> = {
   4: 'Sibling location',
   5: 'Elsewhere',
 };
+
+function takeError(raw: string): string | undefined {
+  return raw.trim() ? numberFieldError(raw, { min: 0 }) : undefined;
+}
 
 function toNumber(value: string): number {
   const parsed = Number.parseFloat(value);
@@ -199,11 +205,8 @@ export function LinkDocumentDialog({
     return positions;
   }, [candidates]);
 
-  const columns = React.useMemo<ColumnDef<OrderInquiryPoCandidate>[]>(
-    () => candidateColumns({ lineCounts, takeFor, setTake }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lineCounts, edits, candidatesQuery.data],
-  );
+  // Stable identity: a keystroke in a Take box must not remount the box.
+  const columns = useStableColumns(candidateColumns({ lineCounts, takeFor, setTake }));
 
   // `listingKey={null}` below (never `PanelDataGrid`, which requires one) - see the
   // component doc comment for why. Built directly rather than through `PanelDataGrid`
@@ -252,7 +255,9 @@ export function LinkDocumentDialog({
     return take > toNumber(candidate.remaining);
   });
   const remainder = Math.max(capacity - totalTaken, 0);
-  const valid = totalTaken > 0 && !overTaken && !lineErrors;
+  // A Take that is typed but unreadable (bad input) is never read as 0 or as "not taken".
+  const badTake = candidates.some((candidate) => takeError(takeFor(candidate)));
+  const valid = totalTaken > 0 && !overTaken && !lineErrors && !badTake;
 
   function handleConfirm() {
     if (!valid) return;
@@ -613,11 +618,11 @@ function candidateColumns({
         const take = takeFor(candidate);
         const overLine = toNumber(take) > toNumber(candidate.remaining);
         return (
-          <Input
-            type="number"
+          <NumberInput
             min={0}
             step="any"
             value={take}
+            error={takeError(take)}
             onChange={(event) => setTake(key, event.target.value)}
             aria-label={`Take off ${candidate.po_number}`}
             className={cn('h-7 text-end text-xs', overLine && 'border-destructive')}

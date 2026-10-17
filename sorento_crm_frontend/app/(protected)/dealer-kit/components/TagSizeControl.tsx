@@ -28,7 +28,8 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import type { SearchableSelectOption } from '@/components/common/SearchableSelect';
@@ -144,10 +145,14 @@ export function TagSizeControl({
   const [wDraft, setWDraft] = useState<string | null>(null);
   const [hDraft, setHDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which box the sentence belongs to (null: it is about a picked size, shown loose).
+  const [errorAxis, setErrorAxis] = useState<'w' | 'h' | null>(null);
   // Per-A4 grid drafts (S7, AC-S7-14) - same "text until blur" pattern as
   // width/height above, kept separate so typing cols does not fight rows.
   const [colsDraft, setColsDraft] = useState<string | null>(null);
   const [rowsDraft, setRowsDraft] = useState<string | null>(null);
+  const [gridError, setGridError] = useState<string | null>(null);
+  const [gridAxis, setGridAxis] = useState<'cols' | 'rows' | null>(null);
   // D9: collapsed by default; a viewer who opens it once keeps it open on
   // their next request, on this browser.
   //
@@ -169,12 +174,14 @@ export function TagSizeControl({
     const draft = axis === 'w' ? wDraft : hDraft;
     const setDraft = axis === 'w' ? setWDraft : setHDraft;
     if (draft === null) return;
-    const n = parseFloat(draft);
-    if (Number.isNaN(n)) {
-      setDraft(null);
-      setError(null);
+    // Blank, not a number or under the floor: keep what was typed, say why, send nothing.
+    const message = numberFieldError(draft, { min: bounds.min_mm });
+    if (message) {
+      setError(message);
+      setErrorAxis(axis);
       return;
     }
+    const n = parseNumberDraft(draft) as number;
     const candidateW = axis === 'w' ? n : width_mm;
     const candidateH = axis === 'h' ? n : height_mm;
     const result = resolveTagSize(candidateW, candidateH, bounds);
@@ -182,9 +189,11 @@ export function TagSizeControl({
       // Keep the typed value on screen next to the reason - reverting it
       // silently would read as the edit never happened.
       setError(result.reason);
+      setErrorAxis(axis);
       return;
     }
     setError(null);
+    setErrorAxis(null);
     onResize(result.width_mm, result.height_mm);
     setDraft(null);
   };
@@ -202,9 +211,16 @@ export function TagSizeControl({
     const draft = axis === 'cols' ? colsDraft : rowsDraft;
     const setDraft = axis === 'cols' ? setColsDraft : setRowsDraft;
     if (draft === null) return;
-    const n = Math.round(parseFloat(draft));
+    const message = numberFieldError(draft, { min: 1, integer: true });
+    if (message) {
+      setGridError(message);
+      setGridAxis(axis);
+      return;
+    }
+    setGridError(null);
+    setGridAxis(null);
+    const n = parseNumberDraft(draft) as number;
     setDraft(null);
-    if (!Number.isFinite(n) || n <= 0) return;
     const cols = axis === 'cols' ? n : (sheetGrid?.cols ?? resolvedGrid.cols);
     const rows = axis === 'rows' ? n : (sheetGrid?.rows ?? resolvedGrid.rows);
     onSheetGridChange?.({ cols, rows, turn: sheetGrid?.turn ?? resolvedGrid.rotation === 90 });
@@ -249,9 +265,11 @@ export function TagSizeControl({
     const result = resolveTagSize(nextWidth_mm, nextHeight_mm, bounds);
     if (!result.ok) {
       setError(result.reason);
+      setErrorAxis(null);
       return;
     }
     setError(null);
+    setErrorAxis(null);
     onResize(result.width_mm, result.height_mm);
   };
 
@@ -338,12 +356,12 @@ export function TagSizeControl({
             <div className="grid grid-cols-2 gap-2">
               <div className="flex flex-col gap-1">
                 <Label className="text-xs text-muted-foreground">W (mm)</Label>
-                <Input
-                  type="number"
+                <NumberInput
                   className="h-7 px-2 text-xs"
                   aria-label="Tag width (mm)"
                   value={wDraft ?? width_mm}
                   step={0.5}
+                  error={errorAxis === 'w' ? (error ?? undefined) : undefined}
                   onChange={(e) => setWDraft(e.target.value)}
                   onBlur={() => commit('w')}
                   onKeyDown={onEnter}
@@ -351,19 +369,19 @@ export function TagSizeControl({
               </div>
               <div className="flex flex-col gap-1">
                 <Label className="text-xs text-muted-foreground">H (mm)</Label>
-                <Input
-                  type="number"
+                <NumberInput
                   className="h-7 px-2 text-xs"
                   aria-label="Tag height (mm)"
                   value={hDraft ?? height_mm}
                   step={0.5}
+                  error={errorAxis === 'h' ? (error ?? undefined) : undefined}
                   onChange={(e) => setHDraft(e.target.value)}
                   onBlur={() => commit('h')}
                   onKeyDown={onEnter}
                 />
               </div>
             </div>
-            {error && <p className="text-2xs text-destructive">{error}</p>}
+            {error && errorAxis === null && <p className="text-2xs text-destructive">{error}</p>}
 
             {/* Per A4 grid (S7, AC-S7-14): configured (typed) numbers show
                 plain; a value nobody set shows the DERIVED fit, greyed. */}
@@ -382,23 +400,25 @@ export function TagSizeControl({
                   )}
                 </div>
                 <div className={cn('flex items-center gap-1.5', !sheetGrid && 'text-muted-foreground')}>
-                  <Input
-                    type="number"
+                  <NumberInput
                     className="h-7 w-14 px-2 text-xs"
                     aria-label="Grid columns per A4"
                     min={1}
                     value={colsDraft ?? (sheetGrid?.cols ?? resolvedGrid.cols)}
+                    error={gridAxis === 'cols' ? (gridError ?? undefined) : undefined}
+                    errorClassName="w-40"
                     onChange={(e) => setColsDraft(e.target.value)}
                     onBlur={() => commitGrid('cols')}
                     onKeyDown={onEnter}
                   />
                   <span className="text-xs">x</span>
-                  <Input
-                    type="number"
+                  <NumberInput
                     className="h-7 w-14 px-2 text-xs"
                     aria-label="Grid rows per A4"
                     min={1}
                     value={rowsDraft ?? (sheetGrid?.rows ?? resolvedGrid.rows)}
+                    error={gridAxis === 'rows' ? (gridError ?? undefined) : undefined}
+                    errorClassName="w-40"
                     onChange={(e) => setRowsDraft(e.target.value)}
                     onBlur={() => commitGrid('rows')}
                     onKeyDown={onEnter}
@@ -413,6 +433,7 @@ export function TagSizeControl({
                     Turn
                   </label>
                 </div>
+                {gridError && gridAxis === null && <p className="text-2xs text-destructive">{gridError}</p>}
                 {resolvedGrid.refusedCell && (
                   <p className="text-2xs text-destructive">
                     Cell is {resolvedGrid.refusedCell.width_mm} x {resolvedGrid.refusedCell.height_mm} mm -

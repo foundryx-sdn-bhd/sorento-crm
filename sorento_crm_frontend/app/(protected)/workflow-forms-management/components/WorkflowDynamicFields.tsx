@@ -2,6 +2,8 @@
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -9,11 +11,33 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Plus, Trash2 } from 'lucide-react';
 import type { WorkflowFormSchema, WorkflowHeaderField } from '../types/workflowForms.types';
 
+/** A required number may not be empty; an optional one is empty or valid. */
+function workflowNumberError(f: WorkflowHeaderField, value: unknown): string | undefined {
+  return numberFieldError(value as number | string | null | undefined, { optional: !f.required });
+}
+
+/** True when any number field in the header or the line rows is empty-but-required or invalid. */
+export function workflowNumbersInvalid(
+  schema: WorkflowFormSchema,
+  header: Record<string, unknown>,
+  lines: { line_group_id: string; row_data: Record<string, unknown> }[] = [],
+): boolean {
+  const headerFields = headerFieldLists(schema).flatMap((g) => g.fields);
+  if (headerFields.some((f) => f.type === 'number' && workflowNumberError(f, header[f.id]))) return true;
+  return lines.some((l) => {
+    const group = schema.line_groups.find((g) => g.id === l.line_group_id);
+    return (group?.fields ?? []).some(
+      (f) => f.type === 'number' && workflowNumberError(f, l.row_data[f.id]),
+    );
+  });
+}
+
 function renderField(
   f: WorkflowHeaderField,
   value: unknown,
   onChange: (v: unknown) => void,
   disabled: boolean,
+  showNumberErrors = false,
 ) {
   const common = { disabled, placeholder: f.placeholder };
   switch (f.type) {
@@ -28,11 +52,11 @@ function renderField(
       );
     case 'number':
       return (
-        <Input
+        <NumberInput
           {...common}
-          type="number"
-          value={value === undefined || value === null ? '' : String(value)}
-          onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+          value={value === undefined || value === null ? null : (value as number | string)}
+          onValueChange={(n) => onChange(n)}
+          error={showNumberErrors ? workflowNumberError(f, value) : undefined}
         />
       );
     case 'checkbox':
@@ -130,11 +154,14 @@ export function WorkflowHeaderFieldsForm({
   data,
   onChange,
   disabled,
+  showNumberErrors,
 }: {
   schema: WorkflowFormSchema;
   data: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
   disabled?: boolean;
+  /** Set once a Save found a wrong number; the sentences then follow the typing. */
+  showNumberErrors?: boolean;
 }) {
   const groups = headerFieldLists(schema);
 
@@ -156,7 +183,13 @@ export function WorkflowHeaderFieldsForm({
                   <span className="text-xs font-normal text-muted-foreground whitespace-pre-wrap">{f.help_text}</span>
                 ) : null}
               </Label>
-              {renderField(f, data[f.id], (v) => onChange({ ...data, [f.id]: v }), !!disabled)}
+              {renderField(
+                f,
+                data[f.id],
+                (v) => onChange({ ...data, [f.id]: v }),
+                !!disabled,
+                showNumberErrors,
+              )}
             </div>
           ))}
         </div>
@@ -170,11 +203,13 @@ export function WorkflowLineGroupsEditor({
   lines,
   onChange,
   disabled,
+  showNumberErrors,
 }: {
   schema: WorkflowFormSchema;
   lines: { line_group_id: string; sort_order: number; row_data: Record<string, unknown> }[];
   onChange: (next: typeof lines) => void;
   disabled?: boolean;
+  showNumberErrors?: boolean;
 }) {
   const addRow = (groupId: string) => {
     const row = { line_group_id: groupId, sort_order: lines.filter((l) => l.line_group_id === groupId).length, row_data: {} };
@@ -237,6 +272,7 @@ export function WorkflowLineGroupsEditor({
                           lines[idx].row_data[f.id],
                           (v) => updateRow(idx, { ...lines[idx].row_data, [f.id]: v }),
                           !!disabled,
+                          showNumberErrors,
                         )}
                       </div>
                     ))}

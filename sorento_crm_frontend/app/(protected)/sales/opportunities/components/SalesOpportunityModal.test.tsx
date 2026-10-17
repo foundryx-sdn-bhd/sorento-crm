@@ -319,6 +319,60 @@ describe('SalesOpportunityModal', () => {
     expect(save.mutateAsync.mock.calls[0][0].expected_amount).toBe('20.00');
   });
 
+  it('NUMBER-FIELDS: a cleared or negative Expected amount keeps Save enabled, says why and sends nothing', async () => {
+    service.getSalesOpportunityCustomerOptions.mockResolvedValue({
+      items: [{ customer_id: 'cust-1', customer_code: 'C1', customer_name: 'ZZT Customer' }],
+      prospect: null,
+      blocked: null,
+    });
+    render(<SalesOpportunityModal open onOpenChange={() => {}} />);
+    await selectOption('Customer or prospect', 'cust-1');
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'ZZT Opp' } });
+    fireEvent.change(screen.getByLabelText('Expected close date'), {
+      target: { value: '2026-11-01' },
+    });
+
+    fireEvent.change(screen.getByLabelText('Expected amount'), { target: { value: '' } });
+    const saveButton = screen.getByRole('button', { name: 'Save' });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+    expect(await screen.findByText(/^Enter a number/)).toBeInTheDocument();
+    expect(save.mutateAsync).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Expected amount'), { target: { value: '-5' } });
+    expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Expected amount'), { target: { value: '5' } });
+    expect(screen.queryByText(/^Enter a number/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(save.mutateAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it('NUMBER-FIELDS: a product row with a blank quantity blocks Save with a message instead of sending 0', async () => {
+    service.getSalesOpportunityCustomerOptions.mockResolvedValue({
+      items: [{ customer_id: 'cust-1', customer_code: 'C1', customer_name: 'ZZT Customer' }],
+      prospect: null,
+      blocked: null,
+    });
+    render(<SalesOpportunityModal open onOpenChange={() => {}} />);
+    await selectOption('Customer or prospect', 'cust-1');
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'ZZT Opp' } });
+    fireEvent.change(screen.getByLabelText('Expected close date'), {
+      target: { value: '2026-11-01' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /add product/i }));
+    const rows = screen.getAllByTestId('opportunity-line-row');
+    const productSelect = within(rows[0]).getByRole('combobox', { name: /product/i }) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(Array.from(productSelect.options).map((o) => o.value)).toContain('p1'),
+    );
+    fireEvent.change(productSelect, { target: { value: 'p1' } });
+    fireEvent.change(within(rows[0]).getByLabelText(/qty/i), { target: { value: '' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText(/^Enter a number/)).toBeInTheDocument();
+    expect(save.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it('fix reviewer-7: a preset customer shows its own name, not a blank field', () => {
     render(
       <SalesOpportunityModal

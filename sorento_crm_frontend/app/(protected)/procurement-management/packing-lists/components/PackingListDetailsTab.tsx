@@ -12,7 +12,8 @@ import { useContainerSizes } from '@/app/(protected)/scm/hooks/useFulfilment';
 import { CLEARANCE_ATTRIBUTE_FIELDS } from '../forms/packing-list-schema';
 import { PackingListField } from './PackingListField';
 import { SupplierCombobox } from './SupplierCombobox';
-import { usePackingListRecord } from '../[id]/components/packing-list-context';
+import { numberFieldError } from '@/lib/number-field';
+import { FREE_DAYS_RULES, usePackingListRecord } from '../[id]/components/packing-list-context';
 
 /** The header field this checkpoint is already edited elsewhere, so it is not asked for
  *  twice. `loading_date` and `etd_date` are explicit fields in the Container card (AC-F5),
@@ -59,6 +60,7 @@ export function PackingListDetailsTab() {
     lineSupplierNames,
     checkpoints,
     canReadScm,
+    numbersChecked,
   } = usePackingListRecord();
 
   // An SCM read (403 without SCM read). The view reads `container_size_code` off the
@@ -226,10 +228,11 @@ export function PackingListDetailsTab() {
             <PackingListField
               label={card1AttributeByName.get('free_days_available')?.label ?? 'Free days'}
               name="free_days_available"
-              type="number"
+              numeric
               editing={editing}
               draft={draft}
               onChange={setField}
+              error={numbersChecked ? numberFieldError(draft.free_days_available, FREE_DAYS_RULES) : undefined}
               view={text(record.free_days_available)}
             />
             <PackingListField

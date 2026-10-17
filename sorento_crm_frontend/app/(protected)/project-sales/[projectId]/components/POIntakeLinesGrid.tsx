@@ -141,7 +141,7 @@ export function blockingNotes(
  * grid on every keystroke, and a person correcting a misread quantity is typing into a table
  * of fifty-two rows. Escape puts the cell back to what the server holds.
  *
- * Numeric cells are text inputs, not `type="number"`: money and quantity are strings from
+ * Numeric cells are plain text inputs, not native number inputs: money and quantity are strings from
  * the API to the API, and a number input invites the float round trip the contract forbids.
  *
  * The real task on this document is three exceptions out of fifty-two rows, so the flagged

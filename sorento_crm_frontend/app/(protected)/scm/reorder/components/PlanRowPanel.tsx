@@ -14,7 +14,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -277,6 +279,11 @@ export function PlanRowPanel({
     recompose({ borrowedQty: borrowQty, poQty: Math.min(num(raw), poMax) }, current.stock);
 
   const [buyDraft, setBuyDraft] = useState<string | null>(null);
+  // A typed Buy that is blank or not a whole number is told, never read as 0: it is not
+  // applied and Save waits for a figure.
+  const [buyTried, setBuyTried] = useState(false);
+  const buyError =
+    buyDraft === null ? undefined : numberFieldError(buyDraft, { min: 0, integer: true });
   /** The Buy patch `commitBuy` would apply, computed but NOT applied - Save reads this
    *  to flush an un-blurred typed value into the very save it is about to fire (AC-S12.5,
    *  review fix round 3), rather than waiting on `onEdit`'s own state update, which would
@@ -292,7 +299,12 @@ export function PlanRowPanel({
   const commitBuy = () => {
     const patch = pendingBuyPatch();
     if (!patch) return;
+    if (buyError) {
+      setBuyTried(true);
+      return;
+    }
     setBuyDraft(null);
+    setBuyTried(false);
     onEdit(patch);
   };
 
@@ -381,14 +393,15 @@ export function PlanRowPanel({
             disabled={disabled || poMax <= 0}
             onChange={setPo}
           />
-          <label className="flex items-center justify-between gap-2 text-xs">
+          <label className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="min-w-0 truncate text-muted-foreground">Buy</span>
-            <Input
-              type="number"
+            <NumberInput
               min={0}
               inputMode="numeric"
               aria-label="Units to buy"
               className="h-7 w-24 text-right tabular-nums"
+              errorClassName="basis-full text-end"
+              error={buyTried ? buyError : undefined}
               disabled={disabled}
               value={buyDraft ?? String(buyQty)}
               onChange={(e) => setBuyDraft(e.target.value)}
@@ -405,25 +418,25 @@ export function PlanRowPanel({
             <span className="tabular-nums">{fmtInt(line.rec.incoming_spo ?? 0)}</span>
           </div>
 
-          <label className="flex items-center justify-between gap-2 text-xs">
+          <label className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="min-w-0 truncate text-muted-foreground">
               MOQ
               {masterMoq === null || masterMoq === undefined ? null : (
                 <span className="ms-1 text-2xs">{`master ${fmtInt(masterMoq)}`}</span>
               )}
             </span>
-            <Input
-              type="number"
+            <LiveNumberInput
               min={0}
               inputMode="numeric"
               aria-label="MOQ"
               className="h-7 w-24 text-right tabular-nums"
+              errorClassName="basis-full text-end"
               disabled={disabled}
               placeholder={masterMoq === null ? undefined : String(masterMoq)}
-              value={moqValue === null || moqValue === undefined ? '' : String(moqValue)}
-              onChange={(e) =>
-                onEdit({ moq: e.target.value.trim() === '' ? null : num(e.target.value) })
-              }
+              rules={{ min: 0, integer: true, optional: true }}
+              value={moqValue ?? null}
+              onCommit={(figure) => onEdit({ moq: figure })}
+              onClear={() => onEdit({ moq: null })}
             />
           </label>
 
@@ -438,6 +451,10 @@ export function PlanRowPanel({
                 // rather than left stranded in local state - `commitBuy`'s own onBlur
                 // still runs too on whichever browser event order gets there first, but
                 // Save must not depend on blur having already happened.
+                if (buyError) {
+                  setBuyTried(true);
+                  return;
+                }
                 setBuyDraft(null);
                 onSave(pendingBuyPatch());
               }}
@@ -569,38 +586,34 @@ export function PlanRowPanel({
               with no suggestion to amend ("There is no suggestion to amend for this
               item"), and a live input whose save can only 422 is worse than a dead one.
               The reorder quantity beside it has no such rule and stays editable. */}
-          <label className="flex items-center justify-between gap-2 text-xs">
+          <label className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="text-muted-foreground">Level</span>
-            <Input
-              type="number"
+            <LiveNumberInput
               min={0}
               inputMode="numeric"
               aria-label="AutoCount level"
               className="h-7 w-24 text-right tabular-nums"
+              errorClassName="basis-full text-end"
               disabled={disabled || !level}
-              value={levelValue === null || levelValue === undefined ? '' : String(levelValue)}
-              onChange={(e) =>
-                onEdit({ level: e.target.value.trim() === '' ? null : num(e.target.value) })
-              }
+              rules={{ min: 0, integer: true, optional: true }}
+              value={levelValue ?? null}
+              onCommit={(figure) => onEdit({ level: figure })}
+              onClear={() => onEdit({ level: null })}
             />
           </label>
-          <label className="flex items-center justify-between gap-2 text-xs">
+          <label className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="text-muted-foreground">Reorder qty</span>
-            <Input
-              type="number"
+            <LiveNumberInput
               min={0}
               inputMode="numeric"
               aria-label="AutoCount reorder qty"
               className="h-7 w-24 text-right tabular-nums"
+              errorClassName="basis-full text-end"
               disabled={disabled}
-              value={
-                reorderQtyValue === null || reorderQtyValue === undefined
-                  ? ''
-                  : String(reorderQtyValue)
-              }
-              onChange={(e) =>
-                onEdit({ reorderQty: e.target.value.trim() === '' ? null : num(e.target.value) })
-              }
+              rules={{ min: 0, integer: true, optional: true }}
+              value={reorderQtyValue ?? null}
+              onCommit={(figure) => onEdit({ reorderQty: figure })}
+              onClear={() => onEdit({ reorderQty: null })}
             />
           </label>
 
@@ -730,7 +743,7 @@ function NumberField({
   onChange: (raw: string) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-2 text-xs">
+    <label className="flex flex-wrap items-center justify-between gap-2 text-xs">
       <span
         className="min-w-0 truncate text-muted-foreground"
         title={hint ? `${label} (${hint})` : label}
@@ -738,16 +751,17 @@ function NumberField({
         {label}
         {hint ? <span className="ms-1 text-2xs">{`(${hint})`}</span> : null}
       </span>
-      <Input
-        type="number"
+      <LiveNumberInput
         min={0}
         max={max}
         inputMode="numeric"
         aria-label={label}
         className="h-7 w-24 text-right tabular-nums"
+        errorClassName="basis-full text-end"
         disabled={disabled}
-        value={String(value)}
-        onChange={(e) => onChange(e.target.value)}
+        rules={{ min: 0, max, integer: true }}
+        value={value}
+        onCommit={(figure) => onChange(String(figure))}
       />
     </label>
   );

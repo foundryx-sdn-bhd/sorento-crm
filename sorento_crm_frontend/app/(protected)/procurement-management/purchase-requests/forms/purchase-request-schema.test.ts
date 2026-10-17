@@ -125,3 +125,19 @@ describe('sponsorship unit price validation (#1227)', () => {
     expect(res.success).toBe(true);
   });
 });
+
+describe('PurchaseRequestFormSchema bad input (round 2, S-A)', () => {
+  it('a NaN line Quantity reads as the number sentence, never raw zod text, and the other checks still run', () => {
+    const result = PurchaseRequestFormSchema.safeParse({
+      ...BASE,
+      request_type: 'purchase_request',
+      sales_type: null,
+      products: [{ item_code: 'A', quantity: NaN, remark: null, unit_price: null, total: null }],
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const byPath = Object.fromEntries(result.error.issues.map((i) => [i.path.join('.'), i.message]));
+    expect(byPath['products.0.quantity']).toBe('Enter a number above 0.');
+    expect(byPath['sales_type']).toBe('Sales type is required.');
+  });
+});

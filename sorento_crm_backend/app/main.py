@@ -592,35 +592,7 @@ async def root():
     return {"message": "Sorento CRM API", "version": "1.0.0"}
 
 
-def _git_sha() -> str:
-    """The short sha of the checkout this process is running, read ONCE at import.
-
-    A stack check has to be able to say WHICH code answered it, and the deploy is the
-    only other thing that knows. `GIT_SHA` (set by the container build) wins where there
-    is no git directory at all; a local run reads it from the checkout beside this file.
-    Never per request: this shells out.
-    """
-    from os import environ
-
-    env_sha = (environ.get("GIT_SHA") or "").strip()
-    if env_sha:
-        return env_sha
-    try:
-        import subprocess
-
-        out = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=str(_Path(__file__).resolve().parent.parent),
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        return (out.stdout or "").strip() or "unknown"
-    except Exception:  # noqa: BLE001 - a health probe never fails over its own metadata
-        return "unknown"
-
-
-GIT_SHA = _git_sha()
+from app.utils.build_info import GIT_SHA, _git_sha  # noqa: E402,F401 - /health reports it
 
 
 def _production_prompt_version(db) -> int | None:

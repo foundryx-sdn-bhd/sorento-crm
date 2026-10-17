@@ -15,6 +15,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { PACKING_LIST_REGION_OPTIONS } from '@/lib/packing-list-regions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -435,12 +436,19 @@ export default function PackingListForm({
                     <FormItem>
                       <FormLabel>{f.label}</FormLabel>
                       <FormControl>
-                        <Input
-                          type={f.name === 'free_days_available' ? 'number' : 'text'}
-                          min={f.name === 'free_days_available' ? 0 : undefined}
-                          {...field}
-                          value={(field.value as string | number) ?? ''}
-                        />
+                        {f.name === 'free_days_available' ? (
+                          <NumberInput
+                            min={0}
+                            {...field}
+                            value={(field.value as string | number) ?? ''}
+                          />
+                        ) : (
+                          <Input
+                            type="text"
+                            {...field}
+                            value={(field.value as string | number) ?? ''}
+                          />
+                        )}
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -491,7 +499,14 @@ export default function PackingListForm({
                       <FormItem className="w-32">
                         <FormLabel>Qty Shipped</FormLabel>
                         <FormControl>
-                          <Input type="number" min={1} {...field} onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)} />
+                          <NumberInput
+                            min={1}
+                            name={field.name}
+                            ref={field.ref}
+                            onBlur={field.onBlur}
+                            value={field.value}
+                            onValueChange={field.onChange}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

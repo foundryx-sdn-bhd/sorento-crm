@@ -638,6 +638,26 @@ PERMISSION_REGISTRY.extend([
         ),
     },
     {
+        "slug": "projects.sample_requests.view",
+        "name": "View Sample Requests",
+        "description": "See every sample request (consignment requisition), not only your own.",
+    },
+    {
+        "slug": "projects.sample_requests.create",
+        "name": "Create Sample Requests",
+        "description": "Raise and submit your own sample requests, and cancel them until Processing.",
+    },
+    {
+        "slug": "projects.sample_requests.process",
+        "name": "Process Sample Requests",
+        "description": (
+            "Coordinator grant: move a sample request through Processing, Customer "
+            "confirmed and Delivered, cancel one in Processing, and fill Consignment No "
+            "and PO No. Separate from `projects.projects.edit`, which every salesperson "
+            "holds and which would let them mark their own request delivered."
+        ),
+    },
+    {
         "slug": "projects.stock_debt.view",
         "name": "View Stock Debt",
         "description": (

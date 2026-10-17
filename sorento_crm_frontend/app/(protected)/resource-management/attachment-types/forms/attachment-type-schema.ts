@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { optionalNumber, requiredNumber } from '@/lib/number-field-schema';
 
 export const AttachmentTypeSchema = z.object({
   type_name: z
@@ -14,18 +15,9 @@ export const AttachmentTypeSchema = z.object({
     .string()
     .min(1, { message: 'Allowed extensions are required.' })
     .max(255, { message: 'Allowed extensions must not exceed 255 characters.' }),
-  max_file_size_mb: z
-    .number()
-    .min(1, { message: 'Max file size must be at least 1 MB.' })
-    .max(10000, { message: 'Max file size must not exceed 10000 MB.' }),
+  max_file_size_mb: requiredNumber({ min: 1, max: 10000 }),
   // Blank = unlimited. Enforced per entity row by the portal upload quota check.
-  max_count_per_entity: z
-    .number()
-    .int({ message: 'Max attachments per record must be a whole number.' })
-    .min(1, { message: 'Max attachments per record must be at least 1.' })
-    .max(1000, { message: 'Max attachments per record must not exceed 1000.' })
-    .nullable()
-    .optional(),
+  max_count_per_entity: optionalNumber({ min: 1, max: 1000, integer: true }),
   supports_field_linkage: z.boolean().optional(),
   triggers_n8n_webhook: z.boolean().optional(),
   // The cert-bearing signal. The external attachment endpoint honours the
@@ -34,13 +26,7 @@ export const AttachmentTypeSchema = z.object({
   is_certificate: z.boolean().optional(),
   // Ceiling used by the review rules: a validity span longer than this is
   // flagged as implausible rather than trusted. Blank = no ceiling.
-  max_validity_months: z
-    .number()
-    .int({ message: 'Maximum validity must be a whole number of months.' })
-    .min(1, { message: 'Maximum validity must be at least 1 month.' })
-    .max(600, { message: 'Maximum validity must not exceed 600 months.' })
-    .nullable()
-    .optional(),
+  max_validity_months: optionalNumber({ min: 1, max: 600, integer: true }),
   // An upload of this type is written with company_id = NULL (visible to every
   // company). Flipping this later never touches an existing row.
   is_shared: z.boolean().optional(),
