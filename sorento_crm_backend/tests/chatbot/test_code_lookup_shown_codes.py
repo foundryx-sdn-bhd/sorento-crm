@@ -274,3 +274,67 @@ def _install_parser(monkeypatch, parsed) -> None:
         ),
     )
     monkeypatch.setattr(parser_mod, "parse", lambda config, user_block: parsed)
+
+
+# ---- reviewer on df16528084: shown_codes must hold only the codes THIS reply shows
+
+
+def test_a_pick_that_misses_over_an_open_roster_records_only_what_the_reply_shows(session_factory, monkeypatch):
+    """Hand pass 9 D1 flow (tests/chatbot/test_rearch_r9_handpass9_replay.py): turn 1 rosters A, B, C; turn 2
+    picks A, a genuine miss, and the miss re-arms the carried roster as answer.question (contract 36,
+    turn/compose.py:951). The reply shows the picked product and the miss line, not B or C."""
+    from tests._pg_fixture import unique_code
+    from tests.chatbot.test_engine import _parser_output
+    from tests.chatbot.test_outstanding_lane import _session_of
+    from tests.chatbot.test_rearch_r5_production_decides import (
+        _mcp_double,
+        _run_turn_real,
+        _run_turn_with_mcp_call,
+        _seed_contact_and_get,
+    )
+    from tests.chatbot.test_rearch_r9_handpass9_replay import _photo_roster_ask_qf, _position_of, _seed_photo_family
+
+    _seed_contact_and_get(session_factory)
+    base = unique_code("ZZTSC7PHA").replace("-", "")
+    family = _seed_photo_family(session_factory, base)
+    a_code, _a_id = family["a"]
+    _run_turn_real(
+        session_factory, monkeypatch, qf=_photo_roster_ask_qf(base),
+        text_body=f"photo for {base}", msg_id="zzt-sc7-roster", mcp_response={"data": []},
+    )
+    options = (_session_of(session_factory).get("open_question") or {}).get("options") or []
+    position = _position_of(options, a_code)
+    assert len(options) == 3 and position is not None, options
+    qf2 = _parser_output(
+        message_type="casual", intent_hint=None, domain_hint=None, entities=[], reference_positions=[position],
+    )
+
+    result2 = _run_turn_with_mcp_call(
+        session_factory, monkeypatch, qf=qf2, text_body=str(position), msg_id="zzt-sc7-pick",
+        mcp_call=_mcp_double(other=lambda *_a, **_k: json.dumps({"data": []}))[0],
+    )
+
+    reply = _text(result2)
+    assert f"• product: {a_code}" in reply and "But no Product Photos matched these." in reply, reply
+    shown = _replied_facts(session_factory, result2).get("shown_codes") or []
+    assert all(code in reply for code in shown), (shown, reply)
+
+
+def test_a_lane_question_does_not_hide_this_turns_did_you_mean_codes():
+    """The replied record reads `_shown_codes(question) or answer.shown_codes`, so a question that carries
+    codes the reply does not show hides the did-you-mean codes it does. Unit level (no real turn mints both):
+    an Answer whose own list is X, Y while its question carries the carried roster A, B, C. The seam the test
+    names, `engine._replied_shown_codes(answer)`, is the one place the replied record's value is computed
+    (it replaces the inline expression at engine.py:7979); the coder adds it."""
+    from types import SimpleNamespace
+
+    from app.services.chatbot import engine as engine_mod
+    from app.services.chatbot.turn.compose import Answer
+
+    carried = SimpleNamespace(
+        kind="product_pick",
+        options=[{"entity_type": "product", "code": c} for c in ("ZZCARRY-A", "ZZCARRY-B", "ZZCARRY-C")],
+    )
+    answer = Answer(text="Did you mean:\n1. ZZSHOWN-X\n2. ZZSHOWN-Y", question=carried, shown_codes=["ZZSHOWN-X", "ZZSHOWN-Y"])
+
+    assert engine_mod._replied_shown_codes(answer) == ["ZZSHOWN-X", "ZZSHOWN-Y"]
