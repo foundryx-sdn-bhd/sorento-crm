@@ -1,6 +1,6 @@
 # PLAN: spec-registry-ui (owner edits chatbot closed lists from the front end)
 
-Status: Plan (card answered 17 Oct, mock drafted on seed rows, waiting on crew data rows). Track: full (size L, one migration).
+Status: Plan (card + publish path answered 17 Oct, mock ready for the owner's OK). Track: full (size L, one migration).
 crew-lane: SPEC-REGISTRY-UI
 
 ## Owner request (17 Oct)
@@ -29,7 +29,10 @@ Most of this ALREADY SHIPS. The owner's journey is a repair + small extension of
 `REGISTRY_TABLES` (`product_spec_registry`, `attachment_types`, `certificates`, `lookup_options`,
 `lookup_option_keywords`). The worker converges within 30 s. This holds ONLY if the active published
 `chatbot_semantic_parser` text carries the `{{specs}}` / `{{attachment_types}}` / `{{certification_types}}` tokens
-(the docstring at `chatbot_parser_prompt.py:1278` still says "at the next publish"): needs a crew data check.
+(the docstring at `chatbot_parser_prompt.py:1278` still says "at the next publish").
+Crew data check (17 Oct): it does NOT. Production (dev v63) carries no `{{specs}}`, `{{attachment_types}}` or
+`{{certification_types}}`; the spec lines are baked text (rendered by `render_prompt_blocks` at publish time). #1755's
+unlabelled v162 adds the two list tokens but not `{{specs}}`. So today no registry edit reaches the production bot.
 
 ### Permission and audit (exist)
 - Words / values: `master_data.spec_registry.edit` OR `master_data.products.edit`; any other field needs
@@ -72,6 +75,16 @@ Most of this ALREADY SHIPS. The owner's journey is a repair + small extension of
 5. Today's permissions. "Try in chatbot" (record gear) runs the real parser dry-run (console turn path, no reply,
    no writes outside `chatbot.turns`) and shows the picked field / value / list item.
 6. Gear links to Attachment Types and Lookup Sets. History tab mounts `AuditTrail` for the row.
+7. Publish path (crew answer 17 Oct, (a)): `scripts/publish_specs_token_prompt.py`, same shape as #1755's
+   `publish_closed_lists_prompt.py`. Base = production version or `--from-version N` (run on top of #1755's version so
+   one publish carries both). Finds the ONE contiguous run of baked `Specification ...` lines plus the
+   `Product types (...)` line, replaces it with `{{specs}}`, adds `specs` to `variables`, refuses on 0 or 2+ runs,
+   publishes the next version UNLABELLED, never moves a label. Crew sequences the publishes; the label moves only after
+   a bench run and the owner's OK.
+8. Shipped cross-field overlaps (20 words on dev, 14 of them Product class vs Type) get an "Also on: <field>" note on
+   the word row; only NEW words are refused.
+9. Audit: 0 dev rows for `product_spec_registry` is expected (every dev edit, 14 to 21 Sep, predates default-on staff
+   audit); History fills from the first save.
 
 ## Mock
 `documentation/plans/chatbot/spec-registry-ui-17oct-mock.html` (seed rows; swapped for crew rows when they arrive).
