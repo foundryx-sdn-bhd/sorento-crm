@@ -202,3 +202,50 @@ def test_grounding_runs_under_the_gate_and_the_verdict_says_so(gate, session_fac
     assert engine_mod.closed_lists_verdict({"entities": []}, gate=gate) == (
         {"entities": [], "closed_lists": True} if gate else {"entities": []}
     )
+
+
+# --- S4b-v2: the closed list on the wire --------------------------------------------------------
+
+
+def test_the_gated_schema_holds_listed_item_to_the_rendered_items():
+    schema = parser_mod.closed_lists_schema(["technical_specifications", "certification", "PPS"])
+    entity = schema["properties"]["entities"]["items"]
+    assert entity["properties"]["listed_item"] == {
+        "type": ["string", "null"], "enum": ["technical_specifications", "certification", "PPS", None],
+    }
+    assert "listed_item" in entity["required"]
+    # The production schema is untouched.
+    assert "listed_item" not in parser_mod.PARSE_OUTPUT_JSON_SCHEMA["properties"]["entities"]["items"]["properties"]
+
+
+def test_parse_sends_the_configs_own_schema(monkeypatch):
+    from app.services.chatbot import llm_call
+
+    sent: list[dict] = []
+
+    class _Result:
+        content = json.dumps(_parser_output())
+        prompt_tokens = completion_tokens = total_tokens = cached_tokens = 0
+
+    def chat(*args, **kwargs):
+        sent.append(kwargs["json_schema"])
+        return _Result()
+
+    monkeypatch.setattr(llm_call, "chat", chat)
+    schema = parser_mod.closed_lists_schema(["certification"])
+    gated = parser_mod.ParserConfig(
+        system_prompt="x", prompt_version=1, provider="openai", model="m", api_key="k", closed_lists=True, json_schema=schema,
+    )
+    plain = parser_mod.ParserConfig(system_prompt="x", prompt_version=1, provider="openai", model="m", api_key="k")
+
+    parser_mod.parse(gated, "block")
+    parser_mod.parse(plain, "block")
+
+    assert sent == [schema, parser_mod.PARSE_OUTPUT_JSON_SCHEMA]
+
+
+def test_the_items_are_what_the_two_lists_render():
+    from app.services import chatbot_prompt_vars as pv
+
+    with blank_session() as db:
+        assert pv.closed_list_enum(db) == []

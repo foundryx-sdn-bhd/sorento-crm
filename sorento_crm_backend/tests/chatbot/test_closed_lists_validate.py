@@ -110,14 +110,29 @@ def test_a_cert_kind_and_a_scheme_on_file_are_tagged_with_the_listed_spelling(db
     assert (scheme["listed"], scheme["canonical_code"]) == ("cert_scheme", "SIRIM")
 
 
-def test_a_pick_that_is_one_items_own_word_names_that_item(db):
-    """The parser writes the kind in a listed word ("technical drawing", an alias of the
-    owner's lookup set; "certificate", a word of the Certification type): the item whose
-    words hold it, whole and case aside. Its own words, never the customer's."""
+def test_the_parsers_listed_item_names_the_item_whatever_its_code_says(db):
+    """S4b-v2: under the gate the provider holds `listed_item` to the rendered items (a JSON
+    enum), so the parser's understanding of "TD" or "span certificate" arrives as the item."""
+    [drawing] = _ground(db, {**_file_entity("TD", "technical drawing"), "listed_item": "technical_specifications"})
+    assert (drawing["listed"], drawing["canonical_code"]) == ("file_type", "technical_specifications")
+    [cert] = _ground(db, {**_file_entity("span certificate", "certificate"), "listed_item": "certification"})
+    assert (cert["listed"], cert["canonical_code"]) == ("cert_kind", "certification")
+    [scheme] = _ground(db, {**_file_entity("sirim", None), "listed_item": "SIRIM"})
+    assert (scheme["listed"], scheme["canonical_code"]) == ("cert_scheme", "SIRIM")
+
+
+def test_an_explicit_alias_link_names_its_type(db):
+    """The owner's `attachment_type_alias` lookup set is an explicit link, so a code that is
+    one of its keywords names that type."""
     [drawing] = _ground(db, _file_entity("TD", "technical drawing"))
     assert (drawing["listed"], drawing["canonical_code"]) == ("file_type", "technical_specifications")
-    [cert] = _ground(db, _file_entity("span certificate", "certificate"))
-    assert (cert["listed"], cert["canonical_code"]) == ("cert_kind", "certification")
+
+
+def test_a_description_word_is_never_matched_by_code(db):
+    """Crew's dev data check (17 Oct): description text ("cert, certificate, ...", "Spec /
+    Drawing by Marketing") is shown to the parser, never matched by code."""
+    assert _ground(db, _file_entity("span certificate", "certificate")) == []
+    assert _ground(db, _file_entity("spec", "Spec")) == []
 
 
 def test_a_word_two_items_share_names_neither(db):
@@ -229,3 +244,7 @@ def test_an_items_own_name_outranks_another_items_word(db):
 
     [scheme] = _ground(db, _file_entity("pps", "PPS"))
     assert (scheme["listed"], scheme["canonical_code"]) == ("cert_scheme", "PPS")
+
+
+def test_the_enum_is_every_rendered_item_once_in_list_order(db):
+    assert pv.closed_list_enum(db) == ["technical_specifications", "certification", "SIRIM"]
