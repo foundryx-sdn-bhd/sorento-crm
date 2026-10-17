@@ -200,3 +200,14 @@ so its timing is covered by tests only.
   fraction / bad qty to 1 and a blank loan period to 2. Now validate() refuses them with "Enter a whole number of at
   least 1." under the box, nothing sent; both boxes use NumberInput. Main's new nested DataGrid site
   (SampleRequestDetail.tsx) added to the inventory baseline (that test was red on main too).
+
+## Rounds 8 and 9 (17 Oct: crew audit resend + reviewer r7)
+
+- Crew audit item 6: project quotation / project PO line updates refuse an explicit null quantity (422) instead of
+  saving it as 1 (omitted and 0 unchanged; no screen sends a null there).
+- Reviewer r7: Sample Request "Save as draft" (portal and staff) now runs the same number checks as Submit
+  (`numberErrors` in lib/sample-request-form.ts): blank / 0 / bad qty or loan period sends nothing and shows the
+  sentence; the collection number gate recurses only into groups, so a condition carrying `"rules": []` is checked.
+- Browser rows D 375, F 375 and Sample Request: NOT RUN in the browser (crew ruling (b), 17 Oct): the permission
+  system denies browser save presses on the shared dev DB after three accidental writes during browser passes (all
+  restored, logged on the PR). Covered by tests and earlier browser evidence (PR body).
