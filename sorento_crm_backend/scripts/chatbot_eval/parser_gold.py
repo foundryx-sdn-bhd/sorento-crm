@@ -118,10 +118,10 @@ def _parse_one(message: str, config: Any, factory: Any) -> Any:
         promotion_kinds = turn_runtime.promotion_kind_rows(db)
         product_types = turn_runtime.product_type_names(db)
         product_details = turn_runtime.product_detail_values(db)
-        lines, _listed = (
+        lines, _listed, _picks = (
             engine._candidate_lines(db, message, code_lookup=config.code_lookup)
             if config.closed_lists
-            else (None, frozenset())
+            else (None, frozenset(), {})
         )
     finally:
         db.close()

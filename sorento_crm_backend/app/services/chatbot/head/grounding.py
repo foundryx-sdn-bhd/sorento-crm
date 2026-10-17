@@ -741,6 +741,7 @@ def ground(
     message: str | None = None,
     closed_lists: bool = False,
     listed_codes: frozenset[str] | None = None,
+    pick_info: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """The verdict with every descriptor grounded, and a note per change for the trace.
 
@@ -754,7 +755,12 @@ def ground(
 
     `listed_codes` (CHAT-CODE-LOOKUP, the version also carries the CODE LOOKUP section): a
     product pick that is not the typed word, an extension or a family of it, and not a code
-    the candidate block listed, is dropped and the raw kept. None is today."""
+    the candidate block listed, is dropped and the raw kept. None is today.
+
+    `pick_info` (CHAT-CODE-LOOKUP R2-4, `candidates.pick_info`): a kept pick is still refused
+    (canonical dropped, raw kept, noted) on a TRUE TIE (another near code on the word's line
+    has the pick's exact score) or SEVERAL HOLDERS (two or more listed codes hold the word and
+    none equals it). The scores are the shortlist's own; nothing here compares spellings."""
     entities = verdict.get("entities")
     if not isinstance(entities, list) or not entities:
         return verdict, []
@@ -830,6 +836,19 @@ def ground(
                 notes.append({"from": hint, "raw": raw, "to": "canonical dropped: not on the candidate block"})
                 entity = {**entity, "canonical_code": None}
                 canonical = ""
+            elif pick_info and picked != typed and (info := pick_info.get(typed)):
+                scores, holds = info.get("scores") or {}, info.get("holds") or []
+                tie = picked in scores and picked not in holds and any(
+                    other != picked and other not in holds and score == scores[picked] for other, score in scores.items()
+                )
+                several = len(holds) >= 2 and typed not in holds and picked in holds
+                if tie or several:
+                    notes.append({
+                        "from": hint, "raw": raw,
+                        "to": "canonical refused: " + ("tied near codes" if tie else "several codes hold the word"),
+                    })
+                    entity = {**entity, "canonical_code": None}
+                    canonical = ""
         if hint == _PRODUCT_HINT and _names_a_class_not_a_code(raw, vocab):
             # Fix round 10 on PR #833 (owner, 28 Sep 2026: "i tried to search like gunmetal
             # basin, there is no such thing and it gives me flexible trap"): words with no

@@ -1103,7 +1103,7 @@ def code_lookup_verdict(verdict: dict[str, Any], *, gate: bool) -> dict[str, Any
 
 def _candidate_lines(
     db: Session, latest_user_message: str, *, code_lookup: bool = False
-) -> tuple[list[str] | None, frozenset[str]]:
+) -> tuple[list[str] | None, frozenset[str], dict[str, dict[str, Any]]]:
     """The candidate block for the message's OWN first line (the quoted reply under it is
     not this message's words, the line grounding reads too). It only advises the parser,
     so a failure leaves it out and the turn goes on (savepoint: the session stays usable).
@@ -1116,10 +1116,14 @@ def _candidate_lines(
                 if code_lookup
                 else candidates_mod.shortlist(db, message)
             )
-            return candidates_mod.candidate_lines(entries), candidates_mod.listed_codes(entries)
+            return (
+                candidates_mod.candidate_lines(entries),
+                candidates_mod.listed_codes(entries),
+                candidates_mod.pick_info(entries) if code_lookup else {},
+            )
     except Exception:  # noqa: BLE001 - advisory block, never a failed turn
         logger.warning("chatbot: candidate shortlist failed; parsing without it", exc_info=True)
-        return None, frozenset()
+        return None, frozenset(), {}
 
 
 def _scoped_factory(
@@ -4546,10 +4550,10 @@ def _run_stages_body(  # noqa: PLR0915
         product_details = turn_runtime.product_detail_values(db)
         # CHAT-CLOSED-LISTS: what is on file under the words of this message, for a
         # version carrying the CLOSED LISTS section only (code shortlists, the parser picks).
-        candidate_lines, listed_codes = (
+        candidate_lines, listed_codes, pick_info = (
             _candidate_lines(db, latest_user_message, code_lookup=parser_config.code_lookup)
             if parser_config.closed_lists and isinstance(latest_user_message, str)
-            else (None, frozenset())
+            else (None, frozenset(), {})
         )
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
@@ -4821,6 +4825,7 @@ def _run_stages_body(  # noqa: PLR0915
             message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None,
             closed_lists=parser_config.closed_lists,
             listed_codes=listed_codes if parser_config.code_lookup else None,
+            pick_info=pick_info if parser_config.code_lookup else None,
         )
     verdict = closed_lists_verdict(verdict, gate=parser_config.closed_lists)
     verdict = code_lookup_verdict(verdict, gate=parser_config.code_lookup)

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -61,6 +61,10 @@ class WordCandidates:
     items: list[str] = field(default_factory=list)
     #: Candidate line text -> the product code it lists (code lines only).
     codes: dict[str, str] = field(default_factory=dict)
+    #: CHAT-CODE-LOOKUP R2-4, code lines of a coded word: code -> its folded similarity to the
+    #: typed word, and the codes that HOLD the word. What grounding checks a pick against.
+    scores: dict[str, float] = field(default_factory=dict)
+    holds: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -377,6 +381,7 @@ def _code_candidates(db: "Session", tokens: list[str], *, code_lookup: bool = Fa
                     .all()
                 ]
             labelled = [(_code_label(code, name, holds), code) for code, name, holds in rows]
+            meta = [(code, holds) for code, _name, holds in rows]
             if sets:
                 exact = set_exact or any(_fold_code(code) == word for code, _name, _holds in rows)
                 merged = _ranked(
@@ -385,11 +390,16 @@ def _code_candidates(db: "Session", tokens: list[str], *, code_lookup: bool = Fa
                     NEAR_CODE if exact else NEAR_CODE_NO_EXACT,
                 )
                 labelled = [(_code_label(code, name, holds, kind), code) for code, name, holds, kind in merged]
+                meta = [(code, holds) for code, _name, holds, _kind in merged]
         else:
             labelled = [(_code_label(code, name, True), code) for code, name in by_word.get(word, [])]
+            meta = []
         if labelled:
+            typed = trigrams(word)
             out.append(WordCandidates(
                 gram=token, position=position, items=[text for text, _code in labelled], codes=dict(labelled),
+                scores={code: similarity(typed, trigrams(_fold_code(code))) for code, _holds in meta},
+                holds=[code for code, holds in meta if holds],
             ))
     return out
 
@@ -406,6 +416,8 @@ def shortlist(db: "Session", message: str, *, code_lookup: bool = False) -> list
         held = merged.setdefault(entry.gram, WordCandidates(gram=entry.gram, position=entry.position))
         held.items.extend(item for item in entry.items if item not in held.items)
         held.codes.update(entry.codes)
+        held.scores.update(entry.scores)
+        held.holds.extend(code for code in entry.holds if code not in held.holds)
     ordered = sorted(merged.values(), key=lambda e: (e.position, -len(e.gram)))
     for entry in ordered:
         exact = [i for i in entry.items if not i.startswith("near ")]
@@ -420,6 +432,23 @@ def listed_codes(entries: list[WordCandidates]) -> frozenset[str]:
 
     shown = [entry for entry in entries if entry.items][:CAP_LINES]
     return frozenset(token_key(entry.codes[item]) for entry in shown for item in entry.items if item in entry.codes)
+
+
+def pick_info(entries: list[WordCandidates]) -> dict[str, dict[str, Any]]:
+    """What grounding needs to refuse an unsafe product pick, per rendered word (keyed by the
+    word's folded key): the folded code -> similarity of each code line, and the folded codes
+    that hold the word."""
+    from app.services.chatbot.turn.state import token_key
+
+    shown = [entry for entry in entries if entry.items][:CAP_LINES]
+    out: dict[str, dict[str, Any]] = {}
+    for entry in shown:
+        listed = {code for item, code in entry.codes.items() if item in entry.items}
+        out[token_key(entry.gram)] = {
+            "scores": {token_key(c): s for c, s in entry.scores.items() if c in listed},
+            "holds": [token_key(c) for c in entry.holds if c in listed],
+        }
+    return out
 
 
 def candidate_lines(entries: list[WordCandidates]) -> list[str]:

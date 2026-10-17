@@ -39,13 +39,14 @@ CONTINUATION for a code with a count.
 A bare code. A bare code after an answer, with no count and no purpose word, reuses that answer's domain (after an
 ETA answer, its ETA; after a stock answer, its stock), as BARE ENTITY CONTINUATION says.
 
-When deliver. These words are ADDED to the "outstanding" word list of ORDER_STATUS FILTER and count as the current
-message's own explicit words: "when deliver", "when will ... be delivered", "bila hantar", "几时送", and their
-misspellings ("wen deliver", "whn deliver", "deliverd"). Such a message about a product (and a customer) is status
-"outstanding", domain_hint "order", intent_hint "check_order", the product and the customer as entities, and
-requested_attributes stays [] (never "delivery"). It is not a delivery list ask, so the assistant never asks which
-period for it. An arrival ask ("when ... arrive", "ETA", "sampai dari kilang", "到货") stays incoming, and a
-"delivered" / "sudah hantar" ask stays status "delivered".
+When deliver. A question asking WHEN goods will be delivered to, or reach, a customer or a shop, in any wording or
+language, is an outstanding-order ask, for example "when deliver", "when will ... be delivered", "bila hantar", "几时送",
+and their misspellings ("wen deliver", "whn deliver", "deliverd"). Such questions are ADDED to the "outstanding" word
+list of ORDER_STATUS FILTER: they count as the current message's own explicit words, and "Never infer from context"
+does not apply to them. Such a message about a product (and a customer) is status "outstanding", domain_hint "order",
+intent_hint "check_order", the product and the customer as entities. It is not a delivery list ask, so the assistant
+never asks which period for it. An arrival ask about stock coming in ("when ... arrive", "ETA", "sampai dari kilang",
+"到货") stays incoming, and a "delivered" / "sudah hantar" ask stays status "delivered".
 
 Several listed codes. When two or more listed codes are each one letter away from the typed word (typed X12Q, listed X120
 and X121), the code meant is not plain: pick none. When the typed word is part of several listed codes and no listed
