@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import json
+
+import pytest
 import uuid
 from types import SimpleNamespace
 
@@ -259,3 +261,25 @@ def test_red_a_db_behind_the_arm_is_refused_with_the_upgrade_command(
     assert rc == 2, text.out + text.err
     assert "alembic upgrade head" in text.out + text.err
     assert _no_row_written(out)
+
+
+# ------------------------------------------------------------------ round 3
+@pytest.mark.parametrize("cmd", ["run", "live"])
+def test_red_an_unstamped_replay_db_is_refused(cmd, tmp_path, session_factory, recorded, live_env, monkeypatch, capsys):
+    _preflight(monkeypatch, set(), {"a1"}, known=False)
+    rc, out = _cli(cmd, tmp_path, session_factory, recorded, monkeypatch)
+    text = capsys.readouterr()
+    assert rc == 2, text.out + text.err
+    assert "alembic_version" in text.out + text.err, text.out + text.err
+    assert _no_row_written(out)
+
+
+def test_red_a_clean_diff_prints_no_broken_line(tmp_path, capsys):
+    rc, out = _diff_cli(tmp_path, [_row("t1")], [_row("t1")], capsys)
+    assert rc == 0 and "broken" not in out.lower(), out
+
+
+def test_guard_a_broken_diff_still_prints_broken_and_its_count(tmp_path, capsys):
+    bad = _row("t1", misses=[{"error": "KeyError"}], stages={})
+    rc, out = _diff_cli(tmp_path, [bad], [dict(bad)], capsys)
+    assert rc == 3 and "BROKEN" in out and "broken 1" in out, out
