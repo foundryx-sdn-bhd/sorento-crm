@@ -564,9 +564,11 @@ class _Row:
 class FulfilmentBoardService:
     """`GET /project-sales/fulfilment-planning/board`. A pure read."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, *, reveal_eta_delay: bool = True):
         self.db = db
-        self.supply = ProjectSupplyService(db)
+        # A viewer without `view_clearance` is shown the published ETA, never the delay
+        # (owner ruling 17 Oct 2026); the route says which this request's viewer is.
+        self.supply = ProjectSupplyService(db, reveal_eta_delay=reveal_eta_delay)
         # Per-request stock facts, filled by `_allocate` and read by `_cell`. Cached rather
         # than re-read because the cell states the same figures the allocation was computed
         # from - a second read could disagree with the proposal sitting next to it.

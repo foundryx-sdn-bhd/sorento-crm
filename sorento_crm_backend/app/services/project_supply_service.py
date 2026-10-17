@@ -1136,8 +1136,13 @@ def _location_only(candidate: Mapping[str, Any]) -> Dict[str, Any]:
 class ProjectSupplyService:
     """The supply sheet (`proposal_for`) and the atomic commit (`confirm`)."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, *, reveal_eta_delay: bool = True):
         self.db = db
+        # Whether this request's reader may see `eta_delay_date`, a
+        # `procurement.packing_lists.view_clearance` field (owner ruling 17 Oct 2026). Only
+        # a read that PRINTS dates to a viewer passes False; every decision and write keeps
+        # the default and dates incoming supply by the revised ETA.
+        self.reveal_eta_delay = reveal_eta_delay
         # Facts about THIS request, filled by `_facts_for` and read by the helpers below.
         # Per-request rather than per-call because one proposal asks the same "what is
         # free at that location" question once per line and once per borrow candidate.
@@ -9940,9 +9945,8 @@ class ProjectSupplyService:
             balance = _dec(row.allocated_quantity) - _dec(row.quantity_received)
             if balance <= _ZERO:
                 continue
-            arrival = (
-                row.eta_delay_date or row.estimated_arrival_date or row.expected_date
-            )
+            delay = row.eta_delay_date if self.reveal_eta_delay else None
+            arrival = delay or row.estimated_arrival_date or row.expected_date
             out.setdefault((str(row.product_id), str(row.warehouse_id)), []).append(
                 _SpoRow(
                     spo_number=str(row.spo_number or ""),

@@ -58,6 +58,7 @@ from app.services import project_service as projects
 from app.services.audit_service import log_audit
 from app.services.error_handler import AppException, handle_internal_error
 from app.services.project_classification_evidence import classification_evidence
+from app.services.field_access import staff_may_see_clearance
 from app.services import confirm_simulation  # noqa: F401 - registers the engine commit guard
 from app.services import project_line_draft_service
 from app.services.project_fulfilment_board_service import FulfilmentBoardService
@@ -346,7 +347,9 @@ def get_planning_board(
     """
     try:
         numbers = [part.strip() for part in (orders or "").split(",") if part.strip()]
-        body = FulfilmentBoardService(db).build(
+        body = FulfilmentBoardService(
+            db, reveal_eta_delay=staff_may_see_clearance(db, _user)
+        ).build(
             numbers,
             granularity=granularity,
             as_of=as_of,
@@ -963,7 +966,9 @@ def get_stock_detail(
         # repeated params, deduplicates, and refuses a value that is not an id by naming the
         # parameter - rather than handing the typo to the query.
         wanted = parse_uuid_list([line_ids], param_name="line_ids") or []
-        return FulfilmentBoardService(db).stock_detail(
+        return FulfilmentBoardService(
+            db, reveal_eta_delay=staff_may_see_clearance(db, _user)
+        ).stock_detail(
             product_id, warehouse_id, line_ids=wanted, group=group
         )
     except Exception as exc:
