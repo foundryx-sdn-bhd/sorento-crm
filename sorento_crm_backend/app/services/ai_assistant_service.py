@@ -353,11 +353,7 @@ class MCPRuntimeClient:
             resp = client.post(
                 self.base_url,
                 json=payload,
-                headers={
-                    # FastMCP streamable HTTP requires both content types in Accept.
-                    "Accept": "application/json, text/event-stream",
-                    "Content-Type": "application/json",
-                },
+                headers=self._headers(),
             )
             resp.raise_for_status()
             body = self._decode_streamable_body(resp)
@@ -366,6 +362,18 @@ class MCPRuntimeClient:
         if not isinstance(body, dict):
             raise RuntimeError("Invalid MCP response payload")
         return body.get("result") or {}
+
+    @staticmethod
+    def _headers() -> dict[str, str]:
+        headers = {
+            # FastMCP streamable HTTP requires both content types in Accept.
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+        }
+        token = (settings.mcp_auth_token or "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
 
     def _decode_streamable_body(self, resp: httpx.Response) -> dict[str, Any]:
         content_type = (resp.headers.get("content-type") or "").lower()

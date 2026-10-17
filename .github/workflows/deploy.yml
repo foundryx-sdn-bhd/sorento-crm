@@ -2115,11 +2115,17 @@ jobs:
               curl -fsS -o /dev/null http://127.0.0.1/
             fi
             # MCP via host nginx (n8n entrypoint, port stays 8765 forever)
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8765/mcp || true)
-            # 406 expected for plain GET (MCP demands SSE Accept header); means nginx reached MCP.
+            # https once the owner moves the :8765 listener behind TLS (MCP-LOCKDOWN ops step);
+            # -k because the cert names the public hostname, not 127.0.0.1. http until then.
+            for scheme in https http; do
+              code=$(curl -sk -o /dev/null -w "%{http_code}" "$scheme://127.0.0.1:8765/mcp" || true)
+              [ "$code" = "401" ] && break
+            done
+            # MCP-LOCKDOWN: this probe sends no bearer token, so only 401 means "nginx reached a
+            # gated MCP". 200/405/406 now mean MCP is up WITHOUT the token check (old image).
             case "$code" in
-              200|405|406) echo "MCP reachable via nginx (HTTP $code)";;
-              *) echo "ERROR: MCP via nginx returned $code"; exit 1;;
+              401) echo "MCP reachable via nginx and refusing unauthenticated calls (HTTP $code)";;
+              *) echo "ERROR: MCP via nginx returned $code (expected 401)"; exit 1;;
             esac
 
       # The owner mail, a step of this job since CI-LEAN (10 Oct 2026): as a

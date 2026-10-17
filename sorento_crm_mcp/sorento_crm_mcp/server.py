@@ -14,6 +14,9 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
+from starlette.types import ASGIApp
+
+from sorento_crm_mcp.auth import MIN_TOKEN_LENGTH, BearerAuthMiddleware
 from sorento_crm_mcp.catalog import CATALOG, ToolSpec
 from sorento_crm_mcp.escalation_hint import attach_suggested_escalation
 from sorento_crm_mcp.http_client import CRMClient
@@ -1800,6 +1803,22 @@ def _compile_tool(spec: ToolSpec):
     return ns[fname]
 
 
+def _transport_security(settings: Settings) -> TransportSecuritySettings:
+    hosts = [h.strip() for h in settings.mcp_allowed_hosts.split(",") if h.strip()]
+    return TransportSecuritySettings(enable_dns_rebinding_protection=bool(hosts), allowed_hosts=hosts)
+
+
+def create_http_app(settings: Settings) -> ASGIApp:
+    """The ASGI app `__main__` serves: FastMCP's streamable HTTP app behind the bearer gate."""
+    token = (settings.mcp_auth_token or "").strip()
+    if len(token) < MIN_TOKEN_LENGTH:
+        raise RuntimeError(
+            f"MCP_AUTH_TOKEN must be set to a random value of at least {MIN_TOKEN_LENGTH} characters "
+            "(e.g. `openssl rand -hex 32`); the MCP server will not serve without it."
+        )
+    return BearerAuthMiddleware(create_mcp_app(settings).streamable_http_app(), token)
+
+
 def create_mcp_app(settings: Settings) -> FastMCP:
     @asynccontextmanager
     async def lifespan(_app: FastMCP) -> AsyncIterator[dict[str, Any]]:
@@ -1819,7 +1838,7 @@ def create_mcp_app(settings: Settings) -> FastMCP:
         host=settings.mcp_host,
         port=settings.mcp_port,
         log_level=settings.log_level.upper(),  # type: ignore[arg-type]
-        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+        transport_security=_transport_security(settings),
         stateless_http=True,
         lifespan=lifespan,
     )
