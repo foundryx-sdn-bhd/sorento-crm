@@ -99,7 +99,9 @@ describe('PurchaseRequestForm - round 1b', () => {
     };
     renderForm(true);
     await screen.findByRole('button', { name: /^Update$/ });
-    expect(screen.getByText(MESSAGE)).toBeInTheDocument();
+    // The load-time sentence comes from an async form.trigger() in the load effect, so it can
+    // land after the Update button: wait for it rather than reading the DOM once.
+    expect(await screen.findByText(MESSAGE)).toBeInTheDocument();
     expect(qtyBox()).toHaveAttribute('aria-invalid', 'true');
     fireEvent.click(screen.getByRole('button', { name: /^Update$/ }));
     expect(updateMutateAsync).not.toHaveBeenCalled();
@@ -144,7 +146,7 @@ describe('PurchaseRequestForm - round 2b narrow cell', () => {
     };
     renderForm(true);
     await screen.findByRole('button', { name: /^Update$/ });
-    const el = screen.getByText(MESSAGE);
+    const el = await screen.findByText(MESSAGE);
     expect(el).toHaveClass('whitespace-normal');
     expect(/break-words|wrap-break-word|\[overflow-wrap:anywhere\]/.test(el.className)).toBe(true);
   });
