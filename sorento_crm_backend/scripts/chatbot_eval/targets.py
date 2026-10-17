@@ -1117,20 +1117,24 @@ def _tier_spec_check(row: dict[str, Any], item: dict[str, Any]) -> tuple[str, bo
 
 def _sibling_picker_ok(row: dict[str, Any], item: dict[str, Any], checks: list[tuple[str, bool | None, str]]) -> bool:
     """Owner ruling 17 Oct: after a FULL answer to an EXACT code, an open picker of that code's sibling variants is right
-    (answer.py), so it is not a needless picker. Full = every other check is not False; sibling = the option's code starts
-    with the gold code's family stem (the part before its first "-")."""
+    (answer.py), so it is not a needless picker. Full = every other check is not False; sibling = the option's code head
+    (before its first "-") equals the gold code's head, which must hold a digit (the engine's family_code_for). A
+    did-you-mean is no answer."""
     gold = item.get("gold") or {}
-    raw = gold.get("code") or next(iter(gold.get("subject_after") or []), None)   # an and-x item names its code as the subject
+    raw = gold.get("code") or next(iter(gold.get("subject_after") or []), None)   # a follow-up (and-x, switch) with no gold code names it as the subject
     code = _key(raw)
     if (not code or gold.get("code_unresolved") or not _reply_answers(row, item.get("slice") or "")
+            or re.search(r"\b(?:couldn.?t|could not) find\b|\bdid you mean\b", reply_text(row), re.I)
             or any(ok is False for name, ok, _ in checks if name != "no_picker")):
         return False
     after = _oq(row)[1]
     if not (isinstance(after, dict) and after.get("kind") == "product_pick"):
         return False
     stem = _key(str(raw).split("-")[0])
-    opts = [_key(o.get("code") or o.get("label")) for o in (after.get("options") or []) if isinstance(o, dict)]
-    return bool(opts) and all(o.startswith(stem) for o in opts)
+    if not re.search(r"\d", stem):
+        return False
+    opts = [_key(str(o.get("code") or o.get("label")).split("-")[0]) for o in (after.get("options") or []) if isinstance(o, dict)]
+    return bool(opts) and all(o == stem for o in opts)
 
 
 def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
