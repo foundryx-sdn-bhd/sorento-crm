@@ -54,7 +54,9 @@ Helpers land in the slice that first prints them (lead decision 17 Oct, seam des
 - S2 ETA: dates dd/mm/yyyy (TRAIN cp0-0654e3e74a); one "Container" label; an ETA miss says it once
   (TRAIN cp0-5430419641); dealer `CODE: ✅ ETA d` line unchanged.
 - S3 not found / clarify / hand-over: one miss grammar; one "more" line; no internal names (TRAIN cp0-75e516bd40); no
-  offer or picker left open after a full exact answer (R12; TRAIN cp0-b1f73c72c0, cp0-958b275668, cp0-4430299976);
+  needless question left open after a full exact answer (R12; TRAIN cp0-b1f73c72c0,
+  cp0-958b275668), but the numbered sibling-variant picker after a full answer to an exact code stays, unchanged
+  (owner ruling 17 Oct, `answer.py:4846-4848`);
   access-level question only after a spec-matching product is found (R10).
 - S4 files + promotions: one "attached" sentence, one dedupe; one missing-file sentence; "EXPIRED" on every path, kept
   after re-sorting (R7); dates dd/mm/yyyy (TRAIN cp0-b90acd1184).

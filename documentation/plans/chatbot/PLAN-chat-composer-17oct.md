@@ -28,7 +28,7 @@ attachments / documents, order and document status, lists / sets, not found / cl
 | O9 | A set reply that shows no product fails: capped product list + "reply to see more" | project-cp0-owner-review-17oct |
 | O10 | Price-tier question first only once a spec-matching product is found | project-cp0-owner-review-17oct |
 | O11 | No holding / progress messages | design D3 (16 Oct) |
-| O12 | No needless "which one?" after a full answer (related-products picker left open = defect) | EVAL-BENCH TRAIN cp0-c7ec5f1c31 |
+| O12 | No needless "which one?" after a full answer; the numbered sibling-variant picker after a full answer to an exact code STAYS (`answer.py:4846-4848`) | EVAL-BENCH TRAIN cp0-c7ec5f1c31; owner ruling 17 Oct |
 
 ## Method (brief steps)
 

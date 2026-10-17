@@ -62,7 +62,7 @@ refer strip `.replace(" Please refer to your salesman.", "")` (P:1579), the set-
 | R9 A set reply always shows products: capped list + a "reply to see more" line | CP0 owner review 17 Oct | sets.py, misses.py |
 | R10 Price-tier (access level) question first only once a spec-matching product is found | CP0 owner review 17 Oct | misses.py question order |
 | R11 No holding / progress messages | design D3 (16 Oct) | all composers emit none. The two in code are report paths, out of scope (P:2521 "Preparing the low stock report ...", P:3272 "The Excel follows here."); "Please wait for a moment" (TRAIN cp0-a873ac5398) is not in the repo (registry copy or n8n) |
-| R12 No question left open after a full exact answer | EVAL-BENCH TRAIN cp0-c7ec5f1c31 | misses.py offer rule |
+| R12 No needless question left open after a full exact answer. EXCEPT the numbered sibling-variant picker after a full answer to an exact code, which STAYS (owner ruling 17 Oct, `answer.py:4846-4848`); composers keep it | EVAL-BENCH TRAIN cp0-c7ec5f1c31; owner ruling 17 Oct | misses.py offer rule |
 | R13 Dates dd/mm/yyyy, money `MYR 1,234.00`, empty un-asked fields omitted | lane (one format; today mixed, F:1647 vs A:854 vs P:168) | format.py |
 
 ## 4. Per type: what stays, what changes when the gate is on
@@ -109,8 +109,9 @@ two period replies (`so_status.period_reply`, `do_ask.range_reply`) become one.
 cp0-1e8ccf892e); the access-level menu (TRAIN cp0-ec1b15795d). Changes: one miss grammar (`Couldn't find X.`) instead
 of nine; one "there is more" line instead of five trailers; pickers stay uncapped (owner 2 Oct, PICKER-NO-CAP #1436)
 but every option carries its name; no internal names (cp0-75e516bd40 "no master_products matched these"); a set miss that found products shows
-them (R9; cp0-75e516bd40, cp0-665ba3e897); the escalate / related-products offer is dropped after a full exact answer
-(R12; TRAIN cp0-b1f73c72c0, cp0-958b275668, cp0-4430299976).
+them (R9; cp0-75e516bd40, cp0-665ba3e897); a question tacked onto a full answer is dropped (R12; TRAIN cp0-b1f73c72c0 "How many units
+do you need?" under a complete promo answer, cp0-958b275668). The numbered sibling-variant picker after a full answer
+to an exact code stays (owner ruling 17 Oct, `answer.py:4846-4848`; so TRAIN cp0-4430299976 is not a defect).
 
 ## 5. Edge cases
 
