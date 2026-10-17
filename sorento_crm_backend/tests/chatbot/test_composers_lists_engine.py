@@ -117,7 +117,9 @@ def test_engine_arms_and_pages(session_factory, monkeypatch, stub_parser, stub_a
     assert set(page_one) | set(page_two) == world.codes
     assert 'Reply "more"' not in second and "That is all" not in second
     lines = [ln for ln in second.strip().split("\n") if ln]
-    assert lines[-2] == "Those are the first 13 matches. Send more of the code to narrow it.", lines[-3:]
+    # this world prints no footer, so the sentence is the last line (the l1 tests pin the with-footer case)
+    sentence = lines[-2] if lines[-1].startswith("_") else lines[-1]
+    assert sentence == "Those are the first 13 matches. Send more of the code to narrow it.", lines[-3:]
 
     third = chat.say("more", _more_verdict("master_products", "check_product"))
     assert third.strip() == "Those are the first 13 matches. Send more of the code to narrow it.", third[:200]
