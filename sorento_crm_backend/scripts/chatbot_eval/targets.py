@@ -479,7 +479,7 @@ def _menu_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tupl
 # the engine's stock reply lines (label_catalog.py: "Got stock.", "Only N got stock.", "No stock, ETA ...", "No stock found
 # for ...", "yes, we have stock") and their ms / zh renderings
 STOCK_WORDS_RE = re.compile(r"\b(?:stock|in stock|available|availability|ada|ready stock|ready|how many left|berapa ada)\b", re.I)
-QUANTITY_ASK_RE = re.compile(r"how\s+many|berapa|多少", re.I)
+QUANTITY_ASK_RE = re.compile(r"how\s+many|berapa|多少(?!钱)", re.I)
 
 
 SPEC_REFINE_KEYS = frozenset({"spec", "size", "colour"})   # a refine on these asks for spec info; brand / warehouse do not
@@ -855,8 +855,9 @@ def _val(x: Any) -> str:
 
 
 # the bot's own "nothing matches" forms ("But none matched.", "But no <X> matched these.", "No products found")
-NO_MATCH_RE = re.compile(r"\bnone matched\b|\bno\b[^\n.]{0,80}?\bmatched\b|\bno (?:products?|results?|items?) found\b"
-                         r"|\bnone on record\b|\bwe don.?t have\b", re.I)
+NO_MATCH_RE = re.compile(r"\bnone matched\b|\bbut no\b[^\n.]{0,80}?\bmatched these\b|\bno (?:products?|results?|items?) found\b"
+                         r"|\bnone on record\b|\bwe don.?t have any (?!stock\b|incoming\b)"
+                         r"|Couldn.?t find: [^\"“”\s][^\n(]*\([^)\n]+\)", re.I)   # the value-miss line has an unquoted value and a label
 
 
 def _spec(row, item):
