@@ -25,6 +25,7 @@ PO and SPO use the predicates every other screen uses (`OPEN_PO_STATUSES`,
 """
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
@@ -71,6 +72,17 @@ def _due(line_date: Optional[date], header_date: Optional[date]) -> Optional[dat
     if value is None or value == PLACEHOLDER_DATE:
         return None
     return value
+
+
+# ISO 6346: owner code + category (4 letters) and serial + check digit (7 digits).
+_CONTAINER_NO = re.compile(r"(?<![A-Z])[A-Z]{4}[0-9]{7}(?![0-9])")
+
+
+def _container_no(text: Optional[str]) -> Optional[str]:
+    """The container NUMBER inside a stored container field, or None (owner ruling 17 Oct):
+    'SEKU1741573 (KUCHING)' and 'SEKU1741573' are one container."""
+    found = _CONTAINER_NO.search(text or "")
+    return found.group(0) if found else None
 
 
 def _iso(value: Optional[date]) -> Optional[str]:
@@ -416,17 +428,19 @@ def _incoming_pl(db: Session, product_id: str, spos: list[dict]) -> list[dict]:
         return []
 
     # A container number can recur across voyages; an unlinked SPO row goes to the earliest
-    # still-to-land packing list carrying it.
+    # still-to-land packing list carrying it. Matched on the number alone, never the text
+    # around it (ISO 6346, owner ruling 17 Oct).
     containers: dict[str, str] = {}
     for sid, s in sorted(shipments.items(), key=lambda kv: (kv[1]["eta"] is None, kv[1]["eta"] or "")):
-        if s["container_number"]:
-            containers.setdefault(s["container_number"], sid)
+        number = _container_no(s["container_number"])
+        if number:
+            containers.setdefault(number, sid)
     on_spo: dict[str, float] = defaultdict(float)
     for row in spos:
         # One SPO row counts against one packing list: its link, else (unlinked only) its
         # container. A row linked to another shipment is not on any of these.
         link = row["inbound_shipment_id"]
-        target = (link if link in shipments else None) if link else containers.get(row["container_number"])
+        target = (link if link in shipments else None) if link else containers.get(_container_no(row["container_number"]))
         if target:
             on_spo[target] += row["qty"]
 
