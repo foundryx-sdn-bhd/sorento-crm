@@ -351,3 +351,10 @@ def test_portal_application_is_stamped_with_the_contacts_company(portal):
     row = portal.db.get(NewProductApplication, d["id"])
     assert str(row.company_id) == str(portal.company_id)
     assert row.contact_id == portal.granted
+
+
+def test_review_portal_cannot_set_or_read_the_supplier_model_no(portal):
+    res = _as(portal, portal.granted).post(BASE, json={"lines": [_line(portal, supplier_item_code="XY1234")]})
+    assert res.status_code == 422, res.text
+    d = _create(portal)
+    assert "supplier_item_code" not in d["lines"][0]

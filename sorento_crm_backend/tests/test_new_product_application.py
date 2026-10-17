@@ -784,3 +784,93 @@ def test_item_type_select_lists_the_company_item_types(world):
     res = world.api.as_(world.sales).get(f"{NPA}/item-types", params={"q": "kitchen"})
     assert res.status_code == 200, res.text
     assert world.refs.item_type in {r["id"] for r in res.json()}
+
+
+# ------------------------------------------------------------------ review round 1
+
+
+def test_review_list_rows_carry_the_opened_codes(world):
+    """AC-NPA-52: the inquiry row shows the codes opened (it reads the LIST endpoint)."""
+    d = _approved(world)
+    assert _link(world, d["id"], d["lines"][0]["id"], world.product.id).status_code == 200
+    rows = world.api.as_(world.viewer).get(NPA, params={"stock_inquiry_id": world.inquiry.id}).json()
+    assert rows["items"][0]["opened_codes"] == ["ZZT-KS2433"]
+
+
+def test_review_line_history_rolls_up_to_the_application():
+    """Card example D: the application's audit trail shows a line's old values."""
+    from app.models.new_product_application import NewProductApplicationLine
+    from app.services import audit_service
+
+    assert audit_service._parent_of(NewProductApplicationLine) == (
+        "new_product_application",
+        "application_id",
+    )
+
+
+def test_review_deleting_a_linked_product_is_a_named_409_not_a_500(world):
+    from app.services.error_handler import AppException
+    from app.services.product_service import ProductService
+
+    d = _approved(world)
+    assert _link(world, d["id"], d["lines"][0]["id"], world.product.id).status_code == 200
+    with pytest.raises(AppException) as exc:
+        ProductService(world.db).delete_product(world.product.id)
+    assert exc.value.status_code == 409
+    assert d["application_no"] in str(exc.value.message)
+
+
+def test_review_moves_lock_the_application_row(world, monkeypatch):
+    """Two purchasers finishing the last two lines at once must not leave it stuck in
+    Approved: every move loads the row FOR UPDATE."""
+    from app.services import new_product_application_service as svc
+
+    seen = []
+    original = svc.get_for
+
+    def spy(db, application_id, *, contact_id=None, for_update=False):
+        seen.append(for_update)
+        return original(db, application_id, contact_id=contact_id, for_update=for_update)
+
+    monkeypatch.setattr(svc, "get_for", spy)
+    d = _approved(world)
+    seen.clear()
+    _link(world, d["id"], d["lines"][0]["id"], world.product.id)
+    _act(world, d["id"], "revise", world.sales, reason="x")
+    assert seen and all(seen)
+
+
+def test_review_withdrawn_is_not_sent_to_the_approver_who_revised(world):
+    d = _submitted(world)
+    world.sent.clear()
+    assert _act(world, d["id"], "revise", world.manager, reason="wrong group").status_code == 200
+    assert world.manager not in _to(world, d["id"], "new_product_application_withdrawn")
+
+
+def test_review_staff_cannot_edit_a_portal_application(world):
+    from app.models.new_product_application import NewProductApplication
+
+    d = _draft(world)
+    row = world.db.get(NewProductApplication, d["id"])
+    row.source = "portal"
+    world.db.commit()
+    res = world.api.as_(world.sales).put(f"{NPA}/{d['id']}", json=_body(world, remark="x"))
+    assert res.status_code == 409, res.text
+
+
+@pytest.mark.parametrize("field", ["description", "further_description", "remark"])
+def test_review_line_text_is_capped(world, field):
+    res = world.api.as_(world.sales).post(NPA, json=_body(world, lines=[_line(world, **{field: "x" * 5001})]))
+    assert res.status_code == 422
+
+
+def test_review_reason_is_capped(world):
+    d = _submitted(world)
+    assert _act(world, d["id"], "reject", world.manager, reason="x" * 5001).status_code == 422
+
+
+def test_review_refusals_name_the_field_in_words(world):
+    res = world.api.as_(world.sales).post(NPA, json=_body(world, lines=[_line(world, category_id=uid())]))
+    assert res.status_code == 422
+    assert "item group" in res.text
+    assert "category_id does not exist" not in res.text
