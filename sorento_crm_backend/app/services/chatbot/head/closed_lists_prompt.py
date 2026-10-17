@@ -29,7 +29,9 @@ no item below is what the message asks for. This section OVERRIDES every earlier
 how an attachment_type is written: the earlier rules still say WHICH kind of document is
 meant, and listed_item says which item of these lists that is (a drawing, TD, CAD or spec
 sheet is the item that holds drawings; a photo, image or picture the item that holds photos).
-listed_item is the item that IS the kind asked, never the nearest one: when no line below is
+A file asked for in any language is the same entity and the same item: a message in Malay
+or Chinese asking to see or send a kind of file carries that attachment_type entity exactly
+as the English ask would. listed_item is the item that IS the kind asked, never the nearest one: when no line below is
 that kind (a brochure, a BIM file or a warranty card when no such line is listed), listed_item
 is "none of these" and the assistant asks which file, offering what the product really has.
 

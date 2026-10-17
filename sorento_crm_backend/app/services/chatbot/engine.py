@@ -58,7 +58,7 @@ from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
 from app.utils.build_info import GIT_SHA
 from app.services.ledger_family import customer_groups
-from app.services.chatbot.head import candidates as candidates_mod, grounding, held_family, parser
+from app.services.chatbot.head import candidates as candidates_mod, grounding, held_family, parser, scheme_index
 from app.services.chatbot.head.access import check_access, default_space_id
 from app.services.chatbot.head.build_ctx import build_ctx
 from app.services.chatbot.lanes import business, canned as canned_lanes, casual
@@ -4811,6 +4811,17 @@ def _run_stages_body(  # noqa: PLR0915
             family_note = None
         if family_note:
             turn_trace.add("held_family", family_note)
+    if parser_config.closed_lists:
+        # SCHEME-INDEX: a listed scheme about products indexes their certificates, never
+        # empties the answer (`head/scheme_index.py`). A read failure leaves the verdict.
+        try:
+            with _session(session_factory) as scheme_db:
+                verdict, scheme_note = scheme_index.index_scheme(scheme_db, verdict, list(state_in.focus.products))
+        except Exception:  # noqa: BLE001 - an advisory reading, never a failed turn
+            logger.warning("chatbot: scheme index failed; the turn goes on without it", exc_info=True)
+            scheme_note = None
+        if scheme_note:
+            turn_trace.add("scheme_index", scheme_note)
     if _ranking_words:
         verdict = {**verdict, "entities": [*(verdict.get("entities") or []), *_ranking_words]}
     if grounding_notes:
