@@ -11,6 +11,10 @@ import {
   type SampleRequestWrite,
 } from '@/types/sampleRequest';
 import { codeWithName } from '@/lib/product-display';
+import { numberFieldError } from '@/lib/number-field';
+
+/** The one rule for a line quantity and the loan period. */
+export const WHOLE_AT_LEAST_ONE = { min: 1, integer: true } as const;
 
 export interface DraftLine {
   key: string;
@@ -145,7 +149,8 @@ export function payloadFromState(s: FormState): SampleRequestWrite {
     site_contact_name: clean(s.site_contact_name),
     site_contact_phone: clean(s.site_contact_phone),
     site_contact_note: clean(s.site_contact_note),
-    loan_value: Math.max(1, Number.parseInt(s.loan_value, 10) || 2),
+    // Only built from a form validate() passed: the typed whole number goes through as typed.
+    loan_value: Number(s.loan_value),
     loan_unit: s.loan_unit,
     goods_from: goodsFromTicks(s.goods_demo, s.goods_new),
     purpose: clean(s.purpose),
@@ -153,7 +158,7 @@ export function payloadFromState(s: FormState): SampleRequestWrite {
     board_label: s.board_mounting ? clean(s.board_label) : null,
     lines: pickedLines(s).map((l) => ({
       product_id: l.product_id,
-      qty: Math.max(1, Number.parseInt(l.qty, 10) || 1),
+      qty: Number(l.qty),
       remark: clean(l.remark),
     })),
   };
@@ -178,6 +183,12 @@ export function validate(
   if (!s.ship_to_name.trim()) errors.ship_to_name = 'Enter who the samples go to';
   if (pickedLines(s).length === 0 && !s.board_mounting) errors.lines = 'Add at least one item';
   if (s.board_mounting && !s.board_label.trim()) errors.board_label = 'Enter the board label';
+  const loanError = numberFieldError(s.loan_value, WHOLE_AT_LEAST_ONE);
+  if (loanError) errors.loan_value = loanError;
+  for (const line of pickedLines(s)) {
+    const qtyError = numberFieldError(line.qty, WHOLE_AT_LEAST_ONE);
+    if (qtyError) errors[`qty_${line.key}`] = qtyError;
+  }
   return errors;
 }
 
