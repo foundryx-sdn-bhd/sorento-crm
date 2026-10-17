@@ -37,6 +37,7 @@ axis (entities with that hint; `sales_channel`; `date_mode` / `date_filter_start
 
 Business rules:
 - Several items of one axis (several products, several brands) are ONE `set` for that axis.
+- A message that refers or points to the held subject is `keep`; such a reference is never output as an entity.
 - "and <another item>?" replaces only that item (`set product` or `set customer`); the ask, quantity, period and
   filters stay.
 - A quantity said for the held item is `set quantity`.

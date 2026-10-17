@@ -775,6 +775,18 @@ def apply_changes(
                 out.update(copy.deepcopy(nulls))
     held_products = list(state.focus.products)
     entities = [copy.deepcopy(e) for e in _entities(out) if e.get("current_message") is not False]
+    dropped_entities: list[dict[str, Any]] = []
+    if not (new_subject or answering or period_answer):
+        # A kind no `set` names is not this message's to write (a reference to the held
+        # subject is not an entity); `quantity` rides on the product entity.
+        named = set(set_axes) | ({"product"} if "quantity" in set_axes else set())
+        kept_entities = []
+        for e in entities:
+            if e.get("hint") in named:
+                kept_entities.append(e)
+            else:
+                dropped_entities.append({"kind": e.get("hint")})
+        entities = kept_entities
     if "product" in set_axes and len(held_products) == 1 and held_products[0].get("quantity") is not None:
         mine = [e for e in entities if e.get("hint") == "product"]
         if len(mine) == 1 and mine[0].get("quantity") is None and out.get("demand_qty") is None:
@@ -796,6 +808,7 @@ def apply_changes(
     log["rejected"] = []
     log["slots"] = slots
     log["ignored"] = ignored
+    log["dropped_entities"] = dropped_entities
     return Applied(
         True, replace(state, focus=focus, pending=pending, state_led=led, slot_ask=slot_ask), out, log
     )
