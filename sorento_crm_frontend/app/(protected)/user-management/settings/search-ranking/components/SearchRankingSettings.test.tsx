@@ -85,25 +85,29 @@ describe('SearchRankingSettings', () => {
     expect(mockMutate).toHaveBeenCalledWith({ policyKey: 'class_boost', value: 7 });
   });
 
-  it('item 11 - an emptied draft does not save 0: Save stays disabled', () => {
+  it('item 11 - an emptied draft does not save 0: Save says what is wrong and sends nothing', () => {
     render(<SearchRankingSettings />);
     const saveButtons = screen.getAllByRole('button', { name: 'Save' });
     const inputs = screen.getAllByRole('spinbutton');
 
     fireEvent.change(inputs[0], { target: { value: '' } });
-    expect(saveButtons[0]).toBeDisabled();
+    expect(saveButtons[0]).toBeEnabled();
 
     fireEvent.click(saveButtons[0]);
+    expect(screen.getByText('Enter a number of at least 0.')).toBeInTheDocument();
+    expect(inputs[0]).toHaveValue(null);
     expect(mockMutate).not.toHaveBeenCalled();
   });
 
-  it('item 11 - a non-finite draft (e.g. a bare "-") does not enable Save', () => {
+  it('item 11 - a half-typed draft (e.g. a bare "-") keeps Save live and blocks with a sentence', () => {
     render(<SearchRankingSettings />);
     const saveButtons = screen.getAllByRole('button', { name: 'Save' });
     const inputs = screen.getAllByRole('spinbutton');
 
     fireEvent.change(inputs[0], { target: { value: '-' } });
-    expect(saveButtons[0]).toBeDisabled();
+    expect(saveButtons[0]).toBeEnabled();
+    fireEvent.click(saveButtons[0]);
+    expect(mockMutate).not.toHaveBeenCalled();
   });
 
   it('renders the field hint but not the removed explainer paragraph', () => {

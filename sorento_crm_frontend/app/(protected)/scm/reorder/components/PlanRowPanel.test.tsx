@@ -216,11 +216,16 @@ describe('PlanRowPanel - Cover zone (D2)', () => {
     expect(screen.queryByText(/DC1 5/)).not.toBeInTheDocument();
   });
 
-  it('the borrow is capped at what the other pool actually holds, never past it', () => {
+  it('a borrow past what the other pool holds stays as typed, says so, and is never recorded', () => {
+    // NUMBER-FIELDS: the box never rewrites the typed figure; the figure past the pool is
+    // told in one sentence and nothing is recorded for it.
     const { onEdit } = renderPanel({ cover });
     fireEvent.change(screen.getByLabelText('DC1'), { target: { value: '999' } });
-    const [[patch]] = onEdit.mock.calls;
-    expect((patch as { decision: { stock?: { qty: number } } }).decision.stock?.qty).toBe(5);
+    expect(screen.getByLabelText('DC1')).toHaveValue(999);
+    expect(screen.queryByText('Enter a whole number between 0 and 5.')).not.toBeInTheDocument();
+    fireEvent.blur(screen.getByLabelText('DC1'));
+    expect(screen.getByText('Enter a whole number between 0 and 5.')).toBeInTheDocument();
+    expect(onEdit).not.toHaveBeenCalled();
   });
 });
 

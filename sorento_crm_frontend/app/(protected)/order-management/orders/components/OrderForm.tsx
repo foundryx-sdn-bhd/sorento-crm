@@ -23,6 +23,7 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -913,11 +914,10 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                         <FormItem>
                           <FormLabel>Trips</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
+                            <NumberInput
                               {...field}
                               value={field.value ?? ''}
-                              onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                              onChange={(e) => field.onChange(e.target.value === '' ? undefined : e.target.value)}
                             />
                           </FormControl>
                           <FormMessage />

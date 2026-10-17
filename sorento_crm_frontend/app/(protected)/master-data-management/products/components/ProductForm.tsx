@@ -24,6 +24,7 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Switch } from '@/components/ui/switch';
@@ -117,7 +118,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
       chatbot_eta_offset_days: null,
       base_uom_id: '',
     },
-    mode: 'onTouched',
+    mode: 'onSubmit',
   });
 
   // The category the form currently has selected, refetched in full (the select
@@ -169,13 +170,13 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
       is_searchable: product.is_searchable ?? true,
       exclude_from_planning: product.exclude_from_planning ?? false,
       list_price: product.list_price,
-      cost_price: product.cost_price || null,
-      invoice_price: product.invoice_price || null,
-      weight: product.weight || null,
-      dimensions_length: product.dimensions_length || null,
-      dimensions_width: product.dimensions_width || null,
-      dimensions_height: product.dimensions_height || null,
-      warranty_months: product.warranty_months || null,
+      cost_price: product.cost_price ?? null,
+      invoice_price: product.invoice_price ?? null,
+      weight: product.weight ?? null,
+      dimensions_length: product.dimensions_length ?? null,
+      dimensions_width: product.dimensions_width ?? null,
+      dimensions_height: product.dimensions_height ?? null,
+      warranty_months: product.warranty_months ?? null,
       has_serial_tracking: product.has_serial_tracking,
       has_batch_tracking: product.has_batch_tracking,
       reorder_level: product.reorder_level,
@@ -596,21 +597,12 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                     <FormItem>
                       <FormLabel>List Price *</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           placeholder="0.00"
                           {...field}
                           value={field.value ?? ''}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '') {
-                              field.onChange(0);
-                            } else {
-                              const numValue = parseFloat(value);
-                              field.onChange(isNaN(numValue) ? 0 : numValue);
-                            }
-                          }}
+                          onChange={(e) => field.onChange(e.target.value)}
                         />
                       </FormControl>
                       <FormMessage />
@@ -625,13 +617,14 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                     <FormItem>
                       <FormLabel>Cost Price</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           placeholder="0.00"
-                          {...field}
-                          value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value ?? null}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormDescription>
@@ -649,13 +642,14 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                     <FormItem>
                       <FormLabel>Invoice Price</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           placeholder="0.00"
-                          {...field}
-                          value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value ?? null}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormDescription>
@@ -734,13 +728,14 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                     <FormItem>
                       <FormLabel>Weight</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           placeholder="0.00"
-                          {...field}
-                          value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value ?? null}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormMessage />
@@ -756,13 +751,14 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                       <FormItem>
                         <FormLabel>Length</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             step="0.01"
                             placeholder="0.00"
-                            {...field}
-                            value={field.value || ''}
-                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                            name={field.name}
+                            ref={field.ref}
+                            onBlur={field.onBlur}
+                            value={field.value ?? null}
+                            onValueChange={field.onChange}
                           />
                         </FormControl>
                         <FormMessage />
@@ -777,13 +773,14 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                       <FormItem>
                         <FormLabel>Width</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             step="0.01"
                             placeholder="0.00"
-                            {...field}
-                            value={field.value || ''}
-                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                            name={field.name}
+                            ref={field.ref}
+                            onBlur={field.onBlur}
+                            value={field.value ?? null}
+                            onValueChange={field.onChange}
                           />
                         </FormControl>
                         <FormMessage />
@@ -798,13 +795,14 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                       <FormItem>
                         <FormLabel>Height</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             step="0.01"
                             placeholder="0.00"
-                            {...field}
-                            value={field.value || ''}
-                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                            name={field.name}
+                            ref={field.ref}
+                            onBlur={field.onBlur}
+                            value={field.value ?? null}
+                            onValueChange={field.onChange}
                           />
                         </FormControl>
                         <FormMessage />
@@ -820,12 +818,13 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                     <FormItem>
                       <FormLabel>Warranty (Months)</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           placeholder="0"
-                          {...field}
-                          value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : null)}
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value ?? null}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormMessage />
@@ -885,11 +884,10 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                       <FormItem>
                         <FormLabel>Reorder Level</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             placeholder="10"
                             {...field}
-                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                            onChange={(e) => field.onChange(e.target.value)}
                           />
                         </FormControl>
                         <FormMessage />
@@ -904,11 +902,10 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                       <FormItem>
                         <FormLabel>Reorder Quantity</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             placeholder="50"
                             {...field}
-                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                            onChange={(e) => field.onChange(e.target.value)}
                           />
                         </FormControl>
                         <FormMessage />
@@ -926,8 +923,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                         <FormItem>
                           <FormLabel>Max quantity (assistant)</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
+                            <NumberInput
                               min={0}
                               placeholder={
                                 selectedCategoryForChatbotLimits?.chatbot_max_qty != null
@@ -935,11 +931,11 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                                   : undefined
                               }
                               disabled={!canEditChatbotLimits}
-                              {...field}
-                              value={field.value ?? ''}
-                              onChange={(e) =>
-                                field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)
-                              }
+                              name={field.name}
+                              ref={field.ref}
+                              onBlur={field.onBlur}
+                              value={field.value ?? null}
+                              onValueChange={field.onChange}
                             />
                           </FormControl>
                           <FormMessage />
@@ -954,8 +950,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                         <FormItem>
                           <FormLabel>ETA offset (days)</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
+                            <NumberInput
                               min={0}
                               placeholder={
                                 selectedCategoryForChatbotLimits?.chatbot_eta_offset_days != null
@@ -963,11 +958,11 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                                   : undefined
                               }
                               disabled={!canEditChatbotLimits}
-                              {...field}
-                              value={field.value ?? ''}
-                              onChange={(e) =>
-                                field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)
-                              }
+                              name={field.name}
+                              ref={field.ref}
+                              onBlur={field.onBlur}
+                              value={field.value ?? null}
+                              onValueChange={field.onChange}
                             />
                           </FormControl>
                           <FormMessage />

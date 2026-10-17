@@ -12,6 +12,7 @@
  * which is the widest UOM precision the plan allows, so `10.1 + 20.2 === 30.3` reads as
  * balanced rather than as 0.0000000000000004 over.
  */
+import { numberFieldError } from '@/lib/number-field';
 import type {
   BorrowSource,
   ConfirmLine,
@@ -32,6 +33,12 @@ export function toMinor(qty: string | number | null | undefined): number {
   const value = typeof qty === 'number' ? qty : Number.parseFloat(String(qty ?? '').trim());
   if (!Number.isFinite(value)) return 0;
   return Math.round(value * SCALE);
+}
+
+/** The sentence for a quantity box holding text that is not a number; none for blank or valid. */
+export function quantityError(qty: string | number | null | undefined): string | undefined {
+  if (qty === null || qty === undefined || String(qty).trim() === '') return undefined;
+  return numberFieldError(qty);
 }
 
 export function fromMinor(minor: number): string {
@@ -318,6 +325,18 @@ export function lineBlockers(
   const blockers: string[] = [];
   const subject = `Line ${draft.line_no}${draft.item_code ? `, ${draft.item_code}` : ''}`;
   const balance = lineBalance(draft);
+
+  const typed = [
+    draft.timely_spo_qty,
+    draft.buy_qty,
+    ...draft.reserve.map((row) => row.qty),
+    ...draft.borrow.map((row) => row.qty),
+  ];
+  if (typed.some((qty) => quantityError(qty) !== undefined)) {
+    // Bad input is never read as 0: the line is refused until the box holds a number.
+    blockers.push(`${subject}: a quantity is not a number.`);
+    return blockers;
+  }
 
   if (
     balance.reserveMinor < 0 ||

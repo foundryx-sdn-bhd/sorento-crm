@@ -524,19 +524,58 @@ describe('order-qty ledger - the add-on quantity is editable (Fix A, user feedba
     expect(onDecide).toHaveBeenLastCalledWith(expect.objectContaining({ buy: 240 }));
   });
 
-  it('bounds: a typed figure above the cap clamps to 10x the proposed qty', () => {
-    renderLedger({ line: editableLine() });
+  it('NUMBER-FIELDS: a typed figure above the cap is kept as typed and blocked with a message', () => {
+    const { onDecide } = renderLedger({ line: editableLine() });
     const input = screen.getByRole('spinbutton', { name: 'Forecast add-on quantity' });
-    // Proposal is 60, so the cap is 600.
+    // Proposal is 60, so the cap is 600. No silent clamp any more.
     fireEvent.change(input, { target: { value: '99999' } });
-    expect(input).toHaveValue(600);
+    expect(input).toHaveValue(99999);
+    expect(screen.queryByText(/^Enter a (whole )?number between 0 and 600/)).not.toBeInTheDocument();
+    fireEvent.blur(input);
+    expect(screen.getByText(/^Enter a (whole )?number between 0 and 600/)).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(onDecide).not.toHaveBeenCalled();
   });
 
-  it('bounds: a negative or empty entry floors at zero', () => {
+  it('NUMBER-FIELDS: a negative entry stays as typed and is blocked, never floored to zero', () => {
     renderLedger({ line: editableLine() });
     const input = screen.getByRole('spinbutton', { name: 'Forecast add-on quantity' });
     fireEvent.change(input, { target: { value: '-5' } });
-    expect(input).toHaveValue(0);
+    expect(input).toHaveValue(-5);
+    expect(screen.queryByText(/^Enter a (whole )?number between 0 and 600/)).not.toBeInTheDocument();
+    fireEvent.blur(input);
+    expect(screen.getByText(/^Enter a (whole )?number between 0 and 600/)).toBeInTheDocument();
+  });
+
+  it('NUMBER-FIELDS: clearing the add-on stays empty and, while ticked, commits nothing', () => {
+    const { onDecide } = renderLedger({ line: editableLine() });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Add 60' }));
+    expect(onDecide).toHaveBeenCalledTimes(1);
+
+    const input = screen.getByRole('spinbutton', { name: 'Forecast add-on quantity' }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.value).toBe('');
+    // A blank is not a buy of 40: nothing new is recorded.
+    expect(onDecide).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/^Enter a (whole )?number/)).not.toBeInTheDocument();
+    expect(input).not.toHaveAttribute('aria-invalid', 'true');
+    fireEvent.blur(input);
+    expect(screen.getByText(/^Enter a (whole )?number/)).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.change(input, { target: { value: '200' } });
+    expect(screen.queryByText(/^Enter a (whole )?number/)).not.toBeInTheDocument();
+    expect(onDecide).toHaveBeenLastCalledWith(expect.objectContaining({ buy: 240 }));
+  });
+
+  it('NUMBER-FIELDS: ticking with the add-on blank commits nothing and shows the message', () => {
+    const { onDecide } = renderLedger({ line: editableLine() });
+    const input = screen.getByRole('spinbutton', { name: 'Forecast add-on quantity' }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.value).toBe('');
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    expect(onDecide).not.toHaveBeenCalled();
+    expect(screen.getByText(/^Enter a (whole )?number/)).toBeInTheDocument();
   });
 });
 
@@ -646,16 +685,20 @@ describe('order-qty ledger - per-location use stock', () => {
     expect(last.buy).toBe(15);
   });
 
-  it('clamps a location above what it holds - the buy never goes below zero either', () => {
+  it('keeps a figure above what the location holds as typed, says so, and records nothing', () => {
+    // NUMBER-FIELDS: the field never rewrites the typed figure; the over-limit entry shows its
+    // sentence and commits nothing, so the buy never rests on a figure the buyer did not give.
     const l = shortLine();
     const { onDecide } = renderLedger({ line: l, cover: coverForLine(l, twoSources) });
+    const before = onDecide.mock.calls.length;
 
     fireEvent.change(screen.getByLabelText('Use from BRW-BB'), { target: { value: '999' } });
 
-    expect(screen.getByLabelText('Use from BRW-BB')).toHaveValue(5);
-    const last = onDecide.mock.calls.at(-1)![0];
-    expect(last.stock.qty).toBe(6);
-    expect(last.buy).toBe(14);
+    expect(screen.getByLabelText('Use from BRW-BB')).toHaveValue(999);
+    expect(screen.queryByText('Enter a whole number between 0 and 5.')).not.toBeInTheDocument();
+    fireEvent.blur(screen.getByLabelText('Use from BRW-BB'));
+    expect(screen.getByText('Enter a whole number between 0 and 5.')).toBeInTheDocument();
+    expect(onDecide.mock.calls.length).toBe(before);
   });
 
   it('records a MoQ-legal buy, the same figure the accept and adjust paths record', () => {
@@ -746,7 +789,7 @@ describe('order-qty ledger - the offered locations, at what they hold', () => {
     expect(last.buy).toBeUndefined(); // the whole gap is covered
   });
 
-  it('refuses more than the row needs, however much the location holds', () => {
+  it('flags more than the row needs, however much the location holds, and records nothing', () => {
     // Review finding 2, round 2: the input was clamped to the location's free stock alone, so
     // 40 could be typed against a gap of 10 - and the 30 units this row never needed were
     // then subtracted from every other row of the product.
@@ -754,12 +797,15 @@ describe('order-qty ledger - the offered locations, at what they hold', () => {
     const { onDecide } = renderLedger({ line: l, cover: coverForLine(l, bigSources) });
 
     const ib = screen.getByLabelText('Use from BRW-IB');
+    const before = onDecide.mock.calls.length;
     fireEvent.change(ib, { target: { value: '40' } });
 
-    expect(ib).toHaveValue(10);
-    const last = onDecide.mock.calls.at(-1)![0];
-    expect(last.stock.qty).toBe(10);
-    expect(last.buy).toBeUndefined();
+    // NUMBER-FIELDS: 40 stays as typed with its sentence; the recorded figure is untouched.
+    expect(ib).toHaveValue(40);
+    expect(screen.queryByText('Enter a whole number between 0 and 10.')).not.toBeInTheDocument();
+    fireEvent.blur(ib);
+    expect(screen.getByText('Enter a whole number between 0 and 10.')).toBeInTheDocument();
+    expect(onDecide.mock.calls.length).toBe(before);
   });
 
   it('caps a location at the gap less what the other location already takes', () => {
@@ -770,7 +816,10 @@ describe('order-qty ledger - the offered locations, at what they hold', () => {
     // until the buyer frees some up. Nothing they typed elsewhere is rewritten for them.
     const ntc = screen.getByLabelText('Use from BRW-NTC');
     fireEvent.change(ntc, { target: { value: '6' } });
-    expect(ntc).toHaveValue(0);
+    expect(ntc).toHaveValue(6);
+    expect(ntc).not.toHaveAttribute('aria-invalid', 'true');
+    fireEvent.blur(ntc);
+    expect(ntc).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByLabelText('Use from BRW-IB')).toHaveValue(10);
 
     fireEvent.change(screen.getByLabelText('Use from BRW-IB'), { target: { value: '4' } });

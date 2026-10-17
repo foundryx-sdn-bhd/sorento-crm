@@ -562,6 +562,18 @@ class SPOAllocationUpdate(BaseModel):
     quantity_received: Optional[int] = None
     quantity_rejected: Optional[int] = None
     allocation_notes: Optional[str] = None
+
+    @field_validator("allocated_quantity", "quantity_received", "quantity_rejected")
+    @classmethod
+    def _qty_not_null(cls, v: Optional[int]) -> Optional[int]:
+        # Validators run only on provided values: omitted stays unchanged, an explicit
+        # null would hit a NOT NULL column (500), so refuse it here.
+        if v is None:
+            raise ValueError("Quantity cannot be blank.")
+        if v > 2147483647:
+            raise ValueError("Quantity is too large.")
+        return v
+
     # The document form view's Lines-tab editors (PLAN-spo-investigation-grid.md UAT
     # batch, AC-24 parts 2/3): the line's OWN ETA fallback and its OWN supplier,
     # never the shipment's - those stay read-only, booked against the shipment record.
@@ -1190,7 +1202,15 @@ class PurchaseRequestLineBase(BaseModel):
 
 
 class PurchaseRequestLineCreate(PurchaseRequestLineBase):
-    pass
+    # Write schema only: the response schema shares the base, and a NULL quantity from the
+    # external intake must still serialize on GET.
+    @model_validator(mode="after")
+    def _quantity_required_above_zero(self) -> "PurchaseRequestLineCreate":
+        if self.quantity is None or self.quantity <= 0:
+            raise ValueError("Quantity must be a number above 0.")
+        if self.quantity >= 10**13:
+            raise ValueError("Quantity is too large.")
+        return self
 
 
 class PurchaseRequestLineResponse(PurchaseRequestLineBase):

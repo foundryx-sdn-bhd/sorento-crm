@@ -747,6 +747,31 @@ describe('PurchaseOrderDetail - correcting the order in place', () => {
     expect(updatePurchaseOrderMutateAsync).not.toHaveBeenCalled();
   });
 
+  it('S9: a negative unit price marks the price box itself, with the sentence, and writes nothing', () => {
+    renderDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    openTab('Lines');
+    const box = screen.getByLabelText('Unit price on CW-BASIN-450');
+    fireEvent.change(box, { target: { value: '-5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save purchase order' }));
+
+    expect(updatePurchaseOrderMutateAsync).not.toHaveBeenCalled();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a number of at least 0, or leave it blank.')).toBeInTheDocument();
+  });
+
+  it('S9: a negative discount marks the discount box itself', () => {
+    renderDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    openTab('Lines');
+    const box = screen.getByLabelText('Discount on CW-BASIN-450');
+    fireEvent.change(box, { target: { value: '-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save purchase order' }));
+
+    expect(updatePurchaseOrderMutateAsync).not.toHaveBeenCalled();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('leaves the record alone on Cancel', () => {
     renderDetail();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
@@ -942,5 +967,49 @@ describe('PurchaseOrderDetail - AutoCount Cancel PO on the lines', () => {
     const row = screen.getByLabelText('Qty ordered on CW-BASIN-450').closest('tr') as HTMLElement;
     expect(within(row).getByText('200')).toBeInTheDocument();
     expect(within(row).queryByText('220')).toBeNull();
+  });
+});
+
+describe('PurchaseOrderDetail - a blank or invalid quantity is pending, never 0 (round 2, S-E)', () => {
+  const cells = (tr: HTMLElement) =>
+    Array.from(tr.querySelectorAll('td')).map((td) => (td.textContent ?? '').trim());
+  const footer = () =>
+    Array.from((document.querySelector('tfoot') as HTMLElement).querySelectorAll('td')).map((td) =>
+      (td.textContent ?? '').trim(),
+    );
+
+  function openEditLines() {
+    usePurchaseOrder.mockReturnValue({ data: po(), isLoading: false, isError: false });
+    renderDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    openTab('Lines');
+    return screen.getByLabelText('Qty ordered on CW-BASIN-450') as HTMLInputElement;
+  }
+
+  it.each([
+    ['blank', ''],
+    ['negative', '-5'],
+  ])('a %s qty shows - in Outstanding and in the totals that include it', (_name, typed) => {
+    const box = openEditLines();
+    const tr = box.closest('tr') as HTMLElement;
+    const dashesBefore = footer().filter((t) => t === '-').length;
+    const rowDashesBefore = cells(tr).filter((t) => t === '-').length;
+    fireEvent.change(box, { target: { value: typed } });
+    // Outstanding was 320 and must not become 0.
+    expect(cells(tr).filter((t) => t === '-').length).toBeGreaterThan(rowDashesBefore);
+    const headers = Array.from(document.querySelectorAll('thead th')).map((th) => (th.textContent ?? '').trim());
+    const outstandingAt = headers.findIndex((h) => /^Outstanding qty/.test(h));
+    expect(outstandingAt).toBeGreaterThan(-1);
+    expect(cells(tr)[outstandingAt]).toBe('-');
+    expect(footer().filter((t) => t === '-').length).toBeGreaterThanOrEqual(dashesBefore + 2);
+  });
+
+  it('Save is refused with the sentence under the qty box', () => {
+    const box = openEditLines();
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save purchase order' }));
+    expect(updatePurchaseOrderMutateAsync).not.toHaveBeenCalled();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText(/^Enter a number above 0\.$/)).toBeInTheDocument();
   });
 });

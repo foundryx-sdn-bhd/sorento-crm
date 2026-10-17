@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -33,6 +34,7 @@ import {
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { formatDateInMalaysia, todayMalaysiaYyyyMmDd } from '@/lib/helpers';
+import { numberFieldError } from '@/lib/number-field';
 import {
   useCreateSalesTarget,
   usePatchSalesTarget,
@@ -322,6 +324,11 @@ function membersInRange(
   );
 }
 
+// The rules each typed number is held to when the target is saved.
+const FIGURE_RULES = { min: 0 };
+const NEW_FIGURE_RULES = { min: 0, optional: true };
+const SPLIT_RULES = { min: 1, max: 99, integer: true };
+
 function toNumber(value: string): number {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : 0;
@@ -409,6 +416,8 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
     !!target,
   );
   const [tab, setTab] = useState<RecordTab>('details');
+  // Set once Save found a bad number: each field's sentence then follows its value live.
+  const [showErrors, setShowErrors] = useState(false);
 
   // Every name a picked category, product or brand is known by (F5).
   const labels = useRef(new Map<string, string>());
@@ -489,11 +498,29 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
     !periodError &&
     scopeReady &&
     (!isCreate ||
-      (!!draft.kind && !!draft.subjectId && (isTeam ? members.length > 0 : draft.figure.trim() !== ''))) &&
+      (!!draft.kind && !!draft.subjectId && (isTeam ? members.length > 0 : true))) &&
     !saving;
+
+  // Only the final values are checked, on Save: a blank or bad figure is told, never read as 0
+  // or dropped.
+  const numberProblem =
+    !!draft &&
+    ((draft.split && !!numberFieldError(draft.every, SPLIT_RULES)) ||
+      (isCreate
+        ? isTeam
+          ? members.some((m) => !!numberFieldError(draft.agentFigures[m.sales_agent_id] ?? '', FIGURE_RULES))
+          : !!numberFieldError(draft.figure, FIGURE_RULES)
+        : Object.values(draft.figures).some((v) => !!numberFieldError(v, FIGURE_RULES)) ||
+          Object.values(draft.newAgentFigures).some((byPeriod) =>
+            Object.values(byPeriod).some((v) => !!numberFieldError(v, NEW_FIGURE_RULES)),
+          )));
 
   const save = async () => {
     if (!draft || !canSave) return;
+    if (numberProblem) {
+      setShowErrors(true);
+      return;
+    }
     if (!isCreate && target) {
       const pendingChanges = changes(target, draft);
       if (Object.keys(pendingChanges).length === 0) {
@@ -541,7 +568,11 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
       // The hook toasted the reason; the record stays open with what was typed.
     }
   };
-  const cancel = () => (isCreate ? router.push('/sales/targets') : setDraft(null));
+  const cancel = () => {
+    setShowErrors(false);
+    if (isCreate) router.push('/sales/targets');
+    else setDraft(null);
+  };
 
   const tabs: { value: RecordTab; label: string; icon: typeof Info }[] = [
     { value: 'details', label: 'Details', icon: Info },
@@ -553,7 +584,7 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
 
   const actions: RecordAction[] =
     target && canEdit
-      ? [{ key: 'sales_target.edit', label: 'Edit', icon: SquarePen, run: () => setDraft(draftOf(target)) }, ...targetActions]
+      ? [{ key: 'sales_target.edit', label: 'Edit', icon: SquarePen, run: () => { setShowErrors(false); setDraft(draftOf(target)); } }, ...targetActions]
       : targetActions;
   const index = target ? ids.indexOf(target.id) : -1;
 
@@ -739,12 +770,13 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                           <Label htmlFor="target-split-every" className="text-xs">
                             Every
                           </Label>
-                          <Input
+                          <NumberInput
                             id="target-split-every"
-                            type="number"
                             min={1}
                             max={99}
                             value={draft.every}
+                            error={showErrors ? numberFieldError(draft.every, SPLIT_RULES) : undefined}
+                            errorClassName="basis-full"
                             onChange={(e) => set({ every: e.target.value })}
                             className="h-8 w-16"
                           />
@@ -791,12 +823,12 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
           <Section label="Figure">
             {isCreate && draft && !isTeam ? (
               <Field label={`Target figure (${unit}) ${split ? 'per period' : 'for the whole range'}`} htmlFor="target-figure">
-                <Input
+                <NumberInput
                   id="target-figure"
-                  type="number"
                   min={0}
                   step="any"
                   value={draft.figure}
+                  error={showErrors ? numberFieldError(draft.figure, FIGURE_RULES) : undefined}
                   onChange={(e) => set({ figure: e.target.value })}
                   className="h-8 sm:w-60"
                 />
@@ -855,6 +887,7 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                             <FigureInput
                               label={`Figure, ${periodLabel}`}
                               value={draft.figures[p.id] ?? ''}
+                              error={showErrors ? numberFieldError(draft.figures[p.id] ?? '', FIGURE_RULES) : undefined}
                               onChange={(value) => set({ figures: { ...draft.figures, [p.id]: value } })}
                             />
                           ) : editing && isTeam ? (
@@ -897,6 +930,7 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                     unit={unit}
                     perWhat={split ? 'per period' : 'for the whole range'}
                     sum={teamSum}
+                    showErrors={showErrors}
                     onChange={(agentId, value) => set({ agentFigures: { ...draft.agentFigures, [agentId]: value } })}
                   />
                 ) : target ? (
@@ -904,6 +938,7 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                     target={target}
                     draft={draft}
                     unit={unit}
+                    showErrors={showErrors}
                     total={(p) => (draft ? teamTotal(p.period_start) : p.target_value)}
                     onFigure={(periodId, value) => set({ figures: { ...(draft?.figures ?? {}), [periodId]: value } })}
                     onNewFigure={(agentId, periodStart, value) =>
@@ -1146,6 +1181,7 @@ function NewTeamFigures({
   unit,
   perWhat,
   sum,
+  showErrors,
   onChange,
 }: {
   members: { sales_agent_id: string; label: string }[];
@@ -1154,6 +1190,7 @@ function NewTeamFigures({
   unit: string;
   perWhat: string;
   sum: number;
+  showErrors: boolean;
   onChange: (agentId: string, value: string) => void;
 }) {
   if (!members.length) {
@@ -1180,12 +1217,12 @@ function NewTeamFigures({
                   {m.label}
                 </td>
                 <td className="px-3 py-1.5">
-                  <Input
-                    type="number"
+                  <NumberInput
                     min={0}
                     step="any"
                     aria-label={`${m.label} figure`}
                     value={figures[m.sales_agent_id] ?? ''}
+                    error={showErrors ? numberFieldError(figures[m.sales_agent_id] ?? '', FIGURE_RULES) : undefined}
                     onChange={(e) => onChange(m.sales_agent_id, e.target.value)}
                     className="h-8 text-end"
                   />
@@ -1204,14 +1241,24 @@ function NewTeamFigures({
 }
 
 /** A figure typed in Edit mode (F1): the metric's unit is named by the column. */
-function FigureInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function FigureInput({
+  label,
+  value,
+  error,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  error?: string;
+  onChange: (value: string) => void;
+}) {
   return (
-    <Input
-      type="number"
+    <NumberInput
       min={0}
       step="any"
       aria-label={label}
       value={value}
+      error={error}
       onChange={(e) => onChange(e.target.value)}
       className="ms-auto h-8 w-28 text-end"
     />
@@ -1230,6 +1277,7 @@ function TeamFigures({
   total,
   onFigure,
   onNewFigure,
+  showErrors,
 }: {
   target: SalesTargetDetail;
   draft: Draft | null;
@@ -1237,6 +1285,7 @@ function TeamFigures({
   total: (period: SalesTargetDetail['periods'][number]) => number;
   onFigure: (periodId: string, value: string) => void;
   onNewFigure: (agentId: string, periodStart: string, value: string) => void;
+  showErrors: boolean;
 }) {
   if (target.children.length === 0 && target.members_without_figure.length === 0) {
     return (
@@ -1281,6 +1330,7 @@ function TeamFigures({
                       <FigureInput
                         label={`${child.label}, ${shortDate(p.period_start)}`}
                         value={draft.figures[cp.id] ?? ''}
+                        error={showErrors ? numberFieldError(draft.figures[cp.id] ?? '', FIGURE_RULES) : undefined}
                         onChange={(value) => onFigure(cp.id as string, value)}
                       />
                     ) : (
@@ -1305,6 +1355,14 @@ function TeamFigures({
                     <FigureInput
                       label={`${m.label}, ${shortDate(p.period_start)}`}
                       value={draft.newAgentFigures[m.sales_agent_id]?.[p.period_start] ?? ''}
+                      error={
+                        showErrors
+                          ? numberFieldError(
+                              draft.newAgentFigures[m.sales_agent_id]?.[p.period_start] ?? '',
+                              NEW_FIGURE_RULES,
+                            )
+                          : undefined
+                      }
                       onChange={(value) => onNewFigure(m.sales_agent_id, p.period_start, value)}
                     />
                   ) : (
@@ -1517,8 +1575,7 @@ function CommissionTiers({
             {draft.tiers.map((t, i) => (
               <tr key={t.key}>
                 <td className="px-3 py-1.5">
-                  <Input
-                    type="number"
+                  <NumberInput
                     min={0}
                     step="any"
                     aria-label={`Tier ${i + 1} from %`}
@@ -1528,8 +1585,7 @@ function CommissionTiers({
                   />
                 </td>
                 <td className="px-3 py-1.5">
-                  <Input
-                    type="number"
+                  <NumberInput
                     min={0}
                     step="any"
                     aria-label={`Tier ${i + 1} rate (${rateUnit})`}
@@ -1539,8 +1595,7 @@ function CommissionTiers({
                   />
                 </td>
                 <td className="px-3 py-1.5">
-                  <Input
-                    type="number"
+                  <NumberInput
                     min={0}
                     step="any"
                     aria-label={`Tier ${i + 1} bonus (RM)`}

@@ -53,6 +53,15 @@ ALLOWED = {
     # reads the same marker. A developer tool, not core, not on any request path; it never
     # moves a label.
     "scripts/publish_closed_lists_prompt.py",
+    # EVAL-BENCH (#1743) L1 replay: re-runs recorded parses through the engine with every LLM
+    # call blocked, so it patches `llm_call`, `head.parser` and `grounding` directly; `/chat/turn`
+    # has no seam for a recorded parse. A developer tool and its own test, not core, not on any
+    # request path. Listed by file, not by directory, like the parity script above.
+    "scripts/chatbot_eval/replay.py",
+    "tests/chatbot_eval/test_replay.py",
+    # EVAL-BENCH CP0 (#1745): the recorded-state runner's own test, same reason as the line
+    # above. Listed by CHAT-CLOSED-LISTS, whose merge of main met it unlisted.
+    "tests/chatbot_eval/test_replay_live.py",
     # Chatbot memory lane A S2 (contract section 4/5): the contact's memory/facts
     # surface is a `user_management.contacts` route, so it cannot live under
     # `app/services/chatbot/`, yet its vocabulary, precedence and row-lock rules
@@ -66,12 +75,6 @@ ALLOWED_PREFIXES = (
     "app/services/chatbot/",
     "app/modules/chatbot/",
     "tests/chatbot/",
-    # EVAL-BENCH (#1743) bench tooling: the L1 replay drives `engine.run_turn` and
-    # `head.grounding` directly and its tests replay a synthetic turn. Not core, not on any
-    # request path. Listed by CHAT-CLOSED-LISTS, whose PR edits this file and would
-    # otherwise carry main's red.
-    "scripts/chatbot_eval/",
-    "tests/chatbot_eval/",
 )
 
 # Four ways in, not two. `from app.services import chatbot` and an `importlib` call both

@@ -32,6 +32,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/common/SearchableSelect";
 import { searchProjectsForLink } from "../services/purchaseRequestService";
@@ -52,6 +53,7 @@ import { getOrCreateViewLink } from "../services/purchaseRequestService";
 import { toast } from '@/lib/toast';
 import {
   PurchaseRequestFormSchema,
+  lineHasContent,
   type PurchaseRequestSchemaType,
 } from '../forms/purchase-request-schema';
 import type { PurchaseRequestFormData } from '../types/purchaseRequest.types';
@@ -228,26 +230,29 @@ export default function PurchaseRequestForm({
             render={({ field: f }) => (
               <FormItem>
                 <FormControl>
-                  <Input
-                    type="number"
+                  <NumberInput
                     step="any"
                     placeholder="0"
-                    {...f}
-                    value={f.value ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value ? parseFloat(e.target.value) : null;
+                    name={f.name}
+                    ref={f.ref}
+                    onBlur={f.onBlur}
+                    value={f.value ?? null}
+                    onValueChange={(v) => {
                       f.onChange(v);
+                      // Re-check a flagged box as it is fixed (the form validates on blur otherwise).
+                      if (form.getFieldState(f.name, form.formState).error) void form.trigger(f.name);
                       if (isSponsorship) {
                         const up = form.getValues(`products.${row.index}.unit_price`);
-                        if (up != null && up !== "") {
+                        if (v !== null && !Number.isNaN(v) && up != null && up !== "") {
                           form.setValue(`products.${row.index}.total`, (v ?? 0) * Number(up));
                         }
+                        if (v === null || Number.isNaN(v)) form.setValue(`products.${row.index}.total`, null);
                       }
                     }}
                     className="h-8 w-24"
                   />
                 </FormControl>
-                <FormMessage />
+                <FormMessage className="whitespace-normal break-words" />
               </FormItem>
             )}
           />
@@ -275,19 +280,20 @@ export default function PurchaseRequestForm({
                   render={({ field: f }) => (
                     <FormItem>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="any"
                           placeholder="0"
-                          {...f}
-                          value={f.value ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value ? parseFloat(e.target.value) : null;
+                          name={f.name}
+                          ref={f.ref}
+                          onBlur={f.onBlur}
+                          value={f.value ?? null}
+                          onValueChange={(v) => {
                             f.onChange(v);
                             const qty = form.getValues(`products.${row.index}.quantity`);
-                            if (qty != null && qty !== "") {
+                            if (v !== null && !Number.isNaN(v) && qty != null && qty !== "") {
                               form.setValue(`products.${row.index}.total`, (v ?? 0) * Number(qty));
                             }
+                            if (v === null || Number.isNaN(v)) form.setValue(`products.${row.index}.total`, null);
                           }}
                           className="h-8 w-24"
                         />
@@ -310,14 +316,14 @@ export default function PurchaseRequestForm({
                   render={({ field: f }) => (
                     <FormItem>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="any"
                           placeholder="0"
-                          {...f}
-                          value={f.value ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value ? parseFloat(e.target.value) : null;
+                          name={f.name}
+                          ref={f.ref}
+                          onBlur={f.onBlur}
+                          value={f.value ?? null}
+                          onValueChange={(v) => {
                             f.onChange(v);
                           }}
                           className="h-8 w-28"
@@ -453,6 +459,12 @@ export default function PurchaseRequestForm({
         products,
       });
       setFormInitialized(true);
+      // An intake line can arrive with a NULL quantity: flag it now, not only on Update.
+      const blank = products
+        .map((l, i) => (l.quantity == null ? i : -1))
+        .filter((i) => i >= 0)
+        .map((i) => `products.${i}.quantity` as const);
+      if (blank.length) void form.trigger(blank);
     }
   }, [request, isEditMode, form, formInitialized]);
 
@@ -499,11 +511,10 @@ export default function PurchaseRequestForm({
         requested_by_contact_id: data.requested_by_contact_id ?? null,
         requested_at: data.requested_at || undefined,
         products: data.products
-          .filter(
-            (p) =>
-              p.item_code != null ||
-              p.quantity != null ||
-              (isSponsorship && (p.unit_price != null || p.total != null)),
+          .filter((p) =>
+            lineHasContent(
+              isSponsorship ? p : { item_code: p.item_code, quantity: p.quantity },
+            ),
           )
           .map((p) => ({
             item_code: p.item_code ?? undefined,
@@ -736,8 +747,7 @@ export default function PurchaseRequestForm({
                         <FormItem>
                           <FormLabel>Total Project Value</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
+                            <NumberInput
                               inputMode="decimal"
                               step="0.01"
                               placeholder="e.g. 1234.00"

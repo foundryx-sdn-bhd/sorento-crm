@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { requiredNumber } from '@/lib/number-field-schema';
 
 export const PromotionTypeSchema = z.object({
   type_code: z
@@ -11,11 +12,15 @@ export const PromotionTypeSchema = z.object({
   show_expired: z.boolean(),
   expired_valid_until_year_end: z.boolean(),
   // Blank means no age cap.
-  expired_max_age_days: z.union([z.number().int().min(0), z.null()]).optional(),
+  expired_max_age_days: requiredNumber({ min: 0, integer: true, optional: true }) as unknown as z.ZodType<
+    number | null | undefined,
+    z.ZodTypeDef,
+    number | null | undefined
+  >,
   markers_text: z.string().optional(),
-  match_priority: z.number().int().min(0),
+  match_priority: requiredNumber({ min: 0, integer: true }),
   is_default: z.boolean(),
-  sort_order: z.number().int().min(0),
+  sort_order: requiredNumber({ min: 0, integer: true }),
 });
 
 export type PromotionTypeSchemaType = z.infer<typeof PromotionTypeSchema>;

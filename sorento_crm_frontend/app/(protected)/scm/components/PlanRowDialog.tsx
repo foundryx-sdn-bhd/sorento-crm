@@ -24,7 +24,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataGrid } from '@/components/ui/data-grid';
@@ -37,6 +36,7 @@ import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { getStatusBadgeVariant, formatStatusLabel } from '@/lib/status-badge';
 import { cn } from '@/lib/utils';
 
+import { LiveNumberInput } from '@/components/ui/number-input';
 import { demandClassBadge } from '../lib/demandClass';
 import { EM_DASH, fmtDate, fmtInt, fmtMoney, fmtSupplierCost } from '../lib/format';
 import { purchaseOrderStatusPill } from '../lib/purchaseOrderStatus';
@@ -1894,10 +1894,10 @@ export function SoCoveragePicker({
           }
           const invalid = ticked && value > c.qty;
           return (
-            <Input
-              type="number"
+            <LiveNumberInput
               min={0}
               step={1}
+              rules={{ min: 0, integer: true }}
               className={cn(
                 'h-8 w-20 tabular-nums',
                 invalid &&
@@ -1906,10 +1906,7 @@ export function SoCoveragePicker({
               value={value}
               disabled={!ticked || isTaken(c)}
               aria-label={`Take from ${c.document ?? c.key}`}
-              onChange={(e) => {
-                const next = Math.max(0, Number(e.target.value) || 0);
-                onTakeChangeRef.current?.(c.key, next);
-              }}
+              onCommit={(next) => onTakeChangeRef.current?.(c.key, next)}
             />
           );
         },

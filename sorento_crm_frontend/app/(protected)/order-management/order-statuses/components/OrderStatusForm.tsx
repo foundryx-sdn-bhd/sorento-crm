@@ -16,6 +16,7 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -181,11 +182,10 @@ export default function OrderStatusForm({ orderStatusId, onSuccess }: OrderStatu
                   <FormItem>
                     <FormLabel>Sequence *</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
+                      <NumberInput
                         {...field}
-                        value={field.value}
-                        onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
+                        value={field.value ?? ''}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormDescription>

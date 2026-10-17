@@ -131,11 +131,33 @@ describe('PortalRevisionsSettingsPage globals', () => {
     });
   });
 
-  it('refuses to save a non-numeric cap rather than posting garbage', () => {
+  it('refuses to save an emptied cap with a sentence rather than posting garbage', () => {
     mockApi();
     wrap(<PortalRevisionsSettingsPage />);
-    fireEvent.change(screen.getByLabelText('Max revisions'), { target: { value: 'two' } });
-    expect(screen.getByRole('button', { name: /save settings/i })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Max revisions'), { target: { value: '' } });
+    const save = screen.getByRole('button', { name: /save settings/i });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    expect(screen.getByText('Enter a whole number between 0 and 50.')).toBeInTheDocument();
+    expect(
+      apiFetch.mock.calls.find(([url]) => url === '/api/user-management/settings/general'),
+    ).toBeUndefined();
+  });
+
+  it('keeps a per-type cap over the limit as typed and blocks the save with a sentence', async () => {
+    mockApi();
+    wrap(<PortalRevisionsSettingsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Stock Inquiry' }));
+    const maxField = await screen.findByLabelText('Max revisions', { selector: '#portal-revision-max' });
+    fireEvent.change(maxField, { target: { value: '51' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save revision policy' }));
+    expect(maxField).toHaveValue(51);
+    expect(
+      screen.getByText('Enter a whole number between 0 and 50, or leave it blank.'),
+    ).toBeInTheDocument();
+    expect(
+      apiFetch.mock.calls.find(([url]) => url === '/api/v1/forms-management/revision-configs/stock_inquiry'),
+    ).toBeUndefined();
   });
 
   it('Reset restores the saved values', () => {

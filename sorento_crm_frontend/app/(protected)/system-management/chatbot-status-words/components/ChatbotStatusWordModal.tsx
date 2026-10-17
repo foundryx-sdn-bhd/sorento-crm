@@ -5,6 +5,8 @@ import { LoaderCircleIcon } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
@@ -17,7 +19,10 @@ import {
 } from '../hooks/useChatbotStatusWords';
 import type { ChatbotStatusWord, ChatbotStatusWordInput } from '../types/chatbotStatusWord.types';
 
-const BLANK: ChatbotStatusWordInput = {
+// The order box holds what was typed, so it may be empty until Save checks it.
+type Draft = Omit<ChatbotStatusWordInput, 'sort_order'> & { sort_order: number | null };
+
+const BLANK: Draft = {
   domain: '',
   value: '',
   label: '',
@@ -58,10 +63,11 @@ export default function ChatbotStatusWordModal({
 }: ChatbotStatusWordModalProps) {
   const isNew = statusId === null;
   const current = statusId ? rows.find((r) => r.id === statusId) : null;
-  const [draft, setDraft] = useState<ChatbotStatusWordInput>(BLANK);
+  const [draft, setDraft] = useState<Draft>(BLANK);
 
   useEffect(() => {
     if (!open) return;
+    setChecked(false);
     setDraft(
       current
         ? {
@@ -78,7 +84,7 @@ export default function ChatbotStatusWordModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, statusId]);
 
-  const set = <K extends keyof ChatbotStatusWordInput>(key: K, value: ChatbotStatusWordInput[K]) =>
+  const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
 
   const create = useCreateChatbotStatusWord();
@@ -88,13 +94,20 @@ export default function ChatbotStatusWordModal({
   const index = statusId ? rows.findIndex((r) => r.id === statusId) : -1;
   const valueValid = VALUE_PATTERN.test(draft.value);
   const canSave = Boolean(draft.domain && valueValid && draft.label.trim()) && !saving;
+  const [checked, setChecked] = useState(false);
+  const sortError = numberFieldError(draft.sort_order, { integer: true });
 
   const handleSave = () => {
     if (!canSave) return;
+    if (sortError) {
+      setChecked(true);
+      return;
+    }
+    const input = draft as ChatbotStatusWordInput;
     if (isNew) {
-      create.mutate(draft, { onSuccess: () => onOpenChange(false) });
+      create.mutate(input, { onSuccess: () => onOpenChange(false) });
     } else if (statusId) {
-      update.mutate({ id: statusId, input: draft }, { onSuccess: () => onOpenChange(false) });
+      update.mutate({ id: statusId, input }, { onSuccess: () => onOpenChange(false) });
     }
   };
 
@@ -174,11 +187,11 @@ export default function ChatbotStatusWordModal({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="status-sort">Order</Label>
-              <Input
+              <NumberInput
                 id="status-sort"
-                type="number"
                 value={draft.sort_order}
-                onChange={(e) => set('sort_order', Number(e.target.value) || 0)}
+                onValueChange={(v) => set('sort_order', v)}
+                error={checked ? sortError : undefined}
                 className="w-28"
               />
             </div>
