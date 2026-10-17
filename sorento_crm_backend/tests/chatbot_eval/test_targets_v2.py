@@ -2150,3 +2150,15 @@ def test_r29_a_product_name_alone_beside_a_how_many_is_not_an_answer():
     r = row2(message="send me the brochure of SRTMCB21616", reply="Product: SRTMCB21616\nHow many units?")
     res = grade_turn(r, item("scope", fact="product_attachment", fact_label="files"))
     assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+
+
+def test_r29_a_code_led_entry_beside_a_how_many_is_an_answer():
+    r = row2(message="white tap with soft close", verdict=SPEC_V, reply="Here are white taps:\nSRTKT100\nSRTKT200\nHow many units?")
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+
+
+def test_r29_a_file_sent_beside_a_how_many_is_an_answer():
+    r = _att([_file("Technical Specifications")], reply="How many units?")
+    res = grade_turn(r, item("scope", fact="product_attachment", fact_label="files"))
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
