@@ -106,7 +106,8 @@ def summarise(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
 def _parse_one(message: str, config: Any, factory: Any) -> Any:
     """The parser's emission for one message, with the user turn the engine builds for a turn with no history."""
     from app.models.base import set_company_scope
-    from app.services.chatbot import engine, parser, turn_runtime
+    from app.services.chatbot import engine, turn_runtime
+    from app.services.chatbot.head import parser
     from app.services.chatbot.turn import context as context_mod
     from app.services.company_scope import DEFAULT_COMPANY_ID
 
@@ -139,7 +140,7 @@ def run_live(rows: list[dict[str, Any]], *, session_factory: Any, version_id: st
     """Each gold message x `repeats` through the parser alone; stops cleanly at the spend cap or a wrong key."""
     from datetime import date
 
-    from app.services.chatbot import parser
+    from app.services.chatbot.head import parser
     from scripts.chatbot_eval import replay
 
     if not replay._valid_last4(require_key_last4):
