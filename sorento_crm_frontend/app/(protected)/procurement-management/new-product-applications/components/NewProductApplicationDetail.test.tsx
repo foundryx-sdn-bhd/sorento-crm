@@ -125,8 +125,8 @@ function line(
   return {
     id: 'l-1',
     line_no: 1,
-    proposed_code: 'SRTKS2433',
-    description: 'Nanograin kitchen sink',
+    proposed_code: 'XY-1234-MB',
+    description: 'Example kitchen sink',
     further_description: null,
     category_id: 'g-1',
     category_code: 'KS',
@@ -168,13 +168,13 @@ function detail(over: Partial<Detail> = {}): Detail {
     applicant_id: 'u-owner',
     applicant_name: 'Owner',
     stock_inquiry_id: 'si-1',
-    stock_inquiry_number: 'SI26-0153',
-    stock_inquiry_product_code: 'SRTKS2433',
+    stock_inquiry_number: 'SI26-0412',
+    stock_inquiry_product_code: 'XY-1234-MB',
     customer_id: null,
     customer_code: null,
-    customer_name: 'VST GROUP OF COMPANIES',
-    project_name: 'WESTIN RESIDENCE',
-    first_line: 'SRTKS2433',
+    customer_name: 'EXAMPLE DEVELOPER SDN BHD',
+    project_name: 'EXAMPLE RESIDENCE, TOWER B',
+    first_line: 'XY-1234-MB',
     lines_total: 2,
     lines_done: 0,
     opened_codes: [],
@@ -193,7 +193,7 @@ function detail(over: Partial<Detail> = {}): Detail {
     completed_at: null,
     lines: [
       line(),
-      line({ id: 'l-2', line_no: 2, proposed_code: 'SRTKS2406' }),
+      line({ id: 'l-2', line_no: 2, proposed_code: 'XY-1234-BG' }),
     ],
     ...over,
   };
@@ -266,15 +266,31 @@ describe('who sees which next action', () => {
       lines: [
         line({
           opened_product_id: 'p-1',
-          opened_product_code: 'SRTKS2433',
-          opened_product_name: 'Nanograin kitchen sink',
+          opened_product_code: 'XY-1234-MB',
+          opened_product_name: 'Example kitchen sink',
           opened_product_active: true,
         }),
-        line({ id: 'l-2', line_no: 2, proposed_code: 'SRTKS2406' }),
+        line({ id: 'l-2', line_no: 2, proposed_code: 'XY-1234-BG' }),
       ],
     });
     render(<Page />);
     expect(button(/^revise$/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('a portal-sourced application on the staff side', () => {
+  it('hides Edit on a rejected draft the owner could otherwise change', () => {
+    state.data = detail({
+      status: 'rejected',
+      status_label: 'Rejected',
+      source: 'portal',
+    });
+    state.perms = new Set(['procurement.new_product_applications.create']);
+    render(<Page />);
+    expect(
+      screen.queryByRole('link', { name: 'Edit' }),
+    ).not.toBeInTheDocument();
+    expect(button(/^submit$/i)).toBeInTheDocument();
   });
 });
 
@@ -308,8 +324,8 @@ describe('Link product', () => {
     state.search.mockResolvedValue([
       {
         id: 'p-9',
-        product_code: 'SRTKS2406',
-        product_name: 'S/steel sink',
+        product_code: 'XY-1234-BG',
+        product_name: 'Example steel sink',
         brand_name: null,
       },
     ]);
@@ -323,7 +339,7 @@ describe('Link product', () => {
     fireEvent.focus(box);
     fireEvent.change(box, { target: { value: 'srtks2406' } });
 
-    const hit = await screen.findByText(/SRTKS2406 - S\/steel sink/);
+    const hit = await screen.findByText(/XY-1234-BG - Example steel sink/);
     expect(state.link).not.toHaveBeenCalled();
 
     fireEvent.mouseDown(hit);

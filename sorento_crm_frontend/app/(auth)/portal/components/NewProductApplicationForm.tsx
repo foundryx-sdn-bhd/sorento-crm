@@ -660,7 +660,7 @@ export default function NewProductApplicationForm({
   );
 }
 
-/** "SI26-0153 - SRTKS2433": how the picker and the form name an inquiry. */
+/** "SI26-0412 - XY-1234-MB": how the picker and the form name an inquiry. */
 function inquiryText(i: PortalInquiryHit): string {
   return stockInquiryLabel(i.inquiry_number, i.product_code);
 }

@@ -47,7 +47,7 @@ beforeEach(() => {
     {
       id: 'a-1',
       kind: 'new_product_application',
-      title: 'SRTKS2433',
+      title: 'XY-1234-MB',
       document_number: 'NPA-000001',
       reference: null,
       status: 'draft',
@@ -55,8 +55,8 @@ beforeEach(() => {
       is_editable: true,
       is_draft: true,
       created_at: '2026-10-17T01:00:00',
-      customer_name: 'VST GROUP',
-      project_title: 'WESTIN RESIDENCE',
+      customer_name: 'EXAMPLE DEVELOPER SDN BHD',
+      project_title: 'EXAMPLE RESIDENCE, TOWER B',
     },
   ]);
 });

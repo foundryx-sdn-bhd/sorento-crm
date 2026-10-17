@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Plus } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -118,10 +119,22 @@ export default function NewProductApplicationForm({
       setState(stateFromPrefill(prefill.data));
       setHydrated(true);
     } else if (!applicationId && prefill.isError) {
-      // The inquiry could not be read: start from an empty form, the hook has toasted why.
+      // The inquiry could not be read: say why and keep the empty form usable.
+      toast.error(
+        prefill.error instanceof Error && prefill.error.message
+          ? prefill.error.message
+          : 'That stock inquiry could not be loaded.',
+      );
       setHydrated(true);
     }
-  }, [hydrated, applicationId, existing.data, prefill.data, prefill.isError]);
+  }, [
+    hydrated,
+    applicationId,
+    existing.data,
+    prefill.data,
+    prefill.isError,
+    prefill.error,
+  ]);
 
   const saving = create.isPending || update.isPending || submit.isPending;
 
@@ -321,6 +334,7 @@ export default function NewProductApplicationForm({
             lines={state.lines}
             onChange={(lines) => set('lines', lines)}
             lookups={lookups}
+            hideSupplierAndCost={record?.source === 'portal'}
             errors={errors}
           />
 

@@ -162,7 +162,7 @@ import StockInquiryDetail from './StockInquiryDetail';
 function inquiry(over: Record<string, unknown> = {}) {
   return {
     id: 'si-1',
-    inquiry_number: 'SI26-0153',
+    inquiry_number: 'SI26-0412',
     status: 'responded',
     created_at: '2026-07-01T00:00:00Z',
     purchasing_response: '',
@@ -257,14 +257,14 @@ describe('StockInquiryDetail - New product applications row', () => {
         application_no: 'NPA-000001',
         status: 'completed',
         status_label: 'Completed',
-        opened_codes: ['SRTKS2433', 'SRTKS2406'],
+        opened_codes: ['XY-1234-MB', 'XY-1234-BG'],
       },
     ];
     renderPage();
     const link = await screen.findByRole('link', { name: 'NPA-000001' });
     expect(link).toHaveAttribute('href', '/procurement-management/new-product-applications/a-1');
     expect(screen.getByText('Completed')).toBeInTheDocument();
-    expect(screen.getByText(/SRTKS2433, SRTKS2406/)).toBeInTheDocument();
+    expect(screen.getByText(/XY-1234-MB, XY-1234-BG/)).toBeInTheDocument();
   });
 
   it('is hidden for a user with no new product application permission', async () => {

@@ -62,11 +62,11 @@ const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>;
 
 const INQUIRY = {
   id: 'si-1',
-  inquiry_number: 'SI26-0153',
-  product_code: 'SRTKS2433 & SRTKS2406',
-  item_description: 'Kitchen sinks',
-  project_name: 'WESTIN RESIDENCE',
-  purchasing_response: 'Can proceed',
+  inquiry_number: 'SI26-0412',
+  product_code: 'XY-1234-MB & XY-1234-BG',
+  item_description: 'Example sinks',
+  project_name: 'EXAMPLE RESIDENCE, TOWER B',
+  purchasing_response: 'Supplier can make it, please apply for a new code.',
   last_responded_at: null,
 };
 
@@ -76,8 +76,8 @@ function line(
   return {
     id: 'l-1',
     line_no: 1,
-    proposed_code: 'SRTKS2433',
-    description: 'Nanograin kitchen sink',
+    proposed_code: 'XY-1234-MB',
+    description: 'Example kitchen sink',
     category_id: 'g-1',
     category_code: 'KS',
     category_name: 'Kitchen Sink',
@@ -116,9 +116,9 @@ function detail(
     stock_inquiry_product_code: null,
     customer_id: null,
     customer_code: null,
-    customer_name: 'VST GROUP',
-    project_name: 'WESTIN RESIDENCE',
-    first_line: 'SRTKS2433',
+    customer_name: 'EXAMPLE DEVELOPER SDN BHD',
+    project_name: 'EXAMPLE RESIDENCE, TOWER B',
+    first_line: 'XY-1234-MB',
     lines_total: 1,
     lines_done: 0,
     opened_codes: [],
@@ -153,16 +153,16 @@ describe('new application', () => {
   it('starts from my stock inquiry: line 1 gets the code text, the customer stays typed text', async () => {
     asMock(getNewProductApplicationPrefill).mockResolvedValue({
       stock_inquiry_id: 'si-1',
-      stock_inquiry_number: 'SI26-0153',
+      stock_inquiry_number: 'SI26-0412',
       customer_id: null,
-      customer_name: 'VST GROUP OF COMPANIES',
-      project_name: 'WESTIN RESIDENCE',
+      customer_name: 'EXAMPLE DEVELOPER SDN BHD',
+      project_name: 'EXAMPLE RESIDENCE, TOWER B',
       needed_by: null,
       remark: null,
       lines: [
         {
-          proposed_code: 'SRTKS2433 & SRTKS2406',
-          description: 'Kitchen sinks',
+          proposed_code: 'XY-1234-MB & XY-1234-BG',
+          description: 'Example sinks',
         },
       ],
     });
@@ -172,20 +172,20 @@ describe('new application', () => {
       name: /start from my stock inquiry/i,
     });
     fireEvent.focus(picker);
-    const hit = await screen.findByText('SI26-0153 - SRTKS2433 & SRTKS2406');
+    const hit = await screen.findByText('SI26-0412 - XY-1234-MB & XY-1234-BG');
     fireEvent.mouseDown(hit);
     fireEvent.click(hit);
 
     await waitFor(() =>
       expect(
         (screen.getByLabelText('Proposed code') as HTMLInputElement).value,
-      ).toBe('SRTKS2433 & SRTKS2406'),
+      ).toBe('XY-1234-MB & XY-1234-BG'),
     );
     expect(getNewProductApplicationPrefill).toHaveBeenCalledWith('si-1');
     await waitFor(() =>
       expect(
         (screen.getByLabelText('Customer') as HTMLInputElement).value,
-      ).toBe('VST GROUP OF COMPANIES'),
+      ).toBe('EXAMPLE DEVELOPER SDN BHD'),
     );
 
     fireEvent.click(screen.getByRole('button', { name: /save as draft/i }));
@@ -195,7 +195,7 @@ describe('new application', () => {
     const body = asMock(createNewProductApplication).mock.calls[0][0];
     expect(body.customer_id).toBeNull();
     expect(body.stock_inquiry_id).toBe('si-1');
-    expect(body.lines[0].proposed_code).toBe('SRTKS2433 & SRTKS2406');
+    expect(body.lines[0].proposed_code).toBe('XY-1234-MB & XY-1234-BG');
   });
 
   it('has no Supplier, Supplier model no or Cost price column', async () => {
@@ -276,14 +276,14 @@ describe('an existing application', () => {
         status: 'approved',
         status_label: 'Approved',
         lines: [
-          line({ opened_product_id: 'p-1', opened_product_code: 'SRTKS2433' }),
+          line({ opened_product_id: 'p-1', opened_product_code: 'XY-1234-MB' }),
           line({ id: 'l-2', line_no: 2, closed_reason: 'supplier dropped it' }),
         ],
       }),
     );
     render(<NewProductApplicationForm slug="acme" applicationId="a-1" />);
     expect(
-      await screen.findByText('SRTKS2433', { selector: 'span,p,a' }),
+      await screen.findByText('XY-1234-MB', { selector: 'span,p,a' }),
     ).toBeInTheDocument();
     expect(screen.getByText(/not opening/i)).toBeInTheDocument();
     expect(screen.getByText('supplier dropped it')).toBeInTheDocument();

@@ -7,6 +7,7 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { toast } from '@/lib/toast';
 import type { NewProductApplicationPrefill } from '@/types/newProductApplication';
 
 const mock = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ const mock = vi.hoisted(() => ({
   updateAsync: vi.fn(),
   submitAsync: vi.fn(),
   prefill: undefined as unknown,
+  prefillError: null as Error | null,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -34,6 +36,8 @@ vi.mock('../hooks/useNewProductApplications', () => ({
   useNewProductApplicationPrefillQuery: () => ({
     data: mock.prefill,
     isLoading: false,
+    isError: Boolean(mock.prefillError),
+    error: mock.prefillError,
   }),
   useNewProductApplicationLookups: () => ({
     itemGroups: async () => [],
@@ -55,16 +59,16 @@ import NewProductApplicationForm from './NewProductApplicationForm';
 
 const PREFILL: NewProductApplicationPrefill = {
   stock_inquiry_id: 'si-1',
-  stock_inquiry_number: 'SI26-0153',
+  stock_inquiry_number: 'SI26-0412',
   customer_id: null,
-  customer_name: 'VST GROUP OF COMPANIES',
-  project_name: 'WESTIN RESIDENCE',
+  customer_name: 'EXAMPLE DEVELOPER SDN BHD',
+  project_name: 'EXAMPLE RESIDENCE, TOWER B',
   needed_by: '2028-01-17',
   remark: null,
   lines: [
     {
-      proposed_code: 'SRTKS2433 & SRTKS2406',
-      description: 'Kitchen sinks',
+      proposed_code: 'XY-1234-MB & XY-1234-BG',
+      description: 'Example sinks',
       expected_qty: '55',
     },
   ],
@@ -90,6 +94,7 @@ const lastBody = () => mock.createAsync.mock.calls.at(-1)?.[0];
 beforeEach(() => {
   vi.clearAllMocks();
   mock.prefill = undefined;
+  mock.prefillError = null;
   mock.createAsync.mockResolvedValue({ id: 'npa-1' });
   mock.updateAsync.mockResolvedValue({ id: 'npa-1' });
   mock.submitAsync.mockResolvedValue({ id: 'npa-1' });
@@ -101,19 +106,19 @@ describe('pre-fill from a responded stock inquiry', () => {
     renderForm({ stockInquiryId: 'si-1' });
 
     const code = await screen.findByLabelText('Proposed code');
-    expect((code as HTMLInputElement).value).toBe('SRTKS2433 & SRTKS2406');
+    expect((code as HTMLInputElement).value).toBe('XY-1234-MB & XY-1234-BG');
     expect((screen.getByLabelText('Customer') as HTMLInputElement).value).toBe(
-      'VST GROUP OF COMPANIES',
+      'EXAMPLE DEVELOPER SDN BHD',
     );
 
     saveDraft();
     await waitFor(() => expect(mock.createAsync).toHaveBeenCalledTimes(1));
     const body = lastBody();
     expect(body.customer_id).toBeNull();
-    expect(body.customer_name).toBe('VST GROUP OF COMPANIES');
+    expect(body.customer_name).toBe('EXAMPLE DEVELOPER SDN BHD');
     expect(body.stock_inquiry_id).toBe('si-1');
     expect(body.lines).toHaveLength(1);
-    expect(body.lines[0].proposed_code).toBe('SRTKS2433 & SRTKS2406');
+    expect(body.lines[0].proposed_code).toBe('XY-1234-MB & XY-1234-BG');
     expect(body.lines[0].category_id).toBeNull();
     expect(body.lines[0].base_uom_id).toBeNull();
   });
@@ -166,5 +171,22 @@ describe('Submit', () => {
     await waitFor(() =>
       expect(mock.push).toHaveBeenCalledWith(expect.stringContaining('npa-1')),
     );
+  });
+});
+
+describe('pre-fill failure', () => {
+  it('says why in a toast and leaves a usable empty form', async () => {
+    mock.prefillError = new Error('That stock inquiry could not be loaded.');
+    renderForm({ stockInquiryId: 'si-gone' });
+
+    const code = (await screen.findByLabelText(
+      'Proposed code',
+    )) as HTMLInputElement;
+    expect(code.value).toBe('');
+    expect(toast.error).toHaveBeenCalledWith(
+      'That stock inquiry could not be loaded.',
+    );
+    fireEvent.change(code, { target: { value: 'XY-1' } });
+    expect(code.value).toBe('XY-1');
   });
 });

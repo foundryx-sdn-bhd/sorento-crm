@@ -85,10 +85,10 @@ export async function getNewProductApplications(
 export async function getStockInquiryApplications(
   stockInquiryId: string,
 ): Promise<NewProductApplicationSummary[]> {
-  const sp = new URLSearchParams({
-    stock_inquiry_id: stockInquiryId,
-    limit: '50',
-  });
+  const sp = buildDataGridParams(
+    { pageIndex: 0, pageSize: 50 },
+    { stock_inquiry_id: stockInquiryId },
+  );
   const res = await apiFetch(`${BASE}?${sp.toString()}`);
   const body = await read<NewProductApplicationPage>(
     res,
@@ -208,7 +208,7 @@ export async function searchNewProductApplicationItemTypes(
   }));
 }
 
-/** Stock inquiries for the header picker, labelled "SI26-0153 - <product code>". */
+/** Stock inquiries for the header picker, labelled "SI26-0412 - <product code>". */
 export async function searchStockInquiryOptions(
   q: string,
 ): Promise<SearchableSelectOption[]> {

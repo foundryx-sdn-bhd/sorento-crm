@@ -618,7 +618,7 @@ export default function NewProductApplicationDetail({
                   Revise
                 </Button>
               )}
-              {editable && ownerActs && (
+              {editable && ownerActs && r.source !== 'portal' && (
                 <Button variant="outline" asChild>
                   <Link href={`${BASE_PATH}/${r.id}/edit`}>Edit</Link>
                 </Button>
