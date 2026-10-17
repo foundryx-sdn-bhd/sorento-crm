@@ -125,3 +125,19 @@ the `user_goal` fallback in `derive_require`.
 Open: c06's
 "300mm" reads trap_length where the answer key says dim_length (a numeric key choice; no
 candidate covers a number with a unit, trigger: a TRAIN miss family on units).
+
+## Phase 3 (17 Oct)
+
+Security review: no blocker. Fixed: file-ask products read through a scoped Product query;
+listed items one line, at most 60 chars / 100 items, null-only when none; candidate rows one
+line. Answered: the file-ask roster mirrors the fetch's own visibility (the product-attachments
+route the bot calls applies no tier filter). Open for crew: the external upload schema's
+`scheme` has no `max_length` (the column is varchar(60), so an over-long one fails the insert).
+
+Reviewer: READY. Fixed S1 (first line only), S2 (one whole-code query + at most 6 per-code-word
+queries), S3 (shortlist failure leaves the block out, savepoint), S4 (grounding replay derives
+the gate from `listed_item` on the parse; a whole-turn replay pins the version through
+`prompt_overrides` as runs do), N1, N2. Accepted: N3 (two cached prompt reads per turn; the
+label and text can disagree only across a TTL expiry and a label move in the same instant), N4
+(the file-ask roster lists certificate types too: the customer is asking which file of THIS
+product, and its certificates are files of it).

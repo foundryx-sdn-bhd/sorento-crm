@@ -9,8 +9,9 @@ none and the bot asks. Nothing here decides what a word means, and nothing downs
 on a candidate: the parser's pick is validated against the lists, never against this
 module's scores.
 
-Bounded: at most `CAP_PER_WORD` candidates per word and `CAP_LINES` lines per message, one
-code query per code-like word, and the registry read once per call. Runs in the
+Bounded: at most `CAP_PER_WORD` candidates per word and `CAP_LINES` lines per message; one
+whole-code query for the message plus one query per word with a digit (at most
+`CODE_WORDS_PER_MESSAGE`); the registry read once per call. Runs in the
 session-held phase before the parse; a product read goes through the ORM so the contact's
 company and brand scope and `chat_searchable_products` apply as on every other chat read.
 """
@@ -27,6 +28,9 @@ HEADER = "Candidates for words of this message (each says what it is; pick one o
 
 CAP_PER_WORD = 5
 CAP_LINES = 12
+#: Words with a digit read for codes holding them / spelt near them, per message (one
+#: query each); every other word costs nothing beyond the one whole-code query.
+CODE_WORDS_PER_MESSAGE = 6
 #: The longest run of words read as one phrase ("toilet bowl soft close" is two phrases).
 MAX_PHRASE_WORDS = 3
 #: Near spellings, as pg_trgm scores them: a spec phrase from 4 characters, a code from 3.
@@ -228,56 +232,65 @@ def _value_candidates(db: "Session", tokens: list[str]) -> list[WordCandidates]:
     return list(by_gram.values()) + numbered
 
 
+def _code_label(code: str, name: str | None, holds: bool) -> str:
+    from app.services.chatbot_prompt_vars import _one_line
+
+    # Product rows are staff / import text: one line each, so a stored newline can never
+    # start a line of its own in the user turn (security review, 17 Oct 2026).
+    code, name = _one_line(code), _one_line(name or "")
+    label = f"code {code} ({name})" if name else f"code {code}"
+    return label if holds else f"near {label}"
+
+
 def _code_candidates(db: "Session", tokens: list[str]) -> list[WordCandidates]:
-    """Codes on file under each word: the whole code for any word; for a word with a digit
-    also every code holding it and the codes spelt near it."""
+    """Codes on file under each word: the whole code for any word, in ONE query for the
+    whole message; for a word with a digit (the first `CODE_WORDS_PER_MESSAGE` of them) also
+    every code holding it and the codes spelt near it, one query each."""
     from sqlalchemy import case, func, or_
 
     from app.models.product import Product, chat_searchable_products
 
     norm = func.lower(func.regexp_replace(Product.product_code, r"[-\s]+", "", "g"))
-    out: list[WordCandidates] = []
-    for position, token in enumerate(tokens):
-        word = re.sub(r"[-\s]+", "", token)
-        if len(word) < 2:
-            continue
-        coded = any(ch.isdigit() for ch in word) and len(word) >= MIN_CODE_CHARS
-        if coded:
-            sim = func.similarity(norm, word)
-            match = or_(norm.contains(word, autoescape=True), sim >= NEAR_CODE)
-            order = (
-                case((norm == word, 0), (norm.startswith(word, autoescape=True), 1),
-                     (norm.contains(word, autoescape=True), 2), else_=3),
-                sim.desc(),
-                Product.product_code,
-            )
-        else:
-            sim = None
-            match = norm == word
-            order = (Product.product_code,)
+    words = {position: re.sub(r"[-\s]+", "", token) for position, token in enumerate(tokens)}
+    words = {p: w for p, w in words.items() if len(w) >= 2}
+    coded = [p for p, w in words.items() if any(ch.isdigit() for ch in w) and len(w) >= MIN_CODE_CHARS]
+    coded = coded[:CODE_WORDS_PER_MESSAGE]
+    whole_only = sorted({w for p, w in words.items() if p not in coded})
+    by_word: dict[str, list[tuple[str, str | None]]] = {}
+    if whole_only:
         rows = (
-            db.query(
-                Product.product_code,
-                Product.product_name,
-                norm.contains(word, autoescape=True).label("holds"),
-            )
-            .filter(chat_searchable_products(), match)
-            .order_by(*order)
-            .limit(CAP_PER_WORD)
+            db.query(norm.label("word"), Product.product_code, Product.product_name)
+            .filter(chat_searchable_products(), norm.in_(whole_only))
+            .order_by(Product.product_code)
+            .limit(CAP_PER_WORD * len(whole_only))
             .all()
         )
-        if not rows:
-            continue
-        entry = WordCandidates(gram=token, position=position)
-        from app.services.chatbot_prompt_vars import _one_line
-
-        for code, name, holds in rows:
-            # Product rows are staff / import text: one line each, so a stored newline can
-            # never start a line of its own in the user turn (security review, 17 Oct 2026).
-            code, name = _one_line(code), _one_line(name or "")
-            label = f"code {code} ({name})" if name else f"code {code}"
-            entry.items.append(label if holds else f"near {label}")
-        out.append(entry)
+        for word, code, name in rows:
+            held = by_word.setdefault(word, [])
+            if len(held) < CAP_PER_WORD:
+                held.append((code, name))
+    out: list[WordCandidates] = []
+    for position, word in words.items():
+        token = tokens[position]
+        if position in coded:
+            sim = func.similarity(norm, word)
+            rows = (
+                db.query(Product.product_code, Product.product_name, norm.contains(word, autoescape=True).label("holds"))
+                .filter(chat_searchable_products(), or_(norm.contains(word, autoescape=True), sim >= NEAR_CODE))
+                .order_by(
+                    case((norm == word, 0), (norm.startswith(word, autoescape=True), 1),
+                         (norm.contains(word, autoescape=True), 2), else_=3),
+                    sim.desc(),
+                    Product.product_code,
+                )
+                .limit(CAP_PER_WORD)
+                .all()
+            )
+            items = [_code_label(code, name, holds) for code, name, holds in rows]
+        else:
+            items = [_code_label(code, name, True) for code, name in by_word.get(word, [])]
+        if items:
+            out.append(WordCandidates(gram=token, position=position, items=items))
     return out
 
 

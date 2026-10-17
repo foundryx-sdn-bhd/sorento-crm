@@ -66,6 +66,12 @@ ALLOWED_PREFIXES = (
     "app/services/chatbot/",
     "app/modules/chatbot/",
     "tests/chatbot/",
+    # EVAL-BENCH (#1743) bench tooling: the L1 replay drives `engine.run_turn` and
+    # `head.grounding` directly and its tests replay a synthetic turn. Not core, not on any
+    # request path. Listed by CHAT-CLOSED-LISTS, whose PR edits this file and would
+    # otherwise carry main's red.
+    "scripts/chatbot_eval/",
+    "tests/chatbot_eval/",
 )
 
 # Four ways in, not two. `from app.services import chatbot` and an `importlib` call both

@@ -40,7 +40,7 @@ Status: answered by crew 17 Oct (all five (a)). Plan: `PLAN-chat-closed-lists-17
 - A spec value the registry has but no product carries: R6 wording, not "unknown".
 - A list that grew past the cap (many near spellings): the closest first by code order of retrieval (exact, prefix,
   name, synonym, near spelling), cut at the cap; the cap is printed in the trace.
-- Empty lists (fresh install, no attachment types): the section is omitted, the parser input is unchanged.
+- Empty lists (fresh install, no attachment types): the section's lists render empty and `listed_item` is null-only, so every file ask is asked (R3); the section text itself stays (reviewer S5, 17 Oct).
 
 ## Questions (at most 5)
 

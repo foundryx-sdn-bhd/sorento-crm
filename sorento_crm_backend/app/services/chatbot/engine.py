@@ -1080,8 +1080,24 @@ def _contact_brand_scope(factory: SessionFactory, contact_respond_id: str) -> fr
 
 def closed_lists_verdict(verdict: dict[str, Any], *, gate: bool) -> dict[str, Any]:
     """CHAT-CLOSED-LISTS: a verdict parsed by a CLOSED LISTS version says so, so the lanes
-    read the parser's listed picks and none of the word fallbacks (card R2/R5)."""
-    return {**verdict, "closed_lists": True} if gate else verdict
+    read the parser's listed picks and none of the word fallbacks (card R2/R5). The key is
+    the engine's alone: one a harness emission carried is dropped when the gate is off."""
+    if gate:
+        return {**verdict, "closed_lists": True}
+    return {k: v for k, v in verdict.items() if k != "closed_lists"} if "closed_lists" in verdict else verdict
+
+
+def _candidate_lines(db: Session, latest_user_message: str) -> list[str] | None:
+    """The candidate block for the message's OWN first line (the quoted reply under it is
+    not this message's words, the line grounding reads too). It only advises the parser,
+    so a failure leaves it out and the turn goes on (savepoint: the session stays usable)."""
+    message = latest_user_message.split("\n", 1)[0]
+    try:
+        with db.begin_nested():
+            return candidates_mod.candidate_lines(candidates_mod.shortlist(db, message))
+    except Exception:  # noqa: BLE001 - advisory block, never a failed turn
+        logger.warning("chatbot: candidate shortlist failed; parsing without it", exc_info=True)
+        return None
 
 
 def _scoped_factory(
@@ -4509,7 +4525,7 @@ def _run_stages_body(  # noqa: PLR0915
         # CHAT-CLOSED-LISTS: what is on file under the words of this message, for a
         # version carrying the CLOSED LISTS section only (code shortlists, the parser picks).
         candidate_lines = (
-            candidates_mod.candidate_lines(candidates_mod.shortlist(db, latest_user_message))
+            _candidate_lines(db, latest_user_message)
             if parser_config.closed_lists and isinstance(latest_user_message, str)
             else None
         )
@@ -7166,8 +7182,9 @@ def _run_stages_body(  # noqa: PLR0915
                 # roster the tail stores, so the reply's numbers are what "2" answers.
                 offered = turn_runtime.file_type_ask(db, ask, state_out.focus)
                 if offered is not ask:
+                    # The tail stores the question the Answer carries, so the options
+                    # printed here are the ones a bare "2" answers.
                     ask = offered
-                    state_out = dataclasses_replace(state_out, pending=offered)
                     turn_trace.add("file_type_ask", {"options": len(offered.options)})
             if ask.kind == "customer_pick" and not _roster_is_outstanding(verdict, state_out.focus):
                 # PICKER-ONE (owner, 13 Oct 2026): a customer roster the narrower raised
