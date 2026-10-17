@@ -740,6 +740,7 @@ def ground(
     vocab: Vocabulary | None = None,
     message: str | None = None,
     closed_lists: bool = False,
+    listed_codes: frozenset[str] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """The verdict with every descriptor grounded, and a note per change for the trace.
 
@@ -749,7 +750,11 @@ def ground(
 
     `closed_lists` (CHAT-CLOSED-LISTS, the parser version carries the CLOSED LISTS
     section): a document type is kept only when its pick is an item of the lists the
-    prompt rendered, and is tagged with that list (`_on_closed_lists`)."""
+    prompt rendered, and is tagged with that list (`_on_closed_lists`).
+
+    `listed_codes` (CHAT-CODE-LOOKUP, the version also carries the CODE LOOKUP section): a
+    product pick that is not the typed word, an extension or a family of it, and not a code
+    the candidate block listed, is dropped and the raw kept. None is today."""
     entities = verdict.get("entities")
     if not isinstance(entities, list) or not entities:
         return verdict, []
@@ -817,6 +822,14 @@ def ground(
             notes.append({"from": hint, "raw": raw, "to": canonical})
             entity = {**entity, "raw": canonical, "canonical_code": None}
             raw = canonical
+        if listed_codes is not None and hint == _PRODUCT_HINT and canonical and entity.get("current_message") is not False:
+            from app.services.chatbot.turn.state import token_key
+
+            picked, typed = token_key(canonical), token_key(raw)
+            if picked != typed and picked not in typed and typed not in picked and picked not in {token_key(c) for c in listed_codes}:
+                notes.append({"from": hint, "raw": raw, "to": "canonical dropped: not on the candidate block"})
+                entity = {**entity, "canonical_code": None}
+                canonical = ""
         if hint == _PRODUCT_HINT and _names_a_class_not_a_code(raw, vocab):
             # Fix round 10 on PR #833 (owner, 28 Sep 2026: "i tried to search like gunmetal
             # basin, there is no such thing and it gives me flexible trap"): words with no

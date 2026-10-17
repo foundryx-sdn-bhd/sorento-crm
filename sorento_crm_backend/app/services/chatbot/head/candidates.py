@@ -36,6 +36,10 @@ MAX_PHRASE_WORDS = 3
 #: Near spellings, as pg_trgm scores them: a spec phrase from 4 characters, a code from 3.
 NEAR_PHRASE = 0.55
 NEAR_CODE = 0.5
+#: CHAT-CODE-LOOKUP R1: under the gate a coded word with no exact code on file lists codes
+#: from this similarity up (the resolver's floor, `entity_resolver.ENTITY_MISS_SUGGEST_FLOOR`),
+#: not holding the word; the parser still chooses.
+NEAR_CODE_NO_EXACT = 0.30
 MIN_NEAR_CHARS = 4
 MIN_CODE_CHARS = 3
 
@@ -55,6 +59,8 @@ class WordCandidates:
     gram: str
     position: int
     items: list[str] = field(default_factory=list)
+    #: Candidate line text -> the product code it lists (code lines only).
+    codes: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -242,10 +248,16 @@ def _code_label(code: str, name: str | None, holds: bool) -> str:
     return label if holds else f"near {label}"
 
 
-def _code_candidates(db: "Session", tokens: list[str]) -> list[WordCandidates]:
+def _fold_code(code: str) -> str:
+    return re.sub(r"[-\s]+", "", code).casefold()
+
+
+def _code_candidates(db: "Session", tokens: list[str], *, code_lookup: bool = False) -> list[WordCandidates]:
     """Codes on file under each word: the whole code for any word, in ONE query for the
     whole message; for a word with a digit (the first `CODE_WORDS_PER_MESSAGE` of them) also
-    every code holding it and the codes spelt near it, one query each."""
+    every code holding it and the codes spelt near it, one query each. `code_lookup`
+    (CHAT-CODE-LOOKUP): such a word with no exact code on file also lists the codes spelt
+    near it from `NEAR_CODE_NO_EXACT` up."""
     from sqlalchemy import case, func, or_
 
     from app.models.product import Product, chat_searchable_products
@@ -286,28 +298,52 @@ def _code_candidates(db: "Session", tokens: list[str]) -> list[WordCandidates]:
                 .limit(CAP_PER_WORD)
                 .all()
             )
-            items = [_code_label(code, name, holds) for code, name, holds in rows]
+            if code_lookup and not any(_fold_code(code) == word for code, _name, _holds in rows):
+                held = [(code, name, True) for code, name, holds in rows if holds]
+                rows = held + [
+                    (code, name, False)
+                    for code, name in db.query(Product.product_code, Product.product_name)
+                    .filter(chat_searchable_products(), ~norm.contains(word, autoescape=True), sim >= NEAR_CODE_NO_EXACT)
+                    .order_by(sim.desc(), Product.product_code)
+                    .limit(CAP_PER_WORD)
+                    .all()
+                ]
+            labelled = [(_code_label(code, name, holds), code) for code, name, holds in rows]
         else:
-            items = [_code_label(code, name, True) for code, name in by_word.get(word, [])]
-        if items:
-            out.append(WordCandidates(gram=token, position=position, items=items))
+            labelled = [(_code_label(code, name, True), code) for code, name in by_word.get(word, [])]
+        if labelled:
+            out.append(WordCandidates(
+                gram=token, position=position, items=[text for text, _code in labelled], codes=dict(labelled),
+            ))
     return out
 
 
-def shortlist(db: "Session", message: str) -> list[WordCandidates]:
+def shortlist(db: "Session", message: str, *, code_lookup: bool = False) -> list[WordCandidates]:
     """The candidates for every word of `message` that has any, in message order."""
     tokens = _tokens(message)
     if not tokens:
         return []
     merged: dict[str, WordCandidates] = {}
-    for entry in _value_candidates(db, tokens) + _code_candidates(db, list(dict.fromkeys(tokens))):
+    for entry in _value_candidates(db, tokens) + _code_candidates(
+        db, list(dict.fromkeys(tokens)), code_lookup=code_lookup
+    ):
         held = merged.setdefault(entry.gram, WordCandidates(gram=entry.gram, position=entry.position))
         held.items.extend(item for item in entry.items if item not in held.items)
+        held.codes.update(entry.codes)
     ordered = sorted(merged.values(), key=lambda e: (e.position, -len(e.gram)))
     for entry in ordered:
         exact = [i for i in entry.items if not i.startswith("near ")]
         entry.items = (exact + [i for i in entry.items if i.startswith("near ")])[:CAP_PER_WORD]
     return ordered
+
+
+def listed_codes(entries: list[WordCandidates]) -> frozenset[str]:
+    """The folded codes of the code lines `candidate_lines` renders (the caps applied):
+    what grounding checks a product pick against under the gate."""
+    from app.services.chatbot.turn.state import token_key
+
+    shown = [entry for entry in entries if entry.items][:CAP_LINES]
+    return frozenset(token_key(entry.codes[item]) for entry in shown for item in entry.items if item in entry.codes)
 
 
 def candidate_lines(entries: list[WordCandidates]) -> list[str]:

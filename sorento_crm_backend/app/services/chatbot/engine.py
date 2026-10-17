@@ -1087,17 +1087,33 @@ def closed_lists_verdict(verdict: dict[str, Any], *, gate: bool) -> dict[str, An
     return {k: v for k, v in verdict.items() if k != "closed_lists"} if "closed_lists" in verdict else verdict
 
 
-def _candidate_lines(db: Session, latest_user_message: str) -> list[str] | None:
+def code_lookup_verdict(verdict: dict[str, Any], *, gate: bool) -> dict[str, Any]:
+    """CHAT-CODE-LOOKUP: a verdict parsed by a CODE LOOKUP version says so, so later lanes
+    can read it. Like `closed_lists_verdict`, the key is the engine's alone."""
+    if gate:
+        return {**verdict, "code_lookup": True}
+    return {k: v for k, v in verdict.items() if k != "code_lookup"} if "code_lookup" in verdict else verdict
+
+
+def _candidate_lines(
+    db: Session, latest_user_message: str, *, code_lookup: bool = False
+) -> tuple[list[str] | None, frozenset[str]]:
     """The candidate block for the message's OWN first line (the quoted reply under it is
     not this message's words, the line grounding reads too). It only advises the parser,
-    so a failure leaves it out and the turn goes on (savepoint: the session stays usable)."""
+    so a failure leaves it out and the turn goes on (savepoint: the session stays usable).
+    Also the codes the block lists, for grounding's product pick check under CODE LOOKUP."""
     message = latest_user_message.split("\n", 1)[0]
     try:
         with db.begin_nested():
-            return candidates_mod.candidate_lines(candidates_mod.shortlist(db, message))
+            entries = (
+                candidates_mod.shortlist(db, message, code_lookup=True)
+                if code_lookup
+                else candidates_mod.shortlist(db, message)
+            )
+            return candidates_mod.candidate_lines(entries), candidates_mod.listed_codes(entries)
     except Exception:  # noqa: BLE001 - advisory block, never a failed turn
         logger.warning("chatbot: candidate shortlist failed; parsing without it", exc_info=True)
-        return None
+        return None, frozenset()
 
 
 def _scoped_factory(
@@ -4524,10 +4540,10 @@ def _run_stages_body(  # noqa: PLR0915
         product_details = turn_runtime.product_detail_values(db)
         # CHAT-CLOSED-LISTS: what is on file under the words of this message, for a
         # version carrying the CLOSED LISTS section only (code shortlists, the parser picks).
-        candidate_lines = (
-            _candidate_lines(db, latest_user_message)
+        candidate_lines, listed_codes = (
+            _candidate_lines(db, latest_user_message, code_lookup=parser_config.code_lookup)
             if parser_config.closed_lists and isinstance(latest_user_message, str)
-            else None
+            else (None, frozenset())
         )
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
@@ -4798,8 +4814,10 @@ def _run_stages_body(  # noqa: PLR0915
             verdict,
             message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None,
             closed_lists=parser_config.closed_lists,
+            listed_codes=listed_codes if parser_config.code_lookup else None,
         )
     verdict = closed_lists_verdict(verdict, gate=parser_config.closed_lists)
+    verdict = code_lookup_verdict(verdict, gate=parser_config.code_lookup)
     if parser_config.closed_lists and state_in.focus.products:
         # SPEC-OVER-HELD: a spec said about a held product narrows that product's family
         # (`head/held_family.py`). A read failure leaves the verdict as it was.
