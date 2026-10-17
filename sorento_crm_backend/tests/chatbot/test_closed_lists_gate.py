@@ -1,0 +1,178 @@
+"""CHAT-CLOSED-LISTS S3: the prompt section, its gate, and the candidate block in the user turn.
+
+The closed-lists path runs only for a prompt version whose raw template carries the section
+marker (the CHAT-STATE pattern), so the production label keeps today's parser input byte for
+byte until the owner moves it. The section is code (`head/closed_lists_prompt.py`), published
+as an UNLABELLED version by `scripts/publish_closed_lists_prompt.py`.
+"""
+from __future__ import annotations
+
+import json
+import uuid
+
+import pytest
+
+import app.main  # noqa: F401  isort:skip
+from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
+from app.models.product import Product, ProductCategory, UnitOfMeasure
+from app.services import ai_prompt_registry
+from app.services.ai_assistant_service import MCPRuntimeClient
+from app.services.chatbot import engine as engine_mod
+from app.services.chatbot.head import candidates
+from app.services.chatbot.head import closed_lists_prompt as clp
+from app.services.chatbot.head import parser as parser_mod
+from app.services.company_scope import DEFAULT_COMPANY_ID
+from scripts import publish_closed_lists_prompt as publisher
+from tests._pg_fixture import blank_session, unique_code
+from tests.chatbot.conftest import session_factory  # noqa: F401
+from tests.chatbot.test_engine import _envelope, _parser_output, seeded, stub_access  # noqa: F401
+
+KEY = parser_mod.PROMPT_KEY
+
+
+@pytest.fixture(autouse=True)
+def _fresh_cache():
+    ai_prompt_registry.bust_cache()
+    yield
+    ai_prompt_registry.bust_cache()
+
+
+def _version(db, template: str, *, label: str | None = None) -> AIPromptVersion:
+    versions = [v for (v,) in db.query(AIPromptVersion.version).filter(AIPromptVersion.name == KEY)]
+    row = AIPromptVersion(
+        id=str(uuid.uuid4()), name=KEY, version=max(versions, default=0) + 1, type="text", template=template,
+        variables=["current_date"],
+    )
+    db.add(row)
+    db.flush()
+    if label:
+        db.add(AIPromptLabel(id=str(uuid.uuid4()), name=KEY, label=label, version_id=row.id))
+        db.flush()
+    return row
+
+
+# --- the section and the gate --------------------------------------------------------------------
+
+
+def test_the_section_carries_the_marker_and_both_list_tokens():
+    assert clp.MARKER in clp.SECTION
+    assert "{{attachment_types}}" in clp.SECTION and "{{certification_types}}" in clp.SECTION
+    assert candidates.HEADER.split(" (")[0] in clp.SECTION
+
+
+def test_the_gate_reads_the_raw_template_only():
+    assert clp.gate_on("parser text" + clp.SECTION) is True
+    assert clp.gate_on("parser text") is False
+    assert clp.gate_on(None) is False
+
+
+def test_the_production_label_without_the_section_keeps_the_gate_off():
+    with blank_session() as db:
+        _version(db, "production parser {{current_date}}", label="production")
+        assert parser_mod.uses_closed_lists(db) is False
+
+
+def test_a_pinned_version_with_the_section_turns_the_gate_on():
+    with blank_session() as db:
+        _version(db, "production parser {{current_date}}", label="production")
+        lane = _version(db, "production parser {{current_date}}" + clp.SECTION)
+        assert parser_mod.uses_closed_lists(db, override_version_id=lane.id) is True
+        assert parser_mod.uses_closed_lists(db) is False
+
+
+def test_parser_config_defaults_to_the_gate_off():
+    config = parser_mod.ParserConfig(system_prompt="x", prompt_version=1, provider="openai", model="m", api_key="k")
+    assert config.closed_lists is False
+
+
+# --- the publish script --------------------------------------------------------------------------
+
+
+def test_publish_appends_the_section_to_production_as_an_unlabelled_version_once():
+    with blank_session() as db:
+        prod = _version(db, "production parser {{current_date}}", label="production")
+
+        first = publisher.publish(db)
+        again = publisher.publish(db)
+
+        row = db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY, AIPromptVersion.version == first).one()
+        assert row.template == prod.template + clp.SECTION
+        assert again is None
+        labels = {(lab.label, lab.version_id) for lab in db.query(AIPromptLabel).filter(AIPromptLabel.name == KEY)}
+        assert labels == {("production", prod.id)}
+
+
+def test_publish_from_a_named_version_builds_on_that_version():
+    with blank_session() as db:
+        _version(db, "production parser {{current_date}}", label="production")
+        base = _version(db, "a lane's own version {{current_date}}")
+
+        new = publisher.publish(db, from_version=base.version)
+
+        row = db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY, AIPromptVersion.version == new).one()
+        assert row.template == base.template + clp.SECTION
+
+
+def test_publish_refuses_a_base_that_already_carries_the_section():
+    with blank_session() as db:
+        _version(db, "production parser" + clp.SECTION, label="production")
+        with pytest.raises(SystemExit):
+            publisher.publish(db)
+
+
+# --- the candidate block in the user turn --------------------------------------------------------
+
+
+def _product(session_factory, code: str) -> None:
+    db = session_factory()
+    cat = ProductCategory(
+        id=str(uuid.uuid4()), category_code=unique_code("CAT")[:50], category_name="ZZT cat", company_id=DEFAULT_COMPANY_ID,
+    )
+    uom = UnitOfMeasure(id=str(uuid.uuid4()), uom_code=unique_code("UOM")[:50], uom_name="Each", company_id=DEFAULT_COMPANY_ID)
+    db.add_all([cat, uom])
+    db.flush()
+    db.add(Product(
+        id=str(uuid.uuid4()), product_code=code, product_name="Synthetic WC", category_id=cat.id,
+        base_uom_id=uom.id, list_price=1, company_id=DEFAULT_COMPANY_ID,
+    ))
+    db.commit()
+
+
+def _user_block(session_factory, stub_access, monkeypatch, *, gate: bool) -> str:
+    seen: list[str] = []
+
+    def fake_resolve_config(db, *, current_date, override_version_id=None):
+        return parser_mod.ParserConfig(
+            system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="k", closed_lists=gate,
+        )
+
+    def fake_parse(config, user_block):
+        seen.append(user_block)
+        return _parser_output()
+
+    monkeypatch.setattr(parser_mod, "resolve_config", fake_resolve_config)
+    monkeypatch.setattr(parser_mod, "parse", fake_parse)
+    monkeypatch.setattr(MCPRuntimeClient, "call_tool", lambda self, name, arguments: json.dumps({"ok": True, "items": []}))
+    stub_access()
+    engine_mod.run_turn(_envelope(), session_factory=session_factory)
+    assert len(seen) == 1
+    return seen[0]
+
+
+def test_gate_off_the_user_turn_carries_no_candidate_block(session_factory, seeded, stub_access, monkeypatch):
+    _product(session_factory, "SRTWC8517")
+
+    block = _user_block(session_factory, stub_access, monkeypatch, gate=False)
+
+    assert candidates.HEADER not in block
+
+
+def test_gate_on_the_user_turn_lists_the_candidates_after_the_message(session_factory, seeded, stub_access, monkeypatch):
+    _product(session_factory, "SRTWC8517")
+
+    block = _user_block(session_factory, stub_access, monkeypatch, gate=True)
+
+    lines = block.split("\n")
+    at = lines.index(candidates.HEADER)
+    assert lines[at - 1] == "Current user message: price for SRTWC8517"
+    assert lines[at + 1] == '- "srtwc8517": code SRTWC8517 (Synthetic WC)'
