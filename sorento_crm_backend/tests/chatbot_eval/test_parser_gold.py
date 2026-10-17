@@ -12,6 +12,7 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from scripts.chatbot_eval import parser_gold as pg  # noqa: E402
+from tests.chatbot.conftest import session_factory  # noqa: E402,F401
 
 GOLD = BACKEND / "scripts" / "chatbot_eval" / "gold" / "parser_when_deliver.jsonl"
 
@@ -262,3 +263,50 @@ def test_summarise():
     assert s["a"] == {"n": 3, "passed": 2}
     assert s["b"] == {"n": 1, "passed": 0}
     assert pg.summarise([]) == {}
+
+
+def test_run_live_smoke_two_rows_by_repeats(session_factory, monkeypatch):
+    """run_live must reach the parser module (app.services.chatbot.head.parser), grade each emission and report."""
+    from app.services import llm_provider
+    from app.services.chatbot.head import parser as parser_mod
+
+    class _Keyed:
+        api_key = "sk-synthetic-not-a-real-key-WXYZ"
+
+    def fake_chat(self, messages, **kw):
+        return llm_provider.ChatResult(content="{}", prompt_tokens=1000, completion_tokens=100, total_tokens=1100,
+                                       cached_tokens=800)
+
+    verdict = {"status": "ok", "domain_hint": "product", "intent_hint": "lookup", "requested_attributes": [],
+               "entities": [{"type": "product", "value": "ABC-1"}]}
+
+    def fake_parse(config, user_block):
+        llm_provider.OpenAIProvider.chat(_Keyed(), [{"role": "user", "content": "x"}], model="gpt-5.4-mini")
+        return dict(verdict)
+
+    config = parser_mod.ParserConfig(system_prompt="x", prompt_version=1, provider="openai", model="gpt-5.4-mini",
+                                     api_key="k")
+    monkeypatch.setattr(llm_provider.OpenAIProvider, "chat", fake_chat)
+    monkeypatch.setattr(parser_mod, "parse", fake_parse)
+    monkeypatch.setattr(parser_mod, "resolve_config", lambda db, **kw: config)
+
+    rows = [
+        {"id": "pass-row", "message": "abc-1 price", "expect": {"status": "ok"}},
+        {"id": "fail-row", "message": "abc-1 stock", "expect": {"status": "needs_clarification"}},
+    ]
+    seen: list[dict] = []
+    out = pg.run_live(rows, session_factory=session_factory, version_id="1", repeats=2, max_usd=5.0,
+                      require_key_last4="WXYZ", on_row=seen.append)
+
+    assert len(out) == 4
+    assert [(r["id"], r["repeat"]) for r in out] == [("pass-row", 0), ("pass-row", 1), ("fail-row", 0), ("fail-row", 1)]
+    for r in out:
+        for key in ("id", "repeat", "passed", "reasons", "usd", "status", "domain_hint", "intent_hint",
+                    "requested_attributes", "entities"):
+            assert key in r
+        assert r["status"] == "ok" and r["usd"] > 0
+    assert all(r["passed"] for r in out[:2]) and all(r["reasons"] == [] for r in out[:2])
+    for r, case in zip(out, [rows[0], rows[0], rows[1], rows[1]]):
+        assert (r["passed"], r["reasons"]) == pg.grade_parse(verdict, case["expect"])
+    assert not any(r["passed"] for r in out[2:])
+    assert seen == out
