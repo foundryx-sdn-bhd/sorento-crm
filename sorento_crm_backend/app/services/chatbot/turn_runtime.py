@@ -1359,12 +1359,34 @@ def with_set_count_from_text(
     return {**base, "top_n": count, "reference_positions": []}
 
 
+#: The verdict fields that carry an ask or a filter of the message's own. A "more" sets none of them.
+_OWN_ASK_FIELDS = (
+    "broaden_axis",
+    "broaden_to",
+    "date_mode",
+    "date_filter_start",
+    "date_filter_end",
+    "match_mode",
+    "demand_qty",
+    "order_status",
+    "group_by",
+    "sales_channel",
+    "is_active",
+    "reference_target",
+    "person_mention",
+    "contains_flyer",
+    "query_type",
+    "query_brands",
+)
+
+
 def with_set_more(verdict: dict[str, Any], *, carried: Any) -> dict[str, Any]:
-    """CHAT-COMPOSER: a "more" pages the set the LAST reply listed. Read off parser fields only:
-    `continuation` true, a pageable carry (`0 < shown < total`, not offer-only), and nothing of the
-    message's own (no entity of this message, no attribute, no ask, no named count, no
-    affirmative). Then the verdict asks for one full page of the carried set, exactly as
-    "another N" does; anything else is returned unchanged (and parsed as any other message)."""
+    """CHAT-COMPOSER: a bare "more" pages the set the LAST reply listed (or, past the end,
+    reaches the existing "That is all N." reply). Parser fields only, and a WHITELIST: the
+    verdict pages only when `continuation` is true, the carry is a set carry (`shown > 0`, not
+    offer-only), and the message sets nothing of its own (no entity, attribute, ask, named
+    count, affirmative, filter field, or a domain other than the carried set's). Anything else is
+    returned unchanged and parsed as any other message."""
     from app.services.chatbot import composers
     from app.services.chatbot.lanes.business import answer as answer_mod
 
@@ -1374,7 +1396,7 @@ def with_set_more(verdict: dict[str, Any], *, carried: Any) -> dict[str, Any]:
     if not isinstance(key, dict) or key.get("offer_only"):
         return verdict
     shown, total = int(key.get("shown") or 0), int(key.get("total") or 0)
-    if not 0 < shown < total:
+    if not (shown > 0 and total > 0):
         return verdict
     if (
         verdict.get("requested_attributes")
@@ -1382,7 +1404,11 @@ def with_set_more(verdict: dict[str, Any], *, carried: Any) -> dict[str, Any]:
         or verdict.get("sub_asks")
         or verdict.get("is_affirmative") is True
         or named_count(verdict.get("top_n")) is not None
+        or any(verdict.get(field) for field in _OWN_ASK_FIELDS)
     ):
+        return verdict
+    hint, domain = verdict.get("domain_hint"), key.get("domain")
+    if hint and (hint != domain if domain else verdict.get("domain_in_message") is True):
         return verdict
     entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
     echoed = [e for e in entities if e.get("current_message") is True]

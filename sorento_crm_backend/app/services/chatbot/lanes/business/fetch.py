@@ -55,7 +55,7 @@ from typing import Any, Literal
 
 from app.services.chatbot import jsc
 from app.services.chatbot.composers import format as composers_format
-from app.services.chatbot.label_catalog import IDENTITY, Localizer
+from app.services.chatbot.label_catalog import IDENTITY, Localizer, defaults as label_defaults
 from app.services.chatbot.contracts import (
     SALES_REPORT_GROUP_BYS,
     UNDOMAINED_CHATBOT_TOOLS,
@@ -601,6 +601,14 @@ def _set_named_count(semantic_input: Any) -> int | None:
     return named_count(jsc.get(semantic_input, "top_n"))
 
 
+def _row_code(it: Any) -> str:
+    """The product code a printed row is about (a row's "Product Code", else its title)."""
+    for f in jsc.get(it, "fields") or []:
+        if isinstance(f, dict) and f.get("label") == "Product Code":
+            return jsc.nullish_str(f.get("value")).strip()
+    return jsc.nullish_str(jsc.get(it, "title")).strip()
+
+
 def _set_page(
     *,
     e: dict[str, Any],
@@ -608,6 +616,11 @@ def _set_page(
     rows_start: int,
     rows_end: int,
     row_ends: list[int],
+    row_items: list[Any],
+    row_idx: list[int],
+    question_at: int | None,
+    source: list[Any],
+    loc: Any,
     footer: str,
     other_brands: str,
     shown: int,
@@ -616,47 +629,71 @@ def _set_page(
     build_header: Any,
     cap: int,
 ) -> tuple[str | None, dict[str, int], list[Any] | None]:
-    """CHAT-COMPOSER: one set page as ONE WhatsApp message. The page ends at the last whole
-    product block that keeps the reply (header, rows, the "more" line, other brands, footer)
-    within `sets.MESSAGE_MAX_CHARS`; the header states the range actually listed and the "more"
-    line the products the next page will show. Returns `(reply, window, answers)`; `reply` is
-    None when nothing differs from the plain page (no line, no cut)."""
+    """CHAT-COMPOSER: one set page as ONE WhatsApp message. The page ends where the product
+    code changes (every company row of a listed code rides with it) at the last block that keeps
+    the reply (header, rows, the "more" line, other brands, footer) within
+    `sets.MESSAGE_MAX_CHARS`, also after ms / zh localization; the header states the range of
+    codes actually listed and the "more" line the products the next page will show. Returns
+    `(reply, window, answers)`; `reply` is None when nothing differs from the plain page."""
     from app.services.chatbot.composers import sets as composers_sets
 
-    items = e.get("items") or []
     pre, post = msg[:rows_start], msg[rows_end:]
+    n_rows = len(row_ends)
 
-    def assemble(k: int | None) -> tuple[str, int]:
-        cut = k is not None and row_ends and k < len(row_ends)
-        rows = msg[rows_start : row_ends[k - 1]] if cut else msg[rows_start:rows_end]
-        listed = items[:k] if cut else items
-        n = min(shown, _rendered_product_count(listed) if _rendered_product_count(listed) is not None else shown)
-        core = (pre + rows + post).strip()
-        has_footer = bool(footer) and core.endswith(footer)
-        parts = [core[: -len(footer)].strip() if has_footer else core]
+    def assemble(k: int) -> tuple[str, int]:
+        cut = k < n_rows
+        end = row_ends[k - 1] if cut else rows_end
+        rows = msg[rows_start:end]
+        listed = row_items[:k] if cut else (row_items or (e.get("items") or []))
+        counted = _rendered_product_count(listed)
+        n = min(shown, counted) if counted is not None else shown
         more = composers_sets.next_count(total, offset, n, cap)
-        if more:
-            parts.append(composers_sets.more_line(more))
-        if other_brands:
-            parts.append(other_brands)
+        more_text = composers_sets.more_line(more) if more else ""
+        if question_at is not None and not cut:
+            # A dealer page that still asks a quantity: the "more" line, then the question last.
+            mid = msg[rows_start:question_at] + (more_text + "\n\n" if more_text else "") + msg[question_at:rows_end]
+            core, more_text = (pre + mid + post).strip(), ""
+        else:
+            core = (pre + rows + post).strip()
+        has_footer = bool(footer) and core.endswith(footer)
+        parts = [core[: -len(footer)].strip() if has_footer else core, more_text, other_brands]
         if has_footer:
             parts.append(footer)
         return build_header(n) + "\n\n" + "\n\n".join(p for p in parts if p), n
 
-    full, n_full = assemble(None)
-    k = len(row_ends)
-    text, n = full, n_full
-    while len(text) > composers_sets.MESSAGE_MAX_CHARS and k > 1:
-        k -= 1
-        text, n = assemble(k)
+    localizers: list[Any] = []
+
+    def width(text: str) -> int:
+        """The longest the reply gets: as built, and (where the lane does not localize) in ms / zh."""
+        longest = len(text)
+        if loc is IDENTITY and longest > composers_sets.MESSAGE_MAX_CHARS * 3 // 4:
+            if not localizers:
+                localizers.extend(Localizer(lang, label_defaults(lang)) for lang in ("ms", "zh"))
+            longest = max(longest, *(len(lz.reply(text)) for lz in localizers))
+        return longest
+
+    # Valid page ends: a row boundary where the next row is another code.
+    ends = [
+        k
+        for k in range(n_rows, 0, -1)
+        if k == n_rows or _row_code(row_items[k - 1]) != _row_code(row_items[k])
+    ]
+    full, n_full = assemble(n_rows)
+    text, n, k = full, n_full, n_rows
+    for candidate in ends:
+        text, n = assemble(candidate) if candidate != n_rows else (full, n_full)
+        k = candidate
+        if width(text) <= composers_sets.MESSAGE_MAX_CHARS:
+            break
     window = {
         "first": offset + 1,
         "last": offset + n,
         "total": total,
         "next": composers_sets.next_count(total, offset, n, cap),
     }
-    answers = list(items[:k]) if row_ends and k < len(row_ends) else None
-    unchanged = text == f"{build_header(n_full)}\n\n{msg.strip()}" and answers is None
+    cut = n_rows and k < n_rows
+    answers = list(source[: row_idx[k - 1] + 1]) if cut else None
+    unchanged = text == f"{build_header(n_full)}\n\n{msg.strip()}" and not cut
     return (None if unchanged else text), window, answers
 
 
@@ -3517,6 +3554,11 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     groups_render = bool(
         isinstance(e.get("groups"), list) and len(e["groups"]) and not qs_render
     )
+    rows_start = len(msg)  # CHAT-COMPOSER: where this set's rows begin (page cut below)
+    row_ends: list[int] = []  # the message offset each printed row ends at
+    row_items: list[Any] = []  # the item behind each printed row
+    row_idx: list[int] = []  # its index in the answers list
+    question_at: int | None = None  # where a dealer quantity question starts
     if groups_render:
         position = 0
         for grp in e["groups"]:
@@ -3528,6 +3570,9 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             for it in grp["items"]:
                 position += 1
                 msg += _item_line(position, it) + "\n\n"
+                row_ends.append(len(msg))
+                row_items.append(it)
+                row_idx.append(position - 1)
 
     # Ported from PR #1118 (not merged), review round 3 (Observation B): while ANY
     # product still needs a quantity (D14), `intro` (`_noted_and_missing_question`)
@@ -3551,8 +3596,6 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     # MESSAGE, never from the STATE - `answers` below is untouched, so a positional pick
     # still resolves against the same page rows. And ONLY the numbered list goes: the
     # multi-company note reads `e.items` for attribution and must keep seeing the real rows.
-    rows_start = len(msg)  # CHAT-COMPOSER: where this set's rows begin (page cut below)
-    row_ends: list[int] = []
     if set_predicate is not None and stock_ask_render:
         # Fix round 8 on PR #833: a dealer on availability only, still owing a quantity,
         # reads the set's products by code (the availability item's own title, as the
@@ -3564,6 +3607,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 msg += f"{i + 1 + set_row_offset}. {title}\n\n"
         question = jsc.js_string(e.get("intro") or "").strip()
         if question:
+            question_at = len(msg)
             msg += question + "\n\n"
     printed_status: set[str] = set()
     for i, it in enumerate(
@@ -3577,6 +3621,8 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             printed_status.add(item_text)
         msg += item_text + "\n\n"
         row_ends.append(len(msg))
+        row_items.append(it)
+        row_idx.append(i)
     rows_end = len(msg)
     if dealer_incoming and jsc.truthy(e.get("closing")):
         # The presenter's dealer closing is the refer line (`presenters.py`, `closing`);
@@ -3753,6 +3799,11 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 rows_start=rows_start,
                 rows_end=rows_end,
                 row_ends=row_ends,
+                row_items=row_items,
+                row_idx=row_idx,
+                question_at=question_at,
+                source=_rendered_answers(e) if groups_render else (e.get("items") or []),
+                loc=loc,
                 footer=footer,
                 other_brands=other_brands,
                 shown=shown,
@@ -3801,7 +3852,9 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # numbered 2 on screen (review, should-fix 4). Flattened in RENDER order, which is
         # the only order the customer can be talking about. Ungrouped, this is `items`
         # unchanged, so nothing else moves.
-        "answers": _rendered_answers(e) if groups_render else (page_items if page_items is not None else e.get("items")),
+        "answers": page_items
+        if page_items is not None
+        else (_rendered_answers(e) if groups_render else e.get("items")),
     }
     if set_window is not None:
         out["set_window"] = set_window

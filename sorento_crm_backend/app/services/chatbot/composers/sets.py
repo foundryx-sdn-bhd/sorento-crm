@@ -1,8 +1,9 @@
 """Set pages: the "more" line, how many products the next page shows, and the page size."""
 from __future__ import annotations
 
-#: One WhatsApp message, as the reply counts it (about 4,000 characters including the "more" line).
-MESSAGE_MAX_CHARS = 4000
+#: One WhatsApp message, as the reply counts it, "more" line included. The repo's one budget:
+#: `engine.WHATSAPP_MESSAGE_MAX_CHARS` is this value, and the MCP presenter's constant is pinned equal.
+MESSAGE_MAX_CHARS = 3900
 
 
 def more_line(n: int) -> str:

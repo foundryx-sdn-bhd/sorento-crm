@@ -72,6 +72,7 @@ from app.services.chatbot.usage import CLARIFIER_FEATURE, record_parser_usage, r
 # is everything that has to touch a database or a tool on its behalf.
 from app.services.chatbot import label_catalog, language as language_mod, session_state, turn_runtime
 from app.services.chatbot import quick_reply_guard
+from app.services.chatbot.composers import sets as composers_sets
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import chat_state
 from app.services.chatbot.turn import question as turn_question
@@ -180,7 +181,7 @@ def split_marked_message(text: str) -> list[str]:
 
 #: WhatsApp's per-message ceiling as the MCP presenter keeps it
 #: (`sorento_crm_mcp.presenters.WHATSAPP_MESSAGE_MAX_CHARS`, under WhatsApp's own 4096).
-WHATSAPP_MESSAGE_MAX_CHARS = 3900
+WHATSAPP_MESSAGE_MAX_CHARS = composers_sets.MESSAGE_MAX_CHARS
 
 
 def _product_family(db: Any, code: str) -> list[dict[str, str]]:
