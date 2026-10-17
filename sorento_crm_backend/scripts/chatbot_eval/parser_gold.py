@@ -21,7 +21,7 @@ import re
 import sys
 from typing import Any
 
-EXPECT_KEYS = frozenset({"status", "not_status", "domain_hint", "intent_hint", "product", "no_attribute", "customer"})
+EXPECT_KEYS = frozenset({"status", "not_status", "domain_hint", "intent_hint", "product", "no_attribute", "customer", "canonical", "attributes_only"})
 
 
 def load_gold(path: Any) -> list[dict[str, Any]]:
@@ -70,6 +70,18 @@ def grade_parse(verdict: dict[str, Any], expect: dict[str, Any]) -> tuple[bool, 
         codes = {_fold(e.get("canonical_code")) for e in entities if e.get("hint") == "product"}
         if _fold(expect["product"]) not in codes:
             reasons.append(f"no product entity {expect['product']!r}")
+    if "canonical" in expect:
+        picks = [_fold(e.get("canonical_code")) for e in entities if e.get("hint") == "product"]
+        if expect["canonical"] is None:
+            if any(picks):
+                reasons.append("a product entity has a canonical_code")
+        elif _fold(expect["canonical"]) not in picks:
+            reasons.append(f"no product canonical_code {expect['canonical']!r}")
+    if "attributes_only" in expect:
+        allowed = {str(a).casefold() for a in expect["attributes_only"] or []}
+        extra = sorted({str(a).casefold() for a in verdict.get("requested_attributes") or []} - allowed)
+        if extra:
+            reasons.append(f"attributes outside the allowed set: {extra}")
     if "no_attribute" in expect:
         asked = {str(a).casefold() for a in verdict.get("requested_attributes") or []}
         if str(expect["no_attribute"]).casefold() in asked:

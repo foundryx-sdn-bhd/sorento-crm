@@ -1818,6 +1818,9 @@ def answer_for(
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     # #1262 fix lane round 3, B1-r2: the brand the fetch sent, for the miss header.
     gate = dict(scope_block.with_brand_names(gate, envelope) or {})
+    held_none = _held_member_no_file(parser, gate, via_fetched_empty)
+    if held_none is not None:
+        return turn_compose.Answer(text=held_none)
     # #1262 fix lane round 3, S5: the words the turn could not place
     # (`envelope["unresolved"]`, `turn_runtime.resolve_kinds`'s `unplaced`) are the
     # resolver's own `unresolved_tokens` plus one thing only the chatbot knows - a
@@ -2154,6 +2157,30 @@ def answer_for(
     if alternative_lines:
         text = with_alternative_lines(text, alternative_lines)
     return turn_compose.Answer(text=text, question=question)
+
+
+def _held_member_no_file(parser: Any, gate: Mapping[str, Any], fetched_empty: bool) -> str | None:
+    """CHAT-CODE-LOOKUP R2-2: a file ask the gate settled on the held family member, whose fetch
+    came back empty, is an honest none for that member, not a product miss plus a did-you-mean.
+    None unless the version carries CODE LOOKUP and the only product in scope is the held one."""
+    if not (fetched_empty and isinstance(parser, Mapping) and parser.get("code_lookup") is True):
+        return None
+    if parser.get("domain_hint") != "product_attachment":
+        return None
+    products = [
+        e for e in gate.get("compatible_entities") or [] if isinstance(e, Mapping) and e.get("entity_type") == "product"
+    ]
+    if len(products) != 1 or products[0].get("held_member") is not True or not products[0].get("code"):
+        return None
+    asked = next(
+        (
+            str(e.get("canonical_code") or e.get("raw") or "").strip()
+            for e in parser.get("entities") or []
+            if isinstance(e, Mapping) and e.get("hint") == "attachment_type"
+        ),
+        "",
+    )
+    return f"{products[0]['code']} has no {asked or 'attachment'} on record."
 
 
 def with_alternative_lines(text: str, lines: Any) -> str:

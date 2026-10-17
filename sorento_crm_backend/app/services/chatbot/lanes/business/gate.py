@@ -946,7 +946,11 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
             for o in specific_options:
                 held = [c for c in o["candidates"] if str(c.get("uuid")) in held_product_uuids]
                 if len(held) == 1:
-                    exact_entities.append({"uuid": held[0]["uuid"], "entity_type": "product", "code": held[0]["label"]})
+                    exact_entities.append({
+                        "uuid": held[0]["uuid"], "entity_type": "product", "code": held[0]["label"],
+                        # CHAT-CODE-LOOKUP R2-2: settled on the held member (answer_bridge reads it).
+                        **({"held_member": True} if parser.get("code_lookup") is True else {}),
+                    })
                 else:
                     unsettled.append(o)
             specific_options = unsettled
