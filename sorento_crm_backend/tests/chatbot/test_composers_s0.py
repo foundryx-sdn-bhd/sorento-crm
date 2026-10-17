@@ -13,7 +13,7 @@ import pytest
 
 from app.config import settings
 
-EM = "—"
+EM = "\u2014"
 COMPOSERS_DIR = Path(__file__).resolve().parents[2] / "app" / "services" / "chatbot" / "composers"
 
 

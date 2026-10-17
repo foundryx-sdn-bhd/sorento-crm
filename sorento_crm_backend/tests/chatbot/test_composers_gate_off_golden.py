@@ -15,7 +15,7 @@ from tests.chatbot import _ht26_fixtures as ht
 from tests.chatbot._turn_helpers import verdict
 from tests.chatbot.test_composers_stock_xd import _render, _stock_item, _zs
 
-EM = "—"
+EM = "\u2014"
 
 
 @pytest.fixture(autouse=True)
