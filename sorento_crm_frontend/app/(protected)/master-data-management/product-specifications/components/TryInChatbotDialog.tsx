@@ -9,7 +9,6 @@ import { DataGridTable } from '@/components/ui/data-grid-table';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -62,8 +61,8 @@ export function TryInChatbotDialog({
             {row.original.raw}
           </span>
         ),
-        size: 160,
-        minSize: 100,
+        size: 100,
+        minSize: 70,
       },
       {
         id: 'read_as',
@@ -77,8 +76,8 @@ export function TryInChatbotDialog({
             </span>
           );
         },
-        size: 200,
-        minSize: 120,
+        size: 120,
+        minSize: 80,
       },
       {
         id: 'value',
@@ -89,8 +88,8 @@ export function TryInChatbotDialog({
             {row.original.value}
           </span>
         ),
-        size: 180,
-        minSize: 100,
+        size: 110,
+        minSize: 70,
       },
     ],
     [],
@@ -105,11 +104,13 @@ export function TryInChatbotDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Try in chatbot</DialogTitle>
-          <DialogDescription>Dry run. Nothing is sent and nothing is saved.</DialogDescription>
         </DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          Dry run. Nothing is sent and nothing is saved.
+        </p>
 
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">

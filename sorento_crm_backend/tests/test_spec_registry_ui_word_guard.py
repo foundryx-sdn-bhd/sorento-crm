@@ -363,6 +363,23 @@ def test_a_new_value_that_is_another_fields_label_is_refused(api):
     assert _row(db, "zzt_a").user_values == []
 
 
+def test_a_refused_new_value_leaves_a_same_payload_suppression_unapplied(api):
+    db, _as = api
+    _as(_REGISTRY_ADMIN)
+    client = TestClient(app)
+    _key(db, "zzt_a", label="Alpha finish", data_type="enum", unit=None, allowed_values=["chrome", "gold"], synonyms={"chrome": ["chrome"], "gold": ["gold"]})
+    _key(db, "zzt_b", label="Beta pipe", synonyms={"_self": ["shiny"]})
+
+    response = client.patch(
+        f"{_BASE}/zzt_a", json={"suppressed_values": ["gold"], "user_values": ["shiny"]}
+    )
+
+    _refused(response, "shiny", "Beta pipe")
+    db.expire_all()
+    assert _row(db, "zzt_a").suppressed_values == []
+    assert not db.dirty
+
+
 def test_a_value_already_held_re_sent_with_a_new_one_saves(api):
     db, _as = api
     _as(_REGISTRY_ADMIN)

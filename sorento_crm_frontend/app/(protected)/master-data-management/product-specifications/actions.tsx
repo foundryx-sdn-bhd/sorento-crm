@@ -40,7 +40,9 @@ export function useSpecKeyActions(
 ): RecordActionSet {
   const router = useRouter();
   const canDelete = useHasPermission('master_data.spec_registry.delete');
-  const canTry = useHasPermission('master_data.spec_registry.view');
+  const canTry = useHasPermission('master_data.spec_registry.edit');
+  const canOpenAttachmentTypes = useHasPermission('resource.attachment_types.view');
+  const canOpenLookupSets = useHasPermission('master_data.lookup_sets.view');
   const [tryOpen, setTryOpen] = useState(false);
 
   // Delete asks nothing (D7): the countdown takes the primary button's place on the
@@ -73,18 +75,26 @@ export function useSpecKeyActions(
           },
         ]
       : []),
-    {
-      key: 'spec_key.open_attachment_types',
-      label: 'Attachment Types',
-      icon: Files,
-      run: () => router.push('/resource-management/attachment-types'),
-    },
-    {
-      key: 'spec_key.open_lookup_sets',
-      label: 'Lookup Sets',
-      icon: ListTree,
-      run: () => router.push('/master-data-management/lookup-sets'),
-    },
+    ...(canOpenAttachmentTypes
+      ? [
+          {
+            key: 'spec_key.open_attachment_types',
+            label: 'Attachment Types',
+            icon: Files,
+            run: () => router.push('/resource-management/attachment-types'),
+          },
+        ]
+      : []),
+    ...(canOpenLookupSets
+      ? [
+          {
+            key: 'spec_key.open_lookup_sets',
+            label: 'Lookup Sets',
+            icon: ListTree,
+            run: () => router.push('/master-data-management/lookup-sets'),
+          },
+        ]
+      : []),
   ];
   const actions: RecordAction[] = canDeleteThis
     ? [

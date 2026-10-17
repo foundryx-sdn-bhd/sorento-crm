@@ -1,6 +1,6 @@
 # PLAN: spec-registry-ui (owner edits chatbot closed lists from the front end)
 
-Status: Plan (card + publish path answered 17 Oct, mock ready for the owner's OK). Track: full (size L, one migration).
+Status: Build (full track): S1-S5 + fix rounds 1-2; review, security review and browser pass done, hand test next. Track: full (size L, one migration).
 crew-lane: SPEC-REGISTRY-UI
 
 ## Owner request (17 Oct)
@@ -98,7 +98,7 @@ unlabelled v162 adds the two list tokens but not `{{specs}}`. So today no regist
   `also_on` per word for the "Also on" note.
 - S3 BE: `POST /api/v1/master-data/spec-registry/try-chatbot` {text<=500} -> `resolve_config` + `build_user_block` +
   `parse` (`app/services/chatbot/head/parser.py:750,856,1021`), returns entities `[{raw, kind, field_label, value}]`
-  plus `prompt_version`; no DB write; ParserError -> 422 with a readable message. Needs spec_registry.view.
+  plus `prompt_version`; no DB write; ParserError -> 422 with a readable message. Needs spec_registry.edit.
 - S4 script: `scripts/publish_specs_token_prompt.py` (card item 7).
 - S5 FE: HeaderTab meaning box + Unit read-only; WordsDataGrid "Also on" + refusal; History tab (AuditTrail);
   TryInChatbotDialog; gear links.
@@ -115,7 +115,7 @@ BE (`tests/test_spec_registry_ui_17oct.py`, Postgres):
 7. POST values with another field's word -> same 409.
 8. GET row returns `also_on` for a shipped overlap.
 9. try-chatbot with `parse` stubbed returns raw / field label / value; writes no row (count of chatbot.turns and
-   audit_logs unchanged); ParserError -> 422; >500 chars -> 422; view permission enforced.
+   audit_logs unchanged); ParserError -> 422; >500 chars -> 422; edit permission enforced.
 10. publish script: one run -> `{{specs}}`, `specs` in variables, unlabelled, idempotent; 0 or 2 runs -> refused;
     `--from-version` honoured; production label untouched.
 FE (vitest): HeaderTab meaning box view/edit + counter, Unit read-only, payload has no `unit`; WordsDataGrid shows
@@ -152,7 +152,7 @@ C4 Cross-field word guard: on PATCH (`user_synonyms`, `user_values`) and POST `/
   `"<word>" is already a word for <other label>.`, nothing stored (check before any mutation is committed). Suppressed
   words of the other row do not count (merged_synonyms already removes them). Inactive rows still count.
 C5 `POST /api/v1/system/chatbot/parser-try` (`app/api/v1/system/chatbot.py`, an allowed chatbot doorway), dependency
-  `require_permission("master_data.spec_registry.view")`. Body `{text: str}` 1..500 chars after strip (else 422).
+  `require_permission("master_data.spec_registry.edit")` (only editors test their edits), limited to 10 tries per user per 60 s (429 `parser_try_rate_limited`, fail open when Redis is down). A failed try answers the fixed text "The chatbot could not read that message right now." with `details.reason` of `rate_limited`, `not_configured` or `provider_error`; the cause is logged, never returned. Body `{text: str}` 1..500 chars after strip (else 422).
   Calls `app.services.chatbot.head.parser.resolve_config(db, current_date=<today ISO>)`, then
   `build_user_block(previous_response=None, latest_user_message=text, pending_kind=None)`, then `parse(config, block)`,
   all referenced through the module (`parser.resolve_config` etc.) so tests monkeypatch
@@ -161,7 +161,7 @@ C5 `POST /api/v1/system/chatbot/parser-try` (`app/api/v1/system/chatbot.py`, an 
   registry row's label (spec_key itself if no row), `value` = display text (numeric: `"<n> <unit>"`, e.g. `"300 mm"`;
   enum: `value_labels` label else `display_spec_value`); other entities: `kind` = entity `hint`, `field_label` null,
   `value` = `canonical_code` or `listed_item` or `raw`. `ParserError` (or any exception from parse/resolve_config) ->
-  422 AppException code `parser_try_unavailable` with a readable message. Writes no row (no chatbot.turns, no audit).
+  422 AppException code `parser_try_unavailable` (fixed message above). Writes no row (no chatbot.turns, no audit).
 C6 `scripts/publish_specs_token_prompt.py`: `publish(session, from_version=None) -> int | None`. Base = version under
   label `production` for `chatbot_semantic_parser`, or `--from-version N`. Finds runs of consecutive lines matching
   `^Specification [a-z0-9_]+ \(` optionally followed by one `^Product types \(` line; exactly one run -> replace it
@@ -189,7 +189,7 @@ F4 `components/WordsDataGrid.tsx`: when the row's `also_on[word]` is non-empty, 
 F5 `components/SpecKeyRecordDetail.tsx`: a fifth tab `History` (value `history`) after Products, rendering
    `<AuditTrail entityType="product_spec_registry" entityId={row.id} title="History" />` (`components/audit/AuditTrail.tsx`).
 F6 `actions.tsx` `useSpecKeyActions`: secondary items, before Delete: `Try in chatbot` (key `spec_key.try_chatbot`,
-   only with `master_data.spec_registry.view`, opens the dialog), `Attachment Types` (key `spec_key.open_attachment_types`,
+   only with `master_data.spec_registry.edit`, opens the dialog), `Attachment Types` (key `spec_key.open_attachment_types`,
    router.push('/resource-management/attachment-types')), `Lookup Sets` (key `spec_key.open_lookup_sets`,
    router.push('/master-data-management/lookup-sets')). The dialog is returned through the hook's `dialogs` slot.
 F7 `components/TryInChatbotDialog.tsx` (new, modelled on `TryPhraseDialog.tsx`): title `Try in chatbot`, an Input
@@ -199,3 +199,9 @@ F7 `components/TryInChatbotDialog.tsx` (new, modelled on `TryPhraseDialog.tsx`):
    `Value`; no picks -> empty state heading `Nothing picked`; an error -> an Alert with the message; muted line
    `Dry run. Nothing is sent and nothing is saved.`. DataGrid: tableLayout fixed + columnsResizable, explicit sizes,
    truncate + title.
+
+## Notes (fix round 2)
+- History reuses `AuditTrail`'s shared empty state (one muted line) as is; the shared component is not widened in this lane.
+- Try in chatbot spend is not logged to `ai_assistant_usage_logs` (owner informed).
+- The History tab reads through the per-record audit map (`product_spec_registry` -> `master_data.spec_registry.view`).
+- The gear's Attachment Types and Lookup Sets links need those pages' own view permissions (`resource.attachment_types.view`, `master_data.lookup_sets.view`).

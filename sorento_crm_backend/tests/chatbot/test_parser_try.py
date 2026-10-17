@@ -31,7 +31,8 @@ from app.services.chatbot.head import parser as parser_mod
 from app.services.user_service import UserPermissionService
 
 URL = "/api/v1/system/chatbot/parser-try"
-VIEW = "master_data.spec_registry.view"
+FIXED_MESSAGE = "The chatbot could not read that message right now."
+EDIT = "master_data.spec_registry.edit"
 
 _GRANTS: set[str] = set()
 _ACTOR: dict = {"id": None, "name": "ZZT Parser Try Tester"}
@@ -45,7 +46,7 @@ def db(session_factory):
 @pytest.fixture(autouse=True)
 def _permissions(monkeypatch):
     _GRANTS.clear()
-    _GRANTS.add(VIEW)
+    _GRANTS.add(EDIT)
     monkeypatch.setattr(
         UserPermissionService,
         "check_user_has_permission",
@@ -54,6 +55,13 @@ def _permissions(monkeypatch):
     monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: set())
     yield
     _GRANTS.clear()
+
+
+def _flush_limit() -> None:
+    from app.services.queue_service import redis_conn
+
+    for key in redis_conn.scan_iter(f"rate_limit:v1:parser_try:{_ACTOR['id']}*"):
+        redis_conn.delete(key)
 
 
 @pytest.fixture()
@@ -68,10 +76,12 @@ def client(db):
     app.dependency_overrides[get_current_user] = lambda: dict(_ACTOR)
     app.dependency_overrides[get_current_user_or_api_key] = lambda: dict(_ACTOR)
     _ACTOR["id"] = str(uuid.uuid4())
+    _flush_limit()
     try:
         yield TestClient(app, raise_server_exceptions=False)
     finally:
         app.dependency_overrides.clear()
+        _flush_limit()
 
 
 def _entity(**kwargs: Any) -> dict:
@@ -254,7 +264,9 @@ def test_a_parser_error_from_parse_is_a_422_with_a_readable_code(client, monkeyp
     assert response.status_code == 422, response.text
     body = response.json()
     assert body["code"] == "parser_try_unavailable"
-    assert body["message"].strip()
+    assert body["message"] == FIXED_MESSAGE
+    assert "timeout" not in response.text
+    assert body["details"] == {"reason": "provider_error"}
 
 
 def test_a_parser_error_from_resolve_config_is_the_same_422(client, monkeypatch):
@@ -315,10 +327,11 @@ def test_text_of_exactly_500_characters_is_accepted(client, monkeypatch):
 # --------------------------------------------------------------------------- #
 # Permission and zero writes
 # --------------------------------------------------------------------------- #
-def test_a_caller_without_spec_registry_view_is_refused_403(client, monkeypatch):
+def test_a_caller_without_spec_registry_edit_is_refused_403(client, monkeypatch):
     seams = _Seams([]).install(monkeypatch)
     _GRANTS.clear()
-    _GRANTS.add("system.chat_history.view")
+    # view alone is no longer enough: only editors test their edits
+    _GRANTS.add("master_data.spec_registry.view")
 
     response = client.post(URL, json={"text": "300mm"})
 
@@ -356,3 +369,98 @@ def test_a_failed_try_writes_no_turn_and_no_audit_row_either(client, db, monkeyp
     db.expire_all()
     assert db.query(ChatbotTurn).count() == turns_before
     assert db.query(AuditLog).count() == audits_before
+
+
+# --------------------------------------------------------------------------- #
+# Fix round 2: fixed error text, reasons, rate limit, connection release
+# --------------------------------------------------------------------------- #
+def test_no_internal_text_leaks_and_the_reason_is_not_configured(client, monkeypatch):
+    _Seams([]).install(monkeypatch)
+
+    def no_key(db, *, current_date, override_version_id=None):
+        raise parser_mod.ParserError("no API key configured for provider 'openai' sk-secret")
+
+    monkeypatch.setattr(parser_mod, "resolve_config", no_key)
+
+    response = client.post(URL, json={"text": "300mm"})
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["message"] == FIXED_MESSAGE
+    assert body["details"] == {"reason": "not_configured"}
+    assert "sk-secret" not in response.text and "openai" not in response.text
+
+
+def test_a_rate_limited_provider_is_reported_as_rate_limited(client, monkeypatch):
+    _Seams([]).install(monkeypatch)
+
+    def boom(config, user_block):
+        raise parser_mod.ParserError("provider said 429 internal", rate_limited=True)
+
+    monkeypatch.setattr(parser_mod, "parse", boom)
+
+    body = client.post(URL, json={"text": "300mm"}).json()
+
+    assert body["details"] == {"reason": "rate_limited"}
+    assert "internal" not in body["message"]
+
+
+def test_an_unexpected_exception_is_provider_error_without_its_text(client, monkeypatch):
+    _Seams([]).install(monkeypatch)
+
+    def boom(config, user_block):
+        raise RuntimeError("socket closed to 10.0.0.5")
+
+    monkeypatch.setattr(parser_mod, "parse", boom)
+
+    response = client.post(URL, json={"text": "300mm"})
+
+    assert response.json()["details"] == {"reason": "provider_error"}
+    assert "10.0.0.5" not in response.text
+
+
+def test_the_eleventh_try_in_a_minute_is_429(client, monkeypatch):
+    _Seams([]).install(monkeypatch)
+
+    for _ in range(10):
+        assert client.post(URL, json={"text": "300mm"}).status_code == 200
+    response = client.post(URL, json={"text": "300mm"})
+
+    assert response.status_code == 429, response.text
+    body = response.json()
+    assert body["code"] == "parser_try_rate_limited"
+    assert body["message"] == "Too many tries, wait a minute."
+
+
+def test_the_limit_is_per_user(client, monkeypatch):
+    _Seams([]).install(monkeypatch)
+    for _ in range(11):
+        client.post(URL, json={"text": "300mm"})
+    _ACTOR["id"] = str(uuid.uuid4())
+
+    assert client.post(URL, json={"text": "300mm"}).status_code == 200
+
+
+def test_redis_down_fails_open(client, monkeypatch):
+    from app.services import rate_limit
+
+    _Seams([]).install(monkeypatch)
+    monkeypatch.setattr(rate_limit, "_redis_conn", lambda: None)
+
+    for _ in range(12):
+        assert client.post(URL, json={"text": "300mm"}).status_code == 200
+
+
+def test_the_db_connection_is_released_before_the_provider_call(client, db, monkeypatch):
+    seen: dict = {}
+    seams = _Seams([_entity(raw="x", hint="category")])
+    seams.install(monkeypatch)
+
+    def parse(config, user_block):
+        seen["in_transaction"] = db.in_transaction()
+        return {"entities": seams.entities}
+
+    monkeypatch.setattr(parser_mod, "parse", parse)
+
+    assert client.post(URL, json={"text": "x"}).status_code == 200
+    assert seen["in_transaction"] is False

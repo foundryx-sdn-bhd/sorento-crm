@@ -31,7 +31,7 @@ Plan: `PLAN-spec-registry-ui-17oct.md`. Screen: Master Data > Product Specificat
 - AC-4.2 The save payload no longer carries `unit`.
 
 ## AC-5 Try in chatbot (card Q5)
-- AC-5.1 The record gear has "Try in chatbot" (visible with `master_data.spec_registry.view`).
+- AC-5.1 The record gear has "Try in chatbot" (visible with `master_data.spec_registry.edit`).
 - AC-5.2 Running a message calls the real parser with the current rendered prompt and returns the picks:
   each specification (field label + value as the page shows it), product class, and any closed-list item
   (file type / certification type). Writes no row anywhere and sends nothing.

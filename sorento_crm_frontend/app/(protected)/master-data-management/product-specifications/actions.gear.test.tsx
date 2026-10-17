@@ -53,7 +53,9 @@ beforeEach(() => {
   push.mockReset();
   cleanup();
   granted = {
-    'master_data.spec_registry.view': true,
+    'master_data.spec_registry.edit': true,
+    'resource.attachment_types.view': true,
+    'master_data.lookup_sets.view': true,
     'master_data.spec_registry.delete': true,
   };
 });
@@ -76,14 +78,32 @@ describe('useSpecKeyActions - gear items (F6)', () => {
     expect(actions.slice(0, 3).every((a) => a.kind !== 'destructive')).toBe(true);
   });
 
-  it('hides Try in chatbot without master_data.spec_registry.view, keeps the links', () => {
-    granted = { 'master_data.spec_registry.delete': true };
+  it('hides Try in chatbot without master_data.spec_registry.edit, keeps the links', () => {
+    granted = {
+      'master_data.spec_registry.view': true,
+      'resource.attachment_types.view': true,
+      'master_data.lookup_sets.view': true,
+      'master_data.spec_registry.delete': true,
+    };
     const { actions } = setup();
 
     expect(actions.map((a) => a.key)).toEqual([
       'spec_key.open_attachment_types',
       'spec_key.open_lookup_sets',
       'spec_key.delete',
+    ]);
+  });
+
+  it('each link needs its own page view permission', () => {
+    granted = { 'master_data.spec_registry.edit': true, 'resource.attachment_types.view': true };
+    expect(setup({ ...userKey(), source: 'seed' } as SpecRegistryKey).actions.map((a) => a.key)).toEqual([
+      'spec_key.try_chatbot',
+      'spec_key.open_attachment_types',
+    ]);
+
+    granted = { 'master_data.lookup_sets.view': true };
+    expect(setup({ ...userKey(), source: 'seed' } as SpecRegistryKey).actions.map((a) => a.key)).toEqual([
+      'spec_key.open_lookup_sets',
     ]);
   });
 

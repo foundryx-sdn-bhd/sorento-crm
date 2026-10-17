@@ -71,6 +71,7 @@ from app.services.chatbot import console_service
 from app.services.chatbot.analytics import topic_audit
 from app.services.chatbot.contracts import TURN_STAGES
 from app.services.chatbot.trace_detail import compose_trace_detail
+from app.services.error_handler import AppException
 from app.services.integration_service import IntegrationLogService
 from app.services.outbound_url_guard import OutboundUrlRejected
 from app.services.chatbot.dispatch import (
@@ -721,33 +722,63 @@ def _parser_pick(entity: dict, rows: dict) -> dict:
     }
 
 
+PARSER_TRY_UNAVAILABLE = "The chatbot could not read that message right now."
+
+
+def _parser_try_unavailable(reason: str) -> AppException:
+    """The one sentence a failed try shows. The cause stays in the server log: a provider
+    error can carry a key fragment, an internal host or a stack."""
+    return AppException(
+        status_code=422,
+        message=PARSER_TRY_UNAVAILABLE,
+        code="parser_try_unavailable",
+        details={"reason": reason},
+    )
+
+
 @router.post("/parser-try")
 def parser_try(
     payload: ParserTryRequest,
-    _user: dict = Depends(require_permission("master_data.spec_registry.view")),
+    current_user: dict = Depends(require_permission("master_data.spec_registry.edit")),
     db: Session = Depends(get_db),
 ):
     """Run the real parser on one message and say what it picked. A dry run: no turn, no
     audit row, nothing sent. The parser seams are read through the module so a test (or a
-    future stub) replaces them in one place."""
+    future stub) replaces them in one place. Each try costs a provider call, so it is
+    limited per user (fail-open if Redis is down)."""
     from datetime import date
 
     from app.models.product_spec import ProductSpecRegistry
+    from app.services import rate_limit
     from app.services.chatbot.head import parser
-    from app.services.error_handler import AppException
+    if not rate_limit.hit(
+        "parser_try", str(current_user["id"]), limit=10, window_seconds=60
+    ).allowed:
+        raise AppException(
+            status_code=429,
+            message="Too many tries, wait a minute.",
+            code="parser_try_rate_limited",
+        )
 
     try:
         config = parser.resolve_config(db, current_date=date.today().isoformat())
+    except Exception as exc:
+        logger.warning("parser-try: no usable parser config", exc_info=True)
+        raise _parser_try_unavailable(
+            "not_configured" if isinstance(exc, parser.ParserError) else "provider_error"
+        )
+    # Everything the provider call needs is read; hand the connection back before it.
+    db.rollback()
+    db.close()
+    try:
         block = parser.build_user_block(
             previous_response=None, latest_user_message=payload.text, pending_kind=None
         )
         parsed = parser.parse(config, block)
     except Exception as exc:
-        logger.warning("parser-try failed: %s", exc)
-        raise AppException(
-            status_code=422,
-            message=f"The chatbot parser could not read that message: {exc}",
-            code="parser_try_unavailable",
+        logger.warning("parser-try: parse failed", exc_info=True)
+        raise _parser_try_unavailable(
+            "rate_limited" if getattr(exc, "rate_limited", False) else "provider_error"
         )
     entities = [e for e in (parsed.get("entities") or []) if isinstance(e, dict)]
     keys = {e.get("spec_key") for e in entities if e.get("spec_key")}

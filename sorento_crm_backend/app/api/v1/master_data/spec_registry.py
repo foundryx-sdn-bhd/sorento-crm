@@ -252,7 +252,7 @@ class SpecKeyUpdate(BaseModel):
     max_value: Optional[float] = Field(default=None, ge=0)
     # What this field means to the chatbot: one line, max 200 once cleaned (checked in the
     # route so the refusal carries its own code). Blank stores NULL.
-    parser_hint: Optional[str] = None
+    parser_hint: Optional[str] = Field(default=None, max_length=2000)
 
 
 class SpecKeyCreate(BaseModel):
@@ -1025,7 +1025,10 @@ def update_spec_key(
         # applied, so a refused save stores nothing.
         hint = None
         if "parser_hint" in fields:
-            hint = re.sub(r"\s+", " ", fields["parser_hint"] or "").strip()
+            # Control characters (NUL included) go first: Postgres refuses NUL in text,
+            # and none of them belongs on a one-line prompt entry.
+            hint = re.sub(r"[\x00-\x08\x0e-\x1f\x7f]", "", fields["parser_hint"] or "")
+            hint = re.sub(r"\s+", " ", hint).strip()
             if len(hint) > 200:
                 raise AppException(
                     status_code=422,
@@ -1041,6 +1044,15 @@ def update_spec_key(
                 for word in words:
                     if word and word.strip() and normalise_vocabulary(word) not in held:
                         _word_refusal(db, row, word.strip(), owners, value_key)
+        if "user_values" in fields:
+            # Judged here, before any suppression below touches the row, so a refused
+            # save changes nothing. A value the row already holds is not judged.
+            present = {str(v) for v in merged_allowed_values(row)} | {
+                str(v) for v in (row.user_values or [])
+            }
+            for proposed in fields["user_values"] or []:
+                if proposed and proposed.strip() and proposed not in present:
+                    _word_refusal(db, row, proposed.strip(), owners)
 
         # Suppressions land BEFORE the near-duplicate guard below, so the guard judges the
         # vocabulary as this save leaves it. Renaming a value - take `floor_standing`
@@ -1096,7 +1108,6 @@ def update_spec_key(
                     return _similar_refusal(
                         f"\"{proposed}\" is already {match['value']} on {row.label}.", match
                     )
-                _word_refusal(db, row, proposed, owners)
                 accepted.append(proposed)
 
         if "allowed_values" in fields:

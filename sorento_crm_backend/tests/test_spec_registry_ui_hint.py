@@ -202,6 +202,32 @@ def test_hint_of_201_characters_is_refused_422_and_not_stored(api):
     assert _row(db, "zzt_trap_length").parser_hint is None
 
 
+def test_control_characters_are_removed_from_the_hint(api):
+    db, _as = api
+    _as(_REGISTRY_ADMIN)
+    client = TestClient(app)
+    _key(db, "zzt_trap_length", label="Trap length", data_type="numeric", unit="mm")
+
+    response = client.patch(
+        f"{_BASE}/zzt_trap_length", json={"parser_hint": "outlet\u0000 pipe\u0007 length"}
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["parser_hint"] == "outlet pipe length"
+    assert _row(db, "zzt_trap_length").parser_hint == "outlet pipe length"
+
+
+def test_an_absurdly_long_hint_is_a_422_not_a_500(api):
+    db, _as = api
+    _as(_REGISTRY_ADMIN)
+    client = TestClient(app)
+    _key(db, "zzt_trap_length", label="Trap length", data_type="numeric", unit="mm")
+
+    response = client.patch(f"{_BASE}/zzt_trap_length", json={"parser_hint": "x" * 5000})
+
+    assert response.status_code == 422, response.text
+
+
 def test_blank_hint_is_stored_as_null(api):
     db, _as = api
     _as(_REGISTRY_ADMIN)

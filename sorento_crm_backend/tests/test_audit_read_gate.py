@@ -42,6 +42,7 @@ from tests._pg_fixture import blank_session
 
 COMPLAINT_VIEW = "complaint_management.complaints.view"
 PACKING_LIST_VIEW = "procurement.packing_lists.view"
+SPEC_REGISTRY_VIEW = "master_data.spec_registry.view"
 COMPANY_A = str(uuid.uuid4())
 COMPANY_B = str(uuid.uuid4())
 
@@ -79,6 +80,7 @@ def env():
             "staff": _user(db, "staff", _role(db, "zz_complaint_staff", [COMPLAINT_VIEW])),
             "plain": _user(db, "plain"),
             "packing": _user(db, "packing", _role(db, "zz_packing_staff", [PACKING_LIST_VIEW])),
+            "specreg": _user(db, "specreg", _role(db, "zz_specreg_staff", [SPEC_REGISTRY_VIEW])),
         }
         db.commit()
         # The seed users' own CREATE rows are not under test. audit_logs is append-only
@@ -302,3 +304,31 @@ def test_the_activity_feed_does_not_cross_companies(env):
     actor_ids = {a["id"] for a in body["actors"]}
     assert actor_a in actor_ids
     assert actor_b not in actor_ids
+
+
+# --- the Product Specifications History tab -------------------------------------
+
+def _spec_row_history(as_):
+    row_id = str(uuid.uuid4())
+    as_.db.add(AuditLog(
+        id=str(uuid.uuid4()), entity_type="product_spec_registry", entity_id=row_id,
+        action="UPDATE", old_values={"label": "A"}, new_values={"label": "B"},
+    ))
+    as_.db.commit()
+    return row_id
+
+
+def test_spec_registry_history_is_readable_with_spec_registry_view(env):
+    as_, _ = env
+    row_id = _spec_row_history(as_)
+    r = as_("specreg").get(f"/api/v1/audit/logs/?entity_type=product_spec_registry&entity_id={row_id}")
+    assert r.status_code == 200, r.text
+    assert [row["entity_id"] for row in r.json()["data"]] == [row_id]
+
+
+def test_spec_registry_history_is_forbidden_without_spec_registry_view(env):
+    as_, _ = env
+    row_id = _spec_row_history(as_)
+    for who in ("plain", "staff", "packing"):
+        r = as_(who).get(f"/api/v1/audit/logs/?entity_type=product_spec_registry&entity_id={row_id}")
+        assert r.status_code == 403, (who, r.text)
