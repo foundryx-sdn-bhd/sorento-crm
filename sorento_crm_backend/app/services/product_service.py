@@ -326,9 +326,21 @@ class ProductService:
         variant_filter: Optional[str] = None,
         discontinued_from: Optional[date] = None,
         discontinued_to: Optional[date] = None,
+        chat_visible: bool = False,
     ):
         """Build the filtered + sorted products query shared by ``list_products``
         and ``neighbours`` so the two can never drift.
+
+        ``chat_visible`` (ROGUE-CONVO-REVIEW PR-1, owner ruling Q1, 6 Oct 2026) is the
+        chatbot's own read: the predicate every other chat-facing product read already
+        applies (`Product.chat_searchable_products()`: the product's `is_searchable` and
+        its category's) AND, on an unscoped list (no `product_ids`), `is_active`. A
+        dealer who typed "product" was shown "FOR
+        ACCOUNT DEPARTMENT ONLY (DISBURSEMENT)", a masked "****" description and
+        discontinued rows, because the resolver honours the flag and this list did not.
+        Off by default: the admin list is byte-identical. The contact's brand bound is
+        not applied here; it is the session criterion `set_brand_scope` stamps from the
+        request's `contact_id` + `space_id` (`company_scope_resolver.apply_company_scope`).
 
         Returns the SQLAlchemy ``Query`` (already filtered + ordered), or
         :data:`_EMPTY_RESULT` when a filter resolves to a definitively empty set
@@ -369,6 +381,18 @@ class ProductService:
 
         if status and status != "all":
             filters.append(Product.is_active == (status == "active"))
+
+        if chat_visible:
+            from app.models.product import chat_searchable_products
+
+            filters.append(chat_searchable_products())
+            if not product_ids:
+                # `is_active` bounds the UNSCOPED list only: a code the customer named
+                # resolves whether or not the product is still active (the resolver
+                # returns it with `display.is_active`), and the answer says so; hiding
+                # the row here would turn "<discontinued code> price" into a miss. The
+                # owner's Q1 ruling was about the arbitrary list.
+                filters.append(Product.is_active.is_(True))
 
         # Base / Variant / All variant-graph filter.
         if variant_filter == "base":
@@ -524,6 +548,7 @@ class ProductService:
         variant_filter: Optional[str] = None,
         discontinued_from: Optional[date] = None,
         discontinued_to: Optional[date] = None,
+        chat_visible: bool = False,
     ):
         """List products with filtering and pagination.
 
@@ -582,6 +607,7 @@ class ProductService:
             variant_filter=variant_filter,
             discontinued_from=discontinued_from,
             discontinued_to=discontinued_to,
+            chat_visible=chat_visible,
         )
         if q is self._EMPTY_RESULT:
             payload = {

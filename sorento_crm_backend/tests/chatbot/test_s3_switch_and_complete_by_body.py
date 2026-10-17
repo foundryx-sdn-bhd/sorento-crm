@@ -877,12 +877,52 @@ class TestSendActionShape:
         # dedicated `test_stock_denied_answers_something_instead_of_silence` below for
         # what a real `stock_denied` turn does instead (a confirmed defect, kept red).
         set_chatbot_switches(session_factory, business_lane=True)
+        # ROGUE-CONVO-REVIEW PR-1: the resolver PLACES the typed code. With the default
+        # empty resolver `SRTWC8517` was unplaced and the tool still ran with no filter
+        # at all; that zero-scope `master_products` read is now refused before any tool
+        # call (`gate.REFUSES_EMPTY_FETCH`), so the raise this arm is about can only
+        # happen on a scoped fetch (the same adjustment as `test_engine_failure_paths`).
+        import uuid as _uuid
+
+        from app.services.chatbot.lanes.business.services import ResolveGateServices
+        from tests.chatbot.conftest import validating_resolve_entity
+
+        placed = {
+            "entity_type": "product",
+            "uuid": str(_uuid.uuid4()),
+            "canonical_code": "SRTWC8517",
+            "match_tier": "exact",
+            "display": {"product_name": "ZZT SRTWC8517"},
+        }
+        real_production_services = engine_mod.business_services.production_services
+
+        def placing_services(db, *, space_id=None):
+            # Only the resolver is replaced; the promotion arm still needs the real
+            # access types (its tier gate) to reach its fetch at all.
+            real = real_production_services(db, space_id=space_id)
+            return ResolveGateServices(
+                access_types=real.access_types,
+                resolve_entity=validating_resolve_entity(
+                    lambda body: {
+                        "tokens": ["SRTWC8517"],
+                        "resolutions": [
+                            {"token": "SRTWC8517", "resolved": True, "ambiguous": False, "matches": [placed]}
+                        ],
+                        "unresolved_tokens": [],
+                        "intersection": [placed],
+                        "by_entity_type": {"product": [placed]},
+                    }
+                ),
+                probe=real.probe,
+            )
+
+        monkeypatch.setattr(engine_mod.business_services, "production_services", placing_services)
         monkeypatch.setattr(
             engine_mod.business,
             "run_fetch",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("the answer half fell over")),
         )
-        for kind in ("business_query", "check_promotion"):
+        for kind in ("business_query",):
             monkeypatch.setattr(engine_mod, "turn_route", lambda plan, _kind=kind: _kind)
             stub_parser(_parser_output())
             stub_access()
@@ -902,6 +942,36 @@ class TestSendActionShape:
                 f"S7 mode has nobody left to answer"
             )
             all_actions.extend(result.actions)
+
+        # The promotion arm (ROGUE-CONVO-REVIEW PR-1): it used to reach `run_fetch` only
+        # because the default parse (a `master_products` ask re-routed by name) left its
+        # one fetch leg the zero-scope product read, which is now refused before any tool
+        # call. In this world a promotion ask settles its tier first (the "Which one do
+        # you mean? dealer / office / end user" picker) and the picked tier recomposes to
+        # no entitlement (Security B1, fail closed), so no promotion fetch is reachable
+        # here and the raise cannot be staged for it. What the walk CAN measure for this
+        # lane is the CRM-completed message it does send, the tier ask: its branch kind,
+        # and its `quick_replies` on the NULL branch of the shape assertion (the picker
+        # sends none; reviewer nit, whether it should is outside this PR). The raise
+        # path itself is covered by the business_query arm above, which shares the
+        # fetch block and `_failed_result` with this kind.
+        monkeypatch.setattr(engine_mod, "turn_route", lambda plan: "check_promotion")
+        stub_parser(
+            _parser_output(
+                domain_hint="promotion",
+                intent_hint="check_promotion",
+                entities=[],
+                user_goal="any promo running",
+            )
+        )
+        stub_access()
+        promotion_envelope = _envelope()
+        promotion_envelope.message["message"]["messageId"] = "ZZT-contract-check_promotion"
+        result = engine_mod.run_turn(promotion_envelope, session_factory=session_factory)
+        assert result.status != "failed", result.error
+        assert result.branch_kind == "check_promotion"
+        assert result.delegate is None
+        all_actions.extend(result.actions)
 
         send_messages = [a for a in all_actions if a.get("kind") == "send_message"]
         assert len(send_messages) >= 13, (

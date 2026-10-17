@@ -84,8 +84,18 @@ def test_b1_a_phrase_that_names_a_product_is_searched(world):
 
 
 def test_b1_a_deck_mounted_bath_mixer_ask_is_searched(chat, world):
-    """The reviewer's chat-level probe: the product ask reaches the search and lists the
-    product, instead of "I don't know 'deck mounted' as a mounting"."""
+    """The reviewer's chat-level probe: the product ask reaches the search instead of
+    "I don't know 'deck mounted' as a mounting".
+
+    ROGUE-CONVO-REVIEW PR-1 (owner ruling Q2, 6 Oct 2026): the tier that places a product
+    WORD with no code is the resolver's embedding tier, which this VM has no key for
+    (`Tier-3 query embedding failed`), so here the phrase stays unplaced. Until that PR
+    an unplaced product token in `master_products` ran the catalogue with no filter at
+    all, and the dump happened to contain the mixer, so this test was green by the read
+    it is now forbidden to produce (`gate.REFUSES_EMPTY_FETCH`, AC-RC-A5). The search
+    outcome is one of two: the product listed when the search places it, or the miss
+    that names the phrase AS TYPED when it does not; both are "searched", neither is the
+    unknown-value dead end this test guards."""
     db = world["db"]
     mixer = _product(
         db,
@@ -100,7 +110,10 @@ def test_b1_a_deck_mounted_bath_mixer_ask_is_searched(chat, world):
     db.commit()
     text = chat.say("any deck mounted bath mixer", _product_ask("deck mounted bath mixer", "any deck mounted bath mixer"))
     assert "I don't know" not in text, text
-    assert mixer.product_code in text, text
+    # Without an embedding key (this VM, CI) only the miss half can hold; with one the
+    # Tier-3 hit places the mixer and the listed half does. Either is "searched".
+    assert mixer.product_code in text or '"deck mounted bath mixer"' in text, text
+    assert "That would search every product" not in text, text
 
 
 def test_b1_a_long_spout_set_ask_is_counted(chat, world):

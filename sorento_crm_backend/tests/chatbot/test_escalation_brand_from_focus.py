@@ -582,12 +582,29 @@ class TestTheFocusBrandIsReadOnlyWhenAnOfferIsMinted:
             return real(db, focus)
 
         monkeypatch.setattr(engine_mod, "_focus_brand", counting)
+        # ROGUE-CONVO-REVIEW PR-1: the question is ABOUT the settled product, and the real
+        # parser says so the way it always does for a standing subject - the product is
+        # echoed in `entities` with `current_message: False` under `entity_op: reuse`
+        # (measured on live verdicts). With `entities=[]` this turn named nothing and the
+        # master products tool ran with NO filter at all (measured on main: the call
+        # carried no `product_ids`); the product card the stub returned made that read
+        # look like a hit. A zero-scope fetch is now refused, so the hit is the carried
+        # product's own.
         stub_parser(
             verdict(
                 message_type="business_query",
                 domain_hint="master_products",
                 intent_hint="check_product",
-                entities=[],
+                entities=[
+                    {
+                        "raw": "SRTKS7646",
+                        "hint": "product",
+                        "canonical_code": "SRTKS7646",
+                        "current_message": False,
+                        "confident": True,
+                    }
+                ],
+                entity_op="reuse",
                 routing={"suggested_team": "purchasing", "suggested_agent": "purchasing"},
             )
         )

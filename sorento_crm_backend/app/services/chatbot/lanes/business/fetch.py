@@ -1155,6 +1155,15 @@ def entity_ids_transformer(
         or jsc.get(semantic_input, "domain_hint") == "master_products"
     ):
         out["include_specs"] = True
+    if tool_name == "crm_master_products_list":
+        # ROGUE-CONVO-REVIEW PR-1 (owner ruling Q1, 6 Oct 2026): every product list the
+        # chatbot asks for is the chatbot's own read - searchable (product and category,
+        # the predicate the resolver already honours) and active. A dealer's one-word
+        # "product" listed "FOR ACCOUNT DEPARTMENT ONLY (DISBURSEMENT)" and discontinued
+        # rows because this one path ignored the flag. The route's `chat_visible` flag;
+        # n8n and the admin UI never send it, so their lists are unchanged. The brand
+        # bound rides `contact_id` + `space_id` below, as it already did.
+        out["chat_visible"] = True
     if tool_name == "crm_inventory_stock_balance_list":
         access = trig.get("access") if isinstance(trig.get("access"), dict) else {}
         attributes = access.get("attributes") if isinstance(access.get("attributes"), list) else []
