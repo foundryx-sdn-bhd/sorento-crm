@@ -5,18 +5,24 @@
  * (FILES-URL-NAV). With `useState` every folder click left the URL alone, so browser Back
  * left the Files page instead of going up a folder, and reload lost the folder.
  *
- * Same idiom as `useUrlTab`: the URL is the only copy, every other query param is carried
- * over verbatim, and the root writes no param at all, so the existing `?directoryId=` links
- * (quick access pins, attachment detail, product / promotion tabs) keep working.
+ * Same idiom as `useUrlTab`: the URL is the source of truth, every other query param is
+ * carried over verbatim, and the root writes no param at all, so the existing
+ * `?directoryId=` links (quick access pins, attachment detail, product / promotion tabs)
+ * keep working.
  *
- * Unlike `useUrlTab` it writes with the native `history.pushState` / `replaceState`, which
- * Next syncs into `useSearchParams` without a server round trip. `router.push` re-requested
- * the page on every folder click (about 1s on the dev server, measured in the lane's browser
- * pass), where the old `useState` switch had been instant.
+ * Every history write goes through the Next router, never the native History API. Native
+ * `pushState` copies the CURRENT entry's Next router tree into each entry it writes; after
+ * a reload those trees name page segments the new document never loaded, and Back onto
+ * one left the page on the route's loading skeleton for good (crew audit of PR #1759:
+ * open A > B > C, reload, Back, Back, open D, Back).
+ *
+ * A router navigation is a server round trip (about 1s on the dev server), so the folder
+ * the user opened is shown at once as `pending` and handed back to the URL when it lands,
+ * or as soon as Back / Forward moves the URL anywhere.
  */
 
-import { useCallback, useState } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { FOLDER_ALL_ID } from '../constants';
 
 export const DIRECTORY_PARAM = 'directoryId';
@@ -28,26 +34,40 @@ function normalise(id: string | null | undefined): string | null {
 }
 
 export function useFolderUrl(): { folderId: string | null; openFolder: OpenFolder } {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const folderId = normalise(searchParams?.get(DIRECTORY_PARAM));
+  const urlFolderId = normalise(searchParams?.get(DIRECTORY_PARAM));
+
+  // The folder just opened, until its navigation lands. A wrapper object so the root
+  // (null) can be pending too.
+  const [pending, setPending] = useState<{ id: string | null } | null>(null);
+  if (pending && pending.id === urlFolderId) setPending(null);
+
+  // Back / Forward always wins over a navigation still in flight.
+  useEffect(() => {
+    const onPopState = () => setPending(null);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  const folderId = pending ? pending.id : urlFolderId;
 
   const openFolder = useCallback<OpenFolder>(
     (id, opts) => {
       const next = normalise(id);
-      // Re-opening the open folder must not stack a duplicate Back step.
+      // Re-opening the shown folder must not stack a duplicate Back step.
       if (next === folderId) return;
+      setPending({ id: next });
       const params = new URLSearchParams(searchParams?.toString());
       if (next) params.set(DIRECTORY_PARAM, next);
       else params.delete(DIRECTORY_PARAM);
       const qs = params.toString();
-      // usePathname() has no basePath and native pushState does not add one (router.push
-      // did). next.config.mjs sets none today; prefix it here if that ever changes.
       const href = `${pathname}${qs ? `?${qs}` : ''}`;
-      if (opts?.replace) window.history.replaceState(null, '', href);
-      else window.history.pushState(null, '', href);
+      if (opts?.replace) router.replace(href, { scroll: false });
+      else router.push(href, { scroll: false });
     },
-    [folderId, pathname, searchParams]
+    [folderId, pathname, router, searchParams]
   );
 
   return { folderId, openFolder };

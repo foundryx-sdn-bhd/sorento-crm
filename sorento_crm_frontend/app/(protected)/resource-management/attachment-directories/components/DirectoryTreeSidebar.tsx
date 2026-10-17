@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useDroppable, useDraggable, useDndContext } from '@dnd-kit/core';
 import {
   ChevronRight,
@@ -229,13 +229,21 @@ function DirectoryRow({
     data: { type: 'folder', directoryId: node.id, folderName: node.name },
   });
 
+  const rowRef = useRef<HTMLElement | null>(null);
   const setRowRef = useCallback(
     (el: HTMLElement | null) => {
+      rowRef.current = el;
       setDropRef(el);
       setDragRef(el);
     },
     [setDropRef, setDragRef]
   );
+
+  // The open folder's row scrolls into view, e.g. after a reload into a folder deep in a
+  // long tree; 'nearest' leaves a row that is already visible where it is.
+  useEffect(() => {
+    if (isSelected) rowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [isSelected]);
 
   return (
     <div className="flex flex-col">
