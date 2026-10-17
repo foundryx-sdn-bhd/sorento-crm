@@ -71,3 +71,49 @@ backend suite and the full vitest suite once before asking for the `ci` label.
 ## Data
 
 Real examples: `crew-data-request` on PR #1769 (17 Oct). Rows stay out of the repo; the mock uses one masked case.
+
+## API contract (as built, BE green on 2bd5343b)
+
+Staff, base `/api/v1/procurement/new-product-applications` (module `procurement`):
+
+| Method + path | Who | Body / query | Answer |
+|---|---|---|---|
+| GET `` | any of view/create/approve/open_code (403 otherwise) | `status` (comma list), `q`, `stock_inquiry_id`, `applicant_id`, `page`, `limit`, `sort` (application_no, status, created_at, submitted_at, needed_by, customer_name), `dir` | `{items: Summary[], total, page, limit}`; create-only callers see their own |
+| POST `` | create | Write | 201 Detail (draft) |
+| GET `/prefill?stock_inquiry_id=` | create | | Write-shaped body copied as text from the inquiry + `stock_inquiry_number` |
+| GET `/products?q=` | open_code | | `[{id, product_code, product_name, brand_name, ...}]` (empty q = []) |
+| GET `/item-types?q=` | any NPA slug | | `[{id, item_type_code, item_type_name}]` |
+| GET `/{id}` | owner or view/approve/open_code | | Detail |
+| PUT `/{id}` | create + owner | Write (lines replace all) | Detail; 422 `new_product_application_locked` when submitted/approved; 409 when completed/cancelled |
+| POST `/{id}/submit` | owner | | Detail; 422 names "Line N: ..." |
+| POST `/{id}/approve` | approve | | Detail; 409 unless submitted |
+| POST `/{id}/reject` | approve | `{reason}` required | Detail |
+| POST `/{id}/revise` | owner or approve | `{reason}` required | Detail (draft); 409 once a line is resolved |
+| POST `/{id}/cancel` | owner | `{reason?}` | Detail; 409 once a line is resolved |
+| POST `/{id}/lines/{lineId}/link` | open_code | `{product_id}` | Detail (auto Completed when every line is done) |
+| POST `/{id}/lines/{lineId}/close` | open_code | `{reason}` required | Detail |
+| POST `/{id}/lines/{lineId}/undo` | open_code | | Detail (Completed returns to Approved) |
+| Delete draft | owner | pending action `new_product_application.delete`, entity_type `new_product_application` | countdown, hard delete |
+
+Write: `{stock_inquiry_id?, customer_id?, customer_name?, project_name?, needed_by? (YYYY-MM-DD), remark?,
+lines?: [{proposed_code?, description?, further_description?, category_id?, base_uom_id?, brand_id?,
+item_type_id?, supplier_id?, supplier_item_code?, cost_price?, selling_price?, expected_qty?, remark?}]}`.
+Numbers are strings or numbers; null clears.
+
+Summary: `id, application_no, status, status_label, source, applicant_id, applicant_name, stock_inquiry_id,
+stock_inquiry_number, customer_name, project_name, first_line, lines_total, lines_done, opened_codes, needed_by,
+submitted_at, created_at`.
+Detail = Summary + `stock_inquiry_product_code, customer_id, customer_code, remark, decided_at, decided_by,
+decided_by_name, reject_reason, revise_reason, cancelled_at, cancel_reason, completed_at, updated_at, lines[]`;
+line = Write line + `id, line_no, category_code, category_name, base_uom_code, base_uom_name, brand_name,
+item_type_name, supplier_code, supplier_name, opened_product_id, opened_product_code, opened_product_name,
+opened_product_active, closed_reason, resolved_by, resolved_by_name, resolved_at` (money as "185.00", qty as "55").
+
+Portal, base `/api/v1/public/portal` (X-Portal-Token, grant `new_product_application`, 403
+`FORM_TYPE_NOT_VISIBLE` without it): GET/POST `/submissions/new_product_application` (list answers
+`{data, total, page, limit}`), GET/PUT `/submissions/new_product_application/{id}`, POST `.../{id}/submit`,
+`.../{id}/revise {reason}`, `.../{id}/cancel`; GET `/new-product-application/inquiries` (own responded),
+`/new-product-application/prefill?stock_inquiry_id=` (own responded only, else 404),
+`/new-product-application/lookups/{item-groups|uoms|brands|item-types}?q=` (`[{id, code, name}]`),
+`/new-product-application/customers?q=`. Portal lines have NO supplier_*/cost_price keys and refuse them (422)
+while `PORTAL_SUPPLIER_AND_COST` is off (crew PQ1 (b)).
