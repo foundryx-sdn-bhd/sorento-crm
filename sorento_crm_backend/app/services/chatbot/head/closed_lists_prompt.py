@@ -13,6 +13,10 @@ from __future__ import annotations
 
 MARKER = "== CLOSED LISTS =="
 
+#: The gated schema's named "no item is the kind asked" value (S6, 17 Oct 2026): with null as
+#: the only way out, the parser forced an unlisted kind onto the nearest listed type.
+NOT_LISTED = "none of these"
+
 SECTION = """
 
 == CLOSED LISTS ==
@@ -25,6 +29,9 @@ no item below is what the message asks for. This section OVERRIDES every earlier
 how an attachment_type is written: the earlier rules still say WHICH kind of document is
 meant, and listed_item says which item of these lists that is (a drawing, TD, CAD or spec
 sheet is the item that holds drawings; a photo, image or picture the item that holds photos).
+listed_item is the item that IS the kind asked, never the nearest one: when no line below is
+that kind (a brochure, a BIM file or a warranty card when no such line is listed), listed_item
+is "none of these" and the assistant asks which file, offering what the product really has.
 
 File types (each line: the code, the name, and what it holds):
 {{attachment_types}}

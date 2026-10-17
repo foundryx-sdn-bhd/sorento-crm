@@ -716,7 +716,10 @@ def _on_closed_lists(entity: dict[str, Any], items: dict[str, dict[str, str]]) -
     certificate kind, certificate scheme) and the item as listed, or None when the pick is
     on no list or the parser was not confident. Only the parser's `canonical_code` is read,
     compared whole with case aside; the customer's words never are."""
-    if entity.get("confident") is False:
+    from app.services.chatbot.head.closed_lists_prompt import NOT_LISTED
+
+    if entity.get("confident") is False or entity.get("listed_item") == NOT_LISTED:
+        # The parser said no listed item is the kind asked: no code reading overrides it.
         return None
     # The parser's `listed_item` first (the gated schema holds it to the rendered items),
     # then its `canonical_code`: an item's code or name, or an explicit alias link.

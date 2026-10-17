@@ -305,18 +305,24 @@ def _item(row: dict) -> str:
 
 
 def _file_type_rows(db: Session) -> list[dict]:
-    """The attachment types a PRODUCT carries a live file of (CHAT-CLOSED-LISTS card R1),
-    certificate kinds aside (they are `{{certification_types}}`). Joined through
-    `product_attachments` for the reason `entity_resolver._product_attachment_type_ids`
-    gives: an internal type sharing a word ("Shipment Line Photo") is never a file type."""
+    """The attachment types a parser pick can name (CHAT-CLOSED-LISTS card R1), certificate
+    kinds aside (they are `{{certification_types}}`): every type a PRODUCT carries a live file
+    of, and every type no live file carries yet (a product file type still to be filled:
+    Installation Guide on dev, S6 17 Oct 2026, whose ask the enum otherwise forced onto a
+    neighbour). A type whose live files all sit on other records ("Shipment Line Photo", an
+    SCM type) is no product file type, for the reason
+    `entity_resolver._product_attachment_type_ids` gives."""
     return [
         dict(r)
         for r in db.execute(
             sql(
-                "SELECT DISTINCT t.code, t.type_name, t.description FROM attachment_types t "
-                "JOIN attachments a ON a.attachment_type_id = t.id AND NOT coalesce(a.is_deleted, false) "
-                "JOIN product_attachments pa ON pa.attachment_id = a.id "
-                "WHERE NOT t.is_certificate ORDER BY t.type_name"
+                "SELECT t.code, t.type_name, t.description FROM attachment_types t "
+                "WHERE NOT t.is_certificate AND ("
+                " EXISTS (SELECT 1 FROM attachments a JOIN product_attachments pa ON pa.attachment_id = a.id"
+                "  WHERE a.attachment_type_id = t.id AND NOT coalesce(a.is_deleted, false))"
+                " OR NOT EXISTS (SELECT 1 FROM attachments a"
+                "  WHERE a.attachment_type_id = t.id AND NOT coalesce(a.is_deleted, false))"
+                ") ORDER BY t.type_name"
             )
         ).mappings()
     ]
