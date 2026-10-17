@@ -94,8 +94,9 @@ def test_quotation_line_zero_quantity_records_current_behaviour(api):
     client, db, *_rest, project = api
     version_id, _p, line_id = _qline(client, db, project.id)
     res = client.put(_qurl(version_id, line_id), json={"quantity": "0"})
-    print("QUOTATION ZERO ->", res.status_code, res.text[:200])
-    assert res.status_code in (200, 422)
+    # Pinned to today's behaviour: a quantity of 0 is accepted and stored (not refused).
+    assert res.status_code == 200, res.text
+    assert _qty(client, version_id, line_id) == Decimal("0")
 
 
 # ---------------------------------------------------------------------- PO line
@@ -138,5 +139,6 @@ def test_po_line_zero_quantity_records_current_behaviour(api):
     client, db, *_rest, project = api
     po_id, _p, line_id = _pline(client, db, project.id)
     res = client.put(_purl(po_id, line_id), json={"quantity": "0"})
-    print("PO ZERO ->", res.status_code, res.text[:200])
-    assert res.status_code in (200, 422)
+    # Pinned to today's behaviour: a quantity of 0 is accepted and stored (not refused).
+    assert res.status_code == 200, res.text
+    assert _pqty(client, po_id, line_id) == Decimal("0")

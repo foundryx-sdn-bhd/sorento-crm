@@ -135,3 +135,32 @@ describe('ProductPickerDialog reopen resets tab and refusal (N6)', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
+
+describe('ProductPickerDialog reopen clears the refusal flag by itself (round 9 N3)', () => {
+  it('a saved selection that still holds a bad number shows no alert after reopen until Use these products is pressed', () => {
+    const bad = {
+      ...EMPTY_SELECTION,
+      conditions: {
+        kind: 'group',
+        id: 'g-1',
+        combinator: 'and',
+        rules: [{ kind: 'condition', id: 'c-1', fact: 'product.listPrice', operator: 'eq', value: 'NaN' }],
+      },
+    } as unknown as typeof EMPTY_SELECTION;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const ui = (open: boolean) => (
+      <QueryClientProvider client={client}>
+        <ProductPickerDialog open={open} onOpenChange={vi.fn()} value={bad} onSave={vi.fn()} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(ui(true));
+    fireEvent.click(screen.getByRole('button', { name: /use these products/i }));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    rerender(ui(false));
+    rerender(ui(true));
+    // The draft is reset to the same bad value, so only the refusal flag can keep the alert up.
+    expect(screen.queryByRole('alert')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /use these products/i }));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+});

@@ -100,3 +100,59 @@ def test_update_collection_refuses_non_finite_value_under_a_kindless_root(api): 
     assert res.status_code in (400, 422), res.text
     db.expire_all()
     assert db.query(Collection).one().conditions_json == good
+
+
+def _condition_with_empty_rules(value="NaN"):
+    return {
+        "kind": "group",
+        "combinator": "and",
+        "rules": [
+            {
+                "kind": "condition",
+                "fact": "product.listPrice",
+                "operator": "neq",
+                "value": value,
+                "rules": [],
+            }
+        ],
+    }
+
+
+def test_create_collection_refuses_non_finite_value_on_a_condition_carrying_empty_rules(api):  # noqa: F811
+    db, _as = api
+    _as(_ADMIN_ID)
+    from app.models.dealer_kit import Collection
+
+    with TestClient(app, raise_server_exceptions=False) as c:
+        res = c.post(
+            URL,
+            json={
+                "scope": "library",
+                "name": "ZZT sneaky",
+                "conditions": _condition_with_empty_rules(),
+            },
+        )
+    assert res.status_code in (400, 422), res.text
+    assert db.query(Collection).count() == 0
+
+
+def test_update_collection_refuses_non_finite_value_on_a_condition_carrying_empty_rules(api):  # noqa: F811
+    db, _as = api
+    _as(_ADMIN_ID)
+    from app.models.dealer_kit import Collection
+
+    good = _tree("gt", "10")
+    with TestClient(app, raise_server_exceptions=False) as c:
+        made = c.post(URL, json={"scope": "library", "name": "ZZT sneaky", "conditions": good})
+        assert made.status_code == 201, made.text
+        res = c.put(
+            f"{URL}/{made.json()['id']}",
+            json={
+                "scope": "library",
+                "name": "ZZT sneaky",
+                "conditions": _condition_with_empty_rules(),
+            },
+        )
+    assert res.status_code in (400, 422), res.text
+    db.expire_all()
+    assert db.query(Collection).one().conditions_json == good
