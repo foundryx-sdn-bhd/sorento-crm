@@ -282,3 +282,24 @@ def test_another_company_s_target_is_never_updated_without_the_listener(api, mon
     # Read as its own company's new target, never as an update of the foreign one.
     assert result["rows"][0]["status"] == "mapped", result["rows"][0]["reason"]
     assert (result["summary"]["targets_new"], result["summary"]["targets_updated"]) == (1, 0), result["summary"]
+
+
+def test_a_repeated_ledger_names_every_row_of_the_dealer_on_it(api):
+    """Gate 7 nit: a quarterly target on rows 2-3 and a yearly one on rows 2-4, all one ledger:
+    every row's reason names rows 2, 3 and 4, not only the first target's two."""
+    client, db, company_id = api
+    _customer(db, company_id, "ZULU HOME SDN BHD [A/C I]", 1)
+
+    def fill(ws):
+        ws["A1"], ws["B1"], ws["C1"], ws["D1"] = "DEALER NAME", "ACCOUNT", "Q1", "YEARLY"
+        ws["A2"] = "ZULU HOME SDN BHD"
+        ws.merge_cells("A2:A4")
+        ws["C2"] = "100,000 - 1%"
+        ws.merge_cells("C2:C3")
+        ws["D2"] = "1,000,000 - 1%"
+        ws.merge_cells("D2:D4")
+        for r in (2, 3, 4):
+            ws[f"B{r}"] = "A/C I"
+
+    rows = _post(client, db, _bytes(fill))["rows"]
+    assert [r["reason"].split(";")[0] for r in rows] == ["rows 2, 3 and 4 are one CRM customer"] * 3, rows
