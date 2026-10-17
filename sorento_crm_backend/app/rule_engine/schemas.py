@@ -117,7 +117,7 @@ def _validate_condition(
         return
     if _blank(value):
         problems.append(f"'{fact.label}' needs a value.")
-    elif fact.type == "number" and operator in ("gt", "gte", "lt", "lte") and not _numeric(value):
+    elif fact.type == "number" and operator in ("eq", "neq", "gt", "gte", "lt", "lte") and not _numeric(value):
         problems.append(f"'{fact.label}' needs a numeric value.")
 
 

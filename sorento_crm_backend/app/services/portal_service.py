@@ -1742,8 +1742,8 @@ class PortalService:
             return None
         if not number.is_finite():
             raise handle_validation_error("Enter a valid number.")
-        if abs(number) >= 10**13:
-            raise handle_validation_error("Enter a valid number.")
+        if number >= 10**13 or number <= -(10**13):
+            raise handle_validation_error("Quantity is too large.")
         return number
 
     # ---------- Requestor ("requested by" / "salesperson") options ----------

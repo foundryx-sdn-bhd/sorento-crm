@@ -45,17 +45,36 @@ def get_collection(db: Session, collection_id: str) -> Collection:
 
 
 def _validate_conditions(conditions: Optional[dict]) -> None:
-    """Refuse a rule tree the builder could not have produced (non-finite or non-numeric
-    number values). An empty tree is the unconditional case and is not checked."""
+    """Refuse only bad number values (non-finite or unreadable) in a number fact's rule.
+    Blank or empty shapes the builder has always saved are left alone."""
     if not conditions or not conditions.get("rules"):
         return
-    from app.rule_engine.schemas import validate_tree
+    from app.rule_engine.schemas import _blank, _numeric
+    from app.rule_engine.registry import fact_map
     from app.services.dealer_kit.product_facts import SOURCE, register_product_facts
 
     register_product_facts()
-    problems = validate_tree(conditions, [SOURCE])
-    if problems:
-        raise AppException(status_code=422, message=problems[0])
+    facts = fact_map([SOURCE])
+
+    def walk(node: object) -> None:
+        if not isinstance(node, dict):
+            return
+        if node.get("kind") == "group":
+            for rule in node.get("rules") or []:
+                walk(rule)
+            return
+        fact = facts.get(node.get("fact"))
+        if fact is None or fact.type != "number" or node.get("valueKind") == "fact":
+            return
+        value = node.get("value")
+        members = value if isinstance(value, list) else [value]
+        for member in members:
+            if not _blank(member) and not _numeric(member):
+                raise AppException(
+                    status_code=422, message=f"'{fact.label}' needs a numeric value."
+                )
+
+    walk(conditions)
 
 
 def create_collection(
