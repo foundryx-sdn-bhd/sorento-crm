@@ -1,8 +1,8 @@
 # PLAN: NUMBER-FIELDS
 
-Status: Build (size M, full track: frontend plus backend write-schema validators, no migration, no auth change). Lane NUMBER-FIELDS, branch
-`crew/number-fields`. Behaviour card answered 17 Oct (crew, from owner standing rules): Q1-Q5 all (a); no
-owner mock review needed (reuses existing components + wording). SO blank-qty-cancels case goes first.
+Status: PR+CI (size M, full track: frontend plus backend write-schema validators, no migration; security-reviewer
+ran because the portal / external intake validators changed). Lane NUMBER-FIELDS, PR #1751, branch `crew/number-fields`.
+Reviewer round 6 READY; rounds 1-6 recorded below; owner hand test owed (laneboard/scripts/1751.md).
 
 ## Answers (17 Oct, crew ask a68457864)
 
