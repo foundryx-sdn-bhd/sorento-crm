@@ -123,3 +123,37 @@ def test_portal_draft_line_figure_out_of_range_is_a_400(column):
             assert res.status_code == 400, res.text
             assert _line_count(db) == 0
             assert _header_count(db) == 0
+
+
+# -- round 5 S2 / N2 ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("column", ["quantity", "unit_price", "total"])
+@pytest.mark.parametrize("figure", ["1e1000000", "-1E+1000001", "1e999999999999999999"])
+def test_portal_draft_line_figure_beyond_decimal_emax_is_a_400(column, figure):
+    with blank_session() as db:
+        contact = _contact(db)
+        line = {"item_code": "ZZT-ITEM", "quantity": "2", "unit_price": "10", "total": "20"}
+        line[column] = figure
+        with _portal_client(db, contact.id) as c:
+            res = c.post(
+                f"{BASE}/submissions/sponsorship_form",
+                json={"fields": {"customer_name": "ZZT"}, "products": [line]},
+            )
+            assert res.status_code == 400, res.text
+            assert _line_count(db) == 0
+            assert _header_count(db) == 0
+
+
+def test_portal_draft_too_large_quantity_says_too_large_not_invalid_number():
+    with blank_session() as db:
+        contact = _contact(db)
+        line = {"item_code": "ZZT-ITEM", "quantity": "10000000000000", "unit_price": "10", "total": "20"}
+        with _portal_client(db, contact.id) as c:
+            res = c.post(
+                f"{BASE}/submissions/sponsorship_form",
+                json={"fields": {"customer_name": "ZZT"}, "products": [line]},
+            )
+            assert res.status_code == 400, res.text
+            assert "too large" in res.text.lower(), res.text
+            assert "valid number" not in res.text.lower(), res.text

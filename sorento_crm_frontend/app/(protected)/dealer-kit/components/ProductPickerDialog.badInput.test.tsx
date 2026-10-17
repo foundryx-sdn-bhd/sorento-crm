@@ -95,3 +95,18 @@ describe('ProductPickerDialog rule with bad number input (S2)', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 });
+
+describe('ProductPickerDialog bad rule number while on the By hand tab (N3)', () => {
+  it('Use these products is never a silent no-op: a message is visible and nothing is saved', () => {
+    const { onSave } = setup('eq');
+    typeBadInput(document.querySelector('input[type="number"]') as HTMLElement);
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /by hand/i }));
+    fireEvent.click(screen.getByRole('button', { name: /use these products/i }));
+    expect(onSave).not.toHaveBeenCalled();
+    // Either the sentence on the rule box (tab switched back) or a message that names the rule's bad number.
+    const msgs = screen
+      .queryAllByText(/enter a number|(rule|number).*(not a number|invalid|fix)|(not a number|invalid|fix).*(rule|number)/i)
+      .filter((el) => !el.closest("button, [role=tab]"));
+    expect(msgs.length).toBeGreaterThan(0);
+  });
+});
