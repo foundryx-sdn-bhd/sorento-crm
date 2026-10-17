@@ -336,6 +336,42 @@ def test_incoming_pl_matches_by_container_number_alone_iso_6346(scm_app):
     assert body["totals"]["incoming_pl"] == 20
 
 
+def _eta_world(scm_app, *, clearance: bool):
+    """A caller who opens the panel (scm.reorder.run), with or without the clearance read, and
+    one packing list whose ETA was delayed, carried by an SPO linked to it."""
+    app, db, gcu, gcuk = scm_app
+    grant_permission(db, "guest", "scm.reorder.run")
+    if clearance:
+        grant_permission(db, "guest", "procurement.packing_lists.view_clearance")
+    as_user(app, gcu, gcuk, seed_user(db, "guest"))
+    w = World(db)
+    p = w.product("A")
+    bb = _wh(db, "BB")
+    ship = _shipment(db, w, eta=date(2026, 10, 20))
+    ship.eta_delay_date = date(2026, 11, 5)
+    db.flush()
+    _pl_line(db, ship, p, 40)
+    _spo(db, w, p, bb, 10, shipment=ship)
+    return _get(app, p), ship
+
+
+def test_the_delayed_eta_shows_only_to_holders_of_the_clearance_read(scm_app):
+    """Owner ruling 17 Oct (security S-C, option b): `eta_delay_date` is a
+    `procurement.packing_lists.view_clearance` field; with it the delayed date shows."""
+    body, ship = _eta_world(scm_app, clearance=True)
+    pl = next(s for s in body["incoming_pl"] if s["shipment_number"] == ship.shipment_number)
+    assert pl["eta"] == "2026-11-05"
+    assert body["spos"][0]["arrival_date"] == "2026-11-05"
+
+
+def test_without_the_clearance_read_the_estimated_arrival_shows_never_the_delay(scm_app):
+    body, ship = _eta_world(scm_app, clearance=False)
+    pl = next(s for s in body["incoming_pl"] if s["shipment_number"] == ship.shipment_number)
+    assert pl["eta"] == "2026-10-20"
+    assert body["spos"][0]["arrival_date"] == "2026-10-20"
+    assert "2026-11-05" not in str(body)
+
+
 # ---------------------------------------------------------------- AC-8
 def test_so_due_by_cuts_dated_so_only_and_never_the_undated_or_placeholder(scm_app):
     app, db, w, p = _setup(scm_app)
