@@ -1460,13 +1460,13 @@ def test_a_promo_answer_followup_asking_how_many_fails_even_if_the_bot_widened_i
     assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
 
 
-def test_a_pick_followup_asking_how_many_on_a_non_stock_gold_fails():
+def test_a_pick_followup_on_a_non_stock_gold_whose_reply_gives_the_price_may_ask_how_many():
     v = {"entities": [], "reference_positions": [1], "open_question_answer": {"mode": None, "items": [], "picked": []}}
     r = row2(verdict=v, state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)],
-             tools=[_stock_tool("availability")], reply="The promo price is RM 90. How many units?")
+             tools=[_stock_tool("availability")], reply="SRTA100 is RM 90. How many units?")
     res = grade_turn(r, item("followup", "pick", position=1, code="SRTA100", fact="promotion"))
     assert res["checks"]["position"] is True, res["checks"]
-    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
 
 
 def test_a_pick_followup_on_a_stock_gold_in_availability_mode_may_ask_how_many():
@@ -2121,3 +2121,16 @@ def test_r29_a_number_after_the_attribute_word_is_a_value_even_beside_a_none_phr
     result = _r28_result([{"key": "spec:weight", "label": "Weight", "value": "25 kg"}])
     res = grade_turn(_r28_attr_row("SRTKT1636SS-GM weight 25 kg not available in stock.", result), item("code_lookup", **R28_GOLD))
     assert res["checks"]["attribute_value"] is True, res["checks"]
+
+
+# "no answer" = once the how-many sentence is removed, no number outside a product code, no listed entry, no file
+def test_r29_a_price_answer_beside_a_how_many_is_an_answer():
+    r = row2(message="any promo for SRTA100", reply="The promo price is RM 90. How many units?")
+    res = grade_turn(r, item("scope", fact="promotion"))
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+
+
+def test_r29_a_product_name_alone_beside_a_how_many_is_not_an_answer():
+    r = row2(message="send me the brochure of SRTMCB21616", reply="Product: SRTMCB21616\nHow many units?")
+    res = grade_turn(r, item("scope", fact="product_attachment", fact_label="files"))
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
