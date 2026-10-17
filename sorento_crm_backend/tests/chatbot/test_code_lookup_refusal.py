@@ -200,3 +200,26 @@ def test_shortlist_exposes_per_item_scores_and_holding_flags(db):
 
     held = next(e for e in candidates.shortlist(db, "stock zzh77744", code_lookup=True) if e.gram == "zzh77744")
     assert set(held.holds) == {"ZZH77744A", "ZZH77744B"}
+
+
+# ---- review round 2: the tie refusal never fires on an exact typed code
+
+
+def test_an_exact_typed_code_with_a_spec_word_variant_pick_is_kept_despite_a_tied_sibling(
+    session_factory, seeded, stub_access, monkeypatch
+):
+    """grounding.py tie clause has no `typed not in holds` guard: typed ZZRW8608-RL is on
+    file, the parser picks the p-trap variant, both variants score alike, and the pick is
+    refused (stock then fetched for the wrong product)."""
+    typed, exact, p, s = "ZZRW8608-RL", "ZZRW8608-RL", "ZZRW8608-P-RL", "ZZRW8608-S-RL"
+    ids = _seed(session_factory, exact, p, s)
+
+    _assert_kept(session_factory, stub_access, monkeypatch, typed, p, ids)
+
+
+def test_a_colour_suffix_typed_code_that_folds_equal_is_never_refused(session_factory, seeded, stub_access, monkeypatch):
+    """Guard (may already pass): typed zzrb1409rg folds equal to ZZRB1409-RG."""
+    typed, rg, bk, wh = "zzrb1409rg", "ZZRB1409-RG", "ZZRB1409-BK", "ZZRB1409-WH"
+    ids = _seed(session_factory, rg, bk, wh)
+
+    _assert_kept(session_factory, stub_access, monkeypatch, typed, rg, ids)
