@@ -149,3 +149,135 @@ def test_masked_reasons_keep_row_numbers():
 
     assert "row 46" in _mask("the same accounts and dates as row 46")
     assert "rows 2, 3 and 4" in _mask("rows 2, 3 and 4 are one CRM customer; a target lists each account once")
+
+
+# --- reviewer + security-reviewer of the gate-6 round --------------------------------------
+
+
+def test_one_code_on_two_rows_names_both_rows(api):
+    """Review B1: two rows sharing a CUSTOMER CODE share one row key; the message said "rows 4 and 4"."""
+    client, db, company_id = api
+    c1 = _customer(db, company_id, "ZULU HOME SDN BHD [A/C I]", 1)
+    c2 = _customer(db, company_id, "ZULU HOME SDN BHD [A/C II]", 2)
+
+    def fill(ws):
+        ws["A1"], ws["B1"], ws["C1"] = "DEALER NAME", "CUSTOMER CODE", "Q1"
+        ws["A2"] = "ZULU HOME SDN BHD"
+        ws.merge_cells("A2:A4")
+        ws["C2"] = "100,000 - 1%"
+        ws.merge_cells("C2:C4")
+        ws["B2"], ws["B3"], ws["B4"] = c1.customer_code, c2.customer_code, c1.customer_code
+
+    rows = _post(client, db, _bytes(fill))["rows"]
+    assert all("rows 2 and 4 are one CRM customer" in r["reason"] for r in rows), [r["reason"] for r in rows]
+
+
+def test_a_paren_that_is_the_matched_account_is_not_a_branch(api):
+    """Review S1: "(CERAMIC)" in the file name is the account the ledger matched on."""
+    client, db, company_id = api
+    ceramic = _customer(db, company_id, "MOCHA K SDN BHD [CERAMIC]", None)
+
+    def fill(ws):
+        ws["A1"], ws["B1"] = "DEALER NAME", "Q1"
+        ws["A2"], ws["B2"] = "MOCHA K SDN BHD (CERAMIC)", "100,000 - 1%"
+
+    row = _post(client, db, _bytes(fill))["rows"][0]
+    assert row["match"] == "auto" and row["customer"] == ceramic.customer_name, row
+
+
+def test_the_malaysia_marker_and_a_registration_number_are_not_branches(api):
+    client, db, company_id = api
+    one = _customer(db, company_id, "ABC TRADING SDN BHD [A/C I]", 1)
+    for name in ("ABC TRADING (M) SDN BHD", "ABC TRADING SDN BHD (123456-X)"):
+        row = _post(client, db, _one_row(name))["rows"][0]
+        assert row["match"] == "auto" and row["customer"] == one.customer_name, (name, row)
+
+
+def test_the_reason_names_the_branch_that_is_missing(api):
+    """Review N2: not the first paren, the one the ledger lacks."""
+    client, db, company_id = api
+    _customer(db, company_id, "ECHO HOME (SRT) [A/C I]", 1)
+    row = _post(client, db, _one_row("ECHO HOME (SRT) (KL)"))["rows"][0]
+    assert row["reason"].startswith('no ledger of this name has the branch "KL"'), row["reason"]
+
+
+def test_masked_output_keeps_no_file_digits():
+    """Security S1 + review S2: a colon or "row <n>" inside quoted file text, and codes."""
+    from scripts.dealer_targets_dry_run import _mask
+
+    for reason in (
+        'no ledger of this name has the branch "LOT 23: KL"; pick one of its ledgers or skip',
+        'Q1: cannot read the threshold "narrow 12345 deal"',
+        "no customer with code borrow 4471",
+        'no ledger of this name has the account "row 77"; pick one of its ledgers or skip',
+    ):
+        masked = _mask(reason)
+        assert not any(d in masked for d in ("23", "12345", "4471", "77")), (reason, masked)
+    assert _mask("shares a target with row 46, which needs a customer picked").endswith("row 46")
+
+
+def _unscoped_as(monkeypatch, company_id):
+    """A session with no scope filter at all (what the dry-run script had), yet run() told it acts
+    for one company: only the explicit filters keep the other company out."""
+    from app.services.sales import dealer_target_import
+
+    monkeypatch.setattr(dealer_target_import, "_acting_company", lambda db: company_id)
+
+
+def test_a_code_of_another_company_is_unknown_without_the_listener(api, monkeypatch):
+    from app.models.base import company_scope
+    from app.services.sales.dealer_target_import import run
+
+    _client, db, company_id = api
+    other = _other_company(db)
+    _unscoped_as(monkeypatch, company_id)
+
+    def fill(ws):
+        ws["A1"], ws["B1"], ws["C1"] = "DEALER NAME", "CUSTOMER CODE", "Q1"
+        ws["A2"], ws["B2"], ws["C2"] = "FOX HOME", foreign.customer_code, "100,000 - 1%"
+
+    with company_scope(db, None):
+        foreign = _customer(db, other.id, "FOX HOME [A/C I]", 1)
+        row = run(db, _bytes(fill), year=2026, dry_run=True)["rows"][0]
+    assert row["status"] == "not_representable" and "no customer with code" in row["reason"], row
+
+
+def test_a_pick_of_another_company_is_refused_without_the_listener(api, monkeypatch):
+    from app.models.base import company_scope
+    from app.services.sales.dealer_target_import import run
+
+    _client, db, company_id = api
+    other = _other_company(db)
+    _unscoped_as(monkeypatch, company_id)
+    with company_scope(db, None):
+        foreign = _customer(db, other.id, "GOLF HOME [A/C I]", 1)
+        row = run(db, _one_row("NOBODY HOME"), year=2026, dry_run=True, picks={"Sheet!2": foreign.id})["rows"][0]
+    assert row["status"] == "not_representable", row
+
+
+def test_another_company_s_target_is_never_updated_without_the_listener(api, monkeypatch):
+    from datetime import date
+
+    from app.models.base import company_scope
+    from app.models.sales import SalesTarget, SalesTargetAccount
+    from app.services.sales.dealer_target_import import run
+
+    _client, db, company_id = api
+    other = _other_company(db)
+    own = _customer(db, company_id, "HOTEL HOME [A/C I]", 1)
+    _unscoped_as(monkeypatch, company_id)
+    with company_scope(db, None):
+        foreign_target = SalesTarget(
+            id=_uid(), company_id=other.id, target_no="TGT-999998", name="ZZT Foreign dealer",
+            subject_kind="dealer", metric="amount", basis="ordered", product_scope="all",
+            start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), split_every=3, split_unit="month",
+            threshold_unit="amount",
+        )
+        db.add(foreign_target)
+        db.flush()
+        db.add(SalesTargetAccount(id=_uid(), company_id=other.id, target_id=foreign_target.id, customer_id=own.id))
+        db.flush()
+        result = run(db, _one_row("HOTEL HOME"), year=2026, dry_run=True)
+    # Read as its own company's new target, never as an update of the foreign one.
+    assert result["rows"][0]["status"] == "mapped", result["rows"][0]["reason"]
+    assert (result["summary"]["targets_new"], result["summary"]["targets_updated"]) == (1, 0), result["summary"]
