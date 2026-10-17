@@ -1,9 +1,9 @@
 # PLAN: CHAT-STATE - one explicit conversation state for follow-ups
 
-**Status:** Code complete at f4467ba1d: S1-S5, S7 and rounds 4-7b green; reviewer READY (703d5d466 + 7b nit),
-security PASS (two passes + targeted carried-customer review); every round red-first with kill-proof; L1 replay 0
-unintended diffs on every slice. Live TRAIN x3 (17 Oct): lane 70.7% vs main 68.4% on a bench with 28 known-bad items;
-re-run after EVAL-BENCH posts the fixed bench (crew opens the envelope). Track: L, LEAD pattern.
+**Status:** Code complete, PR #1747 open (head after this commit), reviewer READY, security PASS, red-first + kill-proof
+every round, L1 replay 0 unintended diffs on every slice. Fixed TRAIN bench (86 items, grader #1745 230642edc): main
+69.7/86 (81.0%), lane round 11 72.3/86 (84.1%), paired +2.67 [-0.67, +6.67]; no item worse than main. Remaining bot
+failures are step-2 family matching (handed to CHAT-CLOSED-LISTS #1755). Track: L, LEAD pattern.
 **Lane:** CHAT-STATE, branch `crew/chat-state`. Step 1 of the 16 Oct chatbot scale design
 (`crew/state/reports/CHATBOT-SCALE-DESIGN-16oct.html`, sections 2, 3, 4 rows B/C/G, 8 step 1).
 **Docs:** card `chat-state-behaviour-card.md` (rules R1-R13), UAC `chat-state-acceptance-criteria.md`, coder-facing
