@@ -18,11 +18,9 @@ SECTION = """
 Product codes in the candidates block. A "near code X (name)" line under a word with a digit is a code on file
 spelt near a word that is NOT on file as typed. Pick it (hint "product", canonical_code X) only when it is plainly
 the code the message means: the same digits with letters swapped, missing or one letter off. A near code with other
-digits is another product. Pick a near code only when it is plainly meant and no other listed code is as close.
-Swapped adjacent digits or letters are plainly meant even when numbered siblings are listed, as those differ by more
-than a swap. When two or more are equally plausible (for example one listed code is the word without its last letter and
-another has a different last letter), when another listed code is as close, or when none is plainly meant, pick none (canonical_code null) and leave it for the
-did-you-mean: the assistant asks which code. A typed word that is not on file is never its own canonical_code: it is a listed code or null.
+digits is another product. When exactly one near code is plainly meant, pick it: the assistant answers that code and
+names it. When two or more are equally plausible, or none is plainly meant, pick none (canonical_code null): the assistant
+asks which code. A typed word that is not on file is never its own canonical_code: it is a listed code or null.
 A "set code X (name)" line is a product set: hint "product", canonical_code X; with a spec word (P-trap, S-trap, a size),
 pick the set whose name carries it.
 When the typed code's own name carries another spec than the one the message names (a typed set named S-TRAP 250MM, a

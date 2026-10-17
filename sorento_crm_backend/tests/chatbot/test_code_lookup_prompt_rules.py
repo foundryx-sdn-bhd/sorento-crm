@@ -82,16 +82,6 @@ def _near_code_paragraph() -> str:
     return S[start : S.index('a "set code x (name)" line is a product set')]
 
 
-def test_r2_6_near_code_is_picked_only_when_no_other_listed_code_is_as_close():
-    para = _near_code_paragraph()
-    assert "no other listed code is as close" in para
-    assert "did-you-mean" in para
-
-
-def test_r2_6_one_plainly_meant_pick_rule_is_gone():
-    assert "when exactly one near code is plainly meant, pick it" not in S
-
-
 def test_r2_6_swapped_digits_still_pick():
     para = _near_code_paragraph()
     assert "plainly the code the message means" in para
