@@ -200,12 +200,12 @@ HAND_OVER_OFFER = "hand_over"
 
 def _offer_just_made(pending: Any, turn_no: int | None) -> bool:
     """An answered roster whose LAST reply offered the hand-over: the stamp (the miss path's
-    own turn; the roster's birth turn when an older store carries none) is the turn before this
+    own turn; a roster without one shows no offer) is the turn before this
     one. A fresh roster, or a flag left by an earlier turn, is not an offer."""
     payload = getattr(pending, "payload", None) or {}
     if not payload.get("escalate_offered") or not payload.get("answered_positions"):
         return False
-    stamp = payload.get("offered_at_turn", getattr(pending, "asked_at_turn", None))
+    stamp = payload.get("offered_at_turn")
     return isinstance(stamp, int) and isinstance(turn_no, int) and stamp == turn_no - 1
 
 
