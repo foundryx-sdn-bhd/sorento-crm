@@ -7014,6 +7014,33 @@ def _run_stages_body(  # noqa: PLR0915
                     and asked is not None
                     and min(asked, business_answer.SET_LIST_MAX) < qualifying
                 )
+                # CHAT-COMPOSER: a page cut by the one-message budget leaves products unlisted even
+                # in a set of 50 or fewer; a described set whose leg qualifies nothing names the
+                # first page of its matching products. Both are carried so a bare "more" pages.
+                from app.services.chatbot import composers
+
+                window = envelopes[0].get("set_window") if envelopes else None
+                window_last = (
+                    int(window["last"]) if isinstance(window, dict) and window.get("last") else None
+                )
+                members = (predicate or {}).get("members") if isinstance(predicate, dict) else None
+                members_total = int((members or {}).get("total") or 0) if isinstance(members, dict) else 0
+                members_listed = len((members or {}).get("codes") or []) if isinstance(members, dict) else 0
+                cut_small = bool(
+                    predicate is not None
+                    and plan.fetch
+                    and spec_tier
+                    and window_last is not None
+                    and window_last < qualifying
+                    and not (listed_to_the_limit or partly_listed)
+                )
+                members_paged = bool(
+                    composers.enabled()
+                    and predicate is not None
+                    and plan.fetch
+                    and not qualifying
+                    and members_total > members_listed > 0
+                )
                 paged = bool(plan.fetch) and isinstance(plan.fetch[0].filters.get("set_page"), dict)
                 # ROGUE-CONVO-REVIEW (owner ruling Q4): a set the spec tier read off the
                 # words INSIDE an unplaced product token is not what the customer asked
@@ -7026,10 +7053,6 @@ def _run_stages_body(  # noqa: PLR0915
                 # `miss_on_typed_product` is the one computation beside the resolve outcome.
                 # CHAT-COMPOSER: a page cut to one message listed fewer than the limit; the carry
                 # moves past what was actually printed.
-                window = envelopes[0].get("set_window") if envelopes else None
-                window_last = (
-                    int(window["last"]) if isinstance(window, dict) and window.get("last") else None
-                )
                 if paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
@@ -7054,7 +7077,15 @@ def _run_stages_body(  # noqa: PLR0915
                             state_out.focus.extra.pop(kind, None)
                 elif miss_on_typed_product and not class_terms:
                     state_out.focus.set_page = None
-                elif partly_listed or listed_to_the_limit:
+                elif members_paged:
+                    state_out.focus.set_page = turn_runtime.set_page_carry(
+                        {**predicate, "qualifying_total": members_total, "require": {}},
+                        plan.fetch[0],
+                        class_terms,
+                        access_levels=(envelopes[0].get("access_levels_used") if envelopes else None),
+                        shown=members_listed,
+                    )
+                elif partly_listed or listed_to_the_limit or cut_small:
                     state_out.focus.set_page = turn_runtime.set_page_carry(
                         predicate,
                         plan.fetch[0],

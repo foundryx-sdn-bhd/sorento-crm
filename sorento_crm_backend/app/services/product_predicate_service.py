@@ -1291,7 +1291,19 @@ def resolve_product_set(
         members_total = int(_base(db.query(func.count(func.distinct(family))), with_legs=False).scalar() or 0)
         if members_total:
             members: dict[str, Any] = {"total": members_total}
-            if members_total > breakdown_over:
+            from app.config import settings
+
+            if members_total > breakdown_over and getattr(settings, "chat_composer_enabled", False):
+                # CHAT-COMPOSER: the first page of the matching products, by code (never counts).
+                first = (
+                    _base(db.query(family.label("family"), Product.product_code), with_legs=False)
+                    .order_by(family, Product.product_code)
+                    .distinct(family)
+                    .limit(breakdown_over)
+                    .all()
+                )
+                members["codes"] = sorted({str(f) for f, _code in first})
+            elif members_total > breakdown_over:
                 broken = _set_breakdown(
                     db, _base(db.query(Product.id.label("pid"), family.label("family")), with_legs=False), membership=membership, brand=brand
                 )

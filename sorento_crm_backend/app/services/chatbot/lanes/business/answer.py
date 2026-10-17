@@ -2840,12 +2840,17 @@ def breakdown_lines(breakdown: Any, set_noun: str) -> list[str]:
     return out
 
 
-def what_you_want_reply(asked: str, lines: list[str], *, missing: str = "", leg: str = "", team: Any) -> str:
+def what_you_want_reply(
+    asked: str, lines: list[str], *, missing: str = "", leg: str = "", team: Any, between: str = ""
+) -> str:
     """The ONE reply a miss has, the product-code miss's own (owner, 28 Sep 2026: "you do
     like here is what you want, but no incoming, do you want me to escalate..., I want
     that structure to stay"): what was asked for on one line, what matched line by line,
     what did not match, one short escalate offer. Fix round 9 on PR #833."""
     head = "\n".join([f"Here's what you want: {asked}", *lines])
+    if between:
+        # CHAT-COMPOSER: a line that belongs under the list, above the miss sentence.
+        head = f"{head}\n\n{between}"
     if missing:
         from app.services.chatbot import composers
 
@@ -2875,11 +2880,27 @@ def described_members_reply(predicate: Any, team: Any) -> str | None:
     phrase = described_set_phrase(jsc.get(predicate, "description"), noun, {})
     total = int(jsc.get(members, "total") or 0)
     lines = [f"• {jsc.js_string(c)}" for c in jsc.array(jsc.get(members, "codes")) if jsc.truthy(c)]
-    lines = lines or breakdown_lines(jsc.get(members, "breakdown"), noun)
+    from app.services.chatbot import composers
+
+    on = composers.enabled()
+    # CHAT-COMPOSER: more matching products than the page names them by code, no count lines;
+    # the header states the range and a "more" line sits under the list.
+    paged = on and total > len(lines) > 0
+    lines = lines or ([] if on else breakdown_lines(jsc.get(members, "breakdown"), noun))
     leg = next(iter(require), "")
     noun_of_leg = (
         jsc.js_string(require[leg]).strip().lower() if leg == "attachment_type" else _MISS_NOUN.get(leg, "")
     )
+    if paged:
+        from app.services.chatbot.composers import sets as composers_sets
+
+        return what_you_want_reply(
+            f"{phrase} ({total:,}, showing 1 to {len(lines)})",
+            lines,
+            leg=noun_of_leg,
+            team=team,
+            between=composers_sets.more_line(composers_sets.next_count(total, 0, len(lines), SET_LIST_MAX)),
+        )
     return what_you_want_reply(f"{phrase} ({total:,})" if total else phrase, lines, leg=noun_of_leg, team=team)
 
 
@@ -2892,7 +2913,9 @@ def near_miss_reply(predicate: Any, team: Any) -> str:
     labels = [jsc.js_string(c) for c in jsc.array(jsc.get(predicate, "class_labels")) if jsc.truthy(c)]
     noun = set_noun_for(labels)
     asked = described_set_phrase(jsc.get(predicate, "description"), noun, jsc.get(predicate, "require") or {})
-    lines = breakdown_lines({"rows": jsc.array(jsc.get(near, "other_values"))}, set_noun_for(
+    from app.services.chatbot import composers
+
+    lines = [] if composers.enabled() else breakdown_lines({"rows": jsc.array(jsc.get(near, "other_values"))}, set_noun_for(
         [jsc.js_string(c) for c in jsc.array(jsc.get(near, "class_labels")) if jsc.truthy(c)] or labels
     ))
     value = jsc.js_string(jsc.get(near, "value")).strip()
