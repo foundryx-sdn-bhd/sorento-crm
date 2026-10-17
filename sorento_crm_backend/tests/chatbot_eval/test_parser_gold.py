@@ -189,7 +189,7 @@ def test_code_picks_gold_file():
     ids = [r["id"] for r in rows]
     assert len(rows) >= 16
     assert len(ids) == len(set(ids))
-    for prefix in ("cp-typo-", "cp-tie-", "cp-part-", "cp-set-"):
+    for prefix in ("cp-typo-", "cp-tie-", "cp-part-", "cp-set-", "cp-amb-", "cp-trans-"):
         assert any(i.startswith(prefix) for i in ids), prefix
     assert sum(i.startswith("cp-typo-") for i in ids) >= 5
     assert sum(i.startswith("cp-tie-") for i in ids) >= 4
@@ -197,7 +197,7 @@ def test_code_picks_gold_file():
     assert sum(i.startswith("cp-set-") for i in ids) >= 2
     for r in rows:
         assert "canonical" in r["expect"] and "attributes_only" in r["expect"], r["id"]
-        if r["id"].startswith(("cp-tie-", "cp-part-")):
+        if r["id"].startswith(("cp-tie-", "cp-part-", "cp-amb-")):
             assert r["expect"]["canonical"] is None, r["id"]
         else:
             assert r["expect"]["canonical"], r["id"]

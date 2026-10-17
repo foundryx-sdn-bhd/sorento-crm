@@ -15,3 +15,13 @@
 {"id": "cp-set-01", "message": "ibwc7605-s10 but in p trap", "expect": {"canonical": "IBWC7605-P", "attributes_only": []}}
 {"id": "cp-set-02", "message": "ibwc7605-p with s trap please", "expect": {"canonical": "IBWC7605-S10", "attributes_only": []}}
 {"id": "cp-set-03", "message": "mwc7604-sssc in p-trap", "expect": {"canonical": "MWC7604-P", "attributes_only": []}}
+{"id": "cp-amb-01", "message": "is cbdr400q still in stock?", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-amb-02", "message": "cbm116x ada stok tak?", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-amb-03", "message": "srtwb142q 6 pcs", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-amb-04", "message": "what is the price of mss690q", "expect": {"canonical": null, "attributes_only": ["price"]}}
+{"id": "cp-trans-01", "message": "srtwb3450 how many do we have", "expect": {"canonical": "SRTWB3405", "attributes_only": []}}
+{"id": "cp-trans-02", "message": "srt9451-gy ada stok?", "expect": {"canonical": "SRT9541-GY", "attributes_only": []}}
+{"id": "cp-trans-03", "message": "need srtwc8061-rl x 4", "expect": {"canonical": "SRTWC8601-RL", "attributes_only": []}}
+{"id": "cp-trans-04", "message": "srt2042-gy available?", "expect": {"canonical": "SRT2402-GY", "attributes_only": []}}
+{"id": "cp-amb-05", "message": "cb5112b ada stok tak?", "expect": {"canonical": null, "attributes_only": []}}
+{"id": "cp-amb-06", "message": "ch6004m in stock?", "expect": {"canonical": null, "attributes_only": []}}

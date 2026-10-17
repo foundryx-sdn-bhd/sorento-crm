@@ -72,3 +72,27 @@ def test_f8_a_typed_word_not_on_file_is_never_its_own_canonical_code():
 
 def test_f8_a_set_whose_name_carries_another_spec_gives_way_to_the_set_that_carries_the_asked_one():
     assert "pick the listed set or near set code whose name carries the spec" in S
+
+
+# ---- R2-6 (crew decision 18 Oct): a near code is picked only when no other listed code is as close
+
+
+def _near_code_paragraph() -> str:
+    start = S.index('a "near code x (name)" line under a word with a digit')
+    return S[start : S.index('a "set code x (name)" line is a product set')]
+
+
+def test_r2_6_near_code_is_picked_only_when_no_other_listed_code_is_as_close():
+    para = _near_code_paragraph()
+    assert "no other listed code is as close" in para
+    assert "did-you-mean" in para
+
+
+def test_r2_6_one_plainly_meant_pick_rule_is_gone():
+    assert "when exactly one near code is plainly meant, pick it" not in S
+
+
+def test_r2_6_swapped_digits_still_pick():
+    para = _near_code_paragraph()
+    assert "plainly the code the message means" in para
+    assert "same digits with letters swapped, missing or one letter off" in para
