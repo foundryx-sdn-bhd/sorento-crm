@@ -54,6 +54,11 @@ ALLOWED = {
     # request path. Listed by file, not by directory, like the parity script above.
     "scripts/chatbot_eval/replay.py",
     "tests/chatbot_eval/test_replay.py",
+    # EVAL-BENCH (#1745) live replay test: drives `replay.py live` through the real engine and
+    # patches `engine`, `head.parser` and `lanes.ideate` directly to block the network and the
+    # ideation offload; `/chat/turn` has no seam for those. Bench tooling, not core, not on a
+    # request path. Listed by file, like `test_replay.py` above.
+    "tests/chatbot_eval/test_replay_live.py",
     # Chatbot memory lane A S2 (contract section 4/5): the contact's memory/facts
     # surface is a `user_management.contacts` route, so it cannot live under
     # `app/services/chatbot/`, yet its vocabulary, precedence and row-lock rules
