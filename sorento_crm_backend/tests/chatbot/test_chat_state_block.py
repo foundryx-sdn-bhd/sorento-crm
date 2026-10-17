@@ -198,14 +198,15 @@ import pytest  # noqa: E402
 
 
 @pytest.mark.parametrize("domain,code", R2D_CASES, ids=[c[0] for c in R2D_CASES])
-def test_r2d_the_subject_line_names_the_domain_of_the_last_answer(domain, code):
+def test_r2d_the_subject_line_names_the_domain_that_was_answered(domain, code):
     state = State(focus=Focus(products=[_product(code)], domains=[domain]), turn_no=3)
     text = _render(state)
     line = next(l for l in text.splitlines() if l.startswith("- subject"))
-    assert f"last answer: {domain}" in line, line
+    assert f"domain {domain} (answered)" in line, line
+    assert "last answer" not in line, "the words collide with the open-question kind last_answer"
     assert code in line
 
 
 def test_r2d_no_domain_held_prints_no_last_answer_claim():
     text = _render(State(focus=Focus(products=[_product("SRT1")]), turn_no=3))
-    assert "last answer" not in text
+    assert "(answered)" not in text

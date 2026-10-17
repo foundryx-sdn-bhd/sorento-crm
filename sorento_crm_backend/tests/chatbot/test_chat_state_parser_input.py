@@ -469,7 +469,7 @@ def test_r2d_a_message_naming_only_another_item_asks_the_same_fact_as_the_last_a
     import re
 
     text = _section_text()
-    assert "last answer" in text
+    assert "(answered)" in text, "the subject's domain marker must be explained"
     assert re.search(r"(naming|names) only (another|a different) (item|code|product)[^.]*(same|keep)[^.]*(domain|fact|last answer)", text), text
     assert re.search(r"`set product`", text)
 
