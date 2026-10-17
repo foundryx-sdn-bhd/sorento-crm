@@ -2483,3 +2483,38 @@ def test_r30c_words_in_different_keys_of_the_same_call_are_not_pooled():
     res = _r30b({"key": "spec", "value": "black matt"}, [BLACK_SPEC],
                 [("crm_master_products_list", {"product_ids": [UA], "scope_terms": ["black"], "query": "matt"})])
     assert res["checks"].get("applied") is False, res["checks"]
+
+
+# round 30d: a carried filter word is a whole word
+def _r30d(value, args):
+    return _r30b({"key": "spec", "value": value}, [], [("crm_master_products_list", dict(args))])
+
+
+def test_r30d_a_filter_word_inside_a_longer_word_is_not_carried():
+    res = _r30d("p_trap", {"scope_terms": ["s trap water closet"]})
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30d_digits_inside_a_product_uuid_are_not_a_carried_size():
+    res = _r30d("300mm", {"product_ids": ["4d3006aa-1b2c-4d5e-8f90-123456789abc"]})
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30d_digits_inside_a_product_code_are_not_a_carried_size():
+    res = _r30d("300mm", {"product_codes": ["SRTWB3001"]})
+    assert res["checks"].get("applied") is False, res["checks"]
+
+
+def test_r30d_a_whole_word_size_in_a_search_term_is_carried():
+    res = _r30d("300mm", {"scope_terms": ["300 mm basin"]})
+    assert res["checks"].get("applied") is True, res["checks"]
+
+
+def test_r30d_two_filter_words_in_one_argument_list_are_carried():
+    res = _r30d("black matt", {"scope_terms": ["black", "matt"]})
+    assert res["checks"].get("applied") is True, res["checks"]
+
+
+def test_r30d_the_whole_phrase_in_one_string_is_carried():
+    res = _r30d("black matt", {"scope_terms": ["black matt basin"]})
+    assert res["checks"].get("applied") is True, res["checks"]
