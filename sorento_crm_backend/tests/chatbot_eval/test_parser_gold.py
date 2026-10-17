@@ -382,3 +382,95 @@ def test_run_live_registers_the_scope_listener_and_scopes_the_candidate_block(se
     # End to end (can only fail in a process where nothing registered the listener yet).
     assert blocks and held[DEFAULT_COMPANY_ID] in blocks[0]
     assert held[OTHER_COMPANY] not in blocks[0]
+
+
+# ---- review round 2: a pin must resolve to an UNLABELLED parser version before any spend
+# (parser_gold.py _parse_one/resolve_config falls back silently to the in-code prompt for an unknown
+# id, ai_prompt_registry.py:1495; replay.py:775/809 `_pin_resolves` is the guard to mirror)
+
+
+def _seed_version(session_factory, number: int, *, label: str | None = None) -> str:
+    import uuid
+
+    from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
+    from scripts.chatbot_eval import replay
+
+    db = session_factory()
+    vid = str(uuid.uuid4())
+    db.add(AIPromptVersion(id=vid, name=replay.PARSER_PROMPT_KEY, version=number, template="x"))
+    db.flush()
+    if label:
+        db.add(AIPromptLabel(id=str(uuid.uuid4()), name=replay.PARSER_PROMPT_KEY, label=label, version_id=vid))
+    db.commit()
+    return vid
+
+
+def _stub_provider(monkeypatch, session_factory, tmp_path, version_number: int = 7):
+    """Count every LLM call and every parser.parse; point the CLI at the blank-schema factory."""
+    import app.database
+    from app.services import llm_provider
+    from app.services.chatbot.head import parser as parser_mod
+
+    calls: list[str] = []
+
+    class _Keyed:
+        api_key = "sk-synthetic-not-a-real-key-WXYZ"
+
+    def fake_chat(self, messages, **kw):
+        calls.append("chat")
+        return llm_provider.ChatResult(content="{}", prompt_tokens=10, completion_tokens=1, total_tokens=11, cached_tokens=0)
+
+    def fake_parse(config, user_block):
+        calls.append("parse")
+        llm_provider.OpenAIProvider.chat(_Keyed(), [{"role": "user", "content": "x"}], model="gpt-5.4-mini")
+        return {"status": "ok", "entities": [], "requested_attributes": []}
+
+    config = parser_mod.ParserConfig(system_prompt="x", prompt_version=version_number, provider="openai",
+                                     model="gpt-5.4-mini", api_key="k")
+    monkeypatch.setattr(llm_provider.OpenAIProvider, "chat", fake_chat)
+    monkeypatch.setattr(parser_mod, "parse", fake_parse)
+    monkeypatch.setattr(parser_mod, "resolve_config", lambda db, **kw: config)
+    monkeypatch.setattr(app.database, "SessionLocal", session_factory)
+    monkeypatch.chdir(BACKEND)
+    gold = tmp_path / "g.jsonl"
+    gold.write_text(json.dumps({"id": "r1", "message": "abc1 price", "expect": {}}) + "\n", encoding="utf-8")
+    return calls, gold, tmp_path / "out.jsonl"
+
+
+def _live_argv(gold, out, version_id: str) -> list[str]:
+    return ["live", "--gold", str(gold), "--out", str(out), "--max-usd", "5", "--require-key-last4", "WXYZ",
+            "--prompt-version-id", version_id, "--repeats", "1"]
+
+
+def test_live_refuses_a_pin_that_is_not_a_parser_version_before_any_llm_call(session_factory, monkeypatch, tmp_path, capsys):
+    import uuid
+
+    calls, gold, out = _stub_provider(monkeypatch, session_factory, tmp_path)
+
+    rc = pg.main(_live_argv(gold, out, str(uuid.uuid4())))
+
+    assert rc != 0
+    assert calls == [], calls
+    assert "refused" in capsys.readouterr().err
+
+
+def test_live_refuses_a_pin_to_a_labelled_version_before_any_llm_call(session_factory, monkeypatch, tmp_path, capsys):
+    vid = _seed_version(session_factory, 7, label="production")
+    calls, gold, out = _stub_provider(monkeypatch, session_factory, tmp_path)
+
+    rc = pg.main(_live_argv(gold, out, vid))
+
+    assert rc != 0
+    assert calls == [], calls
+    assert "refused" in capsys.readouterr().err
+
+
+def test_run_live_rows_carry_the_resolved_prompt_version_number(session_factory, monkeypatch, tmp_path):
+    vid = _seed_version(session_factory, 7)
+    calls, _gold, _out = _stub_provider(monkeypatch, session_factory, tmp_path, version_number=7)
+
+    out = pg.run_live([{"id": "r1", "message": "abc1 price", "expect": {}}], session_factory=session_factory,
+                      version_id=vid, repeats=2, max_usd=5.0, require_key_last4="WXYZ")
+
+    assert len(out) == 2 and calls
+    assert [r.get("prompt_version") for r in out] == [7, 7], out
