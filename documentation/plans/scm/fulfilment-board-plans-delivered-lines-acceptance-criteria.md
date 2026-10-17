@@ -63,10 +63,12 @@ order does today.
   a stock rung for 3 (whichever rung the ladder's own rules pick; the UAC does not prescribe the
   composition), and after confirm the reserve it writes holds 0 (AC-S1-2).
 - **AC-S2-4 [BE]** Given an open line with 3 ordered, 1 delivered, no decision, then the line
-  asks for 3 (not 2): 1 still to ship, 1 to put back. After a confirmed reserve of 1 on it, the
-  hold counts as `min(1, 3 - 1) = 1`, so free stock for other orders drops by 1 only. The rung
-  composition is the ladder's own business (rule 7 keeps the own bin out of Reserve; the UAC
-  does not prescribe it).
+  asks for 3 (not 2): 1 still to ship, 1 to put back. RESTATED 14 Oct 2026 (owner rule:
+  delivered qty consumes the Reserve/Borrow first, then the Buy): after a confirmed Reserve 1 +
+  Buy 2 on it, the delivered unit used the Reserve up, so the hold is 0 and free stock for
+  other orders is untouched; the Buy 2 covers the 2 still owed. (Was: the hold counted
+  `min(1, 3 - 1) = 1`.) The rung composition is the ladder's own business (rule 7 keeps the
+  own bin out of Reserve; the UAC does not prescribe it).
 - **AC-S2-5 [BE]** Given a line with `purchasing_status = covered`, then it is not admitted (a
   person already ruled "no purchase needed").
 - **AC-S2-6 [BE]** Given a line with `line_status = cancelled`, then it is not admitted, and a
