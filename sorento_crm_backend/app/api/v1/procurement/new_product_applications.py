@@ -38,15 +38,19 @@ def _any_actor(db: Session, user: dict) -> svc.Actor:
     return svc.actor_from_slugs(user["id"], slugs)
 
 
-def _load(db: Session, application_id: str):
-    return svc.get_for(db, validate_uuid_path(application_id, resource="New product application"))
+def _load(db: Session, application_id: str, *, for_update: bool = False):
+    return svc.get_for(
+        db,
+        validate_uuid_path(application_id, resource="New product application"),
+        for_update=for_update,
+    )
 
 
-def _done(db: Session, app, event: Optional[str] = None):
+def _done(db: Session, app, event: Optional[str] = None, actor_id: Optional[str] = None):
     """Commit, then tell whoever now has to act, then answer with the fresh record."""
     db.commit()
     if event:
-        svc.notify(db, app, event)
+        svc.notify(db, app, event, actor_id=actor_id)
         db.commit()
     db.refresh(app)
     return svc.serialize_detail(db, app)
@@ -141,7 +145,7 @@ def update_application(
     db: Session = Depends(get_db),
 ):
     try:
-        app = _load(db, application_id)
+        app = _load(db, application_id, for_update=True)
         svc.update(db, app, actor=_actor(db, user), data=payload.model_dump(exclude_unset=True))
         return _done(db, app)
     except Exception:
@@ -151,11 +155,11 @@ def update_application(
 
 def _move(db: Session, user: dict, application_id: str, fn, **kw):
     try:
-        app = _load(db, application_id)
+        app = _load(db, application_id, for_update=True)
         actor = _actor(db, user)
         svc.assert_can_view(app, actor)
         event = fn(db, app, actor=actor, **kw)
-        return _done(db, app, event)
+        return _done(db, app, event, actor.user_id)
     except Exception:
         db.rollback()
         raise
@@ -203,11 +207,11 @@ def cancel(
 
 def _line_move(db: Session, user: dict, application_id: str, line_id: str, fn, **kw):
     try:
-        app = _load(db, application_id)
+        app = _load(db, application_id, for_update=True)
         actor = _actor(db, user)
         svc.assert_can_view(app, actor)
         event = fn(db, app, validate_uuid_path(line_id, resource="Line"), actor=actor, **kw)
-        return _done(db, app, event)
+        return _done(db, app, event, actor.user_id)
     except Exception:
         db.rollback()
         raise

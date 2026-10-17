@@ -79,7 +79,17 @@ LINE_REFS = {
     "supplier_id": Supplier,
 }
 LINE_NUMBERS = ("cost_price", "selling_price", "expected_qty")
-PORTAL_HIDDEN_LINE_FIELDS = ("supplier_id", "cost_price")
+PORTAL_HIDDEN_LINE_FIELDS = ("supplier_id", "supplier_item_code", "cost_price")
+#: What a refusal calls each field (never the raw key).
+FIELD_WORDS = {
+    "category_id": "item group",
+    "base_uom_id": "base UOM",
+    "brand_id": "brand",
+    "item_type_id": "item type",
+    "supplier_id": "supplier",
+    "supplier_item_code": "supplier model no",
+    "cost_price": "cost price",
+}
 
 
 @dataclass
@@ -201,11 +211,11 @@ def _check_refs(db: Session, data: Dict[str, Any], *, portal: bool) -> None:
         if portal and not PORTAL_SUPPLIER_AND_COST:
             for field in PORTAL_HIDDEN_LINE_FIELDS:
                 if line.get(field) is not None:
-                    raise _invalid(field, f"Line {index}: {field} is not set from the portal.")
+                    raise _invalid(field, f"Line {index}: the {FIELD_WORDS[field]} is not set from the portal.")
         for field, model in LINE_REFS.items():
             value = line.get(field)
             if value is not None and not _ref_exists(db, model, value):
-                raise _invalid(field, f"Line {index}: the chosen {field} does not exist.")
+                raise _invalid(field, f"Line {index}: the chosen {FIELD_WORDS[field]} does not exist.")
 
 
 def _apply(db: Session, app: NewProductApplication, data: Dict[str, Any], *, portal: bool) -> None:
@@ -258,15 +268,33 @@ def create_draft(
 def update(db: Session, app: NewProductApplication, *, actor: Actor, data: Dict[str, Any]) -> None:
     if not is_owner(app, actor):
         raise _forbidden("Only the applicant can edit this application.")
+    if app.source == "portal" and actor.contact_id is None:
+        # The portal checks (own inquiry, own debtors, no supplier or cost) live on the
+        # portal route; a staff edit would skip them.
+        raise _conflict(
+            "This application was raised in the portal. Edit it in the portal.",
+            "NEW_PRODUCT_APPLICATION_PORTAL_ONLY",
+        )
     assert_unlocked(app)
     _apply(db, app, data, portal=app.source == "portal")
     db.flush()
 
 
-def get_for(db: Session, application_id: str, *, contact_id: Optional[str] = None) -> NewProductApplication:
+def get_for(
+    db: Session,
+    application_id: str,
+    *,
+    contact_id: Optional[str] = None,
+    for_update: bool = False,
+) -> NewProductApplication:
+    """``for_update`` locks the row for the rest of the transaction: every move takes it, so
+    two purchasers finishing the last two lines at once cannot both miss Completed, and a
+    second link of the same line waits and then answers 409."""
     q = db.query(NewProductApplication).filter(NewProductApplication.id == application_id)
     if contact_id is not None:
         q = q.filter(NewProductApplication.contact_id == str(contact_id))
+    if for_update:
+        q = q.with_for_update(of=NewProductApplication)
     app = q.first() if _is_uuid(application_id) else None
     if app is None:
         raise handle_not_found("New product application", application_id)
@@ -661,7 +689,13 @@ def list_for(
         .limit(limit)
         .all()
     )
-    return {"items": [serialize_summary(db, r) for r in rows], "total": total, "page": page, "limit": limit}
+    opened = _opened_codes(db, [str(r.id) for r in rows])
+    return {
+        "items": [serialize_summary(db, r, opened) for r in rows],
+        "total": total,
+        "page": page,
+        "limit": limit,
+    }
 
 
 def _names(db: Session, model, ids: Iterable[Any], *cols) -> Dict[str, Any]:
@@ -690,7 +724,26 @@ def _iso(value: Any) -> Optional[str]:
     return value.isoformat() if value is not None else None
 
 
-def serialize_summary(db: Session, app: NewProductApplication) -> Dict[str, Any]:
+def _opened_codes(db: Session, app_ids: List[str]) -> Dict[str, List[str]]:
+    """Application id -> the codes its lines were opened as, in line order (one query)."""
+    if not app_ids:
+        return {}
+    rows = (
+        db.query(NewProductApplicationLine.application_id, Product.product_code)
+        .join(Product, Product.id == NewProductApplicationLine.opened_product_id)
+        .filter(NewProductApplicationLine.application_id.in_(app_ids))
+        .order_by(NewProductApplicationLine.application_id, NewProductApplicationLine.line_no)
+        .all()
+    )
+    out: Dict[str, List[str]] = {}
+    for app_id, code in rows:
+        out.setdefault(str(app_id), []).append(code)
+    return out
+
+
+def serialize_summary(
+    db: Session, app: NewProductApplication, opened: Optional[Dict[str, List[str]]] = None
+) -> Dict[str, Any]:
     lines = list(app.lines)
     first = lines[0] if lines else None
     inquiry = (
@@ -714,7 +767,9 @@ def serialize_summary(db: Session, app: NewProductApplication) -> Dict[str, Any]
         "first_line": (first.description or first.proposed_code) if first else None,
         "lines_total": len(lines),
         "lines_done": sum(1 for line in lines if _resolved(line)),
-        "opened_codes": [],
+        "opened_codes": (opened if opened is not None else _opened_codes(db, [str(app.id)])).get(
+            str(app.id), []
+        ),
         "needed_by": _iso(app.needed_by),
         "submitted_at": _iso(app.submitted_at),
         "created_at": _iso(app.created_at),
@@ -784,12 +839,11 @@ def serialize_detail(db: Session, app: NewProductApplication, *, portal: bool = 
             "resolved_at": _iso(l.resolved_at),
         }
         if portal and not PORTAL_SUPPLIER_AND_COST:
-            for key in ("supplier_id", "supplier_code", "supplier_name", "cost_price"):
+            for key in ("supplier_id", "supplier_code", "supplier_name", "supplier_item_code", "cost_price"):
                 out.pop(key, None)
         return out
 
     summary = serialize_summary(db, app)
-    summary["opened_codes"] = [products[str(l.opened_product_id)][0] for l in lines if l.opened_product_id and str(l.opened_product_id) in products]
     return {
         **summary,
         "stock_inquiry_product_code": inquiry[1] if inquiry else None,
@@ -820,14 +874,16 @@ def _holders(db: Session, slug: str, company_id: str, exclude: Iterable[Any] = (
 
 _EVENTS = {
     "submitted": ("waits for your approval", "approvers"),
-    "withdrawn": ("was withdrawn by the applicant", "approvers"),
+    "withdrawn": ("was taken back for changes", "approvers"),
     "approved": ("is approved: codes to open", "purchasing"),
     "rejected": ("was rejected", "applicant"),
     "completed": ("is done: the codes are open", "applicant"),
 }
 
 
-def notify(db: Session, app: NewProductApplication, event: Optional[str]) -> int:
+def notify(
+    db: Session, app: NewProductApplication, event: Optional[str], actor_id: Optional[str] = None
+) -> int:
     """Tell the people who now have to act (card rule 8). Call AFTER the move commits; a
     failure is logged and swallowed per recipient, so it never undoes the move."""
     if event not in _EVENTS:
@@ -835,7 +891,9 @@ def notify(db: Session, app: NewProductApplication, event: Optional[str]) -> int
     phrase, audience = _EVENTS[event]
     try:
         if audience == "approvers":
-            recipients = _holders(db, APPROVE, app.company_id, exclude=[app.applicant_id])
+            # Never the applicant, and never the person who just acted (an approver who
+            # revised does not need to hear the request was withdrawn).
+            recipients = _holders(db, APPROVE, app.company_id, exclude=[app.applicant_id, actor_id])
         elif audience == "purchasing":
             recipients = _holders(db, OPEN_CODE, app.company_id)
         else:

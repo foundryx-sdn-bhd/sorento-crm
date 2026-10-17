@@ -121,6 +121,7 @@ class NewProductApplicationLine(Base):
     __tablename__ = "new_product_application_lines"
     __audit_entity_type__ = "new_product_application_line"
     __audit_track__ = True
+    __audit_parent__ = "application_id"  # history rolls up to the application
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
     application_id = Column(

@@ -57,11 +57,12 @@ def _linked_user_id(db: Session, contact_id: str) -> Optional[str]:
     return db.query(User.id).filter(User.respond_contact_id == str(contact_id)).scalar()
 
 
-def _own(db: Session, token: PortalToken, application_id: str):
+def _own(db: Session, token: PortalToken, application_id: str, *, for_update: bool = False):
     return svc.get_for(
         db,
         validate_uuid_path(application_id, resource="New product application"),
         contact_id=str(token.contact_id),
+        for_update=for_update,
     )
 
 
@@ -220,7 +221,7 @@ def portal_update(
     company_id = _resolve_company(db, token)
     try:
         with company_scope(db, frozenset({company_id})):
-            app = _own(db, token, application_id)
+            app = _own(db, token, application_id, for_update=True)
             data = payload.model_dump(exclude_unset=True)
             svc.assert_unlocked(app)
             _check_write(db, token, data, current_customer=app.customer_id)
@@ -236,7 +237,7 @@ def _move(db: Session, token: PortalToken, application_id: str, fn, **kw):
     company_id = _resolve_company(db, token)
     try:
         with company_scope(db, frozenset({company_id})):
-            app = _own(db, token, application_id)
+            app = _own(db, token, application_id, for_update=True)
             event = fn(db, app, actor=_actor(token), **kw)
             return _done(db, app, event)
     except Exception:
