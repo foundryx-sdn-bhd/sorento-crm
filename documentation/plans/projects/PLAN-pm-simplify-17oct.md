@@ -1,6 +1,6 @@
 # PLAN: simplify the project PO and delivery schedule parts (PM-SIMPLIFY)
 
-Status: discovery (17 Oct 2026). No code until the owner OKs the mock. Track: not chosen yet
+Status: mock v1 filed for the owner (17 Oct 2026), waiting on the mock OK and questions Q1-Q5. No code until the owner OKs the mock. Track: not chosen yet
 (decided by the diff once the mock is approved).
 
 Owner 15 Oct: "the PO part and the delivery schedule part are badly designed, too complicated ->
@@ -81,3 +81,66 @@ Four line sets describe one order: `po_lines` (scan, per version), `purchase_ord
 (agreed/keyed), `delivery_schedule_cells` (product x phase), project `sales_order_lines`
 (product x phase x date). Delivery dates live in three places: `delivery_phases.delivery_date`,
 `delivery_schedule_cells.delivery_date_override`, `sales_order_lines.delivery_date`.
+
+## Discovery findings (browser walk, 17 Oct)
+
+Sandbox copy, synthetic project "Taman Contoh Residences" (12 PO lines, schedule v1 + v2 over
+6 phases in two areas, 6 sales orders, PSO-000001 published with 3 lines part delivered).
+Sidebar clicks from `/`. Screenshots: `evidence/pm-simplify-17oct/` (a = create a PO, b = change
+dates, c = partial deliveries, d = what is outstanding; `-1280` and `-375`).
+
+| Job | Today |
+| --- | --- |
+| A. Create a PO | 3 pages (project, PO record, PO document review) + 2 dialogs (Upload: 2 fields, Record: 7 fields), 10 clicks, 3 sign-offs (Confirm, Approve, Countersign) (a01-a09) |
+| B. Change one delivery date | Not possible on the schedule: dates are column headers, clicking does nothing; History sheet read-only (b04-b07). Only route seen: the delivery date on every draft SO line on that phase, one SO at a time; published SOs locked (b08). Or upload a revision: 5-field dialog (b02), review, confirm |
+| C. Partial deliveries | Shown nowhere: SO lines have Qty, UOM, Unit price, Amount, Delivery (date); no delivered figure (c04). Build drafts: 2 dialogs, 3 fields (c02, c03) |
+| D. Ordered / scheduled / delivered / outstanding per item | 7 screens, about 15 clicks; ordered and scheduled found on two different pages, compared by eye; delivered and outstanding not obtainable (d01-d04) |
+
+Also seen: schedule v2 "Need attention (0)" filter beside a "Needs acknowledgement 1" flag (b04);
+PO review says "Only 0 of 1 pages were read" on a confirmed PO with all 12 lines (a09); product
+not resolved shows as "Not matched", "Not quoted", "Not identified" and "Not resolved" on four
+screens; PO line UOM "NOS" becomes "UNIT" on the SO line (b08).
+
+## Proposal (mock v1)
+
+Mock: `mockups/po-schedule-simplify-v1.html` (1280 and 375 frames, numbered callouts, element to
+component map, existing components only).
+
+1. One **Orders** tab on the project replaces POs, Delivery schedules and Sales orders (12 tabs to
+   10). Grid of POs; a row expands to its schedule and sales orders; right-click for the row's
+   actions; Columns toggle.
+2. One **PO page** (`pos/[poId]`) replaces the PO record, the PO document review and the schedule
+   review pages. Line tabs: Lines, Deliveries, Sales orders, Documents. One header CTA: the next
+   step.
+3. **Lines tab**: Ordered, Scheduled, Delivered, Outstanding per line, from existing data (no
+   migration: `projects.sales_order_lines.source_po_line_id` + `core_sales_order_line_id` ->
+   `public.sales_order_lines.qty_delivered` via `delivered_qty_of`,
+   `BE/services/project_supply_service.py:532`). Expand a line for its deliveries.
+4. **Deliveries tab**: one row per phase; the date is edited in place and draft SO lines on that
+   phase follow; a published SO gets the existing amendment flow (Q2). Upload revised schedule is
+   one field.
+5. One sign-off (Q1). Build in one dialog with one field (Q5). Defects D1-D5 fixed on the way.
+
+| Job | Today | Proposed |
+| --- | --- | --- |
+| Create a PO from a scan | 3 pages + 2 dialogs, 10 clicks, 3 sign-offs | 1 page + 1 dialog, 3 clicks, 1 sign-off |
+| Change one delivery's date | not possible on the schedule | 2 clicks, 1 field |
+| Upload a revised schedule | 5 fields | 1 field |
+| See a partial delivery | shown nowhere | 0 extra clicks |
+| Outstanding per item | 7 screens, ~15 clicks, not answerable | 1 screen, 2 clicks |
+| Build sales orders | 2 dialogs, 3 fields | 1 dialog, 1 field |
+
+## Questions for the owner
+
+- Q1. Approve + Countersign gate nothing: (a) drop them, Confirm is the only sign-off; (b) keep and
+  make Build wait for Countersign. Recommendation (a).
+- Q2. Change a delivery date: (a) edit in place, draft SOs follow, published get an amendment;
+  (b) only via a revised schedule upload. Recommendation (a).
+- Q3. One page per PO (merge the three pages)? Recommendation yes.
+- Q4. Delivered quantities: (a) AutoCount only, read-only; (b) also recorded in the CRM.
+  Recommendation (a).
+- Q5. Build: (a) keep the split-by choice in one dialog; (b) always split by delivery date, no
+  dialog. Recommendation (a).
+
+Track (once approved): full track. Q2 changes a business rule (behaviour card), and the merged
+PO page is well over 300 lines; no migration expected.
