@@ -1366,16 +1366,13 @@ _OWN_ASK_FIELDS = (
     "date_mode",
     "date_filter_start",
     "date_filter_end",
-    "match_mode",
     "demand_qty",
     "order_status",
     "group_by",
     "sales_channel",
-    "is_active",
     "reference_target",
     "person_mention",
     "contains_flyer",
-    "query_type",
     "query_brands",
 )
 
@@ -1406,6 +1403,8 @@ def with_set_more(verdict: dict[str, Any], *, carried: Any) -> dict[str, Any]:
         or named_count(verdict.get("top_n")) is not None
         or any(verdict.get(field) for field in _OWN_ASK_FIELDS)
     ):
+        return verdict
+    if verdict.get("message_type") not in (None, "business_query"):
         return verdict
     hint, domain = verdict.get("domain_hint"), key.get("domain")
     if hint and (hint != domain if domain else verdict.get("domain_in_message") is True):

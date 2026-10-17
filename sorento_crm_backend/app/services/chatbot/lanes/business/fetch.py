@@ -3456,8 +3456,13 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         and isinstance(e.get("items"), list)
         and len(e["items"])
     )
+    rows_start = len(msg)  # CHAT-COMPOSER: where this set's rows begin (page cut below)
+    row_ends: list[int] = []  # the message offset each printed row ends at
+    row_items: list[Any] = []  # the item behind each printed row
+    row_idx: list[int] = []  # its index in the answers list (the summary list on a summary page)
+    question_at: int | None = None  # where a dealer quantity question starts
     if qs_render:
-        for si in e["summary_items"]:
+        for si_pos, si in enumerate(e["summary_items"]):
             if not isinstance(si, dict) or not isinstance(si.get("fields"), list):
                 continue  # a hostile entry is skipped, never thrown on
             summary_lines = "\n".join(
@@ -3469,6 +3474,9 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             )
             if summary_lines:
                 msg += summary_lines + "\n\n"
+                row_ends.append(len(msg))
+                row_items.append(si)
+                row_idx.append(si_pos)
 
     action_links = e.get("action_links") or []
     for i, link in enumerate(action_links):
@@ -3554,11 +3562,6 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     groups_render = bool(
         isinstance(e.get("groups"), list) and len(e["groups"]) and not qs_render
     )
-    rows_start = len(msg)  # CHAT-COMPOSER: where this set's rows begin (page cut below)
-    row_ends: list[int] = []  # the message offset each printed row ends at
-    row_items: list[Any] = []  # the item behind each printed row
-    row_idx: list[int] = []  # its index in the answers list
-    question_at: int | None = None  # where a dealer quantity question starts
     if groups_render:
         position = 0
         for grp in e["groups"]:
@@ -3802,7 +3805,11 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 row_items=row_items,
                 row_idx=row_idx,
                 question_at=question_at,
-                source=_rendered_answers(e) if groups_render else (e.get("items") or []),
+                source=(
+                    e["summary_items"]
+                    if qs_render
+                    else _rendered_answers(e) if groups_render else (e.get("items") or [])
+                ),
                 loc=loc,
                 footer=footer,
                 other_brands=other_brands,
@@ -3852,15 +3859,19 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # numbered 2 on screen (review, should-fix 4). Flattened in RENDER order, which is
         # the only order the customer can be talking about. Ungrouped, this is `items`
         # unchanged, so nothing else moves.
-        "answers": page_items
-        if page_items is not None
-        else (_rendered_answers(e) if groups_render else e.get("items")),
+        "answers": (
+            (e.get("items") or [])[: set_window["last"] - set_row_offset]
+            if qs_render and page_items is not None and set_window is not None
+            else page_items
+            if page_items is not None
+            else (_rendered_answers(e) if groups_render else e.get("items"))
+        ),
     }
     if set_window is not None:
         out["set_window"] = set_window
     # Spread-in, not defaulted: a reply with no summary keeps EXACTLY the keys it has today.
     if qs_render:
-        out["summary_items"] = e["summary_items"]
+        out["summary_items"] = page_items if page_items is not None else e["summary_items"]
     if groups_render:
         out["groups"] = e["groups"]
     out.update(
