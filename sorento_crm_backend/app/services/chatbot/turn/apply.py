@@ -1026,8 +1026,12 @@ def _focus_rules(
     domain_locked: bool,
     domain_override: str | None,
     trace: Trace,
+    carried: bool = False,
 ) -> Focus:
-    if verdict.get("topic_reset"):
+    # CHAT-STATE: `carried` is True when the parser's `state_changes` already decided what
+    # the prior state keeps (`turn/chat_state.apply_changes`); the four carry wipes below
+    # are then skipped. The write half (this message's values onto the axes) always runs.
+    if verdict.get("topic_reset") and not carried:
         # Every axis the old topic filled goes; the tier and the brand are the contact's,
         # not the topic's, so they stay. The rules BELOW still run on the emptied focus -
         # a reset turn is a new topic, and it names that topic's own domain and entities
@@ -1171,7 +1175,8 @@ def _focus_rules(
         elif decision.refines:
             trace.rules_fired.append("refinement_keeps_subject")
     if (
-        focus.sort
+        not carried
+        and focus.sort
         and not verdict.get("sort_by")
         and (decision.starts_fresh or domain_in_message(verdict) is True)
     ):
@@ -1197,7 +1202,7 @@ def _focus_rules(
             focus.domains = [verdict["domain_hint"]]
             trace.rules_fired.append("domains_from_asks")
         # else: no domain word this turn - focus.domains carries over unchanged.
-    if focus.date_window and _left_every_carried_domain(carried_domains, focus.domains):
+    if not carried and focus.date_window and _left_every_carried_domain(carried_domains, focus.domains):
         # ORDER-BROADEN (owner, 5 Oct 2026): a window narrows the question it was asked
         # on, and a DIFFERENT domain is a different question, so the carried window
         # never rides into it. "check delivery for last week" (28/09 to 04/10) missed,
@@ -1219,7 +1224,7 @@ def _focus_rules(
     # Read before the v3 `status` overwrites it: "outstanding" in that key alone left a
     # ranking with no hop and no carried filters (PR #1273 round 7).
     was_ranking = focus.status == TOP_SELLING_STATUS
-    if not domain_locked and domain_in_message(verdict) is True:
+    if not carried and not domain_locked and domain_in_message(verdict) is True:
         # #1262 fix lane round 5, R2 (owner hand test, 27 Sep 2026): a message with a
         # domain or status word of its OWN states its own document and status, or none.
         # Writing only when the verdict named one kept "outstanding" on the focus for
@@ -3418,6 +3423,11 @@ def _apply(
     # decide for themselves disagreed at the edges, and each hand pass since the second
     # found a path one of them missed.
     decision = decide(verdict, state.focus, state.pending)
+    if state.state_led not in (None, "answer"):
+        # CHAT-STATE: the parser declared what this message does to the state; decide()'s
+        # own subject reading is bypassed. why="state_changes" keeps `starts_fresh` False,
+        # so the carry eviction in `_focus_rules` cannot fire.
+        decision = replace(decision, kind=state.state_led, why="state_changes")
     trace.decision = decision.as_trace()
 
     refused = _stock_pick_refuses_all(state, verdict, decision, trace)
@@ -3465,6 +3475,7 @@ def _apply(
             domain_locked=False,
             domain_override=domain_override,
             trace=trace,
+            carried=state.state_led is not None,
         )
         return replace(state, focus=focus), reconcile_short_circuit
 
@@ -3507,6 +3518,7 @@ def _apply(
         domain_locked=domain_locked,
         domain_override=domain_override,
         trace=trace,
+        carried=state.state_led is not None,
     )
     # Ported from PR #1118 (not merged). AFTER the focus rules, never before: a topic
     # reset rebuilds the focus from `RESET_KEEPS` alone, and the tasks it KEEPS (the

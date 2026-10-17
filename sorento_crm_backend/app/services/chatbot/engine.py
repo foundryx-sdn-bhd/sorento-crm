@@ -73,6 +73,7 @@ from app.services.chatbot.usage import CLARIFIER_FEATURE, record_parser_usage, r
 from app.services.chatbot import label_catalog, language as language_mod, session_state, turn_runtime
 from app.services.chatbot import quick_reply_guard
 from app.services.chatbot.turn import pending as turn_pending
+from app.services.chatbot.turn import chat_state
 from app.services.chatbot.turn import question as turn_question
 from app.services.chatbot.turn import sub_asks as turn_sub_asks
 from app.services.chatbot.turn import state as turn_state
@@ -1171,6 +1172,17 @@ def turn_apply(state_in: Any, *args: Any, **kwargs: Any) -> Any:
     live = getattr(state_in, "quoted_live", None)
     if live and getattr(out, "quoted_live", None) is None:
         out = dataclasses_replace(out, quoted_live=live)
+    # CHAT-STATE: the decision the parser's `state_changes` led rides to the tail too.
+    carried = {
+        name: getattr(state_in, name)
+        for name in ("state_led", "state_path", "held_aside", "slot_ask")
+        if getattr(state_in, name, None) and not getattr(out, name, None)
+    }
+    if carried:
+        out = dataclasses_replace(out, **carried)
+    if getattr(state_in, "slot_ask", None) is not None:
+        # An unclear held slot is asked, not fetched: the question is the plan's ask.
+        plan.ask, plan.fetch = state_in.slot_ask, []
     return out, plan
 
 
@@ -4521,6 +4533,12 @@ def _run_stages_body(  # noqa: PLR0915
     current_subject = (
         subject_full[len(subject_prefix) :] if subject_full and subject_full.startswith(subject_prefix) else subject_full
     )
+    # CHAT-STATE: the same render the S4 state log keeps as `shown`, so what the parser was
+    # given and what the trace says it was given cannot differ. `open_question` stays the one
+    # source for the block and for `without_phantom_answer`.
+    state_block = (
+        chat_state.render(chat_state.view(state_in, open_question)) if parser_config.state_block else None
+    )
     context_layers = context_mod.ContextLayers(
         level=effective_level,
         profile_facts=memory_intake["profile_facts"],
@@ -4541,6 +4559,7 @@ def _run_stages_body(  # noqa: PLR0915
         product_types=product_types,
         product_details=product_details,
         recent_exchanges=recent,
+        state_block=state_block,
     )
     user_block, context_report = context_mod.assemble(context_layers)
     # AC-MEM052/056 (round 3): where the level itself came from, alongside what it
@@ -4706,6 +4725,54 @@ def _run_stages_body(  # noqa: PLR0915
     # stage (AC-105/R5/H44's own "no routing" shape).
     turn_trace.add("context", context_report)
 
+    # CHAT-STATE seam: the parser's `state_changes`, applied ONCE, before every post-parse
+    # rewrite, APPLY and both of its re-entries (they all read `state_in` / `verdict`, so
+    # writing the change into those two makes the re-entries idempotent). On when the
+    # prompt in use asks for the key or the emission is a dry-run mock; off, the turn is
+    # today's turn untouched.
+    # A dry-run mock emission opts in by carrying the key (null counts as present).
+    state_path = bool(parser_config.state_block or (parser_bypassed and "state_changes" in verdict))
+    if state_path:
+        state_in = dataclasses_replace(state_in, state_path=True)
+        with _session(session_factory) as hygiene_db:
+            state_in = dataclasses_replace(
+                state_in,
+                focus=dataclasses_replace(
+                    state_in.focus,
+                    customers=_readable_customers(
+                        hygiene_db, state_in.focus.customers, contact_respond_id, bool(contact_scope)
+                    ),
+                ),
+            )
+        shown_view = chat_state.view(state_in, open_question)
+        state_log: dict[str, Any] = {
+            "shown": chat_state.render(shown_view),
+            "before": shown_view,
+            "changes": None,
+            "rejected": [],
+        }
+        if verdict.get("state_changes") is not None:
+            applied = chat_state.apply_changes(
+                state_in,
+                verdict,
+                open_question=open_question,
+                domains=[d.name for d in policy.domains],
+                kinds=[k.kind for k in policy.kinds],
+                brands=brands,
+                positions_read_elsewhere=_positions_read_elsewhere(state_in),
+            )
+            state_log = {**applied.log, "shown": state_log["shown"], "before": shown_view}
+            if applied.valid:
+                # A slot the parser said `skip` for is off the focus for this turn only; the
+                # tail puts it back, so the stored focus keeps it.
+                state_in = chat_state.set_aside(applied.state, applied.log.get("slots") or {})
+                verdict = applied.verdict
+            else:
+                verdict = applied.verdict
+        remembered_before["_chat_state"] = state_log
+    state_led = state_in.state_led is not None
+    answering = state_in.state_led == "answer"
+
     # The routing default lands ONCE, here, after the last parse and before the access
     # read (finding 2b): every reader downstream - access, the lanes, the trace - sees
     # the same `suggested_agent`. SRTSC07 (prod transcript, 22 Sep 2026): `pending=` lets
@@ -4722,25 +4789,28 @@ def _run_stages_body(  # noqa: PLR0915
     # #865 round 6 (R3): a reply naming one of the companies an open escalation offer
     # showed ("mocha", "srt", "yes please escalate to sorento team") picks it - n8n's
     # deterministic company-pick tier, with the parser's own pick as the validated fallback.
-    verdict = turn_runtime.with_company_pick(
-        verdict, pending=state_in.pending, message=latest_user_message
-    )
-    # Reviewer S1 on PR #833: the answer to "how many should I show?" must not rest on
-    # the parser filling `top_n` for a bare "10" - its prompt has no example of one, and
-    # its positional rule pulls a bare number toward `reference_positions`.
-    # Round 4 R5 on PR #833: the answer to an open clarify re-runs the ask it was about.
-    verdict = turn_runtime.with_clarify_answer(
-        verdict, latest_user_message, carried=state_in.focus.set_clarify
-    )
-    verdict = _with_account_answer(verdict, state_in.focus.set_clarify)
-    verdict = turn_runtime.with_set_count_from_text(
-        verdict, latest_user_message, carried=state_in.focus.set_page
-    )
-    # Round 7 on PR #833 (owner hand test, item 6): a brand the last set answer offered
-    # narrows that set.
-    verdict = turn_runtime.with_brand_from_offer(
-        verdict, latest_user_message, carried=state_in.focus.set_page
-    )
+    if not state_led or answering:
+        verdict = turn_runtime.with_company_pick(
+            verdict, pending=state_in.pending, message=latest_user_message
+        )
+        # Reviewer S1 on PR #833: the answer to "how many should I show?" must not rest on
+        # the parser filling `top_n` for a bare "10" - its prompt has no example of one, and
+        # its positional rule pulls a bare number toward `reference_positions`.
+        # Round 4 R5 on PR #833: the answer to an open clarify re-runs the ask it was about.
+        verdict = turn_runtime.with_clarify_answer(
+            verdict, latest_user_message, carried=state_in.focus.set_clarify
+        )
+        verdict = _with_account_answer(verdict, state_in.focus.set_clarify)
+        # CHAT-STATE: an option the parser declared picked is not a row count.
+        if not (state_led and (verdict.get("open_question_answer") or {}).get("mode") == "pick"):
+            verdict = turn_runtime.with_set_count_from_text(
+                verdict, latest_user_message, carried=state_in.focus.set_page
+            )
+        # Round 7 on PR #833 (owner hand test, item 6): a brand the last set answer offered
+        # narrows that set.
+        verdict = turn_runtime.with_brand_from_offer(
+            verdict, latest_user_message, carried=state_in.focus.set_page
+        )
     # ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): an echo of a row
     # the focus already holds settled is the carry restated, not an axis to rewrite with
     # an unsettled copy.
@@ -4879,9 +4949,11 @@ def _run_stages_body(  # noqa: PLR0915
         # is read against the question the bot asked before anything routes it.
         # R2 (round 7): read before the verdict below can change the conversation.
         in_ranking_conversation = _in_ranking_conversation(state_in.focus)
-        verdict, state_in, top_selling_rule = _top_selling_verdict(
-            db, verdict, state_in, jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
-        )
+        top_selling_rule = None
+        if not state_led:
+            verdict, state_in, top_selling_rule = _top_selling_verdict(
+                db, verdict, state_in, jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
+            )
         if in_ranking_conversation and _asks_for_a_person(verdict):
             in_ranking_conversation = False
         if top_selling_rule:
@@ -4902,9 +4974,11 @@ def _run_stages_body(  # noqa: PLR0915
         from app.services.chatbot import order_list as order_list_mod
 
         order_list_was_open = order_list_mod.is_open_order_list(state_in.focus)
-        verdict, state_in, order_list_rule = order_list_mod.order_list_verdict(
-            db, verdict, state_in, jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
-        )
+        order_list_rule = None
+        if not state_led:
+            verdict, state_in, order_list_rule = order_list_mod.order_list_verdict(
+                db, verdict, state_in, jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
+            )
         if order_list_rule:
             turn_trace.add("order_list", {"verdict_rule": order_list_rule})
         # SO-NUMBER-ASK: "all my sales orders" is the SO list whatever the parser read (the
@@ -4921,7 +4995,9 @@ def _run_stages_body(  # noqa: PLR0915
             turn_trace.add("so_status", {"verdict_rule": typed_so_rule})
         # Same pass: the report status and document the parser carried onto "1" under the
         # outstanding offer, or onto a period answering the SO list, are not the message's.
-        if not (in_ranking_conversation or top_selling_rule or state_in.focus.status == "top_selling"):
+        if not state_led and not (
+            in_ranking_conversation or top_selling_rule or state_in.focus.status == "top_selling"
+        ):
             verdict, carried_rule = so_status_mod.carried_status_verdict(
                 verdict,
                 jsc.js_string(jsc.get(_inner_message(envelope), "text") or ""),
@@ -4990,7 +5066,9 @@ def _run_stages_body(  # noqa: PLR0915
                 verdict = summed
 
         owed_task = _stock_task_owed_a_number(state_in.focus)
-        if owed_task is None or not _stock_task_is_the_current_question(state_in, owed_task, verdict):
+        if not state_led and (
+            owed_task is None or not _stock_task_is_the_current_question(state_in, owed_task, verdict)
+        ):
             engine_verdict = _with_the_engine_pick(
                 verdict, state_in.pending, jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
             )
@@ -7251,6 +7329,7 @@ def _run_stages_body(  # noqa: PLR0915
                 contact_respond_id=contact_respond_id,
                 turn_trace=turn_trace,
                 state=state_out,
+                remembered_before=remembered_before,
             )
             actions = [*actions, *extra_actions]
             _close_turn(
@@ -8388,6 +8467,85 @@ def _demand_qty_missing(verdict: dict[str, Any]) -> bool:
     return jsc.is_empty(verdict.get("demand_qty")) or verdict.get("demand_qty") == 0
 
 
+def _readable_customers(db: Any, rows: Any, contact_respond_id: Any, has_company_scope: bool) -> list[Any]:
+    """CHAT-STATE S7: the carried customer rows this contact can still read, at turn start.
+    One read through the contact's scope-stamped session (company scope applies), narrowed to
+    the current customer links for an enforced contact. A row whose keys are all unreadable is
+    dropped; a row with no code and no key is dropped; token-only rows travel to the resolver."""
+    keys_of = lambda r: [  # noqa: E731
+        str(k) for k in ([r.get("uuid")] if r.get("uuid") else []) + list(r.get("uuids") or []) if k
+    ]
+    from app.services.identifier_resolver import is_uuid
+
+    every_key = {k for r in rows or [] if isinstance(r, dict) for k in keys_of(r)}
+    wanted = {k for k in every_key if is_uuid(k)}
+    # A key that is not a UUID can name nothing readable.
+    unreadable: set[str] = every_key - wanted
+    if wanted:
+        try:
+            from app.models.base import company_scope
+            from app.models.order import Customer
+
+            # A key nothing holds names no data and is left to the resolver; a key a customer
+            # holds but this contact's scope cannot read is dropped.
+            with company_scope(db, None):
+                existing = {str(i) for (i,) in db.query(Customer.id).filter(Customer.id.in_(wanted)).all()}
+            readable = (
+                {str(i) for (i,) in db.query(Customer.id).filter(Customer.id.in_(wanted)).all()}
+                if has_company_scope
+                else set()
+            )
+            scope = business_services.customer_scope(db, contact_respond_id, business_services.fetch_space_id(db))
+            if scope and scope.get("enforced"):
+                readable &= {str(i) for i in scope["ids"]}
+            # With no company scope at all nothing is readable, whether or not the key exists.
+            unreadable |= (existing - readable) if has_company_scope else set(wanted)
+        except Exception:  # noqa: BLE001 - fail closed: no keyed row is trusted when the read fails
+            logger.warning("chatbot: the carried-customer read failed; keyed customer rows dropped", exc_info=False)
+            unreadable = set(every_key)
+    kept: list[Any] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        keys = keys_of(row)
+        if keys:
+            live = [k for k in keys if k not in unreadable]
+            if not live:
+                continue
+            if len(live) != len(keys):
+                row = {**row, "uuid": live[0], **({"uuids": live} if row.get("uuids") else {})}
+        elif not (row.get("canonical_code") or row.get("raw") or row.get("name")):
+            continue
+        kept.append(row)
+    return kept
+
+
+def _state_log(before: dict[str, Any], state: Any, answer: Any) -> dict[str, Any]:
+    """CHAT-STATE: the memory event's `state` key, `{shown, before, changes, rejected, after}`;
+    empty off the state path. `after` is the view of the state this turn leaves behind."""
+    log = before.get("_chat_state")
+    if not log or state is None:
+        return {}
+    from app.services.chatbot.turn import tail as turn_tail
+
+    state = chat_state.restored(state)
+    focus = state.focus
+    if getattr(state, "state_path", False):
+        focus = dataclasses_replace(
+            focus,
+            last_list=turn_tail.last_list_after(
+                focus.last_list,
+                question=getattr(answer, "question", None),
+                sections=getattr(answer, "sections", None) or [],
+            ),
+        )
+    after_state = dataclasses_replace(state, focus=focus, pending=getattr(answer, "question", None) or state.pending)
+    after = chat_state.view(
+        after_state, turn_question.open_question(after_state.pending, focus.tasks, focus.required_ask)
+    )
+    return {"state": json.loads(json.dumps({**log, "after": after}, default=str))}
+
+
 def _record_memory_trace(
     db: Session,
     turn_trace: Any,
@@ -8413,6 +8571,7 @@ def _record_memory_trace(
     from app.services.chatbot.turn.pending import to_wire
     from app.services.chatbot.turn.state import focus_to_wire
 
+    state = chat_state.restored(state) if state is not None else None
     # The contact intake resolved (workspace-scoped, by primary key), never a second
     # `respond_io_id` lookup; the profile BEFORE is intake's snapshot, the AFTER is
     # read now, once this turn's writes are in (reviewer pass at d89110c0, S22).
@@ -8456,6 +8615,7 @@ def _record_memory_trace(
             },
             "written": written,
             "dry_run": dry_run,
+            **_state_log(before, state, answer),
         },
     )
     if not record_remembered:
@@ -10171,8 +10331,14 @@ def run_tail(
         applied = state = turn_tail.carry_live_state(
             applied, question is not None, applied.quoted_live, non_answer=True
         )
+    tail_focus = chat_state.restored(state).focus
+    if getattr(state, "state_path", False):
+        # CHAT-STATE: a turn the parser's `state_changes` led records the list it showed.
+        tail_focus = dataclasses_replace(
+            tail_focus, last_list=turn_tail.last_list_after(tail_focus.last_list, question=question, sections=[])
+        )
     payload = {
-        "focus": turn_state.focus_to_wire(state.focus),
+        "focus": turn_state.focus_to_wire(tail_focus),
         # The lane's OWN question, else the one APPLY carried - the same rule the
         # composed arms run through `turn/tail.py::session_payload` ("no new question"
         # is not "no question", AC-1532). A lane that answers nothing and clears nothing
@@ -10205,6 +10371,17 @@ def run_tail(
             "turn_no": getattr(state, "turn_no", 0),
         },
     )
+    if before.get("_chat_state") and not turn_trace.has_event("memory"):
+        # CHAT-STATE: an arm that hands the memory event nowhere else still shows the state log.
+        import types as _types
+
+        turn_trace.add(
+            "memory",
+            {
+                "dry_run": dry_run,
+                **_state_log(before, state, _types.SimpleNamespace(question=question, sections=[])),
+            },
+        )
 
     written = (not dry_run) and write_session
     if written:
@@ -10480,6 +10657,7 @@ def _complete_canned_lane(
     contact_respond_id: str,
     turn_trace: trace_mod.TurnTrace,
     state: Any = None,
+    remembered_before: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, list[dict[str, Any]]]:
     """One of S3's eight lanes, answered inside the turn. `(reply, patch, actions)`.
 
@@ -10555,6 +10733,7 @@ def _complete_canned_lane(
             contact_respond_id=contact_respond_id,
             turn_trace=turn_trace,
             state=state,
+            remembered_before=remembered_before,
         )
         reply = {**reply, **reply_extras}
 
