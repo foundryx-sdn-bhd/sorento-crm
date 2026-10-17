@@ -592,7 +592,7 @@ def _attribute_answered(row: dict[str, Any], attr: str, code: Any) -> bool:
     """An attribute ask is answered by a number after the attribute word (digits inside a product code do not count), or
     by an honest none: the reply says the record has none and a tool result lists the gold code's item with no field
     for that attribute."""
-    reply = reply_text(row)
+    reply = re.sub(r"[*_~]", "", reply_text(row))   # WhatsApp emphasis markers sit between the word and its colon
     word = re.escape(attr)
     between = re.search(rf"\b{word}\b((?:\s+[\w.-]+){{0,4}})\s*:?\s*\b{NONE_WORDS}", CODE_RE.sub(" ", reply), re.I)
     if between and re.search(r"\d", between.group(1)):   # a number in the words after the attribute is a value
