@@ -132,7 +132,8 @@ def _pl_line(db, ship, product, shipped, *, received=0) -> None:
     db.flush()
 
 
-def _spo(db, w: World, product, wh, qty, *, shipment=None, container=None, received=0) -> SPOAllocation:
+def _spo(db, w: World, product, wh, qty, *, shipment=None, container=None, received=0,
+         line_status=None) -> SPOAllocation:
     row = SPOAllocation(
         id=str(uuid.uuid4()),
         spo_number=f"{MARKER}-SPO-{uuid.uuid4().hex[:8]}",
@@ -146,6 +147,7 @@ def _spo(db, w: World, product, wh, qty, *, shipment=None, container=None, recei
         supplier_id=w.supplier.id,
         issue_date=date(2026, 10, 6),
         expected_date=date(2026, 10, 17),
+        line_status=line_status,
     )
     db.add(row)
     db.flush()
@@ -267,6 +269,36 @@ def test_incoming_pl_counts_only_what_no_spo_already_carries(scm_app):
                                               "still_to_land": 20, "on_spo": 5, "counted": 15}
     assert landed.shipment_number not in by_no and draft.shipment_number not in by_no
     assert body["totals"]["forecast_incl_pl"] == body["totals"]["forecast"] + 133
+
+
+def test_incoming_pl_nets_only_the_spo_rows_the_spo_column_counts(scm_app):
+    """Reviewer B1: a stale SPO row must not take quantity off a packing list."""
+    app, db, w, p = _setup(scm_app)
+    bb = _wh(db, "BB")
+    # Containers are reused across voyages: an SPO row received in full on an earlier,
+    # landed shipment with the same container number is not on the new packing list.
+    old = _shipment(db, w, container="TCLU1234567", status="fully_received")
+    _spo(db, w, p, bb, 50, shipment=old, container="TCLU1234567", received=50)
+    reused = _shipment(db, w, container="TCLU1234567")
+    _pl_line(db, reused, p, 60)
+    # A closed SPO line has left the book: it carries nothing off its packing list.
+    linked = _shipment(db, w)
+    _pl_line(db, linked, p, 40)
+    _spo(db, w, p, bb, 40, shipment=linked, line_status="closed")
+    # Partly received SPO: only its open balance is carried (what the SPO column counts).
+    part = _shipment(db, w)
+    _pl_line(db, part, p, 30)
+    _spo(db, w, p, bb, 30, shipment=part, received=10)
+
+    body = _get(app, p)
+
+    by_no = {s["shipment_number"]: s for s in body["incoming_pl"]}
+    assert by_no[reused.shipment_number]["counted"] == 60
+    assert by_no[linked.shipment_number]["counted"] == 40
+    assert (by_no[part.shipment_number]["on_spo"], by_no[part.shipment_number]["counted"]) == (20, 10)
+    assert body["totals"]["spo_qty"] == 20
+    assert body["totals"]["incoming_pl"] == 60 + 40 + 10
+    assert all("inbound_shipment_id" not in s for s in body["spos"])
 
 
 # ---------------------------------------------------------------- AC-8

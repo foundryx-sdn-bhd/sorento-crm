@@ -30,7 +30,6 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Optional
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Stock, Warehouse
@@ -103,7 +102,6 @@ def stock_status(db: Session, product_id: str, so_due_by: Optional[date] = None)
     sales_orders = _sales_order_rows(db, product_id, so_due_by)
     purchase_orders = _purchase_order_rows(db, product_id)
     spos = _spo_rows(db, product_id)
-    incoming_pl = _incoming_pl(db, product_id)
 
     so_qty: dict[str, float] = defaultdict(float)
     po_qty: dict[str, float] = defaultdict(float)
@@ -142,6 +140,11 @@ def stock_status(db: Session, product_id: str, so_due_by: Optional[date] = None)
     sales_orders = [r for r in sales_orders if r["warehouse_id"] in visible]
     purchase_orders = [r for r in purchase_orders if r["warehouse_id"] in visible]
     spos = [r for r in spos if r["warehouse_id"] in visible]
+    # Netted against exactly the SPO rows the SPO column counts, so a packing list's quantity
+    # is in one figure or the other, never both and never neither.
+    incoming_pl = _incoming_pl(db, product_id, spos)
+    for r in spos:
+        r.pop("inbound_shipment_id")
 
     totals = {
         key: sum(loc[key] for loc in locations)
@@ -324,6 +327,7 @@ def _spo_rows(db: Session, product_id: str) -> list[dict]:
             SPOAllocation.issue_date,
             SPOAllocation.expected_date,
             SPOAllocation.container_number,
+            SPOAllocation.inbound_shipment_id,
             SPOAllocation.supplier_id,
             InboundShipment.supplier_id.label("ship_supplier_id"),
             InboundShipment.eta_delay_date,
@@ -366,13 +370,15 @@ def _spo_rows(db: Session, product_id: str) -> list[dict]:
             "container_number": r.container_number,
             "qty": balance,
             "warehouse_id": str(r.warehouse_id),
+            # Internal: which packing list it carries (`_incoming_pl`); popped before returning.
+            "inbound_shipment_id": str(r.inbound_shipment_id) if r.inbound_shipment_id else None,
         })
     out.sort(key=lambda d: (d["arrival_date"] is None, d["arrival_date"] or "", d["spo_number"] or ""))
     return out
 
 
-def _incoming_pl(db: Session, product_id: str) -> list[dict]:
-    """Packing lists still to land, net of what an SPO already carries (R3)."""
+def _incoming_pl(db: Session, product_id: str, spos: list[dict]) -> list[dict]:
+    """Packing lists still to land, net of the open SPO rows (`spos`, the SPO column) on them (R3)."""
     lines = (
         db.query(
             InboundShipment.id,
@@ -409,22 +415,20 @@ def _incoming_pl(db: Session, product_id: str) -> list[dict]:
     if not shipments:
         return []
 
-    ids = list(shipments)
-    containers = {s["container_number"]: sid for sid, s in shipments.items() if s["container_number"]}
-    match = [SPOAllocation.inbound_shipment_id.in_(ids)]
-    if containers:
-        match.append(SPOAllocation.container_number.in_(list(containers)))
+    # A container number can recur across voyages; an unlinked SPO row goes to the earliest
+    # still-to-land packing list carrying it.
+    containers: dict[str, str] = {}
+    for sid, s in sorted(shipments.items(), key=lambda kv: (kv[1]["eta"] is None, kv[1]["eta"] or "")):
+        if s["container_number"]:
+            containers.setdefault(s["container_number"], sid)
     on_spo: dict[str, float] = defaultdict(float)
-    for sid, box, qty in (
-        db.query(SPOAllocation.inbound_shipment_id, SPOAllocation.container_number,
-                 SPOAllocation.allocated_quantity)
-        .filter(SPOAllocation.product_id == product_id, or_(*match))
-        .all()
-    ):
-        # One SPO row counts against one packing list: its link wins, else its container.
-        target = str(sid) if sid and str(sid) in shipments else containers.get(box)
+    for row in spos:
+        # One SPO row counts against one packing list: its link, else (unlinked only) its
+        # container. A row linked to another shipment is not on any of these.
+        link = row["inbound_shipment_id"]
+        target = (link if link in shipments else None) if link else containers.get(row["container_number"])
         if target:
-            on_spo[target] += _num(qty)
+            on_spo[target] += row["qty"]
 
     out = []
     for sid, s in shipments.items():
