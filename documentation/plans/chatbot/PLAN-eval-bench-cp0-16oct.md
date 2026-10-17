@@ -412,3 +412,17 @@ price tier before finding any product, five run results, now fail), attachment 6
   - `_replay_one` and `_live_one` refuse, before any DB use, a session factory `_rolled_back` did not yield.
   - The mark is cleared when the block exits.
   - The L1 replay runs the engine with `offload=False`, so a worker setting cannot move a turn outside the rollback.
+
+## The bench fails loudly (crew PRIORITY, 17 Oct)
+
+#1718's missing column made every replayed turn error the same way in both arms. The gate compared two equally
+broken outputs and printed "unintended 0" for about 6 hours. The rules now (`scripts/chatbot_eval/replay.py`):
+- `diff` exits 3 and prints `BROKEN: broken N` with the first 5 ids when any row in either arm is broken: an error
+  miss, a turn the engine closed as `failed`, empty stages while not skipped, or a duplicate skip. It also exits 3
+  when nothing was compared (`compared 0`). The gate turns any non-zero diff into a failure.
+- `live` stops with `stopped: error_rate` once errored items (an error, a failed turn, or a turn with no trace and no
+  reply) exceed max(2, 2% of the planned items), exits 3, and prints the count and the first 5 ids.
+- `run` and `live` preflight the DB alembic revision against the cwd arm's heads. At a head: pass. Unknown to the arm
+  (the DB is ahead, e.g. the base arm on a migration lane): pass with a warning. Known but not a head (behind), or
+  unstamped: refused with exit 2 and the `alembic upgrade head` command.
+- Live runs on `sorento_cagent_stack` (at ctg_0001, behind head sr_0001) now refuse until crew upgrades that DB.
