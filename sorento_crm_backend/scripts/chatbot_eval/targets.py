@@ -1061,6 +1061,9 @@ def _attachment(row, item):
         ("type", bool(files) and all(_type_ok(_type_word(f.get("attachmentType")), accepted) for f in files),
          "The files sent are not of the type asked."),
     ]
+    if isinstance(gold.get("scheme_files"), list) and files:   # owner rule (CP0 c04/c19): a certification scheme is an index
+        checks.append(("scheme", all(f.get("fileHash") in set(gold["scheme_files"]) for f in files),
+                       "The certificates sent are not of the scheme asked."))
     return checks
 
 
