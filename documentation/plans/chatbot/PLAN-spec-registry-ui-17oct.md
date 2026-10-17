@@ -88,3 +88,36 @@ unlabelled v162 adds the two list tokens but not `{{specs}}`. So today no regist
 
 ## Mock
 `documentation/plans/chatbot/spec-registry-ui-17oct-mock.html` (seed rows; swapped for crew rows when they arrive).
+
+## Build slices (after the owner's mock OK)
+- S1 BE: migration `spec_hint_0001` adds `product_spec_registry.parser_hint text NULL` and `label_owned boolean NOT NULL
+  DEFAULT false`. PATCH accepts `parser_hint` (spec_registry.edit), sets `label_owned` when the label changes;
+  `seed_spec_registry` skips `label` on an owned row; `_serialise` returns both; `specification_lines` prints
+  `Means: <hint>.`
+- S2 BE: cross-field word guard on PATCH (`user_synonyms`, `user_values`) and POST `/{spec_key}/values`; GET returns
+  `also_on` per word for the "Also on" note.
+- S3 BE: `POST /api/v1/master-data/spec-registry/try-chatbot` {text<=500} -> `resolve_config` + `build_user_block` +
+  `parse` (`app/services/chatbot/head/parser.py:750,856,1021`), returns entities `[{raw, kind, field_label, value}]`
+  plus `prompt_version`; no DB write; ParserError -> 422 with a readable message. Needs spec_registry.view.
+- S4 script: `scripts/publish_specs_token_prompt.py` (card item 7).
+- S5 FE: HeaderTab meaning box + Unit read-only; WordsDataGrid "Also on" + refusal; History tab (AuditTrail);
+  TryInChatbotDialog; gear links.
+
+## Test list (red first)
+BE (`tests/test_spec_registry_ui_17oct.py`, Postgres):
+1. PATCH parser_hint stores trimmed one-line text; 201 chars -> 422; products.edit-only caller -> 403.
+2. specification_lines prints `Means:` for numeric, enum and boolean rows; blank hint prints nothing.
+3. prompt var `specs` re-renders with the new hint after commit (cache cleared).
+4. seed_spec_registry keeps an owned label, repairs an unowned one, never writes parser_hint.
+5. PATCH with `unit` does not change unit (and FE never sends it, vitest).
+6. Adding a word that is another field's word / label / key -> 409 `spec_registry_word_on_other_key`, nothing stored;
+   an existing overlap re-sent in the same PATCH saves; a suppressed word elsewhere does not block.
+7. POST values with another field's word -> same 409.
+8. GET row returns `also_on` for a shipped overlap.
+9. try-chatbot with `parse` stubbed returns raw / field label / value; writes no row (count of chatbot.turns and
+   audit_logs unchanged); ParserError -> 422; >500 chars -> 422; view permission enforced.
+10. publish script: one run -> `{{specs}}`, `specs` in variables, unlabelled, idempotent; 0 or 2 runs -> refused;
+    `--from-version` honoured; production label untouched.
+FE (vitest): HeaderTab meaning box view/edit + counter, Unit read-only, payload has no `unit`; WordsDataGrid shows
+the 409 message under the input and "Also on"; TryInChatbotDialog renders picks and the error line; record tabs include
+History; gear has the two links.
