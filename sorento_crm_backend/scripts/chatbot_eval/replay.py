@@ -119,6 +119,7 @@ def _rolled_back(session_factory: Callable[[], Any]) -> Iterator[Callable[[], An
     try:
         yield factory
     finally:
+        factory._rolled_back = False   # type: ignore[attr-defined]   # a factory reused after the block is refused
         for s in opened:
             with contextlib.suppress(Exception):
                 s.close()
@@ -277,10 +278,15 @@ def _tools(trace: list[dict[str, Any]]) -> list[list[str]]:
     ]
 
 
-def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | None = None,
-                vocab_box: list[Any] | None = None) -> dict[str, Any]:
+def _require_rolled_back(factory: Callable[[], Any]) -> None:
+    """Refuse, before any DB use, a factory that `_rolled_back` did not yield (or has since closed)."""
     if not getattr(factory, "_rolled_back", False):
         raise RuntimeError("_replay_one needs a factory from _rolled_back; call replay_rows")
+
+
+def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | None = None,
+                vocab_box: list[Any] | None = None) -> dict[str, Any]:
+    _require_rolled_back(factory)
     from app.models.chatbot_turn import ChatbotTurn
     from app.services.chatbot import engine
     from app.services.chatbot.contracts import Envelope
@@ -328,7 +334,7 @@ def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | No
     misses: list[dict[str, Any]] = []
     with _patched(_recorded_tools(row), misses):
         try:
-            result = engine.run_turn(envelope, session_factory=factory)
+            result = engine.run_turn(envelope, session_factory=factory, offload=False)
         except Exception as exc:  # noqa: BLE001 - the replay records, never raises
             out["misses"] = misses + [{"error": type(exc).__name__}]
             return out
@@ -696,6 +702,7 @@ def _history_patches(stack: Any, history: dict[str, Any] | None) -> None:
 
 def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], Any],
               total: dict[str, Any], prompt_version_id: str | None = None) -> dict[str, Any]:
+    _require_rolled_back(factory)
     from app.models.chatbot_turn import ChatbotTurn
     from app.services.chatbot import engine
     from app.services.chatbot.contracts import Envelope
