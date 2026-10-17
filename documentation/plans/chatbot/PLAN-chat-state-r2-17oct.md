@@ -57,3 +57,6 @@ passes both arms: no TRAIN signal for the held-out 62.5%), refine 1/1 of 5, swit
 - r2 round 1: red 18bb534d6c (22 red: r2-A held qty 9, r2-D last-answer domain 8, r2-B/D prompt text 2, r2-C combined publish 3);
   fix 18c6556187; kill-proof: reverted 22 failed / restored 196 passed (chat_state apply/block/parser_input/seam).
 - L1 replay gate r2 (faa9d0f11e) vs integration base 697df41293, --split dev: grounding 0/1506, turn 0/585 unintended.
+- Reviewer r2 (faa9d0f11e): NOT READY on r2-A (B-A1 clear quantity undone; S-A2 qty onto another product; S-A3 qty onto a
+  new subject; nit label wording); merge / #1755 alone / combined schema / publish READY.
+- r2 round 2: red 721f462bd1 (33 red); fix ff3ec689d9; kill-proof: reverted 33 failed / restored 191 passed.
