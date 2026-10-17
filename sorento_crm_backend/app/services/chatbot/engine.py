@@ -7704,11 +7704,15 @@ def _without_escalation_offer(answer: Any) -> Any:
 def _shown_codes(question: Any) -> list[str] | None:
     """CHAT-CODE-LOOKUP R2-7 (trace only): the product codes a picker, did-you-mean or related list
     shows, in display order, read off the question built from that same list; None when none."""
-    if question is None or question.kind not in ("product_pick", "product_set_pick"):
+    if question is None:
         return None
-    codes = [
-        str(o["code"]) for o in question.options if o.get("entity_type") in ("product", "product_set") and o.get("code")
-    ]
+    # The escalation lane's own product did-you-mean is a team_pick over product options that keep
+    # their code in the payload.
+    codes = []
+    for o in question.options:
+        code = o.get("code") or (o.get("payload") or {}).get("product_code")
+        if o.get("entity_type") in ("product", "product_set") and code:
+            codes.append(str(code))
     return codes or None
 
 
@@ -10412,7 +10416,7 @@ def run_tail(
             "file_mode": file_mode,
             "file_mode_fallback": file_fallback,
             "files": len(src_files) if isinstance(src_files, list) else 0,
-            "shown_codes": None,
+            "shown_codes": _shown_codes(question),
         },
         raw={"reply": reply},
     )
