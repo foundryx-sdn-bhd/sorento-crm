@@ -33,7 +33,7 @@ def test_red_a_bold_honest_none_answers_the_attribute():
     assert res["passed"] is True, (res["reason"], res["checks"])
 
 
-def test_red_a_bold_value_answers_the_attribute():
+def test_guard_a_bold_value_answers_the_attribute():
     res = _grade(f"{CODE}\n*weight:* 12 kg", WEIGHT)
     assert res["checks"]["attribute_value"] is True, res["checks"]
 
@@ -66,3 +66,24 @@ def test_guard_a_bold_attribute_word_with_no_value_and_no_none_still_fails(reply
     res = _grade(reply)
     assert res["checks"]["attribute_value"] is False, res["checks"]
     assert res["passed"] is False
+
+
+def test_guard_a_value_and_a_none_statement_in_one_bold_reply_counts_as_the_value():
+    # the value branch (`between`) and the none statement both read the stripped reply; the record lists a weight
+    res = _grade(f"*weight* 12 kg colour not recorded for {CODE}", WEIGHT)
+    assert res["checks"]["attribute_value"] is True, res["checks"]
+
+
+def test_guard_the_digits_of_an_underscored_code_are_not_a_value():
+    res = _grade("weight: see SRTA_100 sheet")
+    assert res["checks"]["attribute_value"] is False, res["checks"]
+
+
+def test_guard_a_struck_through_value_after_the_word_counts_as_a_value_today():
+    res = _grade(f"{CODE}\nweight: ~12 kg~", WEIGHT)
+    assert res["checks"]["attribute_value"] is True, res["checks"]
+
+
+def test_guard_a_struck_through_attribute_word_with_an_honest_none_counts_today():
+    res = _grade(f"~weight:~ not recorded for {CODE}")
+    assert res["checks"]["attribute_value"] is True, res["checks"]
