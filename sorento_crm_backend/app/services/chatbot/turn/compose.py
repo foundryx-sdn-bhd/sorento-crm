@@ -437,7 +437,10 @@ def _did_you_mean_per_code(
         if composers.enabled():
             from app.services.chatbot.composers import misses
 
-            line = misses.not_found_text(names, join=lambda n: _join_words(n, localizer))
+            kept = [n for n in names if not composers_format.is_uuid(n)]  # an id is not a name
+            if not kept:
+                return ""
+            line = misses.not_found_text(kept, join=lambda n: _join_words(n, localizer))
             if miss_out is not None:
                 miss_out.append(line)
             return line
@@ -487,8 +490,9 @@ def _did_you_mean_per_code(
         else:
             plain.append(token)
     if not paragraphs:
-        if plain:
-            text += "\n" + unplaced_line(plain)
+        line = unplaced_line(plain) if plain else ""
+        if line:
+            text += "\n" + line
         return text, None, False
 
     domain, team = None, None
@@ -512,7 +516,8 @@ def _did_you_mean_per_code(
         closing = f"{lead_in}."
     # The codes with no suggestion follow the lists, above the one closing line - the
     # all-miss reply's own order (`answer._unsuggested_line`).
-    unsuggested = f"\n\n{unplaced_line(plain)}" if plain else ""
+    unsuggested_line = unplaced_line(plain) if plain else ""
+    unsuggested = f"\n\n{unsuggested_line}" if unsuggested_line else ""
     text += "\n\n" + "\n\n".join(paragraphs) + unsuggested + "\n" + closing
 
     if lane_asked:

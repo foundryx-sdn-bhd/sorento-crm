@@ -33,6 +33,7 @@ from functools import cmp_to_key
 from typing import Any, Literal
 
 from app.services.chatbot import jsc, label_catalog, quick_reply_guard
+from app.services.chatbot.composers import misses as composers_misses
 from app.services.chatbot.lanes.business.fetch import DATE_PARAMS, space_id_or_default
 from app.services.ledger_family import customer_group_of, customer_header_words
 from app.services.product_spec_registry import SPEC_ACRONYMS
@@ -2850,7 +2851,7 @@ def what_you_want_reply(asked: str, lines: list[str], *, missing: str = "", leg:
 
         tail = f"Couldn't find {missing}." if composers.enabled() else f"Couldn't find: {missing}."
     elif lines and leg:
-        tail = f"But no {leg} matched these."
+        tail = f"But no {leg} {composers_misses.PHRASE_MATCHED}."
     else:
         tail = "But none matched."
     # #1301 (F8): a staff profile gets no bot-initiated offer; its caller passes no team.
@@ -3998,7 +3999,7 @@ def not_found_error_message(
             )
             miss_sentence = (
                 # R7 (round 4): "But no purchase order matched", never the domain key.
-                f"But no{active_inactive} {miss_noun}{miss_window}{access} matched these{co_suffix}."
+                f"But no{active_inactive} {miss_noun}{miss_window}{access} {composers_misses.PHRASE_MATCHED}{co_suffix}."
             )
             if missing_lines:
                 # CHAT-COMPOSER F4: the one "nothing on record" line per product, in place of
@@ -5002,7 +5003,7 @@ def build_suggest_offer(
                 out["suggest_offer"] = True
                 out["suggest_selection_context"] = "suggest_offer"
                 out["suggest_response"] = (
-                    f"No incoming stock (ETA) found for {exact_list}. Related products:\n"
+                    f"No incoming stock (ETA){composers_misses.PHRASE_FOUND_FOR}{exact_list}. Related products:\n"
                     f"{numbered}\n"
                     + _cont(
                         "Reply with a number to check its incoming",

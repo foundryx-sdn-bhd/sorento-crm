@@ -117,7 +117,9 @@ def label(f: Any) -> str:
 
 def missing_line(what: str, product: str, *, fill: Any = None) -> str:
     """The one "nothing on record" sentence: `No Product Photos on record for X.`"""
-    key = "No {what} on record for {product}."
+    from app.services.chatbot.composers.misses import PHRASE_ON_RECORD
+
+    key = f"No {{what}}{PHRASE_ON_RECORD}{{product}}."
     if fill is not None:
         return fill(key, what=what, product=product)
     return key.format(what=what, product=product)

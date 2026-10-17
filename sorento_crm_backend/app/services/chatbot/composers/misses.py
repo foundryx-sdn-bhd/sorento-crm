@@ -43,10 +43,14 @@ def bare_question_forms() -> frozenset[str]:
     return frozenset({BARE_QUANTITY_QUESTION, *[v for v in entry.values() if isinstance(v, str)]})
 
 
-#: The two phrases the miss writers print when they state the absence (`build_breakdown_msg`'s
-#: "But no X matched these", `build_suggest_offer`'s "No X found for Y"). A line carrying one
-#: of them AND a code is a statement that the code has nothing.
-ABSENCE_PHRASES = ("matched these", " found for ")
+#: The phrases the absence-stating writers build their sentences from: `what_you_want_reply` and
+#: `build_breakdown_msg` ("But no X matched these."), `build_suggest_offer` ("No incoming stock
+#: (ETA) found for X."), and the gate-on "No <type> on record for <code>." lines. `states_absence`
+#: reads exactly these, so a reworded writer cannot drift from its reader.
+PHRASE_MATCHED = "matched these"
+PHRASE_FOUND_FOR = " found for "
+PHRASE_ON_RECORD = " on record for "
+ABSENCE_PHRASES = (PHRASE_MATCHED, PHRASE_FOUND_FOR, PHRASE_ON_RECORD)
 
 
 def states_absence(text: str, codes: "Iterable[str]") -> bool:
