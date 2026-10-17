@@ -940,6 +940,13 @@ def crossdomain_render(
     # same row reached through two entries is the same object, while two genuinely
     # different rows that happen to render alike stay two rows.
     seen_rows: set[int] = set()
+    # CHAT-COMPOSER: gate on, an ETA miss prints its stock rows as the numbered stock block;
+    # `xd_rows` holds the code of each, stamped on the block for `_prefix_zero_note`.
+    from app.services.chatbot import composers
+    from app.services.chatbot.composers import stock as composers_stock
+
+    gate_on = composers.enabled()
+    xd_rows: list[str] = []
     # Codes that came back empty on BOTH sides. Owner ruling (6 Sep 2026): name them and
     # offer an escalation, rather than dropping them so the reply lists only the codes that
     # had something to show. "Positive facts only" still holds for a code the probe never
@@ -1013,6 +1020,14 @@ def crossdomain_render(
             rows.sort(key=eta)
         for it in rows:
             if id(it) in seen_rows:
+                continue
+            if gate_on and origin_incoming:
+                # CHAT-COMPOSER: the numbered stock block, as the product-code answer prints it.
+                if not jsc.get(it, "fields"):
+                    continue
+                blocks.append(composers_stock.block(len(xd_rows) + 1, it))
+                xd_rows.append(jsc.nullish_str(_field_val(it, "product code")).strip())
+                seen_rows.add(id(it))
                 continue
             field_lines = "\n".join(
                 f"*{jsc.get(f, 'label')}:* {_fmt_xd_value(_field_render_value(f))}"
@@ -1101,7 +1116,7 @@ def crossdomain_render(
     # breakdown, a demand verdict) never gets "no stock" underneath the stock it just showed.
     only_other_note = ""
     if only_other and can_state_absence:
-        only_other_note = f"No {primary_word} for {', '.join(only_other)}."
+        only_other_note = composers_stock.none_for(primary_word, only_other)
 
     # NO OFFER SENTENCE HERE (8 Sep 2026, turns 0184d84d / 5f73ddb0 / 90a1637a): the block
     # used to end "...Would you like me to escalate to X team?" and `tail/compose.
@@ -1144,6 +1159,7 @@ def crossdomain_render(
         "origin": zs.get("origin_domain") or None,
         "probed_rows": len(items),
         "rendered_rows": len(blocks),
+        **({"rendered_codes": [c for c in xd_rows if c]} if gate_on and origin_incoming else {}),
         # A7: the codes with NOTHING on either side, and the sentence built for them - so
         # `run_crossdomain` can try a NEXT ladder rung (e.g. purchase_order) for exactly
         # these codes and, if that rung answers, swap this sentence for its own without

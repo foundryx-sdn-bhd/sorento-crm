@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.services.chatbot import jsc
+from app.services.chatbot.composers import format as composers_format
 from app.services.chatbot.label_catalog import IDENTITY, Localizer
 from app.services.chatbot.contracts import (
     SALES_REPORT_GROUP_BYS,
@@ -1445,7 +1446,7 @@ def call_tool(name: str, args: dict[str, Any], *, mcp: Any) -> Any:
 # output-structurer
 # --------------------------------------------------------------------------- #
 
-_ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+_ISO_RE = composers_format.ISO_RE
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
 # Identity is an ALLOW-LIST, not a label test: short, stable, and shared with the renderers.
@@ -1610,62 +1611,10 @@ def _extract_envelope(j: Any) -> dict[str, Any]:
     return empty
 
 
-def _fmt_ts(iso: Any) -> str | None:
-    """`new Date(iso)` then local `getDate()`/`getMonth()`/... - components, verbatim.
-
-    Every captured `last_updated_at` is a NAIVE ISO string, which `new Date` reads as local
-    time and `getDate()` then reads straight back, so the rendered components equal the
-    input's (measured on all 20 `output-structurer` captures). Implemented as a component
-    read rather than through a timezone, which is also what makes it deterministic.
-    """
-    if not jsc.truthy(iso):
-        return None
-    text = jsc.js_string(iso)
-    match = re.match(
-        r"^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}):(\d{2}))?", text
-    )
-    if not match:
-        return None
-    year, month, day = match.group(1), match.group(2), match.group(3)
-    date = f"{day}/{month}/{year}"
-    hour, minute, second = match.group(4), match.group(5), match.group(6)
-    if hour is None:
-        return date
-    if (int(hour), int(minute), int(second)) == (0, 0, 0):
-        return date  # midnight -> date only
-    return f"{date} {hour}:{minute}:{second}"
-
-
-# The JS renders an empty value and an object joiner with an EM DASH, and the access note
-# with one too. Written as escapes, not as the character: the repo forbids an em dash in
-# anything WE write, and these are neither ours nor prose - they are three literals from a
-# node body that ships, and changing them would change what a customer is sent. Nothing in
-# the 20 graded captures reaches any of the three, so this is faithfulness, not evidence.
-_EM_DASH = "\u2014"
-
-
-def _fmt_value(v: Any) -> str:
-    if v is None or v == "":
-        return _EM_DASH
-    if isinstance(v, bool):
-        return "Yes" if v else "No"
-    if isinstance(v, str):
-        # DO-ASK-SIMPLIFY tester pass 2: a value's own '*' (a product code "*REPLACE")
-        # would pair with the next label's bold marker and leave a stray '*' in WhatsApp.
-        # It prints as the look-alike U+2217, which WhatsApp does not read as formatting.
-        return ((_fmt_ts(v) or v) if _ISO_RE.match(v) else v).replace("*", "\u2217")
-    if isinstance(v, (int, float)):
-        return jsc.js_string(v)
-    if isinstance(v, list):
-        return ", ".join(_fmt_value(x) for x in v)
-    if isinstance(v, dict):
-        parts = [
-            (_fmt_value(x) if isinstance(x, (dict, list)) else jsc.js_string(x))
-            for x in v.values()
-            if x is not None and x != ""
-        ]
-        return f" {_EM_DASH} ".join(parts) if parts else _EM_DASH
-    return jsc.js_string(v)
+# Moved byte for byte into `composers/format.py` (CHAT-COMPOSER S0); the old names stay.
+_fmt_ts = composers_format.timestamp
+_EM_DASH = composers_format.EM_DASH
+_fmt_value = composers_format.value
 
 
 def _has_key(f: Any) -> bool:

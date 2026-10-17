@@ -7611,9 +7611,12 @@ def _stock_ask_reply(
     misses = _unplaced_tokens(envelopes)
     if not text and not misses:
         return answer
-    parts = _stock_answer_lines(envelopes)
+    from app.services.chatbot import composers
+    from app.services.chatbot.composers import stock as composers_stock
+
+    parts = _stock_answer_lines(envelopes, full=composers.enabled())
     if misses:
-        parts.append(f"Couldn't find: {', '.join(misses)}.")
+        parts.append(composers_stock.miss_line(misses))
     if text:
         parts.append(text)
     question = (
@@ -7641,7 +7644,9 @@ def _dealer_names_the_miss(answer: Any, envelopes: list[dict[str, Any]]) -> Any:
     from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
     blocks = _COMPOSE_MISS.sub("", text).rstrip().split("\n\n")
-    line = f"Couldn't find: {', '.join(misses)}."
+    from app.services.chatbot.composers import stock as composers_stock
+
+    line = composers_stock.miss_line(misses)
     if blocks and blocks[-1].strip() == REFER_TO_SALESMAN:
         # The refer line stays last, printed through its one helper.
         head = "\n\n".join(b for b in blocks[:-1] if b.strip())
@@ -7649,8 +7654,9 @@ def _dealer_names_the_miss(answer: Any, envelopes: list[dict[str, Any]]) -> Any:
     return dataclasses_replace(answer, text="\n\n".join(p for p in (*blocks, line) if p.strip()))
 
 
-def _stock_answer_lines(envelopes: list[dict[str, Any]]) -> list[str]:
-    """The answered lines the presenter printed ("<code> x <Q>: ..."), in the order asked."""
+def _stock_answer_lines(envelopes: list[dict[str, Any]], *, full: bool = False) -> list[str]:
+    """The answered lines the presenter printed ("<code> x <Q>: ..."), in the order asked.
+    `full` (CHAT-COMPOSER) prints each as its whole block: marker and alternatives too."""
     lines: list[str] = []
     for envelope in envelopes or []:
         if not isinstance(envelope, dict) or not envelope.get("stock_availability"):
@@ -7659,7 +7665,12 @@ def _stock_answer_lines(envelopes: list[dict[str, Any]]) -> list[str]:
             flags = item.get("flags") if isinstance(item, dict) else None
             title = item.get("title") if isinstance(item, dict) else None
             if isinstance(flags, dict) and flags.get("branch") and not flags.get("needs_quantity") and title:
-                lines.append(str(title))
+                if full:
+                    from app.services.chatbot.composers import stock as composers_stock
+
+                    lines.append(composers_stock.dealer_block(item))
+                else:
+                    lines.append(str(title))
     return lines
 
 
