@@ -1491,7 +1491,10 @@ class PortalService:
                     from app.services.project_link import check_portal_project_link
 
                     check_portal_project_link(
-                        self.db, contact=self.get_contact(token), project_id=value
+                        self.db,
+                        contact=self.get_contact(token),
+                        project_id=value,
+                        current=getattr(row, "project_id", None),
                     )
                 if field == "customer_id":
                     from app.services.debtor_type import link_customer

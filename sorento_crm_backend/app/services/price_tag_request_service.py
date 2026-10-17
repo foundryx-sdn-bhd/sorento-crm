@@ -170,6 +170,7 @@ class PriceTagRequestService:
         company_id: str,
         data: dict,
         viewer=None,
+        project_checked: bool = False,
     ) -> PriceTagRequest:
         """Create a price tag request with its lines.
 
@@ -200,9 +201,14 @@ class PriceTagRequestService:
                 needed_by_date=data.get("needed_by_date"),
                 notes=data.get("notes"),
                 price_mode=data.get("price_mode") or "list",
-                # FORMS-PROJECT: checked here against the session's company scope; the
-                # portal route also checks it against the contact's own companies.
-                project_id=check_project_link(db, data.get("project_id")),
+                # FORMS-PROJECT: checked here against the session's company scope,
+                # unless the portal route already checked it against the contact's own
+                # companies (wider than the one company this runs under, review S2).
+                project_id=(
+                    data.get("project_id") or None
+                    if project_checked
+                    else check_project_link(db, data.get("project_id"))
+                ),
                 # Who prints (r9 D7). Null on a draft; `submit` refuses until
                 # the salesperson has answered.
                 print_by=data.get("print_by"),
@@ -2235,7 +2241,7 @@ Marketing's own work is not part of the form's payload, so it is captured
     def set_project(db: Session, request: PriceTagRequest, project_id: str | None) -> None:
         """The office linking (or clearing) the request's project (FORMS-PROJECT): only a
         project visible in the editor's company scope."""
-        request.project_id = check_project_link(db, project_id)
+        request.project_id = check_project_link(db, project_id, current=request.project_id)
 
     @staticmethod
     def list_requests(

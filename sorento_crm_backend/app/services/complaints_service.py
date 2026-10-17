@@ -1776,7 +1776,7 @@ class ComplaintService:
 
         update_data = complaint_data.model_dump(exclude_unset=True)
         explicit_lines = update_data.pop("product_lines", None)
-        apply_project_link(self.db, update_data)
+        apply_project_link(self.db, update_data, current=complaint.project_id)
         contact_id = update_data.get("contact_id") if "contact_id" in update_data else complaint.contact_id
         space_id = update_data.get("space_id") if "space_id" in update_data else complaint.space_id
         respond_inbox_url = self._build_respond_inbox_url(contact_id, space_id)
@@ -1892,7 +1892,7 @@ class ComplaintService:
         # edit page posts the whole complaint, lines included, so Update & Reply 500'd
         # there for any complaint with a product row.
         explicit_lines = update_data.pop("product_lines", None)
-        apply_project_link(self.db, update_data)
+        apply_project_link(self.db, update_data, current=complaint.project_id)
         contact_id = update_data.get("contact_id") if "contact_id" in update_data else complaint.contact_id
         space_id = update_data.get("space_id") if "space_id" in update_data else complaint.space_id
         respond_inbox_url = self._build_respond_inbox_url(contact_id, space_id)

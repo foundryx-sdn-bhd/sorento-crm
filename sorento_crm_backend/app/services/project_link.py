@@ -23,15 +23,26 @@ def _is_uuid(value: str) -> bool:
     return True
 
 
-def check_project_link(db: Session, project_id: Optional[str]) -> Optional[str]:
+def _unchanged(value, current) -> bool:
+    """A save that sends back the link the row already has is not a new pick: it is never
+    refused, even when the editor could not pick that project today (review S1)."""
+    return bool(value) and current is not None and str(value) == str(current)
+
+
+def check_project_link(
+    db: Session, project_id: Optional[str], *, current: Optional[str] = None
+) -> Optional[str]:
     """Return the id to store: None for a blank value, the id for a visible project.
 
     Anything else (free text, a missing project, one outside the editor's companies) is a
     422 on the project field, so a bad pick is never silently dropped nor a 500 at the FK.
+    `current` is the row's stored link; sending it back unchanged always passes.
     """
     value = (project_id or "").strip() if isinstance(project_id, str) else project_id
     if not value:
         return None
+    if _unchanged(value, current):
+        return str(value)
     from app.models.base import get_company_scope
     from app.models.projects import Project
 
@@ -58,10 +69,10 @@ def check_project_link(db: Session, project_id: Optional[str]) -> Optional[str]:
     return value
 
 
-def apply_project_link(db: Session, payload: dict) -> None:
+def apply_project_link(db: Session, payload: dict, *, current: Optional[str] = None) -> None:
     """Check a payload's `project_id` in place, when the payload carries one."""
     if "project_id" in payload:
-        payload["project_id"] = check_project_link(db, payload["project_id"])
+        payload["project_id"] = check_project_link(db, payload["project_id"], current=current)
 
 
 def check_portal_project_link(
@@ -70,12 +81,16 @@ def check_portal_project_link(
     contact,
     project_id: Optional[str],
     code: str = "PROJECT_LINK_NOT_ALLOWED",
+    current: Optional[str] = None,
 ) -> Optional[str]:
     """The portal rule: a picked project must belong to one of the contact's companies (the
-    same set the portal lookup lists). Blank means no link; anything else is a 422."""
+    same set the portal lookup lists). Blank means no link; the row's unchanged link passes;
+    anything else is a 422."""
     value = (project_id or "").strip() if isinstance(project_id, str) else project_id
     if not value:
         return None
+    if _unchanged(value, current):
+        return str(value)
     from app.models.base import company_scope
     from app.models.projects import Project
     from app.services.sponsorship_link_service import contact_company_ids

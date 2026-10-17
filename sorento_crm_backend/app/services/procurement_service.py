@@ -6142,7 +6142,7 @@ class StockInquiryService:
         column_keys = {a.key for a in inspect(inquiry).mapper.column_attrs}
         immutable = {"id", "created_at", "inquiry_number", "updated_at"}
         requestor_value = data.pop("salesperson_contact_id", _UNSET_REQUESTOR)
-        apply_project_link(self.db, data)
+        apply_project_link(self.db, data, current=inquiry.project_id)
         for key, value in list(data.items()):
             if key in immutable or key not in column_keys:
                 continue
@@ -6625,7 +6625,7 @@ class StockInquiryService:
         # document / PDF / approval page print the TEXT label, so stamping the FK
         # alone leaves them reading "-" (PLAN-requested-by-contact-routing D6/D9).
         requestor_value = update_data.pop("salesperson_contact_id", _UNSET_REQUESTOR)
-        apply_project_link(self.db, update_data)
+        apply_project_link(self.db, update_data, current=inquiry.project_id)
 
         # Status is only changed via workflow actions (submit/approve/reject/reopen) and update_and_reply
         for key, value in update_data.items():
@@ -6769,7 +6769,7 @@ class StockInquiryService:
             raise handle_validation_error("purchasing_response is required to reply.")
         # Do not persist the reply payload (often includes view link) into purchasing_response
         update_data.pop("purchasing_response", None)
-        apply_project_link(self.db, update_data)
+        apply_project_link(self.db, update_data, current=inquiry.project_id)
 
         for key, value in update_data.items():
             setattr(inquiry, key, value)
@@ -9328,11 +9328,9 @@ class PurchaseRequestService:
         if linked_name:
             payload["customer_name"] = linked_name
 
-    def _apply_project_link(self, payload: dict) -> None:
+    def _apply_project_link(self, header, payload: dict) -> None:
         """#1689: a staff pick reaches the row only if the editor can see that project."""
-        from app.services.project_link import apply_project_link
-
-        apply_project_link(self.db, payload)
+        apply_project_link(self.db, payload, current=getattr(header, "project_id", None))
 
     def create_request(self, data: PurchaseRequestHeaderCreate):
         """Create purchase request header + lines (internal API)."""
@@ -9443,7 +9441,7 @@ class PurchaseRequestService:
         self._apply_sponsor_subject_to_payload(payload, header)
         requestor_value = payload.pop("requested_by_contact_id", _UNSET_REQUESTOR)
         self._apply_customer_link(header, payload)
-        self._apply_project_link(payload)
+        self._apply_project_link(header, payload)
         for key, value in payload.items():
             if hasattr(header, key):
                 setattr(header, key, value)
@@ -9529,7 +9527,7 @@ class PurchaseRequestService:
 
         self._apply_sponsor_subject_to_payload(payload, header)
         self._apply_customer_link(header, payload)
-        self._apply_project_link(payload)
+        self._apply_project_link(header, payload)
         for key, value in payload.items():
             if hasattr(header, key):
                 setattr(header, key, value)

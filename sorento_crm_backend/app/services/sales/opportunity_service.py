@@ -294,6 +294,7 @@ def create_opportunity(
     created_by_contact_id: Optional[str] = None,
     restrict_customer_to_agent_id: Optional[AgentIds] = None,
     stamp_agent_from_customer: bool = False,
+    project_checked: bool = False,
 ) -> SalesOpportunity:
     customer_id = payload.get("customer_id")
     prospect_name = payload.get("prospect_name")
@@ -314,9 +315,14 @@ def create_opportunity(
         if customer is not None:
             sales_agent_id = customer.sales_agent_id
 
-    # FORMS-PROJECT: only a project visible in this session's company scope. The portal
-    # routes also check it against the contact's own companies before calling this.
-    project_id = check_project_link(db, payload.get("project_id"))
+    # FORMS-PROJECT: only a project visible in this session's company scope, unless the
+    # portal route already checked it against the contact's own companies (wider than the
+    # one company this create runs under, review S2).
+    project_id = (
+        payload.get("project_id") or None
+        if project_checked
+        else check_project_link(db, payload.get("project_id"))
+    )
 
     initial = status_service.initial_status(db, SALES_OPPORTUNITY_ENTITY)
     opportunity_no = NumberingService(db).get_next_number(NUMBERING_DOC_TYPE, commit_rule=False)
@@ -445,6 +451,7 @@ def update_opportunity(
     payload: dict,
     *,
     restrict_customer_to_agent_id: Optional[AgentIds] = None,
+    project_checked: bool = False,
 ) -> SalesOpportunity:
     # N7 (Phase 3): once an opportunity is Won or Lost, nothing about it moves again -
     # not a field, not another stage - on either side. A stage move away from a terminal
@@ -469,7 +476,11 @@ def update_opportunity(
     if "title" in payload:
         opportunity.title = payload["title"]
     if "project_id" in payload:
-        opportunity.project_id = check_project_link(db, payload["project_id"])
+        opportunity.project_id = (
+            payload["project_id"] or None
+            if project_checked
+            else check_project_link(db, payload["project_id"], current=opportunity.project_id)
+        )
     if payload.get("expected_amount") is not None:
         opportunity.expected_amount = payload["expected_amount"]
     if "expected_close_date" in payload:
