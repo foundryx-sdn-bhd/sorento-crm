@@ -54,6 +54,8 @@ const ROW: RespondWorkspace = {
   ideation_embed_signing_secret_masked: '****cdef',
   chatbot_retry_ingress_url: null,
   has_chatbot_retry_key: false,
+  chatbot_sender_url: null,
+  has_chatbot_sender_key: false,
   created_at: '2026-07-20T00:00:00Z',
   updated_at: '2026-07-20T00:00:00Z',
 };
