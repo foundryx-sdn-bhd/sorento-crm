@@ -50,11 +50,20 @@ def _columns(raw, scratch) -> dict:
     return {c["name"]: c for c in sa.inspect(raw).get_columns("billing_documents", schema=scratch)}
 
 
-def test_revision_id_fits_and_chains_onto_fin_0002():
+def test_revision_id_fits_and_follows_fin_0002_as_the_single_head():
+    """fin_0002 is an ancestor and fin_0003 is the only head. The direct parent is whatever
+    main's head is when the lane lands (`scripts/alembic-reparent.sh` moves it), so it is not
+    pinned here."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
     module = _load("fin_0003_billing_outstanding")
     assert module.revision == "fin_0003_billing_outstanding"
     assert len(module.revision) <= 32
-    assert module.down_revision == "fin_0002_billing_demand_class"
+    script = ScriptDirectory.from_config(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")))
+    assert script.get_heads() == ["fin_0003_billing_outstanding"]
+    ancestors = {rev.revision for rev in script.walk_revisions("base", "fin_0003_billing_outstanding")}
+    assert "fin_0002_billing_demand_class" in ancestors
 
 
 @pytest.fixture()
