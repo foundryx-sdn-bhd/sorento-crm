@@ -74,7 +74,7 @@ def test_u1_gate_on_names_the_first_fifty_and_pages(monkeypatch):
     """The producer sends the first 50 member codes beside the total (never a breakdown)."""
     _set_gate(monkeypatch, True)
     out = A.described_members_reply(_members_predicate(codes=CODES), None)
-    assert out.startswith("Here's what you want: P trap water closets (182, showing 1 to 50)\n")
+    assert out.startswith("Here's what you want: P trap water closets with stock (182, showing 1 to 50)\n")
     assert [ln for ln in out.splitlines() if ln.startswith("• ")] == [f"• {c}" for c in CODES]
     assert not re.search(r"^• .*: \d+", out, re.MULTILINE), out
     last_code_line = out.index(f"\u2022 {CODES[-1]}")
