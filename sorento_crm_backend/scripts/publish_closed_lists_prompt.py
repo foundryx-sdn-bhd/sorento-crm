@@ -14,10 +14,38 @@ Prints `published chatbot_semantic_parser v<N> (from v<M>)` or `already publishe
 from __future__ import annotations
 
 import argparse
+import re
 
 from sqlalchemy.orm import Session
 
 PROMPT_NAME = "chatbot_semantic_parser"
+
+#: The lines `chatbot_parser_prompt.specification_lines` renders (one per registry key, then
+#: the product types), as a base published before `{{specs}}` existed carries them baked in.
+_SPEC_LINE = re.compile(r'^(?:Specification [^\s(]+ \(".*"\): .*|Product types \(the category entity keeps these.*)$')
+
+
+def with_specs_token(template: str) -> str:
+    """The template with its baked specification lines replaced by `{{specs}}`, so an owner
+    edit on Product Specifications reaches the parser at the next read (SPEC-REGISTRY-UI
+    #1765). A template already carrying the token, or no such lines, is returned as it is;
+    two separate runs of them are refused rather than guessed at."""
+    if "{{specs}}" in template:
+        return template
+    lines = template.split("\n")
+    runs: list[tuple[int, int]] = []
+    for i, line in enumerate(lines):
+        if _SPEC_LINE.match(line):
+            if runs and runs[-1][1] == i:
+                runs[-1] = (runs[-1][0], i + 1)
+            else:
+                runs.append((i, i + 1))
+    if not runs:
+        return template
+    if len(runs) > 1:
+        raise SystemExit(f"refused: {len(runs)} separate runs of specification lines; expected one")
+    start, end = runs[0]
+    return "\n".join([*lines[:start], "{{specs}}", *lines[end:]])
 
 
 def _base(session: Session, from_version: int | None):
@@ -45,7 +73,7 @@ def publish(session: Session, from_version: int | None = None) -> int | None:
     base = _base(session, from_version)
     if gate_on(base.template):
         raise SystemExit(f"refused: v{base.version} already carries the CLOSED LISTS section")
-    template = base.template + SECTION
+    template = with_specs_token(base.template) + SECTION
     existing = (
         session.query(AIPromptVersion)
         .filter(AIPromptVersion.name == PROMPT_NAME, AIPromptVersion.template == template)
@@ -84,7 +112,7 @@ def main() -> None:
 
             row = (
                 session.query(AIPromptVersion)
-                .filter(AIPromptVersion.name == PROMPT_NAME, AIPromptVersion.template == base.template + SECTION)
+                .filter(AIPromptVersion.name == PROMPT_NAME, AIPromptVersion.template == with_specs_token(base.template) + SECTION)
                 .first()
             )
             print(f"already published as v{row.version}")

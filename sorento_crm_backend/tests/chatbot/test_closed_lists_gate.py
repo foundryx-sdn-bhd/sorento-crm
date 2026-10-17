@@ -261,3 +261,55 @@ def test_the_section_names_the_none_of_these_value():
     """S6 (17 Oct): with null as the only way out the parser forced a brochure ask onto the
     nearest listed type; a named "none of these" value is what it picks instead."""
     assert f'"{clp.NOT_LISTED}"' in clp.SECTION
+
+
+# --- {{specs}} (SPEC-REGISTRY-UI #1765: owner edits to the registry reach the bot) ---------------
+
+BAKED = (
+    "Entity kind product: resolver products. Did-you-mean on. Default narrowing narrow_to_code.\n"
+    "\n"
+    'Specification finish ("Finish"): choices Chrome = chrome (cp); Gunmetal = gunmetal.\n'
+    'Specification thickness ("Thickness"): a number in mm.\n'
+    "Product types (the category entity keeps these, never a specification): Tap, Wash Basin.\n"
+    "<<<END>>>\nrest of the prompt {{current_date}}"
+)
+
+
+def test_publish_turns_the_baked_specification_lines_into_the_specs_token():
+    with blank_session() as db:
+        _version(db, BAKED, label="production")
+
+        new = publisher.publish(db)
+
+        row = db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY, AIPromptVersion.version == new).one()
+        assert "Specification finish" not in row.template and "Product types (the category" not in row.template
+        assert row.template == (
+            "Entity kind product: resolver products. Did-you-mean on. Default narrowing narrow_to_code.\n"
+            "\n{{specs}}\n<<<END>>>\nrest of the prompt {{current_date}}" + clp.SECTION
+        )
+
+
+def test_the_specs_token_renders_the_registry_at_read_time():
+    from app.services.chatbot_prompt_vars import render_values
+
+    with blank_session() as db:
+        _version(db, BAKED, label="production")
+        new = publisher.publish(db)
+        row = db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY, AIPromptVersion.version == new).one()
+
+        text, _v = ai_prompt_registry.render(db, KEY, override_version_id=row.id, current_date="today")
+
+        live = render_values(db, ["specs"])["specs"]
+        assert "{{specs}}" not in text
+        assert ("\n\n" + live + "\n<<<END>>>") in text
+
+
+def test_a_base_with_the_token_or_no_specification_lines_keeps_its_text():
+    assert publisher.with_specs_token("a {{specs}} b") == "a {{specs}} b"
+    assert publisher.with_specs_token("no spec lines here") == "no spec lines here"
+
+
+def test_two_separate_specification_runs_are_refused():
+    twice = 'Specification a ("A"): yes or no.\nother\nSpecification b ("B"): yes or no.\n'
+    with pytest.raises(SystemExit):
+        publisher.with_specs_token(twice)
