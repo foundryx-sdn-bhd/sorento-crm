@@ -1,6 +1,6 @@
 # PLAN: guard tests know #1718's projects tables (RELEASE-FIX-1017C)
 
-Status: implemented (PR pending). Small fix track: tests only, no product code, no migration.
+Status: implemented (PR #1763). Small fix track: tests only, no product code, no migration.
 
 ## Problem
 
@@ -39,7 +39,33 @@ The same cause fails three more tests in the xdist shards on a fresh bootstrap_e
 Migration 354 and `sr_0001` are untouched. The guards keep their intent: a table that declares
 `projects` must be either in 354's `TABLES` or named here as born after the move.
 
+## The rest of the release run (crew widened the lane)
+
+The full run also failed three tests with other causes:
+
+- `tests/test_portal_revision_config_routes.py::test_get_lists_one_entry_per_portal_type_even_with_no_rows`:
+  #1718 added `sample_request` to `GRANTABLE_PORTAL_FORM_TYPES`, so the revision-config list
+  offered a row for it. The ROUTE is wrong, not the test: `sample_request` has no revision
+  engine (no adapter in `app/services/portal_revision_service.py`; the revise route refuses it,
+  `app/api/v1/public/portal.py` `_check_revisable_kind`). Excluded from
+  `REVISABLE_PORTAL_FORM_TYPES` like `sales_opportunity`; the not-listed / not-puttable test now
+  covers both kinds (red first).
+- `tests/test_oi_project_label_from_so.py::test_summary_matrix_and_export_all_honour_the_project_filter`:
+  #1748 prints the OI Excel as one `ORDER INQUIRY` sheet; the test opened `JAN 26`. Same layout,
+  so only the sheet name changes; the project-filter assertion stands.
+- `PurchaseRequestForm.round1b.test.tsx` "round 2b narrow cell" (vitest shard 2, all three CI
+  attempts): the load-time sentence comes from an async `form.trigger()` in the form's load
+  effect while the Update button exists from the first render, so a sync `getByText` after
+  `findByRole('Update')` raced it. Both such reads now `findByText`.
+
+Company scope: crew asked whether `sample_requests` is registered. It is (`CompanyScopedMixin`,
+`app/models/sample_request.py`); the offenders half of the guard passed and only the count
+tripwire failed. A new test in `tests/test_sample_requests_core.py` pins that another company's
+scope gets a 404, no list row and no ORM row.
+
 ## Verification
 
-Serial (`-p no:xdist`) on a throwaway database built by `scripts.bootstrap_env`:
-the three files above red on base, green after the fix; kill test by reverting the fix.
+Serial (`-p no:xdist`) for the 354 test, `-n 2` otherwise, on a throwaway database built by
+`scripts.bootstrap_env`: every failing test red on base, green after the fix, and each fix
+kill-tested (revert the guard lists; skip `SampleRequest` in the scope filter; export with no
+project; defer or drop the load-time trigger).
