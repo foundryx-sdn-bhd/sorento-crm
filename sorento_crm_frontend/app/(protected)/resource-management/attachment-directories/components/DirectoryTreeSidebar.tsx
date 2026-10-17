@@ -45,7 +45,7 @@ import { Star, StarOff } from 'lucide-react';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { SectionSkeleton } from '@/components/common/SectionSkeleton';
-import { folderAfterDelete } from './drivePath';
+import { findPathIds, folderAfterDelete } from './drivePath';
 
 interface DirectoryTreeSidebarProps {
   selectedId: string | null;
@@ -173,22 +173,6 @@ function filterTreeBySearch(
 
   const filtered = nodes.map(visit).filter((n): n is AttachmentDirectoryTreeNode => n !== null);
   return { filtered, matchedAncestors };
-}
-
-function findPathToFolder(
-  nodes: AttachmentDirectoryTreeNode[],
-  targetId: string,
-  path: string[] = []
-): string[] | null {
-  for (const node of nodes) {
-    const currentPath = [...path, node.id];
-    if (node.id === targetId) return currentPath;
-    if (node.children) {
-      const found = findPathToFolder(node.children, targetId, currentPath);
-      if (found) return found;
-    }
-  }
-  return null;
 }
 
 const ATTACHMENT_DIRECTORIES_PATH = '/resource-management/attachment-directories';
@@ -445,7 +429,7 @@ export default function DirectoryTreeSidebar({
 
   const pathToSelected = useMemo(() => {
     if (!selectedId) return new Set<string>();
-    const path = findPathToFolder(tree, selectedId);
+    const path = findPathIds(tree, selectedId);
     if (!path) return new Set<string>();
     const ids = new Set<string>();
     for (let i = 0; i < path.length - 1; i++) ids.add(path[i]);

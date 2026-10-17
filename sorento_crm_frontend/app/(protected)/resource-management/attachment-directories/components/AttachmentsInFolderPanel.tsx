@@ -187,9 +187,6 @@ export default function AttachmentsInFolderPanel({
   const attachmentTypes = attachmentTypesData?.data ?? [];
   const { data: accessTypes = [] } = useContactAccessTypes();
   const { data: tree = [], isSuccess: treeLoaded, isFetching: treeFetching } = useDirectoryTree();
-  // A tree refetch (after a create or move) may not hold a just-opened folder yet; only a
-  // settled tree can say a folder is not available.
-  const treeReady = treeLoaded && !treeFetching;
 
   const { grants: companyGrants } = useCompany();
   const extraFilterCount =
@@ -428,25 +425,27 @@ export default function AttachmentsInFolderPanel({
   const clearSelection = useCallback(() => setRowSelection({}), []);
 
   // ---- Drill / open --------------------------------------------------------
-  const navigateToFolder = useCallback(
-    (folderId: string | null) => {
-      // Drilling into a folder clears the active search (B7) and resets paging.
-      resetSearchQuery('');
-      setThisFolderOnly(false);
-      setPagination((p) => ({ ...p, pageIndex: 0 }));
-      clearSelection();
-      onSelectFolder?.(folderId);
-    },
-    [onSelectFolder, clearSelection]
-  );
-  // The same reset for a folder change that did not come from a click here: browser
-  // Back / Forward, the tree, a pasted link (FILES-URL-NAV AC-9).
-  useOnFolderChange(directoryId, () => {
+  // Changing folder clears the active search (B7), resets paging and the selection.
+  const resetFolderView = useCallback(() => {
     resetSearchQuery('');
     setThisFolderOnly(false);
     setPagination((p) => ({ ...p, pageIndex: 0 }));
     clearSelection();
-  });
+  }, [resetSearchQuery, clearSelection]);
+  // Runs for every folder change, whatever caused it: a click here, the tree, browser
+  // Back / Forward, a pasted link (FILES-URL-NAV AC-9).
+  useOnFolderChange(directoryId, resetFolderView);
+
+  const navigateToFolder = useCallback(
+    (folderId: string | null) => {
+      // A real change resets through useOnFolderChange once the URL lands. Reset here only
+      // when nothing will change (the open folder's own crumb, or the Trash page, which has
+      // no folder URL), so the OLD folder is never refetched unfiltered in between.
+      if (!onSelectFolder || (folderId ?? null) === (directoryId ?? null)) resetFolderView();
+      onSelectFolder?.(folderId);
+    },
+    [onSelectFolder, directoryId, resetFolderView]
+  );
 
   const openItem = useCallback(
     (item: DriveItem) => {
@@ -802,6 +801,16 @@ export default function AttachmentsInFolderPanel({
     );
   };
 
+  // "Folder not available" verdict, taken only from a SETTLED tree: a refetch after a create
+  // or move may not hold a just-opened folder yet. Held through later refetches (window
+  // focus, invalidations) so a real unavailable folder does not blink back to an empty grid.
+  const [unavailableId, setUnavailableId] = useState<string | null>(null);
+  if (treeLoaded && !treeFetching) {
+    const verdict = isFolderUnavailable(tree, true, effectiveDirectoryId) ? effectiveDirectoryId : null;
+    if (verdict !== unavailableId) setUnavailableId(verdict);
+  }
+  const folderUnavailable = effectiveDirectoryId != null && unavailableId === effectiveDirectoryId;
+
   const crumbs = useMemo(
     () => buildBreadcrumb(tree, isTrashView ? null : effectiveDirectoryId),
     [tree, effectiveDirectoryId, isTrashView]
@@ -999,7 +1008,7 @@ export default function AttachmentsInFolderPanel({
   // A folder URL the loaded tree does not hold (deleted, in Trash, outside the viewer's
   // companies, mistyped). The drive listing would answer with an empty 200, so say so
   // instead of showing a silent empty folder; the breadcrumb's Home goes back (AC-6).
-  if (!isTrashView && isFolderUnavailable(tree, treeReady, effectiveDirectoryId)) {
+  if (folderUnavailable) {
     return (
       <Card data-testid="folder-unavailable">
         <CardHeader className="block">

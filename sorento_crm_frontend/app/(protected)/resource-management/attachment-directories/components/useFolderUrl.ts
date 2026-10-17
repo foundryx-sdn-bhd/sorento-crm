@@ -8,10 +8,15 @@
  * Same idiom as `useUrlTab`: the URL is the only copy, every other query param is carried
  * over verbatim, and the root writes no param at all, so the existing `?directoryId=` links
  * (quick access pins, attachment detail, product / promotion tabs) keep working.
+ *
+ * Unlike `useUrlTab` it writes with the native `history.pushState` / `replaceState`, which
+ * Next syncs into `useSearchParams` without a server round trip. `router.push` re-requested
+ * the page on every folder click (about 1s on the dev server, measured in the lane's browser
+ * pass), where the old `useState` switch had been instant.
  */
 
 import { useCallback, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { FOLDER_ALL_ID } from '../constants';
 
 export const DIRECTORY_PARAM = 'directoryId';
@@ -23,7 +28,6 @@ function normalise(id: string | null | undefined): string | null {
 }
 
 export function useFolderUrl(): { folderId: string | null; openFolder: OpenFolder } {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const folderId = normalise(searchParams?.get(DIRECTORY_PARAM));
@@ -38,10 +42,10 @@ export function useFolderUrl(): { folderId: string | null; openFolder: OpenFolde
       else params.delete(DIRECTORY_PARAM);
       const qs = params.toString();
       const href = `${pathname}${qs ? `?${qs}` : ''}`;
-      if (opts?.replace) router.replace(href, { scroll: false });
-      else router.push(href, { scroll: false });
+      if (opts?.replace) window.history.replaceState(null, '', href);
+      else window.history.pushState(null, '', href);
     },
-    [folderId, pathname, router, searchParams]
+    [folderId, pathname, searchParams]
   );
 
   return { folderId, openFolder };

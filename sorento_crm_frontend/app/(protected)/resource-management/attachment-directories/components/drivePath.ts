@@ -62,7 +62,8 @@ export function flattenDirectoryOptions(
   return out;
 }
 
-function findPathIds(
+/** Folder ids from the top level down to `folderId` (inclusive), or null if not in the tree. */
+export function findPathIds(
   nodes: AttachmentDirectoryTreeNode[],
   folderId: string,
   path: string[] = []

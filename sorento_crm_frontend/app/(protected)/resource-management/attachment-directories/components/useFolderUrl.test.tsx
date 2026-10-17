@@ -4,15 +4,14 @@
  * Back / Forward are modelled by changing the mocked search params and re-rendering:
  * the hook must follow the URL, never hold a copy of it.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-const push = vi.fn();
-const replace = vi.fn();
+let push: ReturnType<typeof vi.spyOn>;
+let replace: ReturnType<typeof vi.spyOn>;
 let search = '';
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push, replace }),
   usePathname: () => '/resource-management/attachment-directories',
   useSearchParams: () => new URLSearchParams(search),
 }));
@@ -21,11 +20,15 @@ import { useFolderUrl, useOnFolderChange } from './useFolderUrl';
 
 const BASE = '/resource-management/attachment-directories';
 
+// The hook writes with the native History API (no server round trip); Next syncs it into
+// useSearchParams, which these tests mock.
 beforeEach(() => {
-  push.mockReset();
-  replace.mockReset();
+  push = vi.spyOn(window.history, 'pushState').mockImplementation(() => {});
+  replace = vi.spyOn(window.history, 'replaceState').mockImplementation(() => {});
   search = '';
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('useFolderUrl', () => {
   it('reads the open folder from ?directoryId=', () => {
@@ -57,7 +60,7 @@ describe('useFolderUrl', () => {
   it('opening a folder PUSHES a history entry with its id', () => {
     const { result } = renderHook(() => useFolderUrl());
     act(() => result.current.openFolder('mkt'));
-    expect(push).toHaveBeenCalledWith(`${BASE}?directoryId=mkt`, { scroll: false });
+    expect(push).toHaveBeenCalledWith(null, '', `${BASE}?directoryId=mkt`);
     expect(replace).not.toHaveBeenCalled();
   });
 
@@ -65,21 +68,21 @@ describe('useFolderUrl', () => {
     search = 'directoryId=q1&foo=1';
     const { result } = renderHook(() => useFolderUrl());
     act(() => result.current.openFolder(null));
-    expect(push).toHaveBeenCalledWith(`${BASE}?foo=1`, { scroll: false });
+    expect(push).toHaveBeenCalledWith(null, '', `${BASE}?foo=1`);
   });
 
   it('opening the root with no other params lands on the bare path', () => {
     search = 'directoryId=q1';
     const { result } = renderHook(() => useFolderUrl());
     act(() => result.current.openFolder(null));
-    expect(push).toHaveBeenCalledWith(BASE, { scroll: false });
+    expect(push).toHaveBeenCalledWith(null, '', BASE);
   });
 
   it('treats the folder-all sentinel as the root', () => {
     search = 'directoryId=q1';
     const { result } = renderHook(() => useFolderUrl());
     act(() => result.current.openFolder('folder-all'));
-    expect(push).toHaveBeenCalledWith(BASE, { scroll: false });
+    expect(push).toHaveBeenCalledWith(null, '', BASE);
   });
 
   it('opening the folder already open adds no history entry', () => {
@@ -94,14 +97,14 @@ describe('useFolderUrl', () => {
     search = 'directoryId=q1';
     const { result } = renderHook(() => useFolderUrl());
     act(() => result.current.openFolder('camp', { replace: true }));
-    expect(replace).toHaveBeenCalledWith(`${BASE}?directoryId=camp`, { scroll: false });
+    expect(replace).toHaveBeenCalledWith(null, '', `${BASE}?directoryId=camp`);
     expect(push).not.toHaveBeenCalled();
   });
 
   it('url-encodes the folder id', () => {
     const { result } = renderHook(() => useFolderUrl());
     act(() => result.current.openFolder('a b&c'));
-    expect(push).toHaveBeenCalledWith(`${BASE}?directoryId=a+b%26c`, { scroll: false });
+    expect(push).toHaveBeenCalledWith(null, '', `${BASE}?directoryId=a+b%26c`);
   });
 });
 
