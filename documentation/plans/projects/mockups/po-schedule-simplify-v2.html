@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PO and schedule, simplified</title>
+<!-- PM-SIMPLIFY mock v2, 17 Oct 2026. Annotated mockup, not shipped code. Plain inline CSS so it opens from a file.
+     Plan: documentation/plans/projects/PLAN-pm-simplify-17oct.md. Data: the real project case PRJ-000001, masked by crew (names, PO numbers, prices scaled by one constant) -->
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --fg:#111827; --muted:#6b7280; --line:#e5e7eb; --line-soft:#f1f2f4;
+  --primary:#1b84ff; --primary-soft:#e9f3ff;
+  --red:#dc2626; --red-soft:#fef2f2; --red-line:#fecaca;
+  --amber:#b45309; --amber-soft:#fffbeb; --amber-line:#fde68a;
+  --green:#15803d; --green-soft:#f0fdf4;
+  --grey-soft:#f3f4f6; --violet:#6d28d9;
+  --callout:#e11d74; --radius:8px;
+  --font:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--font)}
+.doc{max-width:1760px;margin:0 auto;padding:24px 16px 64px}
+.doc>h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+.doc>.sub{color:var(--muted);margin:0 0 20px;max-width:900px}
+.doc h2.frame-title{font-size:15px;margin:28px 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.layout{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.scroll{overflow-x:auto;max-width:100%;border-radius:12px}
+.frame{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);position:relative;overflow:hidden}
+.w1280{width:1280px}
+.w375{width:375px;flex:none}
+.notes{flex:1 1 360px;min-width:300px;max-width:560px}
+.notes ol{margin:0;padding:0;list-style:none}
+.notes li{display:flex;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px}
+.notes li b{display:block;margin-bottom:2px}
+.notes .ref{display:block;color:var(--muted);font-size:12px;margin-top:4px}
+.co{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;border-radius:50%;background:var(--callout);color:#fff;font-size:12px;font-weight:700;box-shadow:0 0 0 2px #fff}
+.pin{position:absolute;z-index:5}
+/* app shell */
+.shell{display:flex;min-height:100%}
+.side{width:232px;flex:none;border-right:1px solid var(--line);padding:16px 12px;background:#fcfcfd;font-size:13px}
+.side .brand{font-weight:700;font-size:16px;margin:0 8px 18px}
+.side .grp{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:14px 8px 6px}
+.side .it{padding:6px 8px;border-radius:6px;color:#374151;position:relative}
+.side .it.sub{padding-left:26px}
+.side .it.on{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.topbar{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:0 20px;color:var(--muted);font-size:13px}
+.main{flex:1;min-width:0}
+.content{padding:20px 28px 28px}
+.ph h1{font-size:20px;margin:0;letter-spacing:-.01em}
+.crumbs{color:var(--muted);font-size:13px;margin-top:2px}
+.phrow{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-start;margin-bottom:16px;position:relative}
+.meta{color:var(--muted);font-size:13px;margin-top:4px}
+.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;font:500 13px var(--font);color:var(--fg);white-space:nowrap}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.sm{padding:3px 9px;font-size:12px}
+.btn.icon{padding:6px 8px}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 16px}
+.facts .k{color:var(--muted);font-size:12px}
+.facts .v{font-weight:500}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 9px 1px 7px;font-size:12px;font-weight:500;white-space:nowrap;background:var(--grey-soft);color:#374151}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.8}
+.pill.red{background:var(--red-soft);color:var(--red)}
+.pill.amber{background:var(--amber-soft);color:var(--amber)}
+.pill.green{background:var(--green-soft);color:var(--green)}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin:0 0 14px;overflow-x:auto;white-space:nowrap;position:relative}
+.tabs span{padding:8px 0;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs span.on{color:var(--fg);border-bottom-color:var(--primary)}
+.toggle{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-size:12px}
+.toggle span{padding:4px 10px;background:#fff}
+.toggle span.on{background:var(--grey-soft);font-weight:600}
+/* DataGrid look */
+.grid{border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:13px}
+.grid .scroller{overflow-x:auto}
+.grid table{border-collapse:collapse;width:100%;table-layout:fixed}
+.grid th{background:#fafafa;color:var(--muted);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grid td{padding:8px 10px;border-bottom:1px solid var(--line-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.grid tr.hl td{background:var(--red-soft)}
+.grid tr.hlamber td{background:var(--amber-soft)}
+.grid td.num,.grid th.num{text-align:right;font-variant-numeric:tabular-nums}
+.grid .second{display:block;color:var(--muted);font-size:11px}
+.grid tfoot td{font-weight:600;background:#fafafa}
+.pager{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;color:var(--muted);font-size:12px;background:#fff;flex-wrap:wrap;gap:6px}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.chip{border:1px dashed var(--line);border-radius:6px;padding:5px 10px;color:#374151;font-size:12px;background:#fff}
+.chip.on{border-style:solid;background:var(--primary-soft);border-color:#bfdbfe;color:var(--primary)}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:6px 0 0}
+.emptypdf{border:1.5px dashed #cbd5e1;border-radius:10px;padding:48px 24px;text-align:center;color:var(--muted);background:#fafafa}
+.emptypdf .t{font-weight:600;color:var(--fg);margin-bottom:8px}
+/* phone */
+.phone .top{height:48px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-weight:700}
+.phone .content{padding:14px 16px 20px}
+.rcard{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff;position:relative}
+.rcard .row1{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.rcard .kv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:6px;font-size:12px}
+.rcard .kv .k{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+
+
+.grid tr.sub td{background:#fbfcfe;border-bottom:1px solid var(--line-soft);font-size:12px}
+.grid tr.sub td:first-child{padding-left:34px}
+.grid tr.exp td{background:var(--primary-soft)}
+.caret{display:inline-block;width:14px;color:var(--muted)}
+.grip{color:#c0c4cc;letter-spacing:-2px;margin-right:4px}
+.bar{display:inline-block;width:70px;height:6px;border-radius:3px;background:var(--grey-soft);vertical-align:middle;overflow:hidden;margin-right:6px}
+.bar i{display:block;height:100%;background:var(--green)}
+.out{font-weight:600}
+.dp{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--primary);border-radius:6px;padding:2px 8px;background:#fff;box-shadow:0 0 0 3px var(--primary-soft)}
+.was{color:var(--muted);text-decoration:line-through;margin-right:6px}
+.ctx{position:absolute;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);font-size:13px;padding:4px;min-width:210px;z-index:4}
+.ctx div{padding:6px 10px;border-radius:5px}
+.ctx div.on{background:var(--grey-soft)}
+.ctx hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.dialog{width:520px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12);padding:20px;position:relative}
+.dialog h3{margin:0 0 4px;font-size:16px}
+.drop{border:1.5px dashed #cbd5e1;border-radius:10px;padding:28px;text-align:center;color:var(--muted);background:#fafafa;margin:14px 0}
+.field{margin:10px 0}
+.field .k{font-size:12px;color:var(--muted);margin-bottom:4px}
+.field .in{border:1px solid var(--line);border-radius:6px;padding:6px 10px;color:#374151}
+.foot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.cmp{border-collapse:collapse;width:100%;font-size:13px;background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.cmp th,.cmp td{padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:left;vertical-align:top}
+.cmp th{background:#fafafa;color:var(--muted);font-weight:500}
+.cmp td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cmp td.good{color:var(--green);font-weight:600}
+.map{border-collapse:collapse;width:100%;font-size:12px;background:#fff}
+.map th,.map td{padding:6px 8px;border-bottom:1px solid var(--line-soft);text-align:left;vertical-align:top}
+.map th{background:#fafafa;color:var(--muted);font-weight:500}
+.q{background:#fff;border:1px solid var(--line);border-left:3px solid var(--callout);border-radius:8px;padding:12px 14px;margin-bottom:10px}
+.q b{display:block;margin-bottom:4px}
+.q .rec{margin-top:6px;color:var(--green);font-weight:500}
+
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>PO and delivery schedule, simplified (mock v2)</h1>
+<p class="sub">Owner, 15 Oct: "the PO part and the delivery schedule part are badly designed, too complicated."
+Proposal: one Orders tab on the project, one page per PO, and every line showing ordered, scheduled,
+delivered and still to deliver. Dates change where they are shown. One sign-off instead of three.
+Existing components only (map at the bottom). Data: the real project case PRJ-000001, masked by crew (names, PO numbers, prices scaled by one constant): 50 PO lines,
+15 deliveries, 3 sales orders, 0 published.</p>
+
+<h2 class="frame-title">Before and after, measured</h2>
+<table class="cmp" style="max-width:1100px;table-layout:fixed"><colgroup><col style="width:22%"><col style="width:32%"><col style="width:20%"><col style="width:26%"></colgroup><thead><tr><th>Job</th><th>Today</th><th>Proposed</th><th>What removes the steps</th></tr></thead><tbody><tr><td>Create a PO from a scan, to a usable PO</td><td>3 pages + 2 dialogs, 10 clicks, 3 sign-offs</td><td class='good'>1 page + 1 dialog, 3 clicks, 1 sign-off</td><td>PO record and PO review are one page; Approve and Countersign go (Q1)</td></tr><tr><td>Change one delivery's date</td><td>Not possible on the schedule; edit the date on every draft SO line for that area, or upload a revision (5-field dialog, review, confirm)</td><td class='good'>2 clicks, 1 field</td><td>Date edited in place on the Deliveries tab; draft SO lines follow (Q2)</td></tr><tr><td>Upload a revised schedule</td><td>5 fields</td><td class='good'>1 field (the file)</td><td>PO, schedule and issuer known from the page</td></tr><tr><td>See a partial delivery</td><td>Shown nowhere</td><td class='good'>0 extra clicks</td><td>Delivered and Outstanding columns on the PO's lines, from AutoCount</td></tr><tr><td>Ordered / scheduled / delivered / outstanding for every item</td><td>7 screens, about 15 clicks, and still not answerable</td><td class='good'>1 screen, 2 clicks from the project</td><td>PO page, Lines tab</td></tr><tr><td>Build sales orders</td><td>2 dialogs, 3 fields</td><td class='good'>1 dialog, 1 field</td><td>PO and confirmed schedule known from the page (Q5)</td></tr><tr><td>Tabs and pages for one PO</td><td>3 project tabs + 3 pages</td><td class='good'>1 project tab + 1 page</td><td>Orders tab + PO page (Q3)</td></tr></tbody></table>
+<p class="muted small">Today's figures: browser walk on the sandbox copy, 17 Oct 2026, sidebar clicks from /; screenshots in documentation/plans/projects/evidence/pm-simplify-17oct/. Proposed figures are counted on this mock.</p>
+
+<h2 class="frame-title">1. Project page: one Orders tab, 1280 wide</h2>
+<div class="layout"><div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side">
+    <div class="brand">Sorento</div>
+    <div class="grp">Sales</div>
+    <div class="it">Project Sales</div>
+    <div class="it sub on">Projects</div>
+    <div class="it sub">My Tasks</div>
+    <div class="it sub">AutoCount Differences</div>
+  </div>
+  <div class="main">
+    <div class="topbar">Search menu... &nbsp; Sorento SRT</div>
+    <div class="content">
+      <div class="crumbs" style="margin:0 0 4px">Project Sales &rsaquo; Projects &rsaquo; Setia Alam</div>
+      
+<div class="phrow">
+  <div class="ph"><h1>Setia Alam &nbsp;<span class="pill green">PO received</span></h1>
+  <div class="meta">PRJ-000001</div></div>
+  <div class="actions"><span class="btn">&lsaquo;</span><span class="btn">&rsaquo;</span><span class="btn primary">Upload PO</span></div>
+</div>
+<div class="tabs" style="position:relative">
+  <span>Overview</span><span>Stakeholders</span><span>Tasks</span><span>Quotations</span><span>Sample requests</span><span>Samples</span><span>Sponsorships</span>
+  <span class="on">Orders</span><span>Activity</span><span>Documents</span>
+  <b class="pin co" style="left:872px;top:6px">1</b>
+</div>
+<div class="toolbar" style="justify-content:space-between">
+  <div class="actions"><span class="chip">Search POs</span><span class="chip">Status</span></div>
+  <div class="actions" style="position:relative"><span class="btn sm">Columns</span><b class="pin co" style="right:-26px;top:0">3</b></div>
+</div>
+<div class="grid" style="position:relative">
+<div class="scroller"><table>
+<colgroup><col style="width:180px"><col style="width:170px"><col style="width:110px"><col style="width:170px"><col style="width:110px"><col style="width:190px"></colgroup>
+<thead><tr><th>Purchase order</th><th>Issued by</th><th class="num">Value (RM)</th><th>Delivered</th><th>Next delivery</th><th>Next step</th></tr></thead>
+<tbody>
+<tr class="exp"><td><span class="caret">&#9662;</span><b>XX/26/01/001</b><span class="second">Dated 16 Jan 2026 &middot; 50 lines</span></td><td>Issuer not recorded</td><td class="num">5,417,721.06</td>
+<td><span class="bar"><i style="width:0%"></i></span>0 of 41,918</td><td>7 Jan 2027</td><td><span class="pill amber">Publish 3 sales orders</span></td></tr>
+<tr class="sub"><td colspan="2">Delivery schedule 1 - 23/7/2026 (v2) &middot; dated 4 Mar 2026</td><td class="num"></td><td>15 deliveries, 7 Jan 2027 to 22 Jul 2027</td><td></td><td><span class="pill amber">SRTWC8608-RL: 894 not scheduled</span> <span class="muted small">+19 more</span></td></tr>
+<tr class="sub"><td colspan="2">Sales orders PSO-000001 to PSO-000003</td><td class="num"></td><td>0 published, 3 not yet</td><td></td><td></td></tr>
+
+</tbody></table></div>
+<div class="pager"><span>1 - 1 of 1</span><span>Rows per page 10</span></div>
+<b class="pin co" style="left:2px;top:30px">2</b>
+<b class="pin co" style="right:8px;top:44px">4</b>
+</div>
+<div class="ctx" style="left:330px;top:452px">
+  <div class="on">Open purchase order</div><div>Upload delivery schedule</div><div>Upload a new PO version</div><hr><div>Copy PO number</div>
+</div>
+<b class="pin co" style="left:550px;top:448px">5</b>
+<div style="height:120px"></div>
+
+    </div>
+  </div>
+</div></div></div><div class="notes"><ol><li><span class="co">1</span><div><b>One Orders tab replaces three.</b> POs, Delivery schedules and Sales orders are one job on one PO, so they become one tab (12 tabs to 10). The grid lists POs; everything about a PO hangs under its row.<span class="ref">Today: ProjectDetailClient.tsx:77-90 (12 tabs). Reuses PanelDataGrid (components/common/PanelDataGrid.tsx), the same grid PurchaseOrdersPanel.tsx already renders.</span></div></li><li><span class="co">2</span><div><b>Rows expand, they do not navigate away.</b> The caret shows the PO's schedule and its sales orders inline: version, date range, what is still open. Click the PO number to open the PO page.<span class="ref">TanStack getExpandedRowModel, already wired in PanelDataGrid (expanded prop) and SpoPlannerTable.tsx.</span></div></li><li><span class="co">3</span><div><b>Columns toggle.</b> Same Columns control every listing has; preferences keyed per listing.<span class="ref">components/ui/data-grid-column-visibility.tsx, listing key projects.purchase_orders.view::orders.</span></div></li><li><span class="co">4</span><div><b>One next step per PO, computed, not a separate card.</b> Replaces the POToSalesOrderStep card whose links landed on a list and made the user pick the PO again (defect D4).<span class="ref">POToSalesOrderStep.tsx:76-81 links ?po= and ?build= that nothing reads (ProjectDetailClient.tsx:98 reads only tab).</span></div></li><li><span class="co">5</span><div><b>Right-click on a row.</b> The row's actions without a column of buttons: open, upload its schedule (PO already known, no picker), upload a new version.<span class="ref">components/ui/context-menu.tsx, as QuotationLinesGrid.tsx uses it.</span></div></li></ol></div></div>
+
+<h2 class="frame-title">2. PO page, Lines tab: what is still to deliver, 1280 and 375 wide</h2>
+<div class="layout"><div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side">
+    <div class="brand">Sorento</div>
+    <div class="grp">Sales</div>
+    <div class="it">Project Sales</div>
+    <div class="it sub on">Projects</div>
+    <div class="it sub">My Tasks</div>
+    <div class="it sub">AutoCount Differences</div>
+  </div>
+  <div class="main">
+    <div class="topbar">Search menu... &nbsp; Sorento SRT</div>
+    <div class="content">
+      <div class="crumbs" style="margin:0 0 4px">Project Sales &rsaquo; Projects &rsaquo; Setia Alam &rsaquo; Orders</div>
+      
+<div class="phrow">
+  <div class="ph" style="position:relative"><h1>XX/26/01/001 &nbsp;<span class="pill green">Confirmed</span></h1>
+  <div class="meta">Setia Alam &middot; Issuer not recorded &middot; Dated 16 Jan 2026 &middot; RM 5,417,721.06 &middot; Schedule 1 - 23/7/2026 (v2)</div>
+  <b class="pin co" style="left:-28px;top:0">6</b></div>
+  <div class="actions" style="position:relative"><span class="btn">&lsaquo;</span><span class="btn">&rsaquo;</span><span class="btn">&#8943;</span><span class="btn primary">Publish 3 sales orders</span><b class="pin co" style="right:-10px;top:-14px">7</b></div>
+</div><div class="tabs" style="position:relative"><span class="on">Lines (50)</span><span class="">Deliveries (15)</span><span class="">Sales orders (3)</span><span class="">Documents (3)</span><b class="pin co" style="left:440px;top:6px">8</b></div>
+<div class="toolbar" style="justify-content:space-between">
+  <div class="actions"><span class="chip">Search lines</span><span class="chip on">Still to deliver</span><span class="chip">Schedule differs (22)</span></div>
+  <div class="actions"><span class="btn sm">Columns</span></div>
+</div>
+<div class="grid" style="position:relative">
+<div class="scroller"><table>
+<colgroup><col style="width:70px"><col style="width:230px"><col style="width:80px"><col style="width:110px"><col style="width:130px"><col style="width:100px"><col style="width:200px"></colgroup>
+<thead><tr><th>#</th><th>Product</th><th class="num">Ordered</th><th class="num">Scheduled</th><th class="num">Delivered</th><th class="num">Outstanding</th><th>Next delivery</th></tr></thead>
+<tbody><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>1</td><td title="SORENTO SRTW8613-RL ONE PIECE WC - SET- Washdown One-Piece WC - Dual Flush : 6/3L- Soft Close Seat & Cover- Size : 700 x 380 x 730mm- S-Trap, 250mm Roughing-in"><b>SRTWC86</b><span class="second">SORENTO SRTW8613-RL ONE PIECE WC - SET- Washdown One-Piece WC - Dual Flush : 6/3L- Soft Close Seat & Cover- Size : 700 x 380 x 730mm- S-Trap, 250mm Roughing-in</span></td><td class="num">927</td><td class="num">927</td><td class="num"><span class="bar"><i style="width:0%"></i></span>0</td><td class="num out">927</td><td>7 Jan 2027</td></tr><tr class="hlamber"><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>2</td><td title="SORENTO SRTWC8608-RL CLOSE COUPLED WC SET"><b>SRTWC8608-RL</b><span class="second">SORENTO SRTWC8608-RL CLOSE COUPLED WC SET</span></td><td class="num">894</td><td class="num">0<span class="second" style="color:var(--amber)">894 not scheduled</span></td><td class="num"><span class="bar"><i style="width:0%"></i></span>0</td><td class="num out">894</td><td></td></tr><tr class="hlamber"><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>3</td><td title="SORENTO SRTW8840-RL CLOSE COUPLE - SET"><b>SRTWC8840</b><span class="second">SORENTO SRTW8840-RL CLOSE COUPLE - SET</span></td><td class="num">9</td><td class="num">0<span class="second" style="color:var(--amber)">9 not scheduled</span></td><td class="num"><span class="bar"><i style="width:0%"></i></span>0</td><td class="num out">9</td><td></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>4</td><td title="SORENTO B2155-BLUE-NL ANGLE VALVE"><b>2155-BLUE</b><span class="second">SORENTO B2155-BLUE-NL ANGLE VALVE</span></td><td class="num">1,816</td><td class="num">1,816</td><td class="num"><span class="bar"><i style="width:0%"></i></span>0</td><td class="num out">1,816</td><td>7 Jan 2027</td></tr><tr class="hlamber"><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>5</td><td title="SORENTO C-FH12S 12" S/STEEL FLEXIBLE HOSE"><b>SRTFH12</b><span class="second">SORENTO C-FH12S 12" S/STEEL FLEXIBLE HOSE</span></td><td class="num">1,816</td><td class="num">3,651<span class="second" style="color:var(--amber)">1,835 more than ordered</span></td><td class="num"><span class="bar"><i style="width:0%"></i></span>0</td><td class="num out">1,816</td><td>7 Jan 2027</td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>6</td><td title="SORENTO SRTUB206 BACK INLET - SET - Size : L300 x W350 x H680mm"><b>SRTUB206-BI</b><span class="second">SORENTO SRTUB206 BACK INLET - SET - Size : L300 x W350 x H680mm</span></td><td class="num">16</td><td class="num">16</td><td class="num"><span class="bar"><i style="width:0%"></i></span>0</td><td class="num out">16</td><td>22 Jul 2027</td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>8</td><td title="SORENTO SRTWB7055 COUNTERTOP BASIN/WALL HUNG BASIN - Size: 470 x 465 x 160mm"><b>SRTWB7055</b><span class="second">SORENTO SRTWB7055 COUNTERTOP BASIN/WALL HUNG BASIN - Size: 470 x 465 x 160mm</span></td><td class="num">927</td><td class="num">927</td><td class="num"><span class="bar"><i style="width:0%"></i></span>0</td><td class="num out">927</td><td>7 Jan 2027</td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>9</td><td title="SORENTO SRTWB243 WALL HUNG BASIN - Size: 510 x 420 x 200mm"><b>SRTWB243</b><span class="second">SORENTO SRTWB243 WALL HUNG BASIN - Size: 510 x 420 x 200mm</span></td><td class="num">852</td><td class="num">852</td><td class="num"><span class="bar"><i style="width:0%"></i></span>0</td><td class="num out">852</td><td>7 Jan 2027</td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>10</td><td title="SORENTO CBT001 CP BOTTLE TRAP"><b>SRTCBT001</b><span class="second">SORENTO CBT001 CP BOTTLE TRAP</span></td><td class="num">1,779</td><td class="num">1,779</td><td class="num"><span class="bar"><i style="width:0%"></i></span>0</td><td class="num out">1,779</td><td>7 Jan 2027</td></tr><tr class="exp"><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9662;</span>48</td><td title="SORENTO SRTCB6633 150X150MM S/S A/INSECT FLOORTRAP"><b>SRTCB6633</b><span class="second">SORENTO SRTCB6633 150X150MM S/S A/INSECT FLOORTRAP</span></td><td class="num">5,920</td><td class="num">5,920</td><td class="num"><span class="bar"><i style="width:0%"></i></span>0</td><td class="num out">5,920</td><td>7 Jan 2027</td></tr><tr class="sub"><td colspan="2">7 Jan 2027 &middot; Tower, Level 2 & 7</td><td class="num"></td><td class="num">600</td><td class="num">0</td><td class="num">600</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">21 Jan 2027 &middot; Tower, Level 8 & 10</td><td class="num"></td><td class="num">540</td><td class="num">0</td><td class="num">540</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">4 Feb 2027 &middot; Tower, Level 11 to 13</td><td class="num"></td><td class="num">450</td><td class="num">0</td><td class="num">450</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">18 Feb 2027 &middot; Tower, Level 14 to 16</td><td class="num"></td><td class="num">450</td><td class="num">0</td><td class="num">450</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">4 Mar 2027 &middot; Tower, Level 17 to 19</td><td class="num"></td><td class="num">450</td><td class="num">0</td><td class="num">450</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">18 Mar 2027 &middot; Tower, Level 20 to 22</td><td class="num"></td><td class="num">450</td><td class="num">0</td><td class="num">450</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">1 Apr 2027 &middot; Tower, Level 23 to 25</td><td class="num"></td><td class="num">450</td><td class="num">0</td><td class="num">450</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">15 Apr 2027 &middot; Tower, Level 26 to 28</td><td class="num"></td><td class="num">450</td><td class="num">0</td><td class="num">450</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">29 Apr 2027 &middot; Tower, Level 29 to 31</td><td class="num"></td><td class="num">450</td><td class="num">0</td><td class="num">450</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">13 May 2027 &middot; Tower, Level 32 to 34</td><td class="num"></td><td class="num">450</td><td class="num">0</td><td class="num">450</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">27 May 2027 &middot; Tower, Level 35 to 37</td><td class="num"></td><td class="num">450</td><td class="num">0</td><td class="num">450</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">10 Jun 2027 &middot; Tower, Level 38 to 40</td><td class="num"></td><td class="num">450</td><td class="num">0</td><td class="num">450</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">24 Jun 2027 &middot; Common Area, Part 1</td><td class="num"></td><td class="num">140</td><td class="num">0</td><td class="num">140</td><td>PSO-000001 <span class="pill red">Blocked</span></td></tr><tr class="sub"><td colspan="2">8 Jul 2027 &middot; Common Area, Part 2</td><td class="num"></td><td class="num">140</td><td class="num">0</td><td class="num">140</td><td>PSO-000001 <span class="pill red">Blocked</span></td></tr></tbody>
+<tfoot><tr><td></td><td>50 lines</td><td class="num">41,918</td><td class="num">30,612</td><td class="num">0</td><td class="num">41,918</td><td></td></tr></tfoot>
+</table></div>
+<div class="pager"><span>1 - 10 of 50</span><span>Rows per page 25</span></div>
+<b class="pin co" style="left:560px;top:6px">9</b>
+<b class="pin co" style="left:2px;top:72px">10</b>
+</div>
+
+    </div>
+  </div>
+</div></div></div><div class="notes"><ol><li><span class="co">6</span><div><b>One page per PO.</b> The PO record page, the PO document review page and the schedule review page become one page, pos/[poId]. Read-only facts sit under the header, as the design language asks.<span class="ref">Today 3 pages: pos/[poId] (PurchaseOrderDetailClient.tsx), purchase-orders/[versionId] (POIntakeConfirmClient.tsx), delivery-schedules/[versionId] (DeliveryScheduleReviewClient.tsx). PageHeader + RecordNavigation (components/common/).</span></div></li><li><span class="co">7</span><div><b>One CTA: whatever is next.</b> Confirm PO, Confirm schedule, Build sales orders or Publish N sales orders, one at a time. Approve and Countersign leave the screen (question 1).<span class="ref">POIntakeConfirmClient.tsx:215-233 shows Confirm, Approve, Countersign; none of the last two is read by build or publish (defect D2).</span></div></li><li><span class="co">8</span><div><b>Four line tabs, same order in view and edit.</b> Lines, Deliveries, Sales orders, Documents. The file and its PDF live only on Documents.<span class="ref">components/ui/tabs.tsx (line variant). PdfViewer (components/common/PdfViewer.tsx) moves into Documents.</span></div></li><li><span class="co">9</span><div><b>Ordered, Scheduled, Delivered, Outstanding on every line.</b> The question the owner's staff could not answer anywhere on the project: how much of each item is still to go. Delivered comes from AutoCount's delivered quantity on the linked sales order lines, read-only (answered: AutoCount is the source of truth).<span class="ref">No migration: projects.sales_order_lines.source_po_line_id + core_sales_order_line_id -> public.sales_order_lines.qty_delivered, via delivered_qty_of (project_supply_service.py:532).</span></div></li><li><span class="co">10</span><div><b>Drag to sort, expand to see the deliveries. A gap is a row colour plus a filter.</b> Expanding line 48 lists its deliveries: date, area, units, delivered, sales order. Nothing on this PO is delivered yet, so Delivered reads 0; it fills from AutoCount as delivery orders post. 20 line(s) are short on the schedule and 2 carry more than ordered: amber row and the 'Schedule differs' chip, not a separate findings list.<span class="ref">DataGridTableDndRows (components/ui/data-grid-table-dnd-rows.tsx) as SalesOrderLinesTable.tsx and QuotationLinesGrid.tsx use it. The amber row reuses the schedule_short finding the build already raises.</span></div></li></ol></div></div>
+<div class="layout" style="margin-top:16px"><div class="frame w375"><div class="phone"><div class="top"><span>&#9776;</span><span>XX/26/01/001</span><span>&#8943;</span></div>
+<div class="content"><div class="meta" style="margin:0 0 8px"><span class="pill green">Confirmed</span> RM 5,417,721.06</div>
+<span class="btn primary" style="width:100%;justify-content:center;margin-bottom:10px">Publish 3 sales orders</span>
+<div class="tabs"><span class="on">Lines (50)</span><span>Deliveries (15)</span><span>Sales orders</span></div>
+<div class="rcard"><div class="row1"><b>SRTWC86</b><span class="muted small">#1</span></div>
+<div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">SORENTO SRTW8613-RL ONE PIECE WC - SET- Washdown One-Piece WC - Dual Flush : 6/3L- Soft Close Seat & Cover- Size : 700 x 380 x 730mm- S-Trap, 250mm Roughing-in</div>
+<div class="kv"><div><div class="k">Ordered</div>927</div><div><div class="k">Delivered</div>0</div><div><div class="k">Outstanding</div><b>927</b></div></div></div><div class="rcard" style="border-color:var(--amber-line);background:var(--amber-soft)"><div class="row1"><b>SRTWC8608-RL</b><span class="muted small">#2</span></div>
+<div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">SORENTO SRTWC8608-RL CLOSE COUPLED WC SET</div>
+<div class="kv"><div><div class="k">Ordered</div>894</div><div><div class="k">Delivered</div>0</div><div><div class="k">Outstanding</div><b>894</b></div></div></div><div class="rcard" style="border-color:var(--amber-line);background:var(--amber-soft)"><div class="row1"><b>SRTWC8840</b><span class="muted small">#3</span></div>
+<div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">SORENTO SRTW8840-RL CLOSE COUPLE - SET</div>
+<div class="kv"><div><div class="k">Ordered</div>9</div><div><div class="k">Delivered</div>0</div><div><div class="k">Outstanding</div><b>9</b></div></div></div><div class="rcard"><div class="row1"><b>2155-BLUE</b><span class="muted small">#4</span></div>
+<div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">SORENTO B2155-BLUE-NL ANGLE VALVE</div>
+<div class="kv"><div><div class="k">Ordered</div>1,816</div><div><div class="k">Delivered</div>0</div><div><div class="k">Outstanding</div><b>1,816</b></div></div></div><div class="muted small" style="text-align:center">46 more lines</div></div></div></div></div>
+
+<h2 class="frame-title">3. PO page, Deliveries tab: change a date in place, 1280 wide</h2>
+<div class="layout"><div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side">
+    <div class="brand">Sorento</div>
+    <div class="grp">Sales</div>
+    <div class="it">Project Sales</div>
+    <div class="it sub on">Projects</div>
+    <div class="it sub">My Tasks</div>
+    <div class="it sub">AutoCount Differences</div>
+  </div>
+  <div class="main">
+    <div class="topbar">Search menu... &nbsp; Sorento SRT</div>
+    <div class="content">
+      <div class="crumbs" style="margin:0 0 4px">Project Sales &rsaquo; Projects &rsaquo; Setia Alam &rsaquo; Orders</div>
+      
+<div class="phrow">
+  <div class="ph" style="position:relative"><h1>XX/26/01/001 &nbsp;<span class="pill green">Confirmed</span></h1>
+  <div class="meta">Setia Alam &middot; Issuer not recorded &middot; Dated 16 Jan 2026 &middot; RM 5,417,721.06 &middot; Schedule 1 - 23/7/2026 (v2)</div>
+  </div>
+  <div class="actions" style="position:relative"><span class="btn">&lsaquo;</span><span class="btn">&rsaquo;</span><span class="btn">&#8943;</span><span class="btn primary">Publish 3 sales orders</span></div>
+</div><div class="tabs" style="position:relative"><span class="">Lines (50)</span><span class="on">Deliveries (15)</span><span class="">Sales orders (3)</span><span class="">Documents (3)</span></div>
+<div class="toolbar" style="justify-content:space-between">
+  <div class="actions"><span class="toggle"><span class="on">By delivery</span><span>By product</span></span><span class="chip">Search</span></div>
+  <div class="actions" style="position:relative"><span class="btn sm">Columns</span><span class="btn sm">Upload revised schedule</span><b class="pin co" style="right:-26px;top:0">14</b></div>
+</div>
+<div class="grid" style="position:relative">
+<div class="scroller"><table>
+<colgroup><col style="width:150px"><col style="width:170px"><col style="width:220px"><col style="width:80px"><col style="width:120px"><col style="width:190px"></colgroup>
+<thead><tr><th>Area</th><th>Levels</th><th>Delivery date</th><th class="num">Units</th><th>Delivered</th><th>Sales order</th></tr></thead>
+<tbody><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 2 & 7">Level 2 & 7</td><td>7 Jan 2027</td><td class="num">4,452</td><td>0 of 4,452</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 8 & 10">Level 8 & 10</td><td>21 Jan 2027</td><td class="num">2,481</td><td>0 of 2,481</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 11 to 13">Level 11 to 13</td><td>4 Feb 2027</td><td class="num">2,392</td><td>0 of 2,392</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 14 to 16">Level 14 to 16</td><td>18 Feb 2027</td><td class="num">2,592</td><td>0 of 2,592</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 17 to 19">Level 17 to 19</td><td>4 Mar 2027</td><td class="num">2,392</td><td>0 of 2,392</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 20 to 22">Level 20 to 22</td><td>18 Mar 2027</td><td class="num">2,442</td><td>0 of 2,442</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 23 to 25">Level 23 to 25</td><td>1 Apr 2027</td><td class="num">2,542</td><td>0 of 2,542</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 26 to 28">Level 26 to 28</td><td>15 Apr 2027</td><td class="num">2,442</td><td>0 of 2,442</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 29 to 31">Level 29 to 31</td><td>29 Apr 2027</td><td class="num">2,392</td><td>0 of 2,392</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 32 to 34">Level 32 to 34</td><td>13 May 2027</td><td class="num">2,592</td><td>0 of 2,592</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 35 to 37">Level 35 to 37</td><td>27 May 2027</td><td class="num">2,392</td><td>0 of 2,392</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Tower</td><td title="Level 38 to 40">Level 38 to 40</td><td>10 Jun 2027</td><td class="num">2,596</td><td>0 of 2,596</td><td>PSO-000002 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Common Area</td><td title="Part 1">Part 1</td><td>24 Jun 2027</td><td class="num">981</td><td>0 of 981</td><td>PSO-000001 <span class="pill red">Blocked</span></td></tr><tr class=""><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Common Area</td><td title="Part 2">Part 2</td><td>8 Jul 2027</td><td class="num">972</td><td>0 of 972</td><td>PSO-000001 <span class="pill red">Blocked</span></td></tr><tr class="exp"><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>Common Area</td><td title="Part 3">Part 3</td><td><span class="dp" style="position:relative"><span class="was">22 Jul 2027</span>5 Aug 2027 &#128197;<b class="pin co" style="right:-30px;top:0">12</b></span></td><td class="num">941</td><td>0 of 941</td><td>PSO-000001 <span class="pill red">Blocked</span></td></tr></tbody></table></div>
+<div class="pager"><span>1 - 15 of 15</span><span>Schedule 1 - 23/7/2026 (v2), confirmed 19 Aug 2026</span></div>
+</div>
+<div class="alert" style="margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fff;position:relative">
+  <b>Common Area, Part 3 moves to 5 Aug 2027.</b> <span class="muted">PSO-000001 is not published, so its lines take the new date. Nothing published changes.</span>
+  <span style="float:right"><span class="btn sm">Undo</span></span>
+  <b class="pin co" style="left:-28px;top:8px">13</b>
+</div>
+
+    </div>
+  </div>
+</div></div></div><div class="notes"><ol><li><span class="co">12</span><div><b>Change a date where it is shown.</b> Click the date, pick the new one, done. It writes that area's date and the draft sales order lines for that area follow. A published sales order gets the existing amendment flow, started for you (question 2). On this project today, 240 of 258 sales order lines still carry the dates of the schedule they were built from, not the confirmed 1 - 23/7/2026 (v2): nothing carried the new dates over.<span class="ref">Today: dates are read-only (DeliveryScheduleMatrix.tsx:233-239); three different routes write three different stores (delivery_phases.delivery_date, delivery_schedule_cells.delivery_date_override, sales_order_lines.delivery_date). DatePicker: components/ui/date-picker.tsx.</span></div></li><li><span class="co">13</span><div><b>The result says what moved, with Undo.</b> No confirm dialog; the change is reversible, so an Undo toast instead of a question.<span class="ref">Toast + undo as the deferred-action standard (PRINCIPLES.md design mandates).</span></div></li><li><span class="co">14</span><div><b>A revised schedule is one button and one file.</b> The PO is known from the page, the schedule is the PO's schedule, so 'Revision of', the PO picker and the project picker go. Issued by defaults to the PO's issuer; the revision label is read from the document. The uploaded version opens in 'By product' (today's matrix) with its flags until confirmed.<span class="ref">DeliveryScheduleUploadDialog.tsx:160-262 asks 4 to 6 fields today. The matrix (DeliveryScheduleMatrix.tsx) is kept as the By product view.</span></div></li></ol></div></div>
+
+<h2 class="frame-title">4. Upload a revised schedule: today vs proposed</h2>
+<div class="layout"><div class="layout" style="gap:32px">
+<div class="dialog"><h3>Upload a delivery schedule <span class="muted small">(today)</span></h3>
+<div class="field"><div class="k">Purchase order *</div><div class="in">XX/26/01/001</div></div>
+<div class="field"><div class="k">Revision of</div><div class="in">A schedule we have not seen before</div></div>
+<div class="field"><div class="k">Issued by</div><div class="in">The company whose letterhead it carries</div></div>
+<div class="field"><div class="k">Revision label</div><div class="in">&nbsp;</div></div>
+<div class="drop">Drop the schedule PDF or Excel here</div>
+<div class="foot"><span class="btn">Cancel</span><span class="btn primary">Upload</span></div></div>
+<div class="dialog" style="position:relative"><h3>Upload revised schedule</h3><div class="muted small">For XX/26/01/001</div>
+<div class="drop">Drop the schedule PDF or Excel here</div>
+<div class="foot"><span class="btn">Cancel</span><span class="btn primary">Upload</span></div>
+<b class="pin co" style="right:-10px;top:-10px">15</b></div>
+</div><div class="notes"><ol><li><span class="co">15</span><div><b>Same dialog component, fewer fields.</b> Opened from the PO page or the PO row, it already knows the PO and the schedule. Opened from Pipeline's Start menu it still asks for the project and PO, nothing else.<span class="ref">DeliveryScheduleUploadDialog.tsx and POIntakeUploadDialog.tsx kept; their context props already exist (the PO is pre-filled today, the other fields are not).</span></div></li></ol></div></div>
+
+<h2 class="frame-title">Fixed on the way (defects found in discovery, independent of the redesign)</h2>
+<ul class="small" style="max-width:1100px">
+<li><b>D1</b> Two places edit a scanned PO's lines and only one reaches the sales orders; confirming a new version wipes the other. Proposed: the PO's lines are edited in one place.</li>
+<li><b>D2</b> Approve and Countersign gate nothing (question 1).</li>
+<li><b>D3</b> Sales orders can be built from a schedule nobody confirmed. Proposed: Build waits for a confirmed schedule.</li>
+<li><b>D4</b> The next-step card's links land on a list and the PO is picked again.</li>
+<li><b>D5</b> The PO is re-picked in the schedule upload, the build dialog and the amendment picker.</li>
+</ul>
+
+<h2 class="frame-title">Questions for the owner (Q1 to Q3 open; Q4 and Q5 answered)</h2>
+<div style="max-width:1100px"><div class="q"><b>1. Approve and Countersign: drop them, or make them mean something?</b>Today a PO needs Confirm, then Approve, then Countersign by a second person, but the build and publish never check the last two. (a) Drop them: Confirm is the only sign-off. (b) Keep them and make Build sales orders wait for Countersign.<div class="rec">Recommendation: (a). They stop nothing today, so nobody relies on them; if a second pair of eyes is wanted, (b) is a small follow-up.</div></div><div class="q"><b>2. Changing a delivery date: edit in place, or re-upload only?</b>(a) Click the date on the Deliveries tab and change it; draft sales orders follow, a published one gets an amendment started for you. (b) Dates change only by uploading a revised schedule.<div class="rec">Recommendation: (a). A date usually moves by phone or WhatsApp; making staff wait for a revised document to move one date is the heavy part today. The next uploaded revision still wins.</div></div><div class="q"><b>3. One page per PO?</b>Merge the PO record, the PO document review and the schedule review into one PO page with Lines, Deliveries, Sales orders and Documents tabs. Sales order detail pages stay as they are.<div class="rec">Recommendation: yes. One job, one place; today one PO visits 3 project tabs and 4 pages.</div></div><div class="q"><b>4. Deliveries: read from AutoCount only?</b>(a) Delivered quantities come only from AutoCount (as today, shown on the PO). (b) Staff also record deliveries in the CRM.<div class="rec">Answered (a): AutoCount is the source of truth.</div></div><div class="q"><b>5. Build sales orders: keep the 'split by' choice?</b>(a) Keep the choice (area, delivery date, delivery month) in one dialog. (b) Always split by delivery date, no dialog: one sales order per delivery.<div class="rec">Answered (a): keep the choice, in one dialog instead of two.</div></div></div>
+
+<h2 class="frame-title">Element to component map (all existing)</h2>
+<table class="map" style="max-width:1100px"><thead><tr><th>Element</th><th>Component</th><th>Used today in</th></tr></thead><tbody><tr><td>Orders tab grid</td><td class='mono'>components/common/PanelDataGrid.tsx</td><td class='muted'>PurchaseOrdersPanel.tsx, DeliverySchedulesPanel.tsx, SalesOrdersPanel.tsx fold into one panel</td></tr><tr><td>Row expand</td><td class='mono'>TanStack getExpandedRowModel via PanelDataGrid `expanded`</td><td class='muted'>SpoPlannerTable.tsx precedent</td></tr><tr><td>Drag sort rows</td><td class='mono'>components/ui/data-grid-table-dnd-rows.tsx</td><td class='muted'>SalesOrderLinesTable.tsx, QuotationLinesGrid.tsx</td></tr><tr><td>Right-click menu</td><td class='mono'>components/ui/context-menu.tsx</td><td class='muted'>QuotationLinesGrid.tsx</td></tr><tr><td>Columns toggle</td><td class='mono'>components/ui/data-grid-column-visibility.tsx</td><td class='muted'>QuotationLinesGrid.tsx</td></tr><tr><td>Page header, prev/next</td><td class='mono'>components/common/PageHeader.tsx, components/common/RecordNavigation.tsx</td><td class='muted'>every detail page</td></tr><tr><td>Status pills</td><td class='mono'>components/ui/badge.tsx</td><td class='muted'></td></tr><tr><td>Line tabs</td><td class='mono'>components/ui/tabs.tsx</td><td class='muted'></td></tr><tr><td>Delivered bar</td><td class='mono'>components/ui/progress.tsx</td><td class='muted'></td></tr><tr><td>Inline date</td><td class='mono'>components/ui/date-picker.tsx</td><td class='muted'></td></tr><tr><td>By product view</td><td class='mono'>delivery-schedules/components/DeliveryScheduleMatrix.tsx</td><td class='muted'>kept as is</td></tr><tr><td>PO lines while unconfirmed</td><td class='mono'>components/POIntakeLinesGrid.tsx</td><td class='muted'>kept, shown on the Lines tab until Confirm</td></tr><tr><td>Document viewer</td><td class='mono'>components/common/PdfViewer.tsx</td><td class='muted'>moves to the Documents tab</td></tr><tr><td>Upload dialogs</td><td class='mono'>components/POIntakeUploadDialog.tsx, components/DeliveryScheduleUploadDialog.tsx</td><td class='muted'>fields hidden when context is known</td></tr><tr><td>Build</td><td class='mono'>components/SalesOrderBuildDialog.tsx</td><td class='muted'>one dialog, not two; PO and schedule known from the page</td></tr></tbody></table>
+</div>
+</body>
+</html>

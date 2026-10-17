@@ -87,10 +87,11 @@ D = json.load(open(data_path))
 VERSION = D.get("version", "v1")
 SOURCE = D.get("source", "the synthetic sandbox project, no real rows")
 P, PO, SV = D["project"], D["po"], D["schedule"]
+PO["issuer"] = PO["issuer"] or "Issuer not recorded"
 LINES = D["lines"]
 PHASES = D["phases"]
 SOS = D["sales_orders"]
-LINE_CAP = 14  # rows drawn in the 1280 Lines frame; the pager says the rest
+LINE_CAP = 10  # rows drawn in the 1280 Lines frame; the pager says the rest
 
 STATUS = {
     "published": ("green", "Published"), "amended": ("green", "Amended"), "adopted": ("green", "In AutoCount"),
@@ -117,6 +118,7 @@ tot_o = sum(l["ordered"] for l in LINES)
 tot_s = sum(l["scheduled"] for l in LINES)
 tot_d = sum(l["delivered"] for l in LINES)
 short = [l for l in LINES if l["scheduled"] < l["ordered"]]
+over = [l for l in LINES if l["scheduled"] > l["ordered"]]
 unpublished = [s for s in SOS if s["status"] not in ("published", "amended", "adopted")]
 published = len(SOS) - len(unpublished)
 cta = f"Publish {len(unpublished)} sales orders" if unpublished else ("Build sales orders" if not SOS else "")
@@ -133,7 +135,7 @@ other_pos = PO["po_count"] - 1
 f1_content = f"""
 <div class="phrow">
   <div class="ph"><h1>{P['name']} &nbsp;<span class="pill green">PO received</span></h1>
-  <div class="meta">{P['code']} &middot; Developer {P['developer'] or '-'}</div></div>
+  <div class="meta">{P['code']}{' &middot; Developer ' + P['developer'] if P['developer'] else ''}</div></div>
   <div class="actions"><span class="btn">&lsaquo;</span><span class="btn">&rsaquo;</span><span class="btn primary">Upload PO</span></div>
 </div>
 <div class="tabs" style="position:relative">
@@ -199,6 +201,9 @@ for l in drawn:
     if l["scheduled"] < l["ordered"]:
         cls = "hlamber"
         flag = f'<span class="second" style="color:var(--amber)">{fmt(l["ordered"] - l["scheduled"])} not scheduled</span>'
+    elif l["scheduled"] > l["ordered"]:
+        cls = "hlamber"
+        flag = f'<span class="second" style="color:var(--amber)">{fmt(l["scheduled"] - l["ordered"])} more than ordered</span>'
     caret = "&#9662;" if l["no"] == exp_no else "&#9656;"
     rows.append(
         f'<tr class="{cls}"><td><span class="grip">&#8942;&#8942;</span><span class="caret">{caret}</span>{l["no"]}</td>'
@@ -215,7 +220,8 @@ for l in drawn:
             )
 exp_line = next((l for l in LINES if l["no"] == exp_no), None)
 part = next((dl for dl in D["expanded_deliveries"] if 0 < dl["delivered"] < dl["units"]), None)
-part_txt = f" A partial delivery reads as {fmt(part['delivered'])} of {fmt(part['units'])} on its own delivery row." if part else ""
+part_txt = (f" A partial delivery reads as {fmt(part['delivered'])} of {fmt(part['units'])} on its own delivery row." if part
+            else " Nothing on this PO is delivered yet, so Delivered reads 0; it fills from AutoCount as delivery orders post.")
 
 po_header = f"""
 <div class="phrow">
@@ -234,7 +240,7 @@ def po_tabs(on):
 
 f2_content = po_header + po_tabs("Lines") + f"""
 <div class="toolbar" style="justify-content:space-between">
-  <div class="actions"><span class="chip">Search lines</span><span class="chip on">Still to deliver</span><span class="chip">Not fully scheduled ({len(short)})</span></div>
+  <div class="actions"><span class="chip">Search lines</span><span class="chip on">Still to deliver</span><span class="chip">Schedule differs ({len(short) + len(over)})</span></div>
   <div class="actions"><span class="btn sm">Columns</span></div>
 </div>
 <div class="grid" style="position:relative">
@@ -265,7 +271,7 @@ f2_notes = notes([
      "No migration: projects.sales_order_lines.source_po_line_id + core_sales_order_line_id -> public.sales_order_lines.qty_delivered, via delivered_qty_of (project_supply_service.py:532)."),
     (10, "Drag to sort, expand to see the deliveries. A gap is a row colour plus a filter.",
      f" Expanding line {exp_no} lists its deliveries: date, area, units, delivered, sales order.{part_txt}"
-     + (f" {len(short)} line(s) are short on the schedule: amber row and the 'Not fully scheduled' chip, not a separate findings list." if short else ""),
+     + (f" {len(short)} line(s) are short on the schedule and {len(over)} carry more than ordered: amber row and the 'Schedule differs' chip, not a separate findings list." if short or over else ""),
      "DataGridTableDndRows (components/ui/data-grid-table-dnd-rows.tsx) as SalesOrderLinesTable.tsx and QuotationLinesGrid.tsx use it. The amber row reuses the schedule_short finding the build already raises."),
 ])
 
@@ -295,7 +301,7 @@ prow = []
 for i, p in enumerate(PHASES[:16]):
     dcell, cls = p["date"], ""
     if i == edit_i:
-        dcell, cls = f'<span class="dp"><span class="was">{p["date"]}</span>{new_date} &#128197;</span>', "exp"
+        dcell, cls = f'<span class="dp" style="position:relative"><span class="was">{p["date"]}</span>{new_date} &#128197;{co(12, "right:-30px;top:0")}</span>', "exp"
     prow.append(f'<tr class="{cls}"><td><span class="grip">&#8942;&#8942;</span><span class="caret">&#9656;</span>{area_name(p["area"])}</td>'
                 f'<td title="{p["levels"]}">{p["levels"]}</td><td>{dcell}</td>'
                 f'<td class="num">{fmt(p["units"])}</td><td>{fmt(p["delivered"])} of {fmt(p["units"])}</td><td>{p["so"] or "-"} {pill(p["status"]) if p["so"] else ""}</td></tr>')
@@ -316,7 +322,6 @@ f3_content = po_header.replace(co(6, "left:-28px;top:0"), "").replace(co(7, "rig
 <thead><tr><th>Area</th><th>Levels</th><th>Delivery date</th><th class="num">Units</th><th>Delivered</th><th>Sales order</th></tr></thead>
 <tbody>{''.join(prow)}</tbody></table></div>
 <div class="pager"><span>1 - {min(len(PHASES), 16)} of {len(PHASES)}</span><span>Schedule {sched_name}, confirmed {SV['confirmed']}</span></div>
-{co(12, f"left:548px;top:{edit_row_top}px")}
 </div>
 <div class="alert" style="margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fff;position:relative">
   {edit_msg}
@@ -327,7 +332,7 @@ f3_content = po_header.replace(co(6, "left:-28px;top:0"), "").replace(co(7, "rig
 f3 = shell(f3_content, crumb + " &rsaquo; Orders")
 f3_notes = notes([
     (12, "Change a date where it is shown.",
-     " Click the date, pick the new one, done. It writes that area's date and the draft sales order lines for that area follow. A published sales order gets the existing amendment flow, started for you (question 2).",
+     f" Click the date, pick the new one, done. It writes that area's date and the draft sales order lines for that area follow. A published sales order gets the existing amendment flow, started for you (question 2). On this project today, {D.get('so_lines_old_date', 0)} of {D.get('so_lines', 0)} sales order lines still carry the dates of the schedule they were built from, not the confirmed {sched_name}: nothing carried the new dates over.",
      "Today: dates are read-only (DeliveryScheduleMatrix.tsx:233-239); three different routes write three different stores (delivery_phases.delivery_date, delivery_schedule_cells.delivery_date_override, sales_order_lines.delivery_date). DatePicker: components/ui/date-picker.tsx."),
     (13, "The result says what moved, with Undo.",
      " No confirm dialog; the change is reversible, so an Undo toast instead of a question.",

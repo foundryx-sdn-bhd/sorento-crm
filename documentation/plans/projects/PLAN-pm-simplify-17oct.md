@@ -1,7 +1,7 @@
 # PLAN: simplify the project PO and delivery schedule parts (PM-SIMPLIFY)
 
-Status: mock v1 reviewed by crew (17 Oct 2026); Q4 and Q5 answered (a). Refilling the mock on the
-real project case (masked rows), then the owner gets the mock with Q1-Q3. No code until the owner OKs the mock. Track: not chosen yet
+Status: mock v2 on the real project case (PRJ-000001, masked rows from crew) filed for the owner
+(17 Oct 2026) with Q1-Q3 open; Q4 and Q5 answered (a). No code until the owner OKs the mock. No code until the owner OKs the mock. Track: not chosen yet
 (decided by the diff once the mock is approved).
 
 Owner 15 Oct: "the PO part and the delivery schedule part are badly designed, too complicated ->
@@ -150,3 +150,20 @@ UAC draft: `pm-simplify-17oct-acceptance-criteria.md`. UI word for a schedule ro
 
 Track (once approved): full track. Q2 changes a business rule (behaviour card), and the merged
 PO page is well over 300 lines; no migration expected.
+
+## Mock v2: the real project case (17 Oct)
+
+`mockups/po-schedule-simplify-v2.html`, built by `mockups/po-schedule-simplify-gen/` from crew's masked
+rows of PRJ-000001 (loaded only into a sandbox database; the rows are not in the repo). What the real
+case adds over the synthetic one:
+
+- 50 live PO lines (51 printed, 1 cancelled), 15 delivery areas (12 tower, 3 common area with no
+  label, shown as Part 1 to 3), 3 sales orders, all blocked, nothing published or delivered.
+- The same product sits on several PO lines, so schedule units are shared out over those lines in
+  line order before comparing; 20 lines come out short on the schedule and 2 over, and 3 schedule
+  columns (2,733 units) match no product. This agrees with the confirmed version's 35 of 44
+  columns reconciled.
+- **240 of 258 sales order lines carry a delivery date that no longer matches their area's
+  confirmed date.** The sales orders were built from schedule v1; v2 (confirmed 19 Aug) moved every
+  tower date by about six months and nothing carried the new dates over. This is defect D6, and the
+  case for Q2: a date belongs to the area, and draft sales order lines follow it.
