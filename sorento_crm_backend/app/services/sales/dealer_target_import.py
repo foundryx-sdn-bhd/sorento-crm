@@ -1393,6 +1393,29 @@ def _is_account_marker(text: str) -> bool:
     return re.fullmatch(r"L\d+|RAW(?:\d+|[IVX]+)", account_key(text) or "") is not None
 
 
+#: Parentheses of a company name that are never a branch: "(M)" (Malaysia) and a registration
+#: number ("(123456-X)"), the bracket forms of the legal words `dealer_key` already drops.
+_NOT_A_BRANCH = re.compile(r"M|.*\d{4,}.*")
+
+
+def _branches(name: Optional[str], accounts: set) -> List[str]:
+    """The branch words in a name's parentheses ("(KL)", "(JB)"), normalised: account markers,
+    an account the ledger answers to ("(CERAMIC)"), "(M)" and registration numbers are not one."""
+    out = []
+    for text in re.findall(r"\(([^)]*)\)", name or ""):
+        word = dealer_key(text)
+        if not word or _is_account_marker(text) or account_key(text) in accounts or _NOT_A_BRANCH.fullmatch(word):
+            continue
+        out.append(word)
+    return out
+
+
+def missing_branches(name: Optional[str], ledger: "_Candidate") -> List[str]:
+    """Branches the file name writes that the ledger's own name does not (gate 6)."""
+    own = set(_branches(ledger.name, ledger.accounts))
+    return [b for b in _branches(name, ledger.accounts) if b not in own]
+
+
 def branch_key(name: Optional[str]) -> str:
     """`dealer_key` that keeps the words of a bracketed part which is not an account marker
     ("(JB)", "(KL)"): the tie-break between ledgers of one name and account."""
@@ -1569,7 +1592,7 @@ class _CustomerIndex:
             if len(written) == 1:
                 exact = written
         if len(exact) == 1:
-            if branch_key(name) != family and branch_key(exact[0].name) != branch_key(name):
+            if missing_branches(name, exact[0]):
                 # The file writes a branch ("<NAME> (KL)") the one ledger of the name lacks: not
                 # an exact match, so a pick that suggests that ledger (gate 6).
                 return None, exact, False, "no_branch"
@@ -1731,10 +1754,7 @@ def run(
             if why == "several":
                 res.reason = "more than one customer has this name and account"
             elif why == "no_branch":
-                branch = next(
-                    (b.strip() for b in re.findall(r"\(([^)]*)\)", res.name_in_file or "") if not _is_account_marker(b)),
-                    "",
-                )
+                branch = (missing_branches(res.name_in_file, suggestions[0]) or [""])[0]
                 res.reason = f'no ledger of this name has the branch "{branch}"; pick one of its ledgers or skip'
             elif why == "account_needed":
                 res.reason = "this name has several ledgers and the file names no account; add an ACCOUNT column or pick one"
@@ -1780,11 +1800,16 @@ def run(
 
     # Existing dealer targets by (accounts, dates, split, unit): a re-import updates, never adds.
     existing: Dict[Tuple, SalesTarget] = {}
-    dealer_targets = db.query(SalesTarget).filter(SalesTarget.subject_kind == "dealer").all()
+    dealer_targets = (
+        db.query(SalesTarget)
+        .filter(SalesTarget.subject_kind == "dealer", SalesTarget.company_id == company_id)
+        .all()
+    )
     if dealer_targets:
         links: Dict[str, set] = {}
         for link in db.query(SalesTargetAccount).filter(
-            SalesTargetAccount.target_id.in_([t.id for t in dealer_targets])
+            SalesTargetAccount.target_id.in_([t.id for t in dealer_targets]),
+            SalesTargetAccount.company_id == company_id,
         ):
             links.setdefault(link.target_id, set()).add(link.customer_id)
         for t in dealer_targets:
@@ -1857,9 +1882,10 @@ def run(
             ids = [customer_of(code).id for code in scheme.codes]
             if len(set(ids)) < len(ids):
                 # Several rows of one target name the same ledger (three "A/C I" rows, gate 6).
+                # By position: rows sharing a CUSTOMER CODE share one row key (review B1).
                 twice = next(i for i in ids if ids.count(i) > 1)
-                numbers = sorted(key_to_row[c].row for c, i in zip(scheme.codes, ids) if i == twice and c in key_to_row)
-                listed = ", ".join(str(n) for n in numbers[:-1]) + f" and {numbers[-1]}" if len(numbers) > 1 else str(numbers[0] if numbers else "")
+                numbers = sorted(r for r, i in zip(scheme.rows, ids) if i == twice)
+                listed = ", ".join(str(n) for n in numbers[:-1]) + f" and {numbers[-1]}"
                 problem = f"rows {listed} are one CRM customer; a target lists each account once"
                 break
             if scheme.payout_by_name is not None:

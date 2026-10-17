@@ -209,6 +209,7 @@ def test_masked_output_keeps_no_file_digits():
         'no ledger of this name has the branch "LOT 23: KL"; pick one of its ledgers or skip',
         'Q1: cannot read the threshold "narrow 12345 deal"',
         "no customer with code borrow 4471",
+        "no customer with code row 4471",
         'no ledger of this name has the account "row 77"; pick one of its ledgers or skip',
     ):
         masked = _mask(reason)

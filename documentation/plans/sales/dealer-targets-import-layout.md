@@ -124,7 +124,9 @@ mapped and every sheet was read (`gate_passes`).
   on that company by name as well, so a session without the scope listeners cannot read another
   company's ledgers. The dry-run script installs the listeners before it opens a session.
 - A file name with a bracketed branch ("<NAME> (KL)") that the one ledger of the name lacks waits
-  on a pick ("no ledger of this name has the branch"), suggesting that ledger.
+  on a pick ("no ledger of this name has the branch "KL""), suggesting that ledger. Not a branch:
+  an account marker, the account the ledger answers to ("(CERAMIC)"), "(M)" and a registration
+  number ("(123456-X)").
 - Rows of one target that land on the same CRM customer (three "A/C I" rows of one dealer) fail
   with "rows 2, 3 and 4 are one CRM customer; a target lists each account once".
 - The masked dry run keeps the row numbers a reason points at.

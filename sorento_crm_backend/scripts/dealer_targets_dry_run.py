@@ -89,13 +89,18 @@ def _differ(names) -> str:
     return "differ by: " + " | ".join(parts)
 
 
+#: "row 46", "rows 2, 3 and 4": the rows a reason points at, which are layout.
+_ROWS = r"\brows? \d+(?:(?:, | and )\d+)*"
+
+
 def _mask(reason: str) -> str:
     """`CATEGORY` plus the shape of a quoted cell, and nothing else from the file."""
     reason = reason or ""
     category = next((name for needle, name in _CATEGORIES if needle in reason), "OTHER")
     quoted = re.findall(r'"([^"]*)"', reason)
     # The column (a header such as "Q1" or "JAN-DEC'26") before the first colon is layout too.
-    column = reason.split(":", 1)[0] if ":" in reason and category not in {"UNKNOWN_CODE", "NO_CODE", "SHARES_A_BROKEN_TARGET", "UNKNOWN_PAY_TO_CODE"} else ""
+    # Only when the colon is the column's, not one inside a quoted file cell (security S1).
+    column = reason.split(":", 1)[0] if ":" in reason and '"' not in reason.split(":", 1)[0] and category not in {"UNKNOWN_CODE", "NO_CODE", "SHARES_A_BROKEN_TARGET", "UNKNOWN_PAY_TO_CODE"} else ""
     parts = [category]
     if column:
         # A header ("Q1 POINT (4%)") is layout: its digits stay, other words are x'd.
@@ -107,11 +112,12 @@ def _mask(reason: str) -> str:
         # Row numbers are layout and stay; every other digit is masked (gate 6).
         words = reason.split(":", 1)[-1].strip()
         parts.append("".join(
-            piece if re.fullmatch(r"rows? [\d, and]+", piece) else re.sub(r"\d", "9", piece)
-            for piece in re.split(r"(rows? \d+(?:(?:, | and )\d+)*)", words)
+            piece if re.fullmatch(_ROWS, piece) else re.sub(r"\d", "9", piece)
+            for piece in re.split(f"({_ROWS})", words)
         ))
-    rows = re.search(r"rows? \d+(?:(?:, | and )\d+)*", reason)
-    if category != "OTHER" and rows:
+    # Searched outside quoted file text, and never in a reason that carries a code (review S2).
+    rows = re.search(_ROWS, re.sub(r'"[^"]*"', "", reason))
+    if category not in {"OTHER", "UNKNOWN_CODE", "UNKNOWN_PAY_TO_CODE"} and rows:
         # The rows a reason points at ("shares a target with row 46") are layout too.
         parts.append(rows.group(0))
     return ", ".join(parts)
