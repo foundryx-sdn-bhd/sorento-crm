@@ -327,9 +327,11 @@ on the form's Item Code column only if the owner asks. Its own small-fix lane.
 - Below 992 wide, By location reads as cards (mock frame 1 at 375).
 - Crew audit fix round (17 Oct): which chip is open lives outside the chip, because a list
   that rebuilds its columns remounts every cell (TanStack renders a cell function as a
-  component) and the board's first click after load lost its popover that way. The popover's
-  max height has a floor of min(28rem, 100dvh - 2rem) so it flips above a low chip instead of
-  shrinking to the strip below it.
+  component) and the board's first click after load lost its popover that way. It is keyed by
+  the caller's row (board contribution key, worklist row id), so two rows of one product never
+  share it. Below 448px of room under the chip the popover asks for the side with more room,
+  and its height is capped at the room on that side, so it neither shrinks to a strip low on the
+  screen nor runs off a small one.
 - Open, owner ruling: (1) container text such as "SEKU1741573 (KUCHING)" on a packing list does
   not equal the SPO's "SEKU1741573", so the exact match leaves 50 units of PL-2609-040 in both
   SPO and Incoming PL (1 of 359 open shipments); matching unchanged until the ruling.
