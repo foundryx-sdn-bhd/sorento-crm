@@ -144,7 +144,9 @@ describe('PurchaseRequestForm - round 2b narrow cell', () => {
     };
     renderForm(true);
     await screen.findByRole('button', { name: /^Update$/ });
-    const el = screen.getByText(MESSAGE);
+    // Awaited, not read at once: the sentence can render a tick after the Update button under a
+    // loaded CI runner (PR #1715 run 39035884012 failed on the synchronous read).
+    const el = await screen.findByText(MESSAGE);
     expect(el).toHaveClass('whitespace-normal');
     expect(/break-words|wrap-break-word|\[overflow-wrap:anywhere\]/.test(el.className)).toBe(true);
   });
