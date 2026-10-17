@@ -778,8 +778,8 @@ def _followup_checks(row, item, kind, gold):
         values |= {_val(e.get("canonical_code") or e.get("raw")) for e in (_mem_focus(row, "after").get("warehouse") or [])
                    if isinstance(e, dict)}
         fwords = set(_val(flt.get("value")).split())
-        blind = payload_omitted or not _entities(row)   # the entities cannot be read: the set header names the filter
-        header_names = bool(fwords) and blind and fwords <= _header_words(row)
+        # the entities cannot be read (payload omitted): the set header names the filter
+        header_names = bool(fwords) and payload_omitted and fwords <= _header_words(row)
         phrase_read = bool(fwords) and fwords <= _entity_words(row)   # the words may be split across entities
         checks = [
             # narrowing may keep a part of the list: a non-empty subset of the gold subject or of what was held before
@@ -801,17 +801,16 @@ def _followup_checks(row, item, kind, gold):
                            if isinstance(e, dict)} | {_val(b) for b in before.get("brands") or []}
             if fv in held_before:
                 held = set()
-            carried = bool(_squash(flt.get("value"))) and any(_squash(flt.get("value")) in _squash(_dump(t.get("args")))
-                                                              for t in _tools(row))
+            # the whole filter phrase inside ONE argument string of a lookup, never words pooled across arguments or tools
+            carried = bool(_squash(flt.get("value"))) and any(
+                _squash(flt.get("value")) in _squash(x) for t in _tools(row) for x in _strings(t.get("args")))
             words_held = set()
             if fv not in held_before:
                 words_held = (_words_of(*(x for e in (extra.get("specification") or []) + (extra.get("category") or [])
                                           for x in ((e.get("raw"), e.get("label"), e.get("spec_value")) if isinstance(e, dict) else (e,))),
-                                        *(_mem_focus(row, "after").get("brands") or []),
-                                        *(s for t in _tools(row) for s in _strings(t.get("args"))))
-                              | _entity_words(row, frozenset({"category"})))
+                                        *(_mem_focus(row, "after").get("brands") or [])))
             applied_by_words = bool(fwords) and fwords <= words_held
-            checks.append(("applied", fv in held or carried or applied_by_words or header_names,
+            checks.append(("applied", fv in held or carried or applied_by_words or (header_names and fv not in held_before),
                            "The filter was read but never applied to a lookup."))
         prev = " ".join(str(row.get("prev_bot_message") or "").lower().split())
         if prev:  # the same answer again is no refinement
