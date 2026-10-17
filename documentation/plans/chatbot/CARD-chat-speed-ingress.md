@@ -1,7 +1,7 @@
 # CARD: CHAT-SPEED, cut the wait before the CRM sees a WhatsApp message (17 Oct)
 
-Status: card filed; crew answered Q2-Q4 (17 Oct), Q1 waits on the dev measurement, then the
-owner's one OK. No code yet. Track: size L, cloud lane (CHAT-SPEED, chatbot
+Status: card filed; Q1-Q5 answered by crew (17 Oct): the measurement picks option D. It waits
+on the owner's one OK. No code yet. Track: size L, cloud lane (CHAT-SPEED, chatbot
 design step 4). Scope is the ingress plumbing only (respond.io -> n8n -> CRM). The parser output
 schema and the engine answer path are out of scope (CHAT-STATE, CHAT-CLOSED-LISTS,
 CHAT-CODE-LOOKUP and CHAT-COMPOSER own them). Paths are under `sorento_crm_backend/` unless
@@ -258,8 +258,27 @@ stay on the owner's machine: they hold real messages, and this repo is treated a
 - Q5: crew reads `chatbot_ordering_enabled` and `chatbot_completed_lanes` from the dev copy of
   the 15 Oct prod backup. Whether the webhook keys are set may stay an owner read, because the
   copy was neutralised.
-- Q1: open. Crew runs queries 1-3 on the dev copy and applies the card's rule (D if P+Q at p50
-  is at least 1.5 s, else B). The owner then gives one OK.
+- Q5 (dev copy of the 15 Oct prod backup): `chatbot_completed_lanes` holds 13 lanes
+  (out_of_scope, access_denied, demand_qty, clarify_menu, escalate_offer, escalation_declined,
+  ideate, low_signal, not_supported, offer_hold, stock_denied, check_promotion, business_query).
+  `chatbot_ordering_enabled` reads true in the copy, but it was set outside Settings, and prod's
+  `/turn/{id}/complete` answered 200 all day. So ordering was effectively OFF on prod, and B's
+  precondition is not met. The respond.io webhook secret was saved through Settings on prod on
+  10-11 Oct and signed webhooks succeeded, so D's precondition is met.
+- Q1: the rule picks **D**. It now waits on the owner's one OK. Measured by queries 1-2 on the
+  dev copy, over the signed `respond_webhook` rows of 11-15 Oct UTC:
+
+  | hop | p50 s | p90 s |
+  |---|---|---|
+  | R: respond.io -> CRM webhook | 3.69 | 4.60 |
+  | P+Q: webhook arrival -> turn created (what D removes) | 2.30 | 3.53 |
+  | pre-CRM total | 6.22 | 7.45 |
+
+  Context for P+Q: the first-turn-only p50 is 2.29 s, the daily p50 ranges 2.18-2.42 s, and 90%
+  of messages are at or above 1.5 s. Expected D saving is about 2.1 s at p50 (2.30 s less the
+  ~0.1-0.2 s sender hop), and about 3.3 s at p90. R, at 3.69 s, is respond.io's own delivery
+  and stays: no option in this card can shorten it. This 11-15 Oct window reads higher than
+  the 8 Sep-13 Oct ~4.8 s figure at the top of the card.
 
 ## Build plan once the card is OK'd (option D, red-first)
 
