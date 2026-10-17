@@ -1,7 +1,6 @@
 # UAC: CHAT-CODE-LOOKUP
 
-Status: DRAFT, written against the card's recommended options (`CARD-chat-code-lookup-17oct.md` Q1-Q5); revised when
-crew relays the answers. Plan: `PLAN-chat-code-lookup-17oct.md`.
+Status: AGREED for R1, R2, R4, R5, R6, Q5 (crew answers 17 Oct, card Q1/Q2/Q4/Q5 (a)); R3 HELD for the owner (Q3). Plan: `PLAN-chat-code-lookup-17oct.md`.
 
 Every criterion runs with the lane gate ON (parser prompt carrying the lane marker) unless it says gate OFF.
 
@@ -28,7 +27,7 @@ Every criterion runs with the lane gate ON (parser prompt carrying the lane mark
 - U2.2 A set code plus an attribute ("SRTWC8608-RL P-TRAP") answers the set variant the parser picks (SRTWC8608-P-RL),
   no question, no unrelated suggestions.
 
-## R3 no picker after a full answer
+## R3 no picker after a full answer (HELD: owner ruling pending, not built)
 
 - U3.1 An exact-code answer (stock, ETA, product info) leaves no open product_pick question; siblings, if named, are
   one plain line.

@@ -1,6 +1,6 @@
 # PLAN: CHAT-CODE-LOOKUP (chatbot code lookups toward the owner's 97% bar)
 
-Status: Plan, step 2 (behaviour card filed as a crew ask; build waits for the answers). Track: L, LEAD pattern, local lane. Branch
+Status: Build, step 3 (card answered 17 Oct: Q1/Q2/Q4/Q5 (a), Q3 held for the owner; stacked on #1755). Track: L, LEAD pattern, local lane. Branch
 `crew/chat-code-lookup`, base origin/main 20c191d861.
 
 Owner approval: 17 Oct ~14:10 ("Ok" to a code-lookup lane, in parallel with steps 1-2).
@@ -49,6 +49,13 @@ rows time out in the rolled-back runner), grader / gold 3, parse 4 (2 typos with
 "when deliver" with no status), candidate retrieval 1 (set-only code), answer 1 (picker after a full answer), out of
 scope 1 (DO number, #1648). Multi-code and family / variant: 0 fails. Harness and gold fixes alone: about 93.3%.
 
-## Slices
+## Slices (red-first, each behind the CODE LOOKUP prompt marker, measured on TRAIN)
 
-Pending the card answers.
+- S1 near code (R1, Q2): near-code floor 0.30, top 5, for a code word with no exact hit; a product pick must be on the
+  candidate block. TRAIN: cp0-9aa22e4c4b, cp0-29d7825ee6.
+- S2 set-only codes (R2, Q4). TRAIN: cp0-9793ea25dc.
+- S3 asked attribute carried (R4), prompt. TRAIN: cp0-39e88ea65f (also needs the EVAL-BENCH grader fix).
+- S4 "when deliver" = outstanding (Q5), prompt. TRAIN: cp0-3fa0985bd4.
+- S5 held family member for a typed family code (R5). Owner c08.
+- S6 domain reuse, count = stock (R6), prompt. #1755-arm TRAIN: cp0-7ce4ddc2da, cp0-df53e90ebf.
+- R3 (sibling picker after a full answer): HELD for the owner; no slice until the owner rules.

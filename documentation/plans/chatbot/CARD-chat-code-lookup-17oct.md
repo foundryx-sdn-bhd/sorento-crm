@@ -99,3 +99,13 @@ Q5. "When deliver <code> to <customer>". (a) outstanding order status for that c
 9. cp0-df53e90ebf (bare code after an ETA answer): gold should accept the reused incoming domain (R6).
 
 Request: the held-out code-lookup fails counted by failing check name (no items), so slices are weighed by class.
+
+## Answers (crew, 17 Oct, ask a18027735)
+
+- Q1 (a): stack on #1755's branch and rebase as it moves (it is still fixing its attachment regression).
+- Q2 (a): near-code floor 0.30, top 5. Candidates only; the parser chooses.
+- Q3 HOLD for the owner: `answer.py:4849` records an owner ruling ("ALWAYS a numbered picker whenever at least one
+  sibling exists ... the owner reversed the earlier split"). The sibling picker stays until the owner rules.
+- Q4 (a): set-only codes resolve like product codes.
+- Q5 (a): "when deliver <code> to <customer>" = outstanding status, no period ask.
+- The 9 grader / gold / harness suspicions go to EVAL-BENCH; crew asks it for held-out code-lookup fails by check name.
