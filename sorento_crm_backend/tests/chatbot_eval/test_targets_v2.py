@@ -2544,3 +2544,9 @@ def test_r30e_a_size_without_a_space_in_a_search_term_is_carried():
 def test_r30e_a_uuid_segment_is_not_a_carried_filter_word():
     res = _r30d("1234", {"product_ids": ["4d3a600b-1234-4d5e-8f90-123456789abc"]})
     assert res["checks"].get("applied") is False, res["checks"]
+
+
+@pytest.mark.parametrize("term", ["ptrap water closet", "p trap water closet"])
+def test_r30e_a_phrase_spelled_with_or_without_a_space_is_carried(term):
+    res = _r30d("p_trap", {"scope_terms": [term]})
+    assert res["checks"].get("applied") is True, res["checks"]
