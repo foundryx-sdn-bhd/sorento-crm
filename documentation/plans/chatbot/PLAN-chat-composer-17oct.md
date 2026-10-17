@@ -1,6 +1,6 @@
 # PLAN: CHAT-COMPOSER - one composer per answer type
 
-**Status:** Build S0 (17 Oct). Card answered by crew (Q1-Q4 all (a)); UAC written; seam design S0/S1 in progress. Track: L, LEAD pattern (local lane).
+**Status:** Build S2 (17 Oct). S0+S1 green (code 1cdd9a8cf + 010c9723d, red 59e3683b3, kill-proof posted on #1760); S2 red tests in progress. Turn-tier L1 replay waits for crew to bring `sorento_eval_base` to main's schema (it was vacuous since #1718). Track: L, LEAD pattern (local lane).
 **UAC:** `chat-composer-acceptance-criteria.md`. **Card:** `chat-composer-behaviour-card.md` (discovery, contract, rules R1-R13, per-type changes, slices, Q1-Q4).
 **Lane:** CHAT-COMPOSER, branch `crew/chat-composer`, base origin/main 20c191d86. Step 3 of the 16 Oct chatbot scale
 design (`crew/state/reports/CHATBOT-SCALE-DESIGN-16oct.html`, section 4 row F, section 8 step 3) and reports
@@ -49,9 +49,9 @@ goes to crew in a crew-note so crew can order merges.
 
 | Slice | Content | Status |
 |---|---|---|
-| S0 | gate `chat_composer_enabled`, composer package, `Reply`, shared format helpers, contract tests | next |
-| S1 | stock (single + multi code; dealer and staff) | queued |
-| S2 | ETA / incoming | queued |
+| S0 | gate `chat_composer_enabled`, composer package, shared format helpers (fold), contract tests | done (with S1) |
+| S1 | stock: miss wording, ETA-miss stock block, full dealer block (OI-1) | done; turn-tier replay owed |
+| S2 | ETA / incoming: dates all tools, Container/ETA labels, miss once, numbered incoming rows | red tests in progress |
 | S3 | not found / clarify / hand-over | queued |
 | S4 | files + promotions | queued |
 | S5 | order / document status | queued |
