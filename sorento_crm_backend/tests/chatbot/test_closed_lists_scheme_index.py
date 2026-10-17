@@ -11,6 +11,8 @@ theirs is sent. A scheme ask over a held product keeps that product in the fetch
 from __future__ import annotations
 
 import json
+
+import pytest
 import uuid
 from typing import Any
 
@@ -173,3 +175,34 @@ def test_a_scheme_set_ask_with_no_product_is_left_alone(session_factory):
 
     assert index_scheme(db, verdict, []) == (verdict, None)
 
+
+
+# --- a scheme word never enters the code / did-you-mean path (crew, held-out class, 17 Oct) -------
+
+
+def _numbered_certificates(session_factory, scheme: str, n: int) -> None:
+    """Certificates whose NUMBERS carry the scheme word, as real registers do ("SPAN/...")."""
+    db = session_factory()
+    for i in range(n):
+        db.add(Certificate(
+            id=str(uuid.uuid4()), scheme=scheme, certificate_number=f"{scheme}/2025/{i:04d}", status="active", company_id=None,
+        ))
+    db.commit()
+
+
+@pytest.mark.parametrize("on_file", [1, 3])
+def test_a_listed_scheme_is_never_looked_up_as_a_certificate_record(on_file, session_factory, seeded, stub_access, monkeypatch):
+    """The live parse of "SPAN certificate" with no product: the scheme pick (canonical_code
+    null, listed_item the scheme) plus the certificate kind. The scheme word matched the
+    certificate NUMBERS and the reply said 'Couldn't find "SPAN" (certificate). Did you
+    mean: <numbers>', or printed one number as the subject."""
+    _seed(session_factory)
+    _numbered_certificates(session_factory, "ZZSPAN", on_file)
+    span = {**_scheme("ZZSPAN", "ZZSPAN"), "canonical_code": None}
+    kind = {**_scheme("certificate", "ZZT Certification"), "canonical_code": "certificate"}
+
+    [(r, calls)] = _turns(session_factory, stub_access, monkeypatch, [("ZZSPAN certificate", _file_ask(span, kind))])
+
+    text = (r.reply or {}).get("text") or ""
+    assert "Did you mean" not in text, text
+    assert "/2025/" not in text, text

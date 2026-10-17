@@ -33,20 +33,22 @@ def _asked_product_ids(db: "Session", said: list[dict[str, Any]], held: list[dic
     return [str(p["uuid"]) for p in held if isinstance(p, dict) and p.get("uuid")], False
 
 
-def _holds_scheme(db: "Session", product_ids: list[str], scheme: str) -> bool:
+def _held_certificates(db: "Session", product_ids: list[str], scheme: str) -> list[str]:
+    """The certificates of the scheme filed against the products' own attachments."""
     from sqlalchemy import func
 
     from app.models.certificate import Certificate, CertificateRevision
     from app.models.product import ProductAttachment
 
-    return (
-        db.query(ProductAttachment.id)
-        .join(CertificateRevision, CertificateRevision.attachment_id == ProductAttachment.attachment_id)
-        .join(Certificate, Certificate.id == CertificateRevision.certificate_id)
+    rows = (
+        db.query(Certificate.id)
+        .join(CertificateRevision, CertificateRevision.certificate_id == Certificate.id)
+        .join(ProductAttachment, ProductAttachment.attachment_id == CertificateRevision.attachment_id)
         .filter(ProductAttachment.product_id.in_(product_ids), func.lower(Certificate.scheme) == scheme.casefold())
-        .first()
-        is not None
+        .distinct()
+        .all()
     )
+    return sorted(str(cid) for (cid,) in rows)
 
 
 def _kind_item(db: "Session", scheme: str, kinds: dict[str, str]) -> str | None:
@@ -93,14 +95,23 @@ def index_scheme(
         return verdict, None
     has_kind = any(e.get("listed") == "cert_kind" for e in said)
     kind_entity = {**schemes[0], "canonical_code": kind, "listed_item": kind, "listed": "cert_kind"}
-    if _holds_scheme(db, product_ids, scheme):
+    # Added beside a kept scheme, the kind is its own entity: reconciliation keys on `raw`,
+    # so it must not share the scheme's word (or it is retyped with it).
+    added_kind = {**kind_entity, "raw": kind}
+    held = _held_certificates(db, product_ids, scheme)
+    if held:
+        # The certificates the scheme names for these products, read here through the link,
+        # are the scheme's resolution (`resolve_gate`): its word is never a record lookup.
+        # Typed `certificate`, the kind its rows are; the certificate kind beside it stays
+        # the file leg.
+        entities = [{**e, "hint": "certificate", "certificate_uuids": held} if e is schemes[0] else e for e in entities]
         carried = [] if named else [
             {"raw": p.get("canonical_code") or p.get("raw"), "hint": "product", "canonical_code": p.get("canonical_code"),
              "current_message": True, "confident": True}
             for p in held_products
             if isinstance(p, dict) and p.get("uuid") and p.get("canonical_code")
         ]
-        out = [*carried, *entities, *([] if has_kind else [kind_entity])]
+        out = [*carried, *entities, *([] if has_kind else [added_kind])]
         note = {"scheme": scheme, "held_by_products": True, "carried": len(carried)}
     else:
         out = [kind_entity if e is schemes[0] else e for e in entities if e not in schemes[1:]]

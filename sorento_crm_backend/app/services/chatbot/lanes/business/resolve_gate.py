@@ -543,6 +543,33 @@ def _token_of(entity: Any) -> Any:
 HINT_LOCKED_KINDS = frozenset({"product_type", "category", "product", "brand"})
 
 
+def listed_scheme_resolutions(parser: dict[str, Any], resolved: dict[str, Any]) -> None:
+    """CHAT-CLOSED-LISTS: a listed scheme never reaches the resolver (`resolve_entity_body`).
+    When `head/scheme_index` read the products' certificates of that scheme through the
+    explicit link, those certificates are the scheme's resolution, so the fetch narrows to
+    them (`certificate_ids`) and the subject line says the scheme, never a number."""
+    for e in jsc.array(parser.get("entities")):
+        if not (isinstance(e, dict) and e.get("listed") == "cert_scheme" and e.get("certificate_uuids")):
+            continue
+        scheme = jsc.nullish_str(e.get("canonical_code")).strip()
+        matches = [
+            {
+                "entity_type": "certificate", "canonical_code": scheme, "uuid": uid,
+                "match_field": "scheme", "match_tier": "exact", "similarity": None,
+                "company_id": None, "company_name": None, "company_code": None,
+                "display": {"scheme": scheme},
+            }
+            for uid in e["certificate_uuids"]
+        ]
+        if "resolutions" in resolved:  # the OR shape: one row per token
+            resolved["resolutions"].append(
+                {"token": _token_of(e), "resolved": True, "ambiguous": False, "matches": matches, "alternatives": []}
+            )
+        else:  # the AND shape: the intersection, by entity type
+            resolved.setdefault("intersection", []).extend(matches)
+            resolved.setdefault("by_entity_type", {}).setdefault("certificate", []).extend(matches)
+
+
 def hint_locked_tokens(
     entities: list[Any], *, brand_entities: Mapping[int, str] | None = None
 ) -> list[str]:
@@ -658,6 +685,13 @@ def resolve_entity_body(
 
     grounded = specification_entities(entities)
     entities = [e for e in entities if not any(e is g for g in grounded)]
+    if parse_output.get("closed_lists"):
+        # CHAT-CLOSED-LISTS (crew held-out class, 17 Oct 2026): a listed certificate scheme
+        # is an index into certificates, carried by the `{"certificate": {"scheme": X}}`
+        # leg (`predicate._listed_require`), never a record token. Probed as one, "SPAN"
+        # matched certificate NUMBERS ("SPAN/2025/...") and the turn asked 'Couldn't find
+        # "SPAN" (certificate). Did you mean: <numbers>'.
+        entities = [e for e in entities if not (isinstance(e, dict) and e.get("listed") == "cert_scheme")]
     if excluded_entity_ids:
         entities = [e for e in entities if id(e) not in excluded_entity_ids]
 
@@ -1464,6 +1498,9 @@ def run(
             brand_entities=brand_entities,
         )
     )
+
+    if parser.get("closed_lists") and isinstance(resolved, dict):
+        listed_scheme_resolutions(parser, resolved)
 
     if account_levels is not None and isinstance(resolved, dict):
         account_refusal = narrow_by_account(
