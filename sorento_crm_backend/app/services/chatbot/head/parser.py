@@ -80,6 +80,9 @@ class ParserConfig:
     provider: str
     model: str
     api_key: str
+    # CHAT-CLOSED-LISTS: the version carries the CLOSED LISTS section, so the user turn
+    # carries the candidate block and grounding validates picks against the lists.
+    closed_lists: bool = False
 
 
 def _build_json_schema() -> dict[str, Any]:
@@ -783,7 +786,18 @@ def resolve_config(
         provider=provider,
         model=model,
         api_key=api_key,
+        closed_lists=uses_closed_lists(db, override_version_id=override_version_id),
     )
+
+
+def uses_closed_lists(db: Session, *, override_version_id: str | None = None) -> bool:
+    """CHAT-CLOSED-LISTS gate: does the version this turn runs carry the CLOSED LISTS
+    section? Read off the RAW template (the same resolution `render` makes), so no
+    rendered list value can switch it on."""
+    from app.services import ai_prompt_registry
+    from app.services.chatbot.head.closed_lists_prompt import gate_on
+
+    return gate_on(ai_prompt_registry.get_prompt(db, PROMPT_KEY, override_version_id=override_version_id).text)
 
 
 def _subject_names(rows: Any) -> list[str]:

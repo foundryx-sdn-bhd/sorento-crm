@@ -152,6 +152,9 @@ def _user_block(session_factory, stub_access, monkeypatch, *, gate: bool) -> str
 
     monkeypatch.setattr(parser_mod, "resolve_config", fake_resolve_config)
     monkeypatch.setattr(parser_mod, "parse", fake_parse)
+    # The contact reads its own company's products (its scope is resolved elsewhere and
+    # tested there; an unlinked test contact fails closed and would read none).
+    monkeypatch.setattr(engine_mod, "_contact_company_scope", lambda factory, contact: frozenset({DEFAULT_COMPANY_ID}))
     monkeypatch.setattr(MCPRuntimeClient, "call_tool", lambda self, name, arguments: json.dumps({"ok": True, "items": []}))
     stub_access()
     engine_mod.run_turn(_envelope(), session_factory=session_factory)
@@ -174,5 +177,6 @@ def test_gate_on_the_user_turn_lists_the_candidates_after_the_message(session_fa
 
     lines = block.split("\n")
     at = lines.index(candidates.HEADER)
-    assert lines[at - 1] == "Current user message: price for SRTWC8517"
+    said = lines.index("Current user message: price for SRTWC8517")
+    assert said < at and all(not line.strip() for line in lines[said + 1 : at])  # the message's own blank lines
     assert lines[at + 1] == '- "srtwc8517": code SRTWC8517 (Synthetic WC)'

@@ -58,7 +58,7 @@ from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
 from app.utils.build_info import GIT_SHA
 from app.services.ledger_family import customer_groups
-from app.services.chatbot.head import grounding, parser
+from app.services.chatbot.head import candidates as candidates_mod, grounding, parser
 from app.services.chatbot.head.access import check_access, default_space_id
 from app.services.chatbot.head.build_ctx import build_ctx
 from app.services.chatbot.lanes import business, canned as canned_lanes, casual
@@ -4500,6 +4500,13 @@ def _run_stages_body(  # noqa: PLR0915
         promotion_kinds = turn_runtime.promotion_kind_rows(db)
         product_types = turn_runtime.product_type_names(db)
         product_details = turn_runtime.product_detail_values(db)
+        # CHAT-CLOSED-LISTS: what is on file under the words of this message, for a
+        # version carrying the CLOSED LISTS section only (code shortlists, the parser picks).
+        candidate_lines = (
+            candidates_mod.candidate_lines(candidates_mod.shortlist(db, latest_user_message))
+            if parser_config.closed_lists and isinstance(latest_user_message, str)
+            else None
+        )
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
     # One call, one schema. What comes back IS the verdict - a plain dict, validated once
@@ -4541,6 +4548,7 @@ def _run_stages_body(  # noqa: PLR0915
         product_types=product_types,
         product_details=product_details,
         recent_exchanges=recent,
+        candidate_lines=candidate_lines,
     )
     user_block, context_report = context_mod.assemble(context_layers)
     # AC-MEM052/056 (round 3): where the level itself came from, alongside what it
