@@ -1,6 +1,6 @@
 # PLAN: CHAT-STATE round 2 - the weak follow-up kinds
 
-**Status:** Plan (root cause by kind in progress; no code yet). Track: L, LEAD pattern. Branch `crew/chat-state-r2` off
+**Status:** Build (r2-INT green 7833e7365e; root cause done; slices r2-A..D next). Track: L, LEAD pattern. Branch `crew/chat-state-r2` off
 `crew/chat-state` (#1747; rebase onto main after its squash merge).
 **Base design:** `PLAN-chat-state-16oct.md`, `chat-state-behaviour-card.md` (R1-R16), `chat-state-seam-design.md`.
 
@@ -29,6 +29,22 @@ switch 85, pick 91, hand-over 93; bar 90 overall. Lift the weak kinds, narrowing
 3. Reviewer (+ security if scope/auth touched).
 4. Live TRAIN paired vs main (cap $3 per run), report per kind.
 
-## Findings
+## Findings (17 Oct, $0 re-grade of r2 main / r3 lane on the 84 items, grader #1758 edfa2c11c)
 
-TBD (step 1).
+Lane 71.3/84 (84.9%) vs main 69 (82.1%). Per kind lane/main: pick 20.67/20, answer 10/10 (every TRAIN answer item
+passes both arms: no TRAIN signal for the held-out 62.5%), refine 1/1 of 5, switch 23/23, and_x 15.67/14.
+- SPEC-OVER-HELD (4, step 2) + HELD-FAMILY (3, step 2): fixed in #1755, which only runs under its CLOSED LISTS prompt
+  section; v157 lacks it -> r2-C publishes one unlabelled version with BOTH sections (combined schema exists, r2-INT).
+- NAMED-HELD-VALUE (3, parse, this lane): STATE_SECTION "Never restate an item of the State" stops the parser emitting a
+  spec the user repeats -> r2-B rewrite: an entity is what this message names, even when the State holds it.
+- HELD-QTY (5, state, this lane): the held quantity lives only on the answered stock task, so keep/refine/swap re-ask
+  "How many units?" -> r2-A carry the task quantity onto the refined items.
+- BARE-CODE-DOMAIN (crew, CHAT-CODE-LOOKUP TRAIN cp0-df53e90ebf in cp0/train_code): a bare code after an ETA reply flips
+  stock / ETA / product info -> r2-D the State shows the last answer's domain; prompt business rule: a message naming
+  only another item asks the same fact as the last answer (owner rule; ETA ruling 16 Oct). Parser input only: no
+  post-parser domain override (crew NO-GO).
+- Grader/gold for EVAL-BENCH: targets.py:434/769/791 compare `note == "payload omitted"` while trace.py:99 writes
+  "payload omitted: N bytes"; `applied` cannot credit a held spec applied as product ids; gold of 253d58ba8b and
+  fcd44fe521 vs the family rule; round-32 gold on aad2aaec55 vs round 11 "pick drops the typed entity".
+- Every class is below the >= 8 phrasings bar: fresh paraphrase tests per class + EVAL-SETS Deliverable A (crew relays path).
+- Test DB: sorento_chatstate_throwaway2 (fresh, current schema).
