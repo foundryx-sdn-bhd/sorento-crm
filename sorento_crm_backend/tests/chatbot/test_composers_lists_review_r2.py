@@ -11,6 +11,8 @@ from app.main import app  # noqa: F401  (first app import resolves the guards cy
 from app.services.chatbot import turn_runtime
 from tests.chatbot._turn_helpers import verdict
 from tests.chatbot.test_composers_stock_xd import _set_gate
+from tests.chatbot.test_set_stock_render import world  # noqa: F401 - fixture used by name
+from tests.chatbot.test_engine import stub_access, stub_parser  # noqa: F401 - fixtures used by name
 from tests.chatbot.test_ref_status import _seed_po
 from tests._pg_fixture import unique_code
 
@@ -72,3 +74,41 @@ def test_the_tier_ask_probe_prints_no_po_card_for_an_injected_ref_staff(session_
         return
     printed = repr(fragment)
     assert "Purchase order" not in printed and "Secret Supplier" not in printed, printed[:300]
+
+
+# --------------------------------------------------------------------------- #
+# Review r3: an emptied code-list page never prints the total (LD7)
+# --------------------------------------------------------------------------- #
+
+
+def test_an_emptied_code_list_page_never_prints_the_total(monkeypatch):
+    """Page 2 of a 13-code list whose carried products are all gone renders no rows. The Sets header would
+    print "(13)" (a total on a code list); LD7 says the list is over and the narrow sentence is the reply."""
+    from tests.chatbot.test_composers_lists_l1 import _list_predicate, _narrow, _run
+
+    _set_gate(monkeypatch, True)
+    out = _run(0, items=[], predicate=_list_predicate(13, 9))
+    text = out["response"]
+    assert "(13" not in text, text
+    assert _narrow(13) in text, text
+    assert "That is all" not in text
+
+
+def test_a_bare_number_after_a_cut_code_list_picks_that_card(session_factory, monkeypatch, stub_parser, stub_access, world):
+    """LD5 end to end: "2" after a cut list is the second card, not a count and not a new page."""
+    import re
+
+    from tests.chatbot.test_composers_lists_engine import _codes, _l1_ask, _l1_chat
+    from tests.chatbot.test_engine import _parser_output
+
+    _set_gate(monkeypatch, True)
+    chat = _l1_chat(session_factory, monkeypatch, stub_parser, stub_access, world)
+    first = chat.say("ZZQ", _l1_ask())
+    page_one = _codes(first)
+    assert len(page_one) >= 2
+    reply = chat.say(
+        "2",
+        _parser_output(message_type="casual", intent_hint=None, domain_hint=None, entities=[], reference_positions=[2]),
+    )
+    assert page_one[1] in reply, reply[:300]
+    assert not re.search(r"showing \d+ to", reply) and 'Reply "more"' not in reply
