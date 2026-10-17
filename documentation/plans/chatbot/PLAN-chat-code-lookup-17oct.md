@@ -1,6 +1,6 @@
 # PLAN: CHAT-CODE-LOOKUP (chatbot code lookups toward the owner's 97% bar)
 
-Status: Plan, step 1 (root cause of TRAIN code-lookup failures). Track: L, LEAD pattern, local lane. Branch
+Status: Plan, step 2 (behaviour card filed as a crew ask; build waits for the answers). Track: L, LEAD pattern, local lane. Branch
 `crew/chat-code-lookup`, base origin/main 20c191d861.
 
 Owner approval: 17 Oct ~14:10 ("Ok" to a code-lookup lane, in parallel with steps 1-2).
@@ -44,7 +44,10 @@ at $0 with main's grader: 81 / 94 judged = 86.2%, 3 unknown (price-tier access a
 
 ## Root cause (step 1)
 
-Pending.
+Done 17 Oct; table and evidence in `CARD-chat-code-lookup-17oct.md`. 13 TRAIN fails on main: bench / harness 3 (photo
+rows time out in the rolled-back runner), grader / gold 3, parse 4 (2 typos with no choose step, a dropped attribute,
+"when deliver" with no status), candidate retrieval 1 (set-only code), answer 1 (picker after a full answer), out of
+scope 1 (DO number, #1648). Multi-code and family / variant: 0 fails. Harness and gold fixes alone: about 93.3%.
 
 ## Slices
 
