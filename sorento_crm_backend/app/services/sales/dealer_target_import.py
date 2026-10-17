@@ -1376,6 +1376,10 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind, shared_rates=()) -> Tuple
 _LEGAL_FORM = {"SDN", "BHD", "BERHAD", "SB", "PLT", "LLP"}
 _ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5}
 _MAX_SUGGESTIONS = 3
+#: Account labels a company's file writes for ledgers that carry a marker instead of a level, by
+#: company code. Owner 17 Oct ("yes for mocha"): in Mocha's file A/C II is the dealer's "[CERAMIC]"
+#: ledger and A/C III its "[IBORN]" ledger. Matched within the dealer's own name, never across.
+ACCOUNT_LABEL_LEDGERS: Dict[str, Dict[str, str]] = {"MCH": {"A/C II": "CERAMIC", "A/C III": "IBORN"}}
 #: Distinct names one upload may send to the near-match (security review B2): each one scans
 #: every customer of the company. Past it a row still waits on a pick, with no suggestions.
 MAX_FUZZY_LOOKUPS = 300
@@ -1516,7 +1520,14 @@ class _CustomerIndex:
     """The acting company's live customers, indexed once by dealer key."""
 
     def __init__(self, db: Session, company_id: str):
+        from app.models.company import Company
         from app.models.order import Customer
+
+        company_code = db.query(Company.code).filter(Company.id == company_id).scalar()
+        aliases = {
+            account_key(label): account_key(marker)
+            for label, marker in ACCOUNT_LABEL_LEDGERS.get(company_code or "", {}).items()
+        }
 
         self.by_family: Dict[str, List[_Candidate]] = {}
         self.all: List[_Candidate] = []
@@ -1530,7 +1541,9 @@ class _CustomerIndex:
             Customer.is_active.is_(True), Customer.company_id == company_id
         )
         for cid, code, name, level in q:
-            cand = _Candidate(str(cid), code, name, dealer_key(name), customer_account_keys(name, level))
+            accounts = customer_account_keys(name, level)
+            accounts |= {label for label, marker in aliases.items() if marker in accounts}
+            cand = _Candidate(str(cid), code, name, dealer_key(name), accounts)
             self.all.append(cand)
             self.by_family.setdefault(cand.family, []).append(cand)
         self.families = list(self.by_family)

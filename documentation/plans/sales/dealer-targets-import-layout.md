@@ -130,3 +130,10 @@ mapped and every sheet was read (`gate_passes`).
 - Rows of one target that land on the same CRM customer (three "A/C I" rows of one dealer) fail
   with "rows 2, 3 and 4 are one CRM customer; a target lists each account once".
 - The masked dry run keeps the row numbers a reason points at.
+
+## Mocha account rule (owner, 17 Oct)
+
+- In Mocha's file (company code MCH) A/C I is the dealer's "- [A/C I]" ledger, A/C II its
+  "- [CERAMIC]" ledger and A/C III its "- [IBORN]" ledger (`ACCOUNT_LABEL_LEDGERS`). The rule
+  only adds an account label to a ledger of the same dealer name; it never matches across
+  names. Every other company reads A/C II / A/C III as account levels only.
