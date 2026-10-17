@@ -41,6 +41,8 @@ export function useFolderUrl(): { folderId: string | null; openFolder: OpenFolde
       if (next) params.set(DIRECTORY_PARAM, next);
       else params.delete(DIRECTORY_PARAM);
       const qs = params.toString();
+      // usePathname() has no basePath and native pushState does not add one (router.push
+      // did). next.config.mjs sets none today; prefix it here if that ever changes.
       const href = `${pathname}${qs ? `?${qs}` : ''}`;
       if (opts?.replace) window.history.replaceState(null, '', href);
       else window.history.pushState(null, '', href);

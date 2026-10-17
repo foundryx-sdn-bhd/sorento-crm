@@ -1,6 +1,6 @@
 # UAC - Files page folder navigation in the URL
 
-Plan: `PLAN-files-url-nav.md`. Draft, final once the behaviour card is answered.
+Plan: `PLAN-files-url-nav.md`. Final: behaviour card answered 17 Oct (1a 2a 3a 4a 5a).
 
 - AC-1 Opening a folder (tree, double/row click in the right pane, breadcrumb, mobile drawer) changes the URL to `?directoryId=<id>`; All files has no `directoryId`.
 - AC-2 Browser Back after opening a folder shows the parent folder (or All files), still on the Files page. Forward re-opens the child.

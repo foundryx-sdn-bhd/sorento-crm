@@ -190,6 +190,13 @@ describe('AttachmentsInFolderPanel folder URL wiring', () => {
     expect(screen.getByTestId('folder-unavailable')).toBeInTheDocument();
   });
 
+  it('Trash page (no folder URL): a crumb click still clears the search inline', () => {
+    renderPanel({ directoryId: 'trash:camp' });
+    fireEvent.change(searchBox(), { target: { value: 'invoice' } });
+    fireEvent.click(screen.getByRole('button', { name: 'All files' }));
+    expect(searchBox().value).toBe('');
+  });
+
   it('AC-6: never in Trash (sentinel ids are not folders in the live tree)', () => {
     renderPanel({ directoryId: '__trash__' });
     expect(screen.queryByTestId('folder-unavailable')).toBeNull();

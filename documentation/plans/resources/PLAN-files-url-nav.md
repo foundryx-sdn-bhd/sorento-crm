@@ -1,6 +1,6 @@
 # PLAN - Files page: every folder has its own URL
 
-Status: **Behaviour card answered 17 Oct (build as written: 1a 2a 3a 4a 5a). Red tests committed; fix in progress. Track: small fix (frontend only, no migration, no auth/RBAC change, no new ingest).**
+Status: **Built, reviewer READY (4986dc18 + nits), sandbox browser pass PASS at 1280 and 375. Awaiting owner hand test on PR #1759. Track: small fix (frontend only, no migration, no auth/RBAC change, no new ingest).**
 UAC: `documentation/plans/resources/files-url-nav-acceptance-criteria.md`
 Lane: FILES-URL-NAV, base `origin/main` 20c191d8.
 
@@ -26,13 +26,15 @@ Paths below are under `sorento_crm_frontend/app/(protected)/resource-management/
 | View mode | `components/useDriveViewMode.ts` | localStorage, per user |
 | Search / sort / page | `AttachmentsInFolderPanel.tsx:143-158` | component state |
 
-## 1. Design (proposed, pending the card)
+## 1. Design (card answered 17 Oct: 1a 2a 3a 4a 5a)
 
 - URL shape unchanged: `/resource-management/attachment-directories?directoryId=<folder id>`;
   root = no param. Every existing link and quick-access pin keeps working.
 - `AttachmentDirectoriesView` derives `selectedId` from `useSearchParams()` instead of
-  `useState`. Selecting a folder (tree, drill, breadcrumb, mobile drawer) does `router.push`,
-  copying every other query param (same idiom as `useUrlTab`). Deleting the folder you are in
+  `useState` (`useFolderUrl.ts`). Selecting a folder (tree, drill, breadcrumb, mobile drawer)
+  does a native `history.pushState`, copying every other query param. Not `router.push`: it
+  re-requested the page on every click (about 1s on dev, measured); Next 15 syncs native
+  history into `useSearchParams` with no round trip (now about 200ms to the new breadcrumb). Deleting the folder you are in
   `router.replace`s to its parent so Back never lands on a deleted folder.
 - The panel resets search / page / selection whenever the folder changes from ANY source
   (Back/Forward included), not only on a drill click.
