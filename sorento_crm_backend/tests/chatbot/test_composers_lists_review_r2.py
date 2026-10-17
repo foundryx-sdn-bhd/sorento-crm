@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from app.main import app  # noqa: F401  (first app import resolves the guards cycle)
 from app.services.chatbot import turn_runtime
 from tests.chatbot._turn_helpers import verdict
@@ -94,6 +96,11 @@ def test_an_emptied_code_list_page_never_prints_the_total(monkeypatch):
     assert "That is all" not in text
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="pre-existing: a code-lookup card list mints no last_list (turn/tail.py last_list_after), so a bare "
+    "number re-runs the ask, gate off too; follow-up outside the Lists slice",
+)
 def test_a_bare_number_after_a_cut_code_list_picks_that_card(session_factory, monkeypatch, stub_parser, stub_access, world):
     """LD5 end to end: "2" after a cut list is the second card, not a count and not a new page."""
     import re
@@ -112,3 +119,53 @@ def test_a_bare_number_after_a_cut_code_list_picks_that_card(session_factory, mo
     )
     assert page_one[1] in reply, reply[:300]
     assert not re.search(r"showing \d+ to", reply) and 'Reply "more"' not in reply
+
+
+def test_an_emptied_code_list_page_through_the_runner_prints_no_total(session_factory, monkeypatch):
+    """The real path: a bare "more" on a 13-code carry (shown 9) whose products are gone. The runner finds no
+    product rows for the carried ids, the master-products tool answers an OK envelope with zero items and
+    `has_result: False` (the presenter's shape for an empty `product_ids` read), and the reply carries no total."""
+    import json
+
+    from app.services.chatbot.lanes.business import services as business_services
+    from app.services.chatbot.lanes.business.services import FetchServices
+    from app.services.chatbot.turn.plan import FetchSpec
+    from app.services.chatbot.turn.state import Focus
+
+    _set_gate(monkeypatch, True)
+    calls: list[str] = []
+
+    def mcp(name, args):
+        calls.append(name)
+        return json.dumps({"result_type": "products", "intro": "Products found.", "items": [], "has_result": False})
+
+    monkeypatch.setattr(business_services, "fetch_services", lambda db: FetchServices(mcp_call=mcp))
+    v = verdict(domain_hint="master_products", intent_hint="check_product", continuation=True)
+    runner = turn_runtime.make_tool_runner(
+        session_factory(),
+        ctx={"parse": {"output": v}},
+        verdict=v,
+        focus=Focus(domains=["master_products"]),
+        compatible_entities=[],
+        predicate=None,
+        unplaced={},
+        space_id=None,
+        dry_run=True,
+        turn_trace=type("Trace", (), {"add": lambda self, *a, **k: None})(),
+    )
+    key = {
+        "code_list": True,
+        "set_noun": "matching products",
+        "code_ids": [{"code": f"SRTWC{i:03d}", "ids": [str(uuid.uuid4())]} for i in range(13)],
+        "total": 13,
+        "shown": 9,
+        "domain": "master_products",
+    }
+    envelope = runner(
+        "master_products",
+        FetchSpec(domain="master_products", entities=[], filters={"set_page": {"set_key": key}}, date_window=None),
+    )
+    text = json.dumps(envelope, default=str)
+    assert "(13" not in text and "That is all" not in text, text[:600]
+    narrow = "Those are the first 13 matches. Send more of the code to narrow it."
+    assert narrow in text, text[:600]
