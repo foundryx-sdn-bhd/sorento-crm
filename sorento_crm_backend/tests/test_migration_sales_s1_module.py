@@ -112,7 +112,9 @@ def test_ac_r4_10_this_plan_adds_no_table_to_the_purge_file_or_the_sales_schema(
         "sales.opportunities",
         "sales.opportunity_lines",
     }
-    other_plans = s6_tables | targets_opportunities_tables
+    # PLAN-dealer-sales-targets-15oct (SALES-TARGET-DEALER) owns these three.
+    dealer_target_tables = {"sales.target_accounts", "sales.target_tier_rates", "sales.point_ratios"}
+    other_plans = s6_tables | targets_opportunities_tables | dealer_target_tables
     purge = Path(__file__).resolve().parents[2] / "sorento_crm_frontend" / "modules" / "sales" / "purge_tables.json"
     assert set(json.loads(purge.read_text())["tables"]) == other_plans
     in_sales = {t.fullname for t in Base.metadata.tables.values() if t.schema == "sales"}

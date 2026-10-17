@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  Building2,
   CalendarRange,
   CircleDollarSign,
   Info,
@@ -41,6 +42,7 @@ import {
   useSalesTarget,
   useSalesTargetOptions,
   useSalesTargets,
+  useTargetCustomerSearch,
   useTargetProductSearch,
 } from '../hooks/useSalesTargets';
 import { useSalesTargetActions } from '../actions';
@@ -59,6 +61,9 @@ import { generatePeriods } from '../lib/periods';
 import type {
   CommissionMethod,
   CommissionTier,
+  Rounding,
+  TargetAccount,
+  ThresholdUnit,
   SalesTargetCreatePayload,
   SalesTargetDetail,
   SalesTargetOptions,
@@ -73,6 +78,26 @@ import type {
 const KIND_OPTIONS = [
   { value: 'agent', label: 'Agent' },
   { value: 'team', label: 'Team' },
+  { value: 'dealer', label: 'Dealer' },
+];
+const KIND_LABEL: Record<TargetSubjectKind, string> = { agent: 'Agent', team: 'Team', dealer: 'Dealer' };
+const THRESHOLD_LABEL: Record<ThresholdUnit, string> = {
+  pct: '% of target',
+  amount: 'RM',
+  points: 'Points',
+};
+const THRESHOLD_OPTIONS = (Object.keys(THRESHOLD_LABEL) as ThresholdUnit[]).map((value) => ({
+  value,
+  label: THRESHOLD_LABEL[value],
+}));
+const ROUNDING_LABEL: Record<Rounding, string> = { sen: 'Sen (0.01)', ringgit: 'Ringgit (1)' };
+const ROUNDING_OPTIONS = (Object.keys(ROUNDING_LABEL) as Rounding[]).map((value) => ({
+  value,
+  label: ROUNDING_LABEL[value],
+}));
+const TIER_TYPE_OPTIONS = [
+  { value: 'main', label: 'Tier' },
+  { value: 'additional', label: '+ Additional' },
 ];
 const METRIC_OPTIONS = [
   { value: 'amount', label: 'Amount (RM)' },
@@ -109,24 +134,40 @@ export const SPLIT_HELP =
 /** Both dates are required (owner ruling N6); a half-empty range never reaches Save. */
 export const DATES_REQUIRED = 'Pick both a start date and an end date.';
 
-type RecordTab = 'details' | 'periods' | 'agents' | 'team' | 'commission';
+type RecordTab = 'details' | 'periods' | 'agents' | 'accounts' | 'team' | 'commission';
 
-/** One commission tier as typed (plan 3.3); `key` keeps a row's inputs stable on remove. */
+/** One commission tier as typed (plan 3.3; one engine, lane SALES-TARGET-DEALER); `key` keeps a
+ * row's inputs stable on remove. `from` is the threshold in the target's unit (%, RM, points). */
 interface TierDraft {
   key: number;
   from: string;
   rate: string;
   bonus: string;
+  additional: boolean;
+  /** Tiers per period: the period's start. */
+  period: string;
+  /** Dealer targets: the rate typed for each counted account; empty = earns nothing. */
+  accountRates: Record<string, string>;
 }
 
 let nextTierKey = 0;
-function tierDraft(tier?: CommissionTier, from = ''): TierDraft {
+function tierDraft(tier?: CommissionTier, from = '', accounts: string[] = []): TierDraft {
   nextTierKey += 1;
+  const threshold = tier ? (tier.from_pct ?? tier.threshold) : null;
+  const accountRates: Record<string, string> = {};
+  if (tier?.account_rates) {
+    for (const r of tier.account_rates) accountRates[r.customer_id] = String(r.rate);
+  } else if (tier && tier.rate !== null && tier.rate !== undefined) {
+    for (const id of accounts) accountRates[id] = String(tier.rate);
+  }
   return {
     key: nextTierKey,
-    from: tier ? String(tier.from_pct) : from,
-    rate: tier ? String(tier.rate) : '',
+    from: threshold === null || threshold === undefined ? from : String(threshold),
+    rate: tier && tier.rate !== null && tier.rate !== undefined ? String(tier.rate) : '',
     bonus: tier?.bonus_amount === null || tier?.bonus_amount === undefined ? '' : String(tier.bonus_amount),
+    additional: !!tier?.is_additional,
+    period: tier?.period_start ?? '',
+    accountRates,
   };
 }
 
@@ -155,6 +196,12 @@ interface Draft {
   newAgentFigures: Record<string, Record<string, string>>;
   method: CommissionMethod;
   tiers: TierDraft[];
+  /** Dealer targets: the counted accounts and the paid one (customer ids). */
+  accountIds: string[];
+  payoutId: string;
+  thresholdUnit: ThresholdUnit;
+  rounding: Rounding;
+  perPeriod: boolean;
 }
 
 function emptyDraft(preset: TargetRecordPreset | undefined): Draft {
@@ -180,6 +227,12 @@ function emptyDraft(preset: TargetRecordPreset | undefined): Draft {
     newAgentFigures: {},
     method: 'none',
     tiers: [],
+    accountIds: [],
+    payoutId: '',
+    // A dealer scheme is fixed RM tiers per period, highest tier paying (owner, 16 Oct).
+    thresholdUnit: preset?.kind === 'dealer' ? 'amount' : 'pct',
+    rounding: 'sen',
+    perPeriod: preset?.kind === 'dealer',
   };
 }
 
@@ -188,6 +241,7 @@ function idsOf(target: SalesTargetDetail, kind: 'category' | 'product' | 'brand'
 }
 
 function draftOf(target: SalesTargetDetail): Draft {
+  const accountIds = (target.accounts ?? []).map((a) => a.customer_id);
   return {
     kind: target.subject_kind,
     subjectId: (target.subject_kind === 'team' ? target.sales_team_id : target.sales_agent_id) ?? '',
@@ -208,7 +262,12 @@ function draftOf(target: SalesTargetDetail): Draft {
     figures: savedFigures(target),
     newAgentFigures: {},
     method: target.commission_method ?? 'none',
-    tiers: (target.tiers ?? []).map((t) => tierDraft(t)),
+    tiers: (target.tiers ?? []).map((t) => tierDraft(t, '', accountIds)),
+    accountIds,
+    payoutId: target.payout_account?.customer_id ?? '',
+    thresholdUnit: target.threshold_unit ?? 'pct',
+    rounding: target.rounding ?? 'sen',
+    perPeriod: !!target.tiers_per_period,
   };
 }
 
@@ -226,23 +285,59 @@ function savedFigures(target: SalesTargetDetail): Record<string, string> {
   return out;
 }
 
+/** A dealer tier's rates: one `rate` when every counted account has the same one, else the
+ * accounts given a rate (only they earn on the tier). */
+function dealerRates(t: TierDraft, accountIds: string[]): Pick<CommissionTier, 'rate' | 'account_rates'> {
+  const typed = accountIds.map((id) => (t.accountRates[id] ?? '').trim());
+  if (typed.length && typed.every((v) => v !== '' && Number(v) === Number(typed[0]))) {
+    return { rate: Number(typed[0]), account_rates: null };
+  }
+  return {
+    rate: 0,
+    account_rates: accountIds
+      .filter((id) => (t.accountRates[id] ?? '').trim() !== '')
+      .map((id) => ({ customer_id: id, rate: Number(t.accountRates[id]) })),
+  };
+}
+
 function tiersOf(draft: Draft): CommissionTier[] {
+  const dealer = draft.kind === 'dealer';
   return draft.tiers.map((t) => ({
-    from_pct: Number(t.from),
-    rate: Number(t.rate),
+    ...(draft.thresholdUnit === 'pct' ? { from_pct: Number(t.from) } : { threshold: Number(t.from) }),
+    ...(dealer ? dealerRates(t, draft.accountIds) : { rate: Number(t.rate) }),
     bonus_amount: t.bonus.trim() === '' ? null : Number(t.bonus),
+    ...(t.additional ? { is_additional: true } : {}),
+    ...(draft.perPeriod ? { period_start: t.period || null } : {}),
   }));
+}
+
+/** The tiers as the server returns them, in the same shape `tiersOf` builds, to spot a change. */
+function savedTiers(target: SalesTargetDetail): CommissionTier[] {
+  const base = draftOf(target);
+  return tiersOf(base);
 }
 
 /** Why the tiers cannot be saved yet, or `''`. */
 function tierProblem(draft: Draft): string {
   const bad = (text: string, required: boolean) =>
     text.trim() === '' ? required : !Number.isFinite(Number(text)) || Number(text) < 0;
-  if (draft.tiers.some((t) => bad(t.from, true) || bad(t.rate, true) || bad(t.bonus, false))) {
-    return 'Type a from % and a rate for every tier.';
+  const dealer = draft.kind === 'dealer';
+  const unit = THRESHOLD_LABEL[draft.thresholdUnit];
+  if (draft.tiers.some((t) => bad(t.from, true) || bad(t.bonus, false))) {
+    return draft.thresholdUnit === 'pct' ? 'Type a from % for every tier.' : `Type the threshold (${unit}) of every tier.`;
   }
-  const froms = draft.tiers.map((t) => Number(t.from));
-  if (new Set(froms).size !== froms.length) return 'Two tiers start at the same %.';
+  if (dealer) {
+    if (draft.tiers.some((t) => Object.values(t.accountRates).some((v) => bad(v, false)))) return 'A rate is not a number.';
+    if (draft.tiers.some((t) => !draft.accountIds.some((id) => (t.accountRates[id] ?? '').trim() !== ''))) {
+      return 'Give every tier a rate for at least one account.';
+    }
+  } else if (draft.tiers.some((t) => bad(t.rate, true))) {
+    return 'Type a rate for every tier.';
+  }
+  if (draft.perPeriod && draft.tiers.some((t) => !t.period)) return 'Pick the period of every tier.';
+  const keys = draft.tiers.map((t) => `${draft.perPeriod ? t.period : ''}|${t.additional}|${Number(t.from)}`);
+  if (new Set(keys).size !== keys.length) return 'Two tiers start at the same threshold in one period.';
+  if (draft.thresholdUnit === 'points' && draft.metric !== 'amount') return 'Points thresholds need an amount target.';
   if (draft.method === 'none' && draft.tiers.length) return 'Pick how the tiers pay, or remove the tiers.';
   return '';
 }
@@ -282,10 +377,21 @@ function changes(target: SalesTargetDetail, draft: Draft): SalesTargetUpdatePayl
   const tiers = tiersOf(draft);
   if (
     draft.method !== (target.commission_method ?? 'none') ||
-    JSON.stringify(tiers) !== JSON.stringify(target.tiers ?? [])
+    draft.thresholdUnit !== (target.threshold_unit ?? 'pct') ||
+    draft.rounding !== (target.rounding ?? 'sen') ||
+    draft.perPeriod !== !!target.tiers_per_period ||
+    JSON.stringify(tiers) !== JSON.stringify(savedTiers(target))
   ) {
     out.commission_method = draft.method;
+    if (draft.thresholdUnit !== (target.threshold_unit ?? 'pct')) out.threshold_unit = draft.thresholdUnit;
+    if (draft.rounding !== (target.rounding ?? 'sen')) out.rounding = draft.rounding;
+    if (draft.perPeriod !== !!target.tiers_per_period) out.tiers_per_period = draft.perPeriod;
     out.tiers = tiers;
+  }
+  if (target.subject_kind === 'dealer') {
+    const before = (target.accounts ?? []).map((a) => a.customer_id);
+    if (draft.accountIds.join() !== before.join()) out.customer_ids = draft.accountIds;
+    if (draft.payoutId !== (target.payout_account?.customer_id ?? '')) out.payout_customer_id = draft.payoutId || null;
   }
   // A child's What counts and Dates follow its team target (T3); its figures and tiers are its own.
   if (target.parent) return out;
@@ -424,6 +530,19 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
   for (const item of target?.scope ?? []) labels.current.set(item.id, item.label);
   for (const c of options?.categories ?? []) labels.current.set(c.id, c.label);
   for (const b of options?.brands ?? []) labels.current.set(b.id, b.label);
+  for (const a of target?.accounts ?? []) labels.current.set(a.customer_id, `${a.code} - ${a.name}`);
+  if (target?.payout_account) {
+    labels.current.set(target.payout_account.customer_id, `${target.payout_account.code} - ${target.payout_account.name}`);
+  }
+  const searchCustomers = useTargetCustomerSearch();
+  const fetchCustomers = useCallback(
+    async (query: string) => {
+      const rows = await searchCustomers(query);
+      for (const row of rows) labels.current.set(row.value, row.label);
+      return rows;
+    },
+    [searchCustomers],
+  );
   const searchProducts = useTargetProductSearch();
   const fetchProducts = useCallback(
     async (query: string) => {
@@ -461,7 +580,11 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
   const set = (patch: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...patch } : d));
   const kind: TargetSubjectKind | '' = isCreate ? (draft?.kind ?? '') : (target as SalesTargetDetail).subject_kind;
   const isTeam = kind === 'team';
+  const isDealer = kind === 'dealer';
   const isChild = !!target?.parent;
+  const thresholdUnit = draft?.thresholdUnit ?? target?.threshold_unit ?? 'pct';
+  // On RM / points thresholds each period's figure is its lowest tier: nothing to type.
+  const figureFromTiers = thresholdUnit !== 'pct';
   const metric = draft?.metric ?? target?.metric ?? 'amount';
   const unit = unitOf(metric);
 
@@ -497,8 +620,9 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
     !datesMissing &&
     !periodError &&
     scopeReady &&
+    (!isDealer || draft.accountIds.length > 0) &&
     (!isCreate ||
-      (!!draft.kind && !!draft.subjectId && (isTeam ? members.length > 0 : true))) &&
+      (!!draft.kind && (isDealer || (!!draft.subjectId && (isTeam ? members.length > 0 : true))))) &&
     !saving;
 
   // Only the final values are checked, on Save: a blank or bad figure is told, never read as 0
@@ -509,7 +633,8 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
       (isCreate
         ? isTeam
           ? members.some((m) => !!numberFieldError(draft.agentFigures[m.sales_agent_id] ?? '', FIGURE_RULES))
-          : !!numberFieldError(draft.figure, FIGURE_RULES)
+          : // A dealer's amount or points target takes its figure from the tiers: no figure box.
+            !figureFromTiers && !!numberFieldError(draft.figure, FIGURE_RULES)
         : Object.values(draft.figures).some((v) => !!numberFieldError(v, FIGURE_RULES)) ||
           Object.values(draft.newAgentFigures).some((byPeriod) =>
             Object.values(byPeriod).some((v) => !!numberFieldError(v, NEW_FIGURE_RULES)),
@@ -547,11 +672,24 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
       start_date: draft.start,
       end_date: draft.end,
       ...(split ? { split_every: split.every, split_unit: split.unit } : {}),
+      // Sent only when not the default, so a plain agent or team target's payload is unchanged.
+      ...(draft.thresholdUnit !== 'pct' ? { threshold_unit: draft.thresholdUnit } : {}),
+      ...(draft.rounding !== 'sen' ? { rounding: draft.rounding } : {}),
+      ...(draft.perPeriod ? { tiers_per_period: true } : {}),
       ...(draft.tiers.length ? { commission_method: draft.method, tiers: tiersOf(draft) } : {}),
     };
+    const figure = figureFromTiers ? {} : { target_value: toNumber(draft.figure) };
     const payload: SalesTargetCreatePayload =
-      draft.kind === 'agent'
-        ? { subject_kind: 'agent', sales_agent_id: draft.subjectId, target_value: toNumber(draft.figure), ...common }
+      draft.kind === 'dealer'
+        ? {
+            subject_kind: 'dealer',
+            customer_ids: draft.accountIds,
+            ...(draft.payoutId ? { payout_customer_id: draft.payoutId } : {}),
+            ...figure,
+            ...common,
+          }
+        : draft.kind === 'agent'
+        ? { subject_kind: 'agent', sales_agent_id: draft.subjectId, ...figure, ...common }
         : {
             subject_kind: 'team',
             sales_team_id: draft.subjectId,
@@ -578,6 +716,7 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
     { value: 'details', label: 'Details', icon: Info },
     { value: 'periods', label: 'Periods', icon: CalendarRange },
     ...(isTeam ? [{ value: 'agents' as const, label: 'Agents', icon: UsersRound }] : []),
+    ...(isDealer ? [{ value: 'accounts' as const, label: 'Accounts', icon: Building2 }] : []),
     ...(isChild ? [{ value: 'team' as const, label: 'Team target', icon: TargetIcon }] : []),
     { value: 'commission', label: 'Commission', icon: CircleDollarSign },
   ];
@@ -605,8 +744,8 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
     const base = draftOf(target);
     setDraft({
       ...base,
-      method: base.method === 'none' ? 'marginal' : base.method,
-      tiers: [...base.tiers, tierDraft(undefined, base.tiers.length ? '' : '0')],
+      method: base.method === 'none' ? (base.kind === 'dealer' ? 'retroactive' : 'marginal') : base.method,
+      tiers: [...base.tiers, tierDraft(undefined, base.tiers.length || base.thresholdUnit !== 'pct' ? '' : '0')],
     });
     setTab('commission');
   };
@@ -667,19 +806,46 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                   <SearchableSelect
                     id="target-for"
                     value={draft.kind}
-                    onChange={(v) => set({ kind: (v as TargetSubjectKind) || '', subjectId: '', agentFigures: {} })}
+                    onChange={(v) =>
+                      set({
+                        kind: (v as TargetSubjectKind) || '',
+                        subjectId: '',
+                        agentFigures: {},
+                        accountIds: [],
+                        payoutId: '',
+                        // A dealer scheme is fixed RM tiers, highest tier paying (owner, 16 Oct).
+                        ...(v === 'dealer' ? { thresholdUnit: 'amount' as const, perPeriod: true } : {}),
+                      })
+                    }
                     options={KIND_OPTIONS}
                     placeholder="Pick one"
                     disabled={!!preset?.subjectId}
                   />
-                ) : isTeam ? (
-                  'Team'
                 ) : (
-                  'Agent'
+                  KIND_LABEL[kind || 'agent']
                 )}
               </Field>
-              <Field label="Who" htmlFor={isCreate ? 'target-who' : undefined}>
-                {isCreate && draft ? (
+              <Field
+                label={isDealer ? (editing ? 'Accounts' : 'Dealer') : 'Who'}
+                htmlFor={isCreate || (isDealer && editing) ? 'target-who' : undefined}
+              >
+                {isDealer && draft ? (
+                  <SearchableMultiSelect
+                    id="target-who"
+                    value={draft.accountIds}
+                    onChange={(ids) =>
+                      set({
+                        accountIds: ids,
+                        payoutId: draft.payoutId || ids[0] || '',
+                      })
+                    }
+                    fetchOptions={fetchCustomers}
+                    selectedOptions={draft.accountIds.map((id) => ({ value: id, label: labels.current.get(id) ?? 'Loading' }))}
+                    placeholder="Search customers by code or name"
+                    clearable
+                    wrapOptions
+                  />
+                ) : isCreate && draft ? (
                   <SearchableSelect
                     id="target-who"
                     value={draft.subjectId}
@@ -821,7 +987,11 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
           </Section>
 
           <Section label="Figure">
-            {isCreate && draft && !isTeam ? (
+            {figureFromTiers && !isTeam ? (
+              <Field label={`Target figure (${thresholdUnit === 'points' ? 'points' : unit})`}>
+                <span className="tabular-nums">{target ? figureSummary(target) : '-'}</span>
+              </Field>
+            ) : isCreate && draft && !isTeam ? (
               <Field label={`Target figure (${unit}) ${split ? 'per period' : 'for the whole range'}`} htmlFor="target-figure">
                 <NumberInput
                   id="target-figure"
@@ -866,7 +1036,12 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                   <div className="rounded-lg border border-dashed py-8 text-center text-sm font-medium">No periods yet</div>
                 )
               ) : target ? (
-                <PeriodsTable unit={unit} commission={target.commission_method !== 'none'}>
+                <PeriodsTable
+                  unit={unit}
+                  commission={target.commission_method !== 'none'}
+                  ratio={target.threshold_unit === 'points'}
+                  provisional={isDealer}
+                >
                   {target.periods.map((p) => {
                     const future = p.period_start > today;
                     const periodLabel = `${shortDate(p.period_start)} to ${shortDate(p.period_end)}`;
@@ -883,7 +1058,7 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-end tabular-nums">
-                          {editing && draft && !isTeam ? (
+                          {editing && draft && !isTeam && !figureFromTiers ? (
                             <FigureInput
                               label={`Figure, ${periodLabel}`}
                               value={draft.figures[p.id] ?? ''}
@@ -902,11 +1077,21 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                         <td className="whitespace-nowrap px-3 py-2 text-end tabular-nums">
                           {future ? '-' : formatPct(p.achieved_pct)}
                         </td>
+                        {target.threshold_unit === 'points' ? (
+                          <td className="whitespace-nowrap px-3 py-2 text-end tabular-nums">
+                            {p.ratio_missing ? 'No ratio' : formatFigure(p.point_ratio ?? null)}
+                          </td>
+                        ) : null}
                         {target.commission_method !== 'none' ? (
                           <td className="whitespace-nowrap px-3 py-2 text-end tabular-nums">
                             {future || p.commission_earned === null || p.commission_earned === undefined
                               ? '-'
                               : formatFigure(p.commission_earned + (p.bonus_earned ?? 0))}
+                            {p.replaced ? (
+                              <span className="block text-xs text-muted-foreground">
+                                {`Replaced by ${target.replaced_by?.target_no ?? 'the dealer target'}`}
+                              </span>
+                            ) : null}
                           </td>
                         ) : null}
                       </tr>
@@ -956,6 +1141,22 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
           </TabsContent>
         ) : null}
 
+        {isDealer ? (
+          <TabsContent value="accounts">
+            <Card>
+              <section aria-label="Accounts" className="flex flex-col gap-3 p-5">
+                <DealerAccounts
+                  target={target}
+                  draft={draft}
+                  labels={labels.current}
+                  fetchCustomers={fetchCustomers}
+                  set={set}
+                />
+              </section>
+            </Card>
+          </TabsContent>
+        ) : null}
+
         {target?.parent ? (
           <TabsContent value="team">
             <ParentTarget parentId={target.parent.id} today={today} />
@@ -973,6 +1174,10 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                 canEdit={canEdit}
                 set={set}
                 onStartAdding={startAddingTier}
+                periodStarts={
+                  isCreate ? periods.map((p) => ({ start: p.start, end: p.end })) : (target?.periods ?? []).map((p) => ({ start: p.period_start, end: p.period_end }))
+                }
+                accounts={accountColumns(target, draft, labels.current)}
               />
             </section>
           </Card>
@@ -998,7 +1203,9 @@ function RecordIdentity({
     );
   }
   const isTeam = target.subject_kind === 'team';
-  const subjectHref = isTeam
+  const subjectHref = target.subject_kind === 'dealer'
+    ? null
+    : isTeam
     ? `/sales/teams/${target.sales_team_id}`
     : canOpenAgent
       ? `/master-data-management/sales-agents/${target.sales_agent_id}`
@@ -1046,13 +1253,21 @@ function figureSummary(target: SalesTargetDetail): string {
   return `${formatFigure(only)} ${target.periods.length === 1 ? 'for the whole range' : 'per period'}`;
 }
 
+/** Until the AutoCount invoice sync, a dealer's sales are the sales orders' totals, tax
+ * included (owner ruling 1, crew Q3 (a)): every such figure says so. */
+export const PROVISIONAL = 'provisional, incl. tax';
+
 function PeriodsTable({
   unit,
   commission = false,
+  ratio = false,
+  provisional = false,
   children,
 }: {
   unit: string;
   commission?: boolean;
+  ratio?: boolean;
+  provisional?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -1062,8 +1277,11 @@ function PeriodsTable({
           <tr>
             <th className="px-3 py-2 text-start font-medium">Period</th>
             <th className="px-3 py-2 text-end font-medium">{`Target (${unit})`}</th>
-            <th className="px-3 py-2 text-end font-medium">Achieved</th>
+            <th className="px-3 py-2 text-end font-medium">
+              {provisional ? `Achieved (${PROVISIONAL})` : 'Achieved'}
+            </th>
             <th className="px-3 py-2 text-end font-medium">%</th>
+            {ratio ? <th className="px-3 py-2 text-end font-medium">RM per point</th> : null}
             {commission ? <th className="px-3 py-2 text-end font-medium">Commission (RM)</th> : null}
           </tr>
         </thead>
@@ -1461,6 +1679,117 @@ function ParentTarget({ parentId, today }: { parentId: string; today: string }) 
  * Edit mode swaps them for inputs in place, with Add tier and a remove per row. Nothing on
  * this tab writes on its own: Save in the header sends the tiers with everything else.
  */
+/** The counted accounts as rate columns, in Edit from the draft, else from the target. */
+function accountColumns(
+  target: SalesTargetDetail | undefined,
+  draft: Draft | null,
+  labels: Map<string, string>,
+): { id: string; label: string }[] {
+  if ((draft?.kind ?? target?.subject_kind) !== 'dealer') return [];
+  const byId = new Map((target?.accounts ?? []).map((a) => [a.customer_id, a.label]));
+  const ids = draft ? draft.accountIds : (target?.accounts ?? []).map((a) => a.customer_id);
+  return ids.map((id) => ({ id, label: byId.get(id) ?? (labels.get(id) ?? '').split(' - ')[0] ?? '' }));
+}
+
+/** A dealer target's Accounts tab: the counted accounts with this period's sales, and the
+ * account paid (owner ruling 16 Oct: it may be one the target does not count). */
+function DealerAccounts({
+  target,
+  draft,
+  labels,
+  fetchCustomers,
+  set,
+}: {
+  target: SalesTargetDetail | undefined;
+  draft: Draft | null;
+  labels: Map<string, string>;
+  fetchCustomers: (query: string) => Promise<{ value: string; label: string }[]>;
+  set: (patch: Partial<Draft>) => void;
+}) {
+  const current = target?.periods.find((p) => p.is_current) ?? target?.periods[target.periods.length - 1];
+  const achieved = new Map((current?.accounts ?? []).map((a) => [a.customer_id, a.achieved_value]));
+  const accounts: TargetAccount[] = draft
+    ? draft.accountIds.map((id) => {
+        const known = target?.accounts?.find((a) => a.customer_id === id);
+        const [code, ...name] = (labels.get(id) ?? '').split(' - ');
+        return known ?? { customer_id: id, code, name: name.join(' - '), label: name.join(' - ') };
+      })
+    : (target?.accounts ?? []);
+  const period = current ? `${shortDate(current.period_start)} to ${shortDate(current.period_end)}` : '';
+  return (
+    <>
+      {accounts.length ? (
+        <div className="overflow-x-auto rounded-lg border">
+          <table aria-label="Counted accounts" className="w-full min-w-[32rem] text-sm">
+            <thead className="bg-muted/40 text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-start font-medium">Code</th>
+                <th className="px-3 py-2 text-start font-medium">Customer</th>
+                <th className="px-3 py-2 text-start font-medium">Account</th>
+                {current && !draft ? (
+                  <th className="px-3 py-2 text-end font-medium">{`Sales, ${period} (${PROVISIONAL})`}</th>
+                ) : null}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {accounts.map((a) => (
+                <tr key={a.customer_id}>
+                  <td className="whitespace-nowrap px-3 py-2">{a.code}</td>
+                  <td className="max-w-[16rem] truncate px-3 py-2" title={a.name}>
+                    {a.name}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2">{a.label}</td>
+                  {current && !draft ? (
+                    <td className="whitespace-nowrap px-3 py-2 text-end tabular-nums">
+                      {formatFigure(achieved.get(a.customer_id) ?? 0)}
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="flex w-full flex-col items-center gap-1 rounded-lg border border-dashed py-8 text-center">
+          <span className="text-sm font-medium">No accounts yet</span>
+          <span className="text-xs text-muted-foreground">Pick them under Details.</span>
+        </div>
+      )}
+      <div className="sm:w-96">
+        <Field label="Pays to" htmlFor={draft ? 'target-pays-to' : undefined}>
+          {draft ? (
+            <SearchableSelect
+              id="target-pays-to"
+              value={draft.payoutId}
+              onChange={(v) => set({ payoutId: v })}
+              fetchOptions={(query) => fetchCustomers(query)}
+              selectedOption={
+                draft.payoutId ? { value: draft.payoutId, label: labels.get(draft.payoutId) ?? '' } : undefined
+              }
+              placeholder="The first counted account"
+              clearable
+              wrapOptions
+            />
+          ) : target?.payout_account ? (
+            `${target.payout_account.code} - ${target.payout_account.name} (${target.payout_account.label})`
+          ) : (
+            '-'
+          )}
+        </Field>
+      </div>
+      {target?.replaced_by ? (
+        <div className="sm:w-96">
+          <Field label="Replaced by">
+            <Link href={`/sales/targets/${target.replaced_by.target_id}`} className="text-primary hover:underline">
+              {`${target.replaced_by.target_no} ${target.replaced_by.name}`}
+            </Link>
+          </Field>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function CommissionTiers({
   target,
   draft,
@@ -1469,6 +1798,8 @@ function CommissionTiers({
   canEdit,
   set,
   onStartAdding,
+  periodStarts,
+  accounts,
 }: {
   target: SalesTargetDetail | undefined;
   draft: Draft | null;
@@ -1477,8 +1808,15 @@ function CommissionTiers({
   canEdit: boolean;
   set: (patch: Partial<Draft>) => void;
   onStartAdding: () => void;
+  periodStarts: { start: string; end: string }[];
+  accounts: { id: string; label: string }[];
 }) {
   const rateUnit = metric === 'quantity' ? 'RM per unit' : '% of RM';
+  const dealer = (draft?.kind ?? target?.subject_kind) === 'dealer';
+  const periodLabel = (start: string) => {
+    const p = periodStarts.find((x) => x.start === start);
+    return p ? `${shortDate(p.start)} to ${shortDate(p.end)}` : start ? shortDate(start) : '-';
+  };
   const empty = (action: ReactNode) => (
     <div className="flex w-full flex-col items-center gap-3 rounded-lg border border-dashed py-8 text-center">
       <span className="text-sm font-medium">No commission</span>
@@ -1498,23 +1836,56 @@ function CommissionTiers({
         ) : null,
       );
     }
+    const unit = target?.threshold_unit ?? 'pct';
+    const perPeriod = !!target?.tiers_per_period;
+    const rateOf = (t: CommissionTier, accountId?: string) => {
+      if (!t.account_rates) return formatFigure(t.rate);
+      const r = t.account_rates.find((x) => x.customer_id === accountId);
+      return r ? formatFigure(r.rate) : '-';
+    };
     return (
       <>
-        <Field label="How tiers pay">{METHOD_LABEL[target?.commission_method ?? 'none']}</Field>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <Field label="How tiers pay">{METHOD_LABEL[target?.commission_method ?? 'none']}</Field>
+          <Field label="Threshold in">{THRESHOLD_LABEL[unit]}</Field>
+          <Field label="Round to">{ROUNDING_LABEL[target?.rounding ?? 'sen']}</Field>
+          <Field label="Tiers">{perPeriod ? 'Own tiers per period' : 'Same every period'}</Field>
+        </div>
         <div className="overflow-x-auto rounded-lg border">
           <table aria-label="Commission tiers" className="w-full text-sm">
             <thead className="bg-muted/40 text-xs text-muted-foreground">
               <tr>
-                <th className="px-3 py-2 text-start font-medium">From</th>
-                <th className="px-3 py-2 text-end font-medium">{`Rate (${rateUnit})`}</th>
+                {perPeriod ? <th className="px-3 py-2 text-start font-medium">Period</th> : null}
+                <th className="px-3 py-2 text-start font-medium">{`From (${THRESHOLD_LABEL[unit]})`}</th>
+                {dealer ? (
+                  accounts.map((a) => (
+                    <th key={a.id} className="px-3 py-2 text-end font-medium">{`${a.label} rate`}</th>
+                  ))
+                ) : (
+                  <th className="px-3 py-2 text-end font-medium">{`Rate (${rateUnit})`}</th>
+                )}
                 <th className="px-3 py-2 text-end font-medium">Bonus (RM)</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {tiers.map((t) => (
-                <tr key={t.from_pct}>
-                  <td className="whitespace-nowrap px-3 py-2">{`${formatFigure(t.from_pct)}%`}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-end tabular-nums">{formatFigure(t.rate)}</td>
+              {tiers.map((t, i) => (
+                <tr key={`${t.period_start ?? ''}-${i}`}>
+                  {perPeriod ? (
+                    <td className="whitespace-nowrap px-3 py-2">{periodLabel(t.period_start ?? '')}</td>
+                  ) : null}
+                  <td className="whitespace-nowrap px-3 py-2">
+                    {t.is_additional ? '+ Additional from ' : ''}
+                    {unit === 'pct' ? `${formatFigure(t.from_pct ?? null)}%` : formatFigure(t.threshold ?? null)}
+                  </td>
+                  {dealer ? (
+                    accounts.map((a) => (
+                      <td key={a.id} className="whitespace-nowrap px-3 py-2 text-end tabular-nums">
+                        {rateOf(t, a.id)}
+                      </td>
+                    ))
+                  ) : (
+                    <td className="whitespace-nowrap px-3 py-2 text-end tabular-nums">{formatFigure(t.rate)}</td>
+                  )}
                   <td className="whitespace-nowrap px-3 py-2 text-end tabular-nums">{formatFigure(t.bonus_amount)}</td>
                 </tr>
               ))}
@@ -1529,9 +1900,17 @@ function CommissionTiers({
     set({ tiers: draft.tiers.map((t) => (t.key === key ? { ...t, ...patch } : t)) });
   const addTier = () =>
     set({
-      tiers: [...draft.tiers, tierDraft(undefined, draft.tiers.length ? '' : '0')],
-      // R5: "Higher rate above each threshold only" is the default once tiers are added.
-      method: draft.method === 'none' ? 'marginal' : draft.method,
+      tiers: [
+        ...draft.tiers,
+        {
+          ...tierDraft(undefined, draft.tiers.length || draft.thresholdUnit !== 'pct' ? '' : '0'),
+          // A new row starts in the last row's period, the common case when typing Q1's tiers.
+          period: draft.tiers[draft.tiers.length - 1]?.period ?? periodStarts[0]?.start ?? '',
+        },
+      ],
+      // R5: "Higher rate above each threshold only" is the default once tiers are added; a
+      // dealer's scheme pays the highest tier reached (owner, 16 Oct).
+      method: draft.method === 'none' ? (dealer ? 'retroactive' : 'marginal') : draft.method,
     });
   const removeTier = (key: number) => {
     const tiers = draft.tiers.filter((t) => t.key !== key);
@@ -1543,28 +1922,76 @@ function CommissionTiers({
       Add tier
     </Button>
   );
-  if (!draft.tiers.length) return empty(addButton);
+  const settings = (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+      <Field label="How tiers pay" htmlFor="target-method">
+        <SearchableSelect
+          id="target-method"
+          value={draft.method}
+          onChange={(v) => set({ method: (v as CommissionMethod) || 'none' })}
+          options={METHOD_OPTIONS}
+          wrapOptions
+        />
+      </Field>
+      <Field label="Threshold in" htmlFor="target-threshold-unit">
+        <SearchableSelect
+          id="target-threshold-unit"
+          value={draft.thresholdUnit}
+          onChange={(v) => set({ thresholdUnit: (v as ThresholdUnit) || 'pct' })}
+          options={THRESHOLD_OPTIONS}
+        />
+      </Field>
+      <Field label="Round to" htmlFor="target-rounding">
+        <SearchableSelect
+          id="target-rounding"
+          value={draft.rounding}
+          onChange={(v) => set({ rounding: (v as Rounding) || 'sen' })}
+          options={ROUNDING_OPTIONS}
+        />
+      </Field>
+      <Field label="Own tiers per period">
+        <Switch
+          aria-label="Own tiers per period"
+          checked={draft.perPeriod}
+          onCheckedChange={(on) =>
+            set({
+              perPeriod: on,
+              tiers: draft.tiers.map((t) => ({ ...t, period: on ? t.period || periodStarts[0]?.start || '' : '' })),
+            })
+          }
+        />
+      </Field>
+    </div>
+  );
+  if (!draft.tiers.length) {
+    return (
+      <>
+        {settings}
+        {empty(addButton)}
+      </>
+    );
+  }
+  const fromLabel = draft.thresholdUnit === 'pct' ? 'From (%)' : `From (${THRESHOLD_LABEL[draft.thresholdUnit]})`;
+  const periodOptions = periodStarts.map((p) => ({ value: p.start, label: periodLabel(p.start) }));
   return (
     <>
-      <div className="sm:w-80">
-        <Field label="How tiers pay" htmlFor="target-method">
-          <SearchableSelect
-            id="target-method"
-            value={draft.method}
-            onChange={(v) => set({ method: (v as CommissionMethod) || 'none' })}
-            options={METHOD_OPTIONS}
-            wrapOptions
-          />
-        </Field>
-      </div>
+      {settings}
       {/* `relative`: the sr-only Remove header is absolutely placed, and must stay inside this
           scroll box or it widens the page at 375. */}
       <div className="relative overflow-x-auto rounded-lg border">
-        <table aria-label="Commission tiers" className="w-full min-w-[28rem] text-sm">
+        <table aria-label="Commission tiers" className="w-full min-w-[36rem] text-sm">
           <thead className="bg-muted/40 text-xs text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 text-start font-medium">From (%)</th>
-              <th className="px-3 py-2 text-end font-medium">{`Rate (${rateUnit})`}</th>
+              {draft.perPeriod ? <th className="px-3 py-2 text-start font-medium">Period</th> : null}
+              <th className="px-3 py-2 text-start font-medium">Type</th>
+              <th className="px-3 py-2 text-start font-medium">{fromLabel}</th>
+              {dealer ? (
+                accounts.map((a) => (
+                  <th key={a.id} className="px-3 py-2 text-end font-medium">{`${a.label} rate`}</th>
+                ))
+              ) : (
+                <th className="px-3 py-2 text-end font-medium">{`Rate (${rateUnit})`}</th>
+              )}
               <th className="px-3 py-2 text-end font-medium">Bonus (RM)</th>
               <th className="w-10 px-3 py-2">
                 <span className="sr-only">Remove</span>
@@ -1574,26 +2001,66 @@ function CommissionTiers({
           <tbody className="divide-y">
             {draft.tiers.map((t, i) => (
               <tr key={t.key}>
+                {draft.perPeriod ? (
+                  <td className="px-3 py-1.5">
+                    <SearchableSelect
+                      value={t.period}
+                      onChange={(v) => setTier(t.key, { period: v })}
+                      options={periodOptions}
+                      placeholder="Period"
+                      triggerClassName="h-8 w-44"
+                      aria-label={`Tier ${i + 1} period`}
+                    />
+                  </td>
+                ) : null}
+                <td className="px-3 py-1.5">
+                  <SearchableSelect
+                    value={t.additional ? 'additional' : 'main'}
+                    onChange={(v) => setTier(t.key, { additional: v === 'additional' })}
+                    options={TIER_TYPE_OPTIONS}
+                    triggerClassName="h-8 w-36"
+                    aria-label={`Tier ${i + 1} type`}
+                  />
+                </td>
                 <td className="px-3 py-1.5">
                   <NumberInput
                     min={0}
                     step="any"
-                    aria-label={`Tier ${i + 1} from %`}
+                    aria-label={
+                      draft.thresholdUnit === 'pct'
+                        ? `Tier ${i + 1} from %`
+                        : `Tier ${i + 1} from (${THRESHOLD_LABEL[draft.thresholdUnit]})`
+                    }
                     value={t.from}
                     onChange={(e) => setTier(t.key, { from: e.target.value })}
-                    className="h-8 w-24"
+                    className="h-8 w-28"
                   />
                 </td>
-                <td className="px-3 py-1.5">
-                  <NumberInput
-                    min={0}
-                    step="any"
-                    aria-label={`Tier ${i + 1} rate (${rateUnit})`}
-                    value={t.rate}
-                    onChange={(e) => setTier(t.key, { rate: e.target.value })}
-                    className="ms-auto h-8 w-28 text-end"
-                  />
-                </td>
+                {dealer ? (
+                  accounts.map((a) => (
+                    <td key={a.id} className="px-3 py-1.5">
+                      <NumberInput
+                        min={0}
+                        step="any"
+                        aria-label={`Tier ${i + 1} ${a.label} rate`}
+                        value={t.accountRates[a.id] ?? ''}
+                        onChange={(e) => setTier(t.key, { accountRates: { ...t.accountRates, [a.id]: e.target.value } })}
+                        className="ms-auto h-8 w-24 text-end"
+                      />
+                    </td>
+                  ))
+                ) : (
+                  <td className="px-3 py-1.5">
+                    <NumberInput
+                      min={0}
+                      step="any"
+                      aria-label={`Tier ${i + 1} rate (${rateUnit})`}
+                      value={t.rate}
+                      onChange={(e) => setTier(t.key, { rate: e.target.value })}
+                      className="ms-auto h-8 w-28 text-end"
+                    />
+                  </td>
+                )}
                 <td className="px-3 py-1.5">
                   <NumberInput
                     min={0}

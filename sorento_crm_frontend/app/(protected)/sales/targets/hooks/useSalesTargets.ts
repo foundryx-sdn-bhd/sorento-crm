@@ -6,14 +6,20 @@ import {
   createSalesTarget,
   createTargetChild,
   duplicateSalesTarget,
+  getPointRatios,
   getSalesTarget,
   getSalesTargetOptions,
   getSalesTargets,
+  downloadDealerTargetsTemplate,
+  importDealerTargets,
   patchSalesTarget,
   patchSalesTargetPeriod,
+  savePointRatio,
+  searchTargetCustomers,
   searchTargetProducts,
 } from '../services/salesTargetService';
 import type {
+  DealerImportPicks,
   SalesTargetCreatePayload,
   SalesTargetListParams,
   SalesTargetUpdatePayload,
@@ -22,6 +28,7 @@ import type {
 export const SALES_TARGETS_KEY = ['sales-targets'] as const;
 export const SALES_TARGET_KEY = ['sales-target'] as const;
 export const SALES_TARGET_OPTIONS_KEY = ['sales-target-options'] as const;
+export const POINT_RATIOS_KEY = ['sales-target-point-ratios'] as const;
 /** The Sales Teams list carries "Targets now", so a target write refreshes it too. */
 const SALES_TEAMS_KEY = ['sales-teams'] as const;
 
@@ -133,5 +140,51 @@ export function useDuplicateSalesTarget() {
       toast.success(`Duplicated as ${copy.target_no}`);
     },
     onError: (error: Error) => toast.error(error.message || 'Failed to duplicate target'),
+  });
+}
+
+/** A dealer target's account picker: customers searched on the server. */
+export function useTargetCustomerSearch() {
+  return useCallback((query: string) => searchTargetCustomers(query), []);
+}
+
+export function usePointRatios(enabled = true) {
+  return useQuery({ queryKey: POINT_RATIOS_KEY, queryFn: getPointRatios, enabled });
+}
+
+export function useSavePointRatio() {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateTargets();
+  return useMutation({
+    mutationFn: savePointRatio,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: POINT_RATIOS_KEY });
+      invalidate();
+      toast.success('Ratio saved');
+    },
+    onError: (error: Error) => toast.error(error.message || 'Failed to save the ratio'),
+  });
+}
+
+export function useImportDealerTargets() {
+  const invalidate = useInvalidateTargets();
+  return useMutation({
+    mutationFn: ({ file, dryRun, year, picks }: { file: File; dryRun: boolean; year: number; picks?: DealerImportPicks }) =>
+      importDealerTargets(file, dryRun, year, picks),
+    onSuccess: (result) => {
+      if (result.dry_run) return;
+      invalidate();
+      toast.success(
+        `Imported: ${result.summary.targets_new} new, ${result.summary.targets_updated} updated`,
+      );
+    },
+    onError: (error: Error) => toast.error(error.message || 'Failed to import the file'),
+  });
+}
+
+export function useDownloadDealerTemplate() {
+  return useMutation({
+    mutationFn: (year: number) => downloadDealerTargetsTemplate(year),
+    onError: (error: Error) => toast.error(error.message || 'Failed to download the template'),
   });
 }

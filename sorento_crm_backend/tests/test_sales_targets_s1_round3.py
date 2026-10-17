@@ -55,6 +55,12 @@ def _team_target(client, db, figures=(("A", 600), ("B", 400)), members=("A", "B"
     return res.json(), agents
 
 
+def _core(tiers):
+    # The one-engine fields (threshold, is_additional, period_start, account_rates; lane
+    # SALES-TARGET-DEALER) are additive; these tests pin the original three.
+    return [{k: t[k] for k in ("from_pct", "rate", "bonus_amount")} for t in tiers]
+
+
 def _values(body):
     return [p["target_value"] for p in body["periods"]]
 
@@ -285,7 +291,7 @@ def test_tiers_are_added_edited_and_removed_through_patch(api):
     body = added.json()
     assert body["commission_method"] == "marginal"
     # Ordered by from %.
-    assert body["tiers"] == [
+    assert _core(body["tiers"]) == [
         {"from_pct": 0, "rate": 2, "bonus_amount": None},
         {"from_pct": 100, "rate": 4, "bonus_amount": 500},
     ]
@@ -297,7 +303,7 @@ def test_tiers_are_added_edited_and_removed_through_patch(api):
     })
     assert edited.status_code == 200, edited.text
     assert edited.json()["commission_method"] == "retroactive"
-    assert edited.json()["tiers"] == [{"from_pct": 0, "rate": 2.5, "bonus_amount": None}]
+    assert _core(edited.json()["tiers"]) == [{"from_pct": 0, "rate": 2.5, "bonus_amount": None}]
 
     removed = client.patch(f"{BASE}/{created['id']}", json={"commission_method": "none", "tiers": []})
     assert removed.status_code == 200, removed.text
@@ -329,7 +335,7 @@ def test_tier_rules_s4_1(api):
     assert ok.status_code == 200, ok.text
     only_method = client.patch(url, json={"commission_method": "retroactive"})
     assert only_method.status_code == 200, only_method.text
-    assert only_method.json()["tiers"] == [{"from_pct": 0, "rate": 1, "bonus_amount": None}]
+    assert _core(only_method.json()["tiers"]) == [{"from_pct": 0, "rate": 1, "bonus_amount": None}]
 
 
 def test_create_takes_tiers_and_duplicate_copies_them(api):
@@ -356,7 +362,7 @@ def test_an_agent_target_of_a_team_holds_its_own_tiers(api):
         "commission_method": "marginal", "tiers": [{"from_pct": 0, "rate": 3}],
     })
     assert res.status_code == 200, res.text
-    assert res.json()["tiers"] == [{"from_pct": 0, "rate": 3, "bonus_amount": None}]
+    assert _core(res.json()["tiers"]) == [{"from_pct": 0, "rate": 3, "bonus_amount": None}]
     assert client.get(f"{BASE}/{team_target['id']}").json()["tiers"] == []
 
 

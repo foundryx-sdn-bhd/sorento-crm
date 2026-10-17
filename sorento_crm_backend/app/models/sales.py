@@ -331,7 +331,8 @@ def _create_leader_rule(target, connection, **kw):  # noqa: ANN001
 class SalesTarget(CompanyScopedMixin, Base):
     """A target header (plan 3.1): who, what counts, on which products, over which dates.
 
-    The subject is an agent or a team (S1; S7 adds `dealer` with `customer_id`). A team target's
+    The subject is an agent, a team or a dealer (lane SALES-TARGET-DEALER: a dealer counts the
+    accounts in `target_accounts`, whatever agent sold, and pays to `payout_customer_id`). A team target's
     figure is the sum of its agent children (`parent_target_id`, owner ruling 26 Sep 06:09, T3),
     stored on the team's periods by `target_service` on every write. The range is a plain date
     range, split into periods only when `split_every`/`split_unit` are set (N6, N7). No stored
@@ -371,6 +372,30 @@ class SalesTarget(CompanyScopedMixin, Base):
     commission_method = Column(
         String(16), nullable=False, default="none", server_default=text("'none'")
     )
+    #: Dealer targets: the account the commission is credited to; may be an account the target
+    #: does not count (owner ruling 16 Oct 00:10).
+    payout_customer_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    #: Dealer targets (crew ruling 16 Oct, owner ruling 4: one tier scale): an account's own
+    #: target pays nothing in a period its dealer's target (named here) reaches a tier.
+    replaced_by_target_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey(f"{SCHEMA}.targets.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    #: What a tier's threshold is in: `pct` of the period's figure (the original tiers),
+    #: `amount` (RM, units on a quantity target) or `points` (x the dated point ratio).
+    threshold_unit = Column(String(8), nullable=False, default="pct", server_default=text("'pct'"))
+    #: Every payout line is rounded to `sen` (0.01) or `ringgit` (1) (owner Q1, crew A2).
+    rounding = Column(String(8), nullable=False, default="sen", server_default=text("'sen'"))
+    #: True: each tier names the period it belongs to (`period_start`); False: every tier
+    #: applies to every period, as before.
+    tiers_per_period = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     #: Set only on an agent target that is one line of a team target (T3).
     parent_target_id = Column(
         UUID(as_uuid=False),
@@ -386,11 +411,26 @@ class SalesTarget(CompanyScopedMixin, Base):
 
     __table_args__ = (
         Index("uq_sales_targets_company_target_no", "company_id", "target_no", unique=True),
-        CheckConstraint("subject_kind IN ('agent', 'team')", name="ck_sales_targets_subject_kind"),
+        CheckConstraint(
+            "subject_kind IN ('agent', 'team', 'dealer')", name="ck_sales_targets_subject_kind"
+        ),
         CheckConstraint(
             "(subject_kind = 'agent' AND sales_agent_id IS NOT NULL AND sales_team_id IS NULL) "
-            "OR (subject_kind = 'team' AND sales_team_id IS NOT NULL AND sales_agent_id IS NULL)",
+            "OR (subject_kind = 'team' AND sales_team_id IS NOT NULL AND sales_agent_id IS NULL) "
+            "OR (subject_kind = 'dealer' AND sales_agent_id IS NULL AND sales_team_id IS NULL)",
             name="ck_sales_targets_subject",
+        ),
+        CheckConstraint(
+            "threshold_unit IN ('pct', 'amount', 'points')", name="ck_sales_targets_threshold_unit"
+        ),
+        CheckConstraint("rounding IN ('sen', 'ringgit')", name="ck_sales_targets_rounding"),
+        CheckConstraint(
+            "payout_customer_id IS NULL OR subject_kind = 'dealer'",
+            name="ck_sales_targets_payout_dealer",
+        ),
+        CheckConstraint(
+            "replaced_by_target_id IS NULL OR subject_kind = 'dealer'",
+            name="ck_sales_targets_replaced_by_dealer",
         ),
         CheckConstraint("metric IN ('amount', 'quantity')", name="ck_sales_targets_metric"),
         CheckConstraint("basis IN ('ordered', 'delivered')", name="ck_sales_targets_basis"),
@@ -480,11 +520,18 @@ class SalesTargetScope(CompanyScopedMixin, Base):
 
 
 class SalesTargetCommissionTier(CompanyScopedMixin, Base):
-    """One commission tier of a target (plan 3.3; the owner's retest of 27 Sep, `sales_0005`).
+    """One commission tier of a target (plan 3.3, `sales_0005`; one engine for every subject,
+    `sales_0006`).
 
-    `from_pct` is the achievement % the tier starts at; `rate` is a % of the achieved amount on
-    an amount target, RM per unit on a quantity target; `bonus_amount` is paid once per period
-    when `from_pct` is reached. Computed per period by `commission_service`, never stored.
+    The threshold is `from_pct` (achievement % of the period's figure) on a `pct` target, else
+    `threshold` (RM, units or points, the target's `threshold_unit`). `rate` is a % of the
+    achieved amount on an amount target, RM per unit on a quantity target, paid on every counted
+    account unless the tier has `target_tier_rates` (then only those accounts, each at its own
+    rate). `is_additional`: a "+ Additional" line, paid on top of the main tier when its own
+    threshold is reached. `period_start`: the period it belongs to on a `tiers_per_period`
+    target (a start date, not a period id, so a date edit that keeps the start keeps its tiers).
+    `bonus_amount` is paid once per period when the tier is reached. Computed per period by
+    `commission_service`, never stored.
     """
 
     __tablename__ = "target_commission_tiers"
@@ -494,18 +541,100 @@ class SalesTargetCommissionTier(CompanyScopedMixin, Base):
         UUID(as_uuid=False),
         ForeignKey(f"{SCHEMA}.targets.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
-    from_pct = Column(Numeric(7, 2), nullable=False)
+    from_pct = Column(Numeric(7, 2), nullable=True)
+    threshold = Column(Numeric(15, 2), nullable=True)
     rate = Column(Numeric(9, 4), nullable=False, default=0, server_default=text("0"))
     bonus_amount = Column(Numeric(15, 2), nullable=True)
+    is_additional = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    period_start = Column(Date, nullable=True)
 
     __table_args__ = (
-        Index("uq_sales_target_commission_tiers_target_from", "target_id", "from_pct", unique=True),
-        CheckConstraint("from_pct >= 0", name="ck_sales_target_commission_tiers_from_pct"),
+        CheckConstraint(
+            "from_pct IS NULL OR from_pct >= 0", name="ck_sales_target_commission_tiers_from_pct"
+        ),
+        CheckConstraint(
+            "threshold IS NULL OR threshold >= 0",
+            name="ck_sales_target_commission_tiers_threshold",
+        ),
+        CheckConstraint(
+            "num_nonnulls(from_pct, threshold) = 1",
+            name="ck_sales_target_commission_tiers_one_threshold",
+        ),
         CheckConstraint("rate >= 0", name="ck_sales_target_commission_tiers_rate"),
         CheckConstraint(
             "bonus_amount IS NULL OR bonus_amount >= 0",
             name="ck_sales_target_commission_tiers_bonus",
         ),
+        {"schema": SCHEMA},
+    )
+
+
+class SalesTargetTierRate(CompanyScopedMixin, Base):
+    """A tier's rate for one counted account of a dealer target (ruling 2: "A/C I - 3%" pays
+    on A/C I only; Deluxe / Mastile / W-Ply each at their own rate)."""
+
+    __tablename__ = "target_tier_rates"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    tier_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey(f"{SCHEMA}.target_commission_tiers.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    customer_id = Column(
+        UUID(as_uuid=False), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False
+    )
+    rate = Column(Numeric(9, 4), nullable=False)
+
+    __table_args__ = (
+        Index("uq_sales_target_tier_rates_tier_customer", "tier_id", "customer_id", unique=True),
+        CheckConstraint("rate >= 0", name="ck_sales_target_tier_rates_rate"),
+        {"schema": SCHEMA},
+    )
+
+
+class SalesTargetAccount(CompanyScopedMixin, Base):
+    """One account (a `customers` ledger) a dealer target counts, in the order entered."""
+
+    __tablename__ = "target_accounts"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    target_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey(f"{SCHEMA}.targets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    customer_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("customers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sort_order = Column(SmallInteger, nullable=False, default=0, server_default=text("0"))
+
+    __table_args__ = (
+        Index("uq_sales_target_accounts_target_customer", "target_id", "customer_id", unique=True),
+        {"schema": SCHEMA},
+    )
+
+
+class SalesPointRatio(CompanyScopedMixin, Base):
+    """RM per point from `effective_from` on, per company (owner ruling 5, Q4). A period uses
+    the ratio in force on its last day, so a new ratio never rewrites a closed period."""
+
+    __tablename__ = "point_ratios"
+    __audit_track__ = True
+    __audit_entity_type__ = "sales_point_ratios"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    effective_from = Column(Date, nullable=False)
+    rm_per_point = Column(Numeric(12, 4), nullable=False)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("uq_sales_point_ratios_company_from", "company_id", "effective_from", unique=True),
+        CheckConstraint("rm_per_point > 0", name="ck_sales_point_ratios_positive"),
         {"schema": SCHEMA},
     )

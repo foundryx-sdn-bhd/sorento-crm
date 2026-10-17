@@ -2,30 +2,38 @@
 
 Slugs (S1-13): the list, a detail and the modal's options need `sales.targets.view`; create
 needs `.add`; a header edit, a period's figure, Duplicate and Add figure need `.edit`; DELETE
-needs `.delete`. Plain `def` handlers: nothing here awaits (LESSONS-LEARNT).
+needs `.delete`. Point ratios: read with `.view`, written with `.edit`; the dealer Excel import
+needs `.edit` for its dry run as well as the apply (lane SALES-TARGET-DEALER). Plain `def`
+handlers: nothing here awaits (LESSONS-LEARNT), the import included (its read is synchronous).
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_permission
 from app.schemas.sales import (
+    SalesPointRatioIn,
+    SalesPointRatioList,
+    SalesPointRatioOut,
     SalesTargetChildCreate,
     SalesTargetCreate,
     SalesTargetDetail,
+    SalesTargetImportResult,
     SalesTargetList,
     SalesTargetOptions,
     SalesTargetPeriodUpdate,
     SalesTargetUpdate,
 )
 from app.services.error_handler import AppException
-from app.services.sales import target_service
+from app.services.sales import dealer_target_import, target_service
 from app.services.uuid_path_param import validate_uuid_path
 
 router = APIRouter()
@@ -63,7 +71,7 @@ def _load(db: Session, target_id: str):
 @router.get("", response_model=SalesTargetList)
 def list_targets(
     on: Optional[date] = Query(None),
-    subject: Literal["agent", "team"] = Query("team"),
+    subject: Literal["agent", "team", "dealer"] = Query("team"),
     sales_team_id: Optional[str] = Query(None),
     query: Optional[str] = Query(None),
     #: Every target of the kind, one row each, whole-range figures (Targets > Teams / Agents).
@@ -74,7 +82,8 @@ def list_targets(
     try:
         if sales_team_id and sales_team_id != "none":
             validate_uuid_path(sales_team_id, resource="Sales Team")
-        if all:
+        # A dealer has no "No target" rows: its tab is always the whole list.
+        if all or subject == "dealer":
             return target_service.list_all_targets(
                 db, subject=subject, sales_team_id=sales_team_id, query=query
             )
@@ -93,6 +102,102 @@ def target_options(
 ):
     try:
         return target_service.options(db)
+    except Exception as exc:
+        _reraise(db, exc)
+
+
+def _ratio_out(row) -> dict:
+    return {"id": row.id, "effective_from": row.effective_from, "rm_per_point": float(row.rm_per_point)}
+
+
+@router.get("/point-ratios", response_model=SalesPointRatioList)
+def list_point_ratios(
+    _user: dict = Depends(require_permission(VIEW)),
+    db: Session = Depends(get_db),
+):
+    try:
+        return {"rows": [_ratio_out(r) for r in target_service.point_ratios(db)]}
+    except Exception as exc:
+        _reraise(db, exc)
+
+
+@router.post("/point-ratios", response_model=SalesPointRatioOut)
+def save_point_ratio(
+    payload: SalesPointRatioIn,
+    _user: dict = Depends(require_permission(EDIT)),
+    db: Session = Depends(get_db),
+):
+    """One ratio per date: the same date again replaces it (ruling 5, a dated history)."""
+    try:
+        with db.begin_nested():
+            row = target_service.save_point_ratio(db, payload.effective_from, payload.rm_per_point)
+        db.commit()
+        return _ratio_out(row)
+    except Exception as exc:
+        _reraise(db, exc)
+
+
+#: A dealer targets workbook is a few hundred rows; anything this size is not one.
+MAX_IMPORT_BYTES = 10 * 1024 * 1024
+
+
+#: The picks form field: one entry per row, a few dozen bytes each.
+MAX_PICKS_BYTES = 512 * 1024
+
+
+@router.get("/import/template")
+def dealer_targets_template(
+    year: Optional[int] = Query(None, ge=2000, le=2100),
+    _user: dict = Depends(require_permission(EDIT)),
+):
+    """An empty workbook in the delivered layout plus a CUSTOMER CODE column (gate-fail item 2)."""
+    year = year or target_service._today().year
+    return Response(
+        content=dealer_target_import.template_workbook(year),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="dealer-targets-template-{year}.xlsx"'},
+    )
+
+
+@router.post("/import", response_model=SalesTargetImportResult)
+def import_dealer_targets(
+    file: UploadFile = File(...),
+    picks: Optional[str] = Form(None),
+    dry_run: bool = Query(True),
+    year: Optional[int] = Query(None, ge=2000, le=2100),
+    user: dict = Depends(require_permission(EDIT)),
+    db: Session = Depends(get_db),
+):
+    """The dealer targets Excel (UAC D3): a dry run writes nothing and reports every row;
+    `dry_run=false` creates or updates the targets in one transaction. `picks` (JSON, owner
+    ruling 16 Oct 09:12) names, per "<sheet>!<row>", the customer the user picked for a row the
+    name match left open, or "skip"."""
+    try:
+        data = file.file.read(MAX_IMPORT_BYTES + 1)
+        if len(data) > MAX_IMPORT_BYTES:
+            raise AppException(status_code=422, message="That file is too large.", code="FILE_TOO_LARGE")
+        chosen = None
+        if picks:
+            if len(picks.encode("utf-8")) > MAX_PICKS_BYTES:
+                raise AppException(status_code=422, message="Too many picks.", code="INVALID_PICKS")
+            try:
+                chosen = json.loads(picks)
+            except (ValueError, RecursionError) as exc:
+                raise AppException(status_code=422, message="Picks are not valid JSON.", code="INVALID_PICKS") from exc
+        year = year or target_service._today().year
+        if dry_run:
+            with db.begin_nested() as nested:
+                result = dealer_target_import.run(
+                    db, data, year=year, dry_run=True, user_id=_user_id(user), picks=chosen
+                )
+                nested.rollback()
+            return result
+        with db.begin_nested():
+            result = dealer_target_import.run(
+                db, data, year=year, dry_run=False, user_id=_user_id(user), picks=chosen
+            )
+        db.commit()
+        return result
     except Exception as exc:
         _reraise(db, exc)
 

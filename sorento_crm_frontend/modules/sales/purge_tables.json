@@ -3,12 +3,15 @@
   "tables": [
     "sales.opportunity_lines",
     "sales.opportunities",
+    "sales.target_tier_rates",
     "sales.target_commission_tiers",
+    "sales.target_accounts",
     "sales.target_scope",
     "sales.target_periods",
     "sales.targets",
+    "sales.point_ratios",
     "sales.team_members",
     "sales.teams"
   ],
-  "description": "Sales targets with their periods, product scope and commission tiers, sales teams and their membership history, and opportunities logged by salespeople. Sales agents, customers, products and sales orders are core records and are not touched."
+  "description": "Sales targets with their periods, product scope, commission tiers, per-account tier rates and dealer accounts, point ratios, sales teams and their membership history, and opportunities logged by salespeople. Sales agents, customers, products and sales orders are core records and are not touched."
 }

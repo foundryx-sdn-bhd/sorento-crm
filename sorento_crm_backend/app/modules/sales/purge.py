@@ -18,10 +18,13 @@ from sqlalchemy.orm import Session
 from app.models.sales import (
     SalesOpportunity,
     SalesOpportunityLine,
+    SalesPointRatio,
     SalesTarget,
+    SalesTargetAccount,
     SalesTargetCommissionTier,
     SalesTargetPeriod,
     SalesTargetScope,
+    SalesTargetTierRate,
     SalesTeam,
     SalesTeamMember,
 )
@@ -32,10 +35,13 @@ logger = logging.getLogger(__name__)
 PURGE_ORDER: List[Type] = [
     SalesOpportunityLine,
     SalesOpportunity,
+    SalesTargetTierRate,
     SalesTargetCommissionTier,
+    SalesTargetAccount,
     SalesTargetScope,
     SalesTargetPeriod,
     SalesTarget,
+    SalesPointRatio,
     SalesTeamMember,
     SalesTeam,
 ]

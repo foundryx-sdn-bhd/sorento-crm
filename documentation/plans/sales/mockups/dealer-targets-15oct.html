@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dealer targets mockup</title>
+<!-- Lane SALES-TARGET-DEALER. Annotated mockup, not shipped code. Plain inline CSS so it opens from a file.
+     Plan + behaviour card: documentation/plans/sales/PLAN-dealer-sales-targets-15oct.md
+     Styles copied from mockups/sales-targets.html so both mocks read as one product.
+     Figures are illustrative until crew sends masked Excel rows; dealer names are placeholders.
+     v2 (16 Oct): owner rulings 00:10 : one target engine for agents and dealers, highest tier pays,
+     thresholds in % / RM / points, stacking additional lines, rounding per target, separate Pay to account. -->
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --fg:#111827; --muted:#6b7280; --line:#e5e7eb; --line-soft:#f1f2f4;
+  --primary:#1b84ff; --primary-soft:#e9f3ff;
+  --red:#dc2626; --red-soft:#fef2f2;
+  --amber:#b45309; --amber-soft:#fffbeb;
+  --green:#15803d; --green-soft:#f0fdf4;
+  --grey-soft:#f3f4f6; --callout:#e11d74; --radius:8px;
+  --wa-bg:#efeae2; --wa-in:#ffffff;
+  --font:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--font)}
+.doc{max-width:1760px;margin:0 auto;padding:24px 16px 64px}
+.doc>h1{font-size:22px;margin:0 0 4px}
+.doc>.sub{color:var(--muted);margin:0 0 20px;max-width:900px}
+h2.frame-title{font-size:15px;margin:28px 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.layout{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.scroll{overflow-x:auto;max-width:100%;border-radius:12px}
+.frame{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);position:relative;overflow:hidden}
+.w1280{width:1280px}.w375{width:375px;flex:none;max-width:100%}.w640{width:640px;flex:none;max-width:100%}
+.notes{flex:1 1 320px;min-width:280px;max-width:520px}
+.notes ol{margin:0;padding:0;list-style:none}
+.notes li{display:flex;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px}
+.notes li b{display:block;margin-bottom:2px}
+.notes .ref{display:block;color:var(--muted);font-size:12px;margin-top:4px}
+.co{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;border-radius:50%;background:var(--callout);color:#fff;font-size:12px;font-weight:700;box-shadow:0 0 0 2px #fff}
+.pin{position:absolute;z-index:5}
+.shell{display:flex;min-height:520px}
+.side{width:170px;border-right:1px solid var(--line);padding:16px 10px;background:#fbfbfc}
+.side .grp{font-size:11px;text-transform:uppercase;color:var(--muted);margin:14px 8px 6px;letter-spacing:.05em}
+.side a{display:block;padding:6px 10px;border-radius:6px;color:var(--fg);text-decoration:none}
+.side a.on{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.main{flex:1;padding:20px 24px;min-width:0}
+.ph{display:flex;flex-direction:column;gap:12px;margin-bottom:14px}
+@media (min-width:640px){.ph{flex-direction:row;justify-content:space-between;align-items:center}}
+.ph h3{margin:0;font-size:20px}
+.ph .meta{color:var(--muted);font-size:13px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;font:inherit;font-size:13px;cursor:default}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.sm{padding:3px 8px;font-size:12px}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.ruling{display:block;color:var(--callout);font-size:12px;font-weight:600;margin-top:4px}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.tabs span{padding:8px 0;color:var(--muted)}
+.tabs span.on{color:var(--fg);border-bottom:2px solid var(--primary);font-weight:600}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.kpi{border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px}
+.kpi .l{color:var(--muted);font-size:12px}.kpi .v{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+th{font-size:12px;color:var(--muted);font-weight:600;background:#fafafa}
+td.wrap{white-space:normal}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:6px;background:var(--grey-soft);border-radius:3px;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:var(--primary)}
+.bar.ok i{background:var(--green)}
+.badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;background:var(--grey-soft);color:var(--muted)}
+.badge.ok{background:var(--green-soft);color:var(--green)}
+.badge.warn{background:var(--amber-soft);color:var(--amber)}
+.badge.pri{background:var(--primary-soft);color:var(--primary)}
+.chip{display:inline-block;padding:0 6px;border:1px solid var(--line);border-radius:4px;font-size:11px;color:var(--muted);margin-right:4px}
+.muted{color:var(--muted)}
+.sub2{display:block;font-size:12px;color:var(--muted)}
+tr.grp td{background:#fafafa;font-weight:600}
+tr.unassigned td{background:#fcfcfd;color:var(--muted);font-style:italic}
+.m-head{padding:14px 16px;border-bottom:1px solid var(--line)}
+.m-card{padding:12px 16px;border-bottom:1px solid var(--line-soft)}
+.m-row{display:flex;justify-content:space-between;gap:8px}
+.modal{padding:18px 20px}
+.modal h4{margin:0 0 14px;font-size:16px}
+.modal h5{margin:16px 0 8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.f{margin-bottom:12px}
+.f label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.inp{border:1px solid var(--line);border-radius:6px;padding:7px 10px;background:#fff;min-height:34px}
+.inp.ro{background:var(--grey-soft)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;flex-wrap:wrap}
+.seg span{padding:6px 12px}.seg span.on{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.foot{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+.pill{display:inline-block;background:var(--primary-soft);color:var(--primary);border-radius:999px;padding:1px 8px;font-size:12px;margin:2px 4px 2px 0}
+.sw{display:inline-block;width:30px;height:17px;border-radius:999px;background:var(--line);position:relative;vertical-align:middle;margin-right:6px}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff}
+.sw.on{background:var(--primary)}.sw.on::after{left:15px}
+.portal-top{background:#0f172a;color:#fff;padding:12px 16px;font-weight:600}
+.wa{background:var(--wa-bg);padding:16px;min-height:300px}
+.wa .top{background:#075e54;color:#fff;padding:10px 14px;font-weight:600}
+.bubble{background:var(--wa-in);border-radius:8px;padding:8px 10px;max-width:92%;box-shadow:0 1px 1px rgba(0,0,0,.1);white-space:pre-line;font-size:13.5px}
+.bubble .t{display:block;text-align:right;font-size:11px;color:var(--muted);margin-top:4px}
+.co.n{width:auto;min-width:22px;padding:0 6px;border-radius:11px}
+.dd{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:6px;padding:7px 10px;background:#fff;min-height:34px;gap:8px}
+.dd::after{content:"\25BE";color:var(--muted);font-size:12px}
+.dd.clear::after{content:"\00D7  \25BE"}
+.menu{border:1px solid var(--line);border-radius:6px;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.08);margin-top:4px}
+.menu div{padding:7px 10px;border-bottom:1px solid var(--line-soft)}
+.menu div.on{background:var(--primary-soft)}
+.menu div.dis{color:var(--muted);font-style:italic}
+.menu div.add{color:var(--primary);font-weight:600}
+.pill.more{background:var(--grey-soft);color:var(--fg);font-weight:600}
+.pill.n{background:#fff;border:1px solid var(--line);color:var(--fg)}
+.side a.sub{padding-left:22px}
+.side .h{font-size:10px;letter-spacing:.08em;color:var(--muted);margin:12px 8px 4px;font-weight:700}
+.meta-strip{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--muted);font-size:12px;margin-top:4px}
+.sec{border:1px solid var(--line);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.sec>.sh{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600}
+.sec>.sb{padding:12px 14px}
+.kv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.kv .l{font-size:12px;color:var(--muted)}
+.empty{padding:18px;text-align:center;color:var(--muted)}
+.m-line{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+.m-line .nm{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.now td{background:var(--primary-soft)}
+.tabs span.co{padding:0 6px;color:#fff;border:0}
+.gone{text-decoration:line-through;color:var(--muted)}
+.co.r5{background:#0f766e}
+.ruling.r5{color:#0f766e}
+.tier-add td{color:#7c3aed}
+.badge.prov{background:var(--amber-soft);color:var(--amber)}
+.badge.err{background:var(--red-soft);color:var(--red)}
+.calc{font-size:12px;color:var(--muted);white-space:normal;line-height:1.5}
+@media (max-width:700px){.kv{grid-template-columns:1fr}.two,.three{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Dealer targets on the one target engine (v2)</h1>
+<p class="sub">v2 after the owner's rulings of 16 Oct 00:10. A dealer is a third subject on the same Targets engine as agents and teams: same list, same record, same Commission tab, same logic. What a dealer adds is the list of accounts it counts and the account it pays to. The Commission tab gains four things for every subject: threshold in % / RM / points, tiers per period, "+ Additional" rows that stack, and round to sen or ringgit. Figures and dealer names are placeholders until the masked Excel rows arrive. Pins map to the notes; each note names the component reused and its repo path. <span class="ruling">Pink notes = changed in v2.</span></p>
+
+<!-- ============ FRAME A: list ============ -->
+<h2 class="frame-title">A. Sales &gt; Targets, Dealers tab (1280)</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="h">SALES</div><a>Opportunities</a><a class="on">Targets</a><a>Sales Teams</a><a>Sales Agents</a></div>
+  <div class="main">
+    <div class="ph"><h3>Targets</h3><div style="display:flex;gap:8px"><span class="btn">&#9881;</span><span class="btn pri">+ Set target</span></div></div>
+    <span class="pin co" style="left:1090px;top:22px">1</span>
+    <div class="tabs"><span>Teams</span><span>Agents</span><span class="on">Dealers</span></div>
+    <span class="pin co" style="left:330px;top:66px">2</span>
+    <div class="toolbar"><span class="inp" style="width:260px">Search dealer, account code, number</span></div>
+    <table>
+      <colgroup><col style="width:34px"><col style="width:170px"><col style="width:180px"><col style="width:100px"><col style="width:100px"><col style="width:150px"><col style="width:110px"><col style="width:150px"><col style="width:60px"><col style="width:110px"></colgroup>
+      <tr><th></th><th>Dealer</th><th>Counts</th><th>Pays to</th><th>Number</th><th>Name</th><th class="n">Target</th><th class="n">Achieved</th><th class="n">%</th><th class="n">Commission</th></tr>
+      <tr><td>&#9744;</td><td>Dealer A Sdn Bhd</td><td><span class="pill n">A/C I</span><span class="pill n">A/C III</span></td><td>A/C I</td><td>TGT-000214</td><td>2026 quarterly</td><td class="n">200,000.00</td><td class="n">250,000.00<span class="sub2"><span class="badge prov">provisional, incl. tax</span></span></td><td class="n">125%</td><td class="n">5,400.00</td></tr>
+      <tr><td>&#9744;</td><td>Dealer A Sdn Bhd</td><td><span class="pill n">A/C III</span></td><td>A/C I</td><td>TGT-000216</td><td>A/C III quarterly</td><td class="n">80,000.00</td><td class="n">90,000.00</td><td class="n">113%</td><td class="n">1,800.00</td></tr>
+      <tr><td>&#9744;</td><td>Dealer B Trading</td><td><span class="pill n">Deluxe</span><span class="pill n">Mastile</span><span class="pill more">+1</span></td><td>Deluxe</td><td>TGT-000231</td><td>2026 quarterly</td><td class="n">300,000.00</td><td class="n">310,000.00</td><td class="n">103%</td><td class="n">6,900.00</td></tr>
+      <tr><td>&#9744;</td><td>Dealer M Ceramic</td><td><span class="pill n">[CERAMIC]</span><span class="pill n">[IBORN]</span></td><td>[CERAMIC]</td><td>TGT-000301</td><td>2026 quarterly</td><td class="n">120,000.00<span class="sub2">100,000 pts</span></td><td class="n">130,000.00</td><td class="n">108%</td><td class="n">5,200.00</td></tr>
+    </table>
+    <span class="pin co" style="left:400px;top:178px">3</span>
+    <span class="pin co" style="left:1130px;top:178px">4</span>
+  </div>
+</div></div></div>
+<div class="notes"><ol>
+<li><span class="co">1</span><div><b>Set target + gear</b>Same header CTA as today. The gear adds "Import from Excel" (frame D) and "Point ratio" (frame E). <span class="ref">PageHeader components/common/PageHeader; SalesTargetsView.tsx:131</span></div></li>
+<li><span class="co">2</span><div><b>Dealers tab</b>Third line tab beside Teams and Agents, `?tab=dealer`. Same grid, same columns as Agents, plus Counts and Pays to. <span class="ref">Tabs variant="line" SalesTargetsView.tsx:43-45, :144</span></div></li>
+<li><span class="co">3</span><div><b>Counts / Pays to</b><span class="ruling">v2: Pays to is its own column, it can be an account the target does not count (row 2).</span> Account label: the level ("A/C I") when set, else the customer's short name. <span class="ref">PillOverflow components/common/PillOverflow</span></div></li>
+<li><span class="co">4</span><div><b>Commission</b>The current period's figure from the same engine as an agent's commission, in RM. A points target shows the RM threshold with the points under it. <span class="ref">DataGrid fixed layout, resizable (CLAUDE.md DataGrid rule)</span></div></li>
+</ol></div>
+</div>
+
+<h2 class="frame-title">A2. Same list at 375</h2>
+<div class="layout">
+<div class="frame w375">
+  <div class="m-head"><b>Targets</b> <span class="btn pri sm" style="float:right">+ Set target</span></div>
+  <div class="tabs" style="padding:0 16px"><span>Teams</span><span>Agents</span><span class="on">Dealers</span></div>
+  <div class="m-card"><div class="m-row"><b>Dealer A Sdn Bhd</b><span>125%</span></div><span class="sub2">TGT-000214 &middot; counts A/C I, A/C III &middot; pays to A/C I</span><div class="m-row"><span>250,000.00 of 200,000.00 <span class="badge prov">provisional, incl. tax</span></span><b>5,400.00</b></div></div>
+  <div class="m-card"><div class="m-row"><b>Dealer M Ceramic</b><span>108%</span></div><span class="sub2">TGT-000301 &middot; counts [CERAMIC], [IBORN]</span><div class="m-row"><span>130,000.00 of 120,000.00 (100,000 pts)</span><b>5,200.00</b></div></div>
+</div>
+<div class="notes"><ol><li><span class="co">5</span><div><b>375</b>The DataGrid's existing narrow layout; nothing new. <span class="ref">components/ui/data-grid</span></div></li></ol></div>
+</div>
+
+<!-- ============ FRAME B: record ============ -->
+<h2 class="frame-title">B. Dealer target record (1280): Details, Accounts</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="main">
+  <div class="ph"><div><h3>2026 quarterly &middot; Dealer A Sdn Bhd</h3><div class="meta-strip"><span>TGT-000214</span><span>Dealer</span><span>Counts: Ordered, provisional, incl. tax</span></div></div><div style="display:flex;gap:8px"><span class="btn sm">&lsaquo; 3 of 41 &rsaquo;</span><span class="btn">&#9881;</span></div></div>
+  <span class="pin co" style="left:300px;top:24px">6</span>
+  <div class="tabs"><span class="on">Details</span><span>Accounts</span><span>Periods</span><span>Commission</span></div>
+  <div class="sec"><div class="sh">Target</div><div class="sb"><div class="kv">
+    <div><span class="l">Target for</span><div>Dealer</div></div><div><span class="l">Who</span><div>Dealer A Sdn Bhd</div></div><div><span class="l">Name</span><div>2026 quarterly</div></div>
+  </div></div></div>
+  <div class="sec"><div class="sh">Dates</div><div class="sb"><div class="kv"><div><span class="l">Start and end date</span><div>1 Jan 26 to 31 Dec 26</div></div><div><span class="l">Split</span><div>Every 3 months</div></div><div></div></div></div></div>
+  <span class="pin co" style="left:760px;top:180px">7</span>
+
+  <h5 style="margin:18px 0 8px;color:var(--muted)">ACCOUNTS TAB</h5>
+  <div class="sec"><div class="sh">Counted accounts</div><div class="sb" style="padding:0">
+    <table><colgroup><col style="width:140px"><col style="width:340px"><col style="width:120px"><col></colgroup>
+    <tr><th>Code</th><th>Customer</th><th>Account</th><th class="n">Q2 sales (provisional, incl. tax)</th></tr>
+    <tr><td>300-A0123</td><td>DEALER A SDN BHD</td><td>A/C I</td><td class="n">180,000.00</td></tr>
+    <tr><td>300-A0124</td><td>DEALER A SDN BHD (III)</td><td>A/C III</td><td class="n">70,000.00</td></tr>
+    </table></div></div>
+  <div class="sec"><div class="sh">Pays to</div><div class="sb"><div class="kv"><div><span class="l">Account</span><div>300-A0123 &middot; DEALER A SDN BHD (A/C I)</div></div></div></div></div>
+  <span class="pin co" style="left:430px;top:300px">8</span>
+</div></div></div>
+<div class="notes"><ol>
+<li><span class="co">6</span><div><b>Header</b>The same record header: metadata under the title, prev/next, gear with Edit / Delete (deferred countdown, no confirm). <span class="ref">TargetRecord.tsx:560-620; RecordNavigation components/common/RecordNavigation; DetailActions components/common/DetailActions</span></div></li>
+<li><span class="co">7</span><div><b>Details</b>Unchanged Section/Field layout; "Target for" gains Dealer, "Who" becomes a searchable dealer select. Measure and product scope work as for an agent. <span class="ref">KIND_OPTIONS TargetRecord.tsx:71; Section / Field :330-345</span></div></li>
+<li><span class="co">8</span><div><b>Accounts tab (dealer only)</b>Counted accounts, and Pays to below. <span class="ruling">v2: Pays to is separate and may be any of the dealer's accounts, counted or not.</span> Edit: SearchableMultiSelect for counted, SearchableSelect for Pays to, both labelled with code. Sits where a team target shows its Agents tab. <span class="ref">SearchableMultiSelect components/common/SearchableMultiSelect.tsx; TargetRecord.tsx:548</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME C: commission tab, shared ============ -->
+<h2 class="frame-title">C. Commission tab, the same component for every subject (1280)</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="main">
+  <div class="tabs"><span>Details</span><span>Accounts</span><span>Periods</span><span class="on">Commission</span></div>
+  <div class="kv" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px">
+    <div><span class="l muted" style="font-size:12px">How tiers pay</span><div>Highest rate on everything</div></div>
+    <div><span class="l muted" style="font-size:12px">Threshold in</span><div>RM</div></div>
+    <div><span class="l muted" style="font-size:12px">Round to</span><div>Sen (0.01)</div></div>
+    <div><span class="l muted" style="font-size:12px">Tiers</span><div>Own tiers per period</div></div>
+  </div>
+  <span class="pin co" style="left:20px;top:58px">9</span>
+  <div class="sec"><div class="sh"><span>Q1 &middot; 1 Jan 26 to 31 Mar 26</span><span class="badge ok">Tier 2 + 2 additional</span></div><div class="sb" style="padding:0">
+    <table><colgroup><col style="width:120px"><col style="width:160px"><col style="width:150px"><col style="width:150px"><col style="width:120px"><col></colgroup>
+      <tr><th>Tier</th><th class="n">From (RM)</th><th class="n">A/C I rate</th><th class="n">A/C III rate</th><th class="n">Bonus (RM)</th><th class="n">Pays</th></tr>
+      <tr><td>1</td><td class="n">150,000.00</td><td class="n">2%</td><td class="n">2%</td><td class="n"></td><td class="n muted">no, tier 2 is reached</td></tr>
+      <tr class="now"><td>2</td><td class="n">200,000.00</td><td class="n">3%</td><td class="n">3%</td><td class="n"></td><td class="n">7,603.52</td></tr>
+      <tr class="tier-add now"><td>+ Additional</td><td class="n">220,000.00</td><td class="n">1%</td><td class="n">1%</td><td class="n"></td><td class="n">2,534.51</td></tr>
+      <tr class="tier-add now"><td>+ Additional</td><td class="n">250,000.00</td><td class="n">0.5%</td><td class="n">0.5%</td><td class="n"></td><td class="n">1,267.25</td></tr>
+      <tr><td colspan="5"><b>Q1 commission</b> <span class="muted">to A/C I</span></td><td class="n"><b>11,405.28</b></td></tr>
+    </table>
+    <div class="calc" style="padding:10px 14px">Sales 253,450.50. 3% = 7,603.515, rounded 7,603.52. +1% = 2,534.505, rounded 2,534.51. +0.5% = 1,267.2525, rounded 1,267.25. Added: 11,405.28. One combined 4.5% would give 11,405.27: never used.</div>
+  </div></div>
+  <span class="pin co" style="left:600px;top:260px">10</span>
+  <div class="sec"><div class="sh"><span>Q2 &middot; 1 Apr 26 to 30 Jun 26</span><span class="badge ok">Tier 2</span></div><div class="sb" style="padding:0">
+    <table><colgroup><col style="width:120px"><col style="width:160px"><col style="width:150px"><col style="width:150px"><col style="width:120px"><col></colgroup>
+      <tr><th>Tier</th><th class="n">From (RM)</th><th class="n">A/C I rate</th><th class="n">A/C III rate</th><th class="n">Bonus (RM)</th><th class="n">Pays</th></tr>
+      <tr><td>1</td><td class="n">200,000.00</td><td class="n">2%</td><td class="n muted">none</td><td class="n"></td><td class="n muted">no, tier 2 is reached</td></tr>
+      <tr class="now"><td>2</td><td class="n">250,000.00</td><td class="n">3%</td><td class="n muted">none</td><td class="n"></td><td class="n">5,400.00</td></tr>
+    </table>
+    <div class="calc" style="padding:10px 14px">Threshold counts A/C I + A/C III: 180,000.00 + 70,000.00 = 250,000.00. Only A/C I has a rate on this tier: 3% x 180,000.00 = 5,400.00, paid to A/C I.</div>
+  </div></div>
+  <span class="pin co" style="left:600px;top:470px">11</span>
+</div></div></div>
+<div class="notes"><ol>
+<li><span class="co">9</span><div><b>Four settings, every subject</b><span class="ruling">v2: one engine.</span> How tiers pay (existing select; dealers and the import use "Highest rate on everything", Q2). Threshold in: % of target (today), RM, Points. Round to: Sen (default) or Ringgit (Q1), set per target and read from an import column (A2 (a)). Tiers: Same every period (today) or Own tiers per period. An agent target gets exactly the same four. <span class="ref">CommissionTiers TargetRecord.tsx:1406, METHOD_OPTIONS; SearchableSelect; Switch components/ui/switch</span></div></li>
+<li><span class="co">10</span><div><b>+ Additional rows stack</b><span class="ruling">v2 (Q5): every additional row whose threshold is met pays; each line is rounded on its own and then added.</span> Add tier / Add additional buttons under the table. <span class="ref">same tier table, row variant; Button components/ui/button</span></div></li>
+<li><span class="co">11</span><div><b>Rate per account (dealer)</b>One rate column per counted account; an empty cell = that account earns nothing on that tier (ruling 2). An agent target has one Rate column, as today. <span class="ref">tier table TargetRecord.tsx:1406-1572</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME C2: points + agent ============ -->
+<h2 class="frame-title">C2. Thresholds in points (Mocha) and an agent target on the same tab (640 each)</h2>
+<div class="layout">
+<div class="frame w640"><div class="main">
+  <div class="ph"><div><h3>2026 quarterly &middot; Dealer M Ceramic</h3><div class="meta-strip"><span>TGT-000301</span><span>Dealer</span><span>Threshold in points</span></div></div></div>
+  <div class="tabs"><span>Details</span><span>Accounts</span><span class="on">Periods</span><span>Commission</span></div>
+  <table><colgroup><col style="width:70px"><col style="width:150px"><col style="width:110px"><col style="width:120px"><col></colgroup>
+  <tr><th>Period</th><th class="n">Threshold</th><th class="n">Ratio</th><th class="n">Achieved</th><th class="n">Commission</th></tr>
+  <tr><td>Q3</td><td class="n">120,000.00<span class="sub2">100,000 pts</span></td><td class="n">1.20</td><td class="n">130,000.00</td><td class="n">5,200.00</td></tr>
+  <tr><td>Q4</td><td class="n">130,000.00<span class="sub2">100,000 pts</span></td><td class="n">1.30</td><td class="n">125,000.00</td><td class="n">0.00</td></tr>
+  </table>
+  <span class="pin co" style="left:300px;top:130px">12</span>
+</div></div>
+<div class="frame w640"><div class="main">
+  <div class="ph"><div><h3>2026 quarterly &middot; Agent A01</h3><div class="meta-strip"><span>TGT-000120</span><span>Agent</span></div></div></div>
+  <div class="tabs"><span>Details</span><span>Periods</span><span class="on">Commission</span></div>
+  <div class="calc" style="margin-bottom:8px">Highest rate on everything &middot; Threshold in RM &middot; Round to sen &middot; Own tiers per period</div>
+  <table><colgroup><col style="width:90px"><col style="width:150px"><col style="width:110px"><col></colgroup>
+  <tr><th>Q1 tier</th><th class="n">From (RM)</th><th class="n">Rate</th><th class="n">Pays</th></tr>
+  <tr><td>1</td><td class="n">500,000.00</td><td class="n">1%</td><td class="n muted">no, tier 2 is reached</td></tr>
+  <tr class="now"><td>2</td><td class="n">600,000.00</td><td class="n">1.5%</td><td class="n">9,180.00</td></tr>
+  </table>
+  <span class="pin co" style="left:300px;top:150px">13</span>
+</div></div>
+<div class="notes"><ol>
+<li><span class="co">12</span><div><b>Points thresholds</b><span class="ruling">v2 (Q4): thresholds in points, turned into RM with the ratio in force on the period's last day.</span> Same 100,000 pts, different RM threshold after the ratio changed on 1 Oct. Commission is in RM (A1 (a)). <span class="ref">PeriodsTable TargetRecord.tsx:1014, Threshold and Ratio columns on a points target</span></div></li>
+<li><span class="co">13</span><div><b>Agent, same flexibility</b><span class="ruling">v2: same component, same logic.</span> Fixed RM tiers per quarter on an agent target; no Accounts tab, no Pays to. <span class="ref">CommissionTiers TargetRecord.tsx:1406</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME D: import ============ -->
+<h2 class="frame-title">D. Import from Excel, after Test (dry run), 1280 modal</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="modal">
+  <h4>Import dealer targets</h4>
+  <div class="two"><div class="f"><label>File</label><div class="inp">Sorento dealer targets 2026.xlsx</div></div><div class="f"><label>Company</label><div class="inp ro">Sorento (the company you are in)</div></div></div>
+  <div style="margin:4px 0 10px"><span class="badge ok">96 rows ready</span> <span class="badge warn">9 rows need a look</span> <span class="badge err">4 rows skipped</span></div>
+  <table><colgroup><col style="width:60px"><col style="width:120px"><col style="width:210px"><col style="width:220px"><col style="width:190px"><col></colgroup>
+  <tr><th>Row</th><th>Code</th><th>Name in Excel</th><th>Customer in CRM</th><th>Scheme</th><th>Result</th></tr>
+  <tr><td>12</td><td>300-A0123</td><td>Dealer A S/B</td><td>DEALER A SDN BHD</td><td>Q1-Q4, 2 tiers, pays to A/C I</td><td><span class="badge warn">name differs, matched by code</span></td></tr>
+  <tr><td>13</td><td>300-A0124</td><td>(merged with row 12)</td><td>DEALER A SDN BHD (III)</td><td>shares row 12 threshold</td><td><span class="badge ok">ready</span></td></tr>
+  <tr><td>40</td><td>300-B0077</td><td>Dealer B Trading</td><td>DEALER B TRADING</td><td>Q1 + 2 additional</td><td><span class="badge ok">ready</span></td></tr>
+  <tr><td>58</td><td>300-Z9999</td><td>Dealer Z</td><td class="muted">no customer with this code</td><td>yearly</td><td><span class="badge err">skipped</span></td></tr>
+  <tr><td>71</td><td>300-C0011</td><td>Dealer C Enterprise</td><td>DEALER C ENTERPRISE</td><td>Dec 25 to Nov 26</td><td><span class="badge pri">updates TGT-000240</span></td></tr>
+  </table>
+  <div class="foot"><span class="btn">Cancel</span><span class="btn">Test again</span><span class="btn pri">Import 105 rows</span></div>
+  <span class="pin co" style="left:560px;top:96px">14</span>
+  <span class="pin co" style="left:1180px;top:160px">15</span>
+</div></div></div>
+<div class="notes"><ol>
+<li><span class="co">14</span><div><b>Test first, always</b>The upload runs a dry run and writes nothing; Import is enabled only after a Test of the same file. Counts come from the backend, not a list length. <span class="ref">ImportFeedbackSections components/common/ImportFeedbackSections.tsx; CustomerImportDialog order-management/customers/components/CustomerImportDialog.tsx</span></div></li>
+<li><span class="co">15</span><div><b>Keyed on code</b>A row matches a customer by code only; a different name is a warning, never a skip. Merged threshold cells become one target over those accounts. Re-importing the same dealer and dates updates that target. Imported targets use the highest tier and the file's threshold unit. <span class="ref">backend: dealer_target_import_service, Test and Import endpoints like the customer importer</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME E: point ratio ============ -->
+<h2 class="frame-title">E. Point ratio, modal at 375</h2>
+<div class="layout">
+<div class="frame w375"><div class="modal">
+  <h4>Point ratio</h4>
+  <div class="two"><div class="f"><label>RM per point</label><div class="inp">1.30</div></div><div class="f"><label>From</label><div class="inp">1 Oct 26</div></div></div>
+  <div class="foot"><span class="btn pri">Add</span></div>
+  <table style="margin-top:10px"><tr><th>From</th><th class="n">RM per point</th></tr>
+  <tr><td>1 Oct 26</td><td class="n">1.30</td></tr><tr><td>1 Jan 26</td><td class="n">1.20</td></tr></table>
+  <span class="pin co" style="left:330px;top:18px">16</span>
+</div></div>
+<div class="notes"><ol>
+<li><span class="co">16</span><div><b>Dated history, per company</b>Each change is a new dated row. A period uses the ratio in force on its last day, so a closed period never changes (ruling 5, Q4). Gated by the targets edit permission. <span class="ref">Dialog components/ui/dialog.tsx; Input; DatePicker components/ui/date-picker.tsx</span></div></li>
+</ol></div>
+</div>
+
+</div>
+</body>
+</html>

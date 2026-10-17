@@ -69,7 +69,13 @@ vi.mock('@/hooks/usePermissions', () => ({
   useHasPermission: (slug: string) => perms.granted.has(slug),
 }));
 
-const hooks = vi.hoisted(() => ({ useSalesTargets: vi.fn() }));
+const hooks = vi.hoisted(() => ({
+  useSalesTargets: vi.fn(),
+  usePointRatios: () => ({ data: { rows: [] }, isLoading: false }),
+  useSavePointRatio: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useImportDealerTargets: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDownloadDealerTemplate: () => ({ mutate: vi.fn(), isPending: false }),
+}));
 vi.mock('../hooks/useSalesTargets', () => hooks);
 
 import SalesTargetsView from './SalesTargetsView';
@@ -111,7 +117,7 @@ describe('SalesTargetsView', () => {
   it('opens on the Teams tab, before Agents (S1-15)', () => {
     render(<SalesTargetsView />);
     const tabs = screen.getAllByRole('tab').map((t) => t.textContent?.trim());
-    expect(tabs).toEqual(['Teams', 'Agents']);
+    expect(tabs).toEqual(['Teams', 'Agents', 'Dealers']);
     expect(screen.getByRole('tab', { name: 'Teams' }).getAttribute('aria-selected')).toBe('true');
   });
 
@@ -210,4 +216,29 @@ describe('SalesTargetsView', () => {
     render(<SalesTargetsView />);
     expect(screen.getByText('No team targets yet')).toBeTruthy();
   });
+
+  it('Dealers lists dealer targets with Counts, Pays to and the current commission (lane SALES-TARGET-DEALER)', () => {
+    perms.granted = new Set(['sales.targets.view', 'sales.targets.add', 'sales.targets.edit']);
+    withRows([
+      row({
+        target_id: 'td1', target_no: 'TGT-000214', name: 'Dealer A 2026 quarterly', subject_kind: 'dealer',
+        sales_team_id: null, subject_label: 'Dealer A Sdn Bhd', team_id: null, team_name: null,
+        product_scope: 'all', scope_labels: [], account_labels: ['A/C I', 'A/C III'],
+        account_codes: ['300-A0123', '300-A0124'], payout_label: 'A/C I', commission_earned: 5400,
+      }),
+    ]);
+    render(<SalesTargetsView />);
+    openTab('Dealers');
+    expect(hooks.useSalesTargets).toHaveBeenCalledWith({ all: true, subject: 'dealer' });
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent?.trim()).filter(Boolean);
+    expect(headers).toEqual([
+      'Number', 'Name', 'Dealer', 'Counts', 'Pays to', 'Measures', 'Dates', 'Target',
+      'Achieved (provisional, incl. tax)', '%', 'Commission',
+    ]);
+    expect(screen.getByText('Dealer A Sdn Bhd')).toBeTruthy();
+    expect(screen.getByText('5,400')).toBeTruthy();
+    // Import and Point ratio are list actions on the Dealers tab only.
+    expect(screen.getAllByText(/Import from Excel|Point ratio|Actions/).length).toBeGreaterThan(0);
+  });
 });
+
