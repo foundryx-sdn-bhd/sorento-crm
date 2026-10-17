@@ -1,6 +1,6 @@
 # PLAN: EVAL-BENCH CP0, the bench check against the owner's targets (16 Oct)
 
-Status: Review, CP0 baseline done on 3 runs (17 Oct, spend $11.96 of $12); review page with crew, then the owner. Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
+Status: Review, both owner CP0 review rounds applied (grader rounds 28 to 29e, 17 Oct; spend $11.96 of $12, regrade $0); CP0 closes when #1745 merges. Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
 gold and the review page live under `crew/state/eval/` (crew-only).
 
 ## The owner's bar (crew relay, 16 Oct)
@@ -256,4 +256,68 @@ Found by the run-1 sanity check and CHAT-STATE's TRAIN root cause; every fix red
   Visibility mode is availability; product pickers (replied asking product_pick with no answer sections) fail unless the
   key marks the code ambiguous, except a spec answer that lists matching products; the dealer/end-user price menu is
   graded unknown. Final 3 runs: follow-ups 72/74/71, code 74, spec 54, attachment 60, access 92, leaks 2 replies/run.
+
+## Owner CP0 rulings (17 Oct, review page v4; round 28 on #1745)
+
+The owner's marks, verbatim (a customer name is replaced by `[customer]`; the owner's card 36 / 37 / 38 are owner
+probes 1 / 2 / 3 on the page). With them the bench is the owner-confirmed yardstick for the chatbot.
+
+1. Attachment card (sent files ✗, files of the right type ✗): "This is fine". Agrees with the bench.
+2. Topic-switch card (did not ask which variant ✗): "This is fine". Agrees.
+3. Weight card (bot failed: no value for the attribute asked): "Yeah we need to be more human to say there is no weight
+   for this product". Agrees it fails; a human "no weight on record for <product>" reply passes, silence fails.
+4. `[customer]` DO card (bot failed: customer outside the asker's linked customers): "This is fine if the order customer
+   is under the contact". The rule stands: pass only when that customer is linked to the asker (it is not here).
+5. Probe 1 (bot passed 2 of 3: the reply shown had no product): "This is not fine, we shouldbt have this reply, we
+   should show the list of products within a cap then they can reply to see more". A set reply that shows no product
+   fails; expected is a capped list with a see-more cue, the bot's "(N, showing 1 to K)" (as SET-STOCK-RENDER).
+6. Probe 2 (could not judge: the bot asked which price tier first): "This is fine". Agrees.
+7. Probe 3 (could not judge: price tier asked first): "This is fine if the product found is matched by spec". Crew
+   ruling (a): on a spec item the tier ask stays could-not-judge only when products were found and all are in the
+   gold spec set; asked before finding any product, or with an off-spec product, it fails.
+
+## Owner CP0 rulings, round 2 (17 Oct, page v5), verbatim, each tagged with the design step that fixes it
+
+1. c04 (span certificate, none matched): "Actually we got type in certification, feel like we can do better, do we need
+   to pass certification type as index like spec or attachment type". Step 2 (certification types join the closed lists).
+2. c05 (refine "I mean this got chrome colour？", the same stock line again): "We should have answered to the
+   question". Step 2 (spec on a family variant of a held exact code; CHAT-STATE's reading).
+3. c06 (menu "WC (product) / WC (attachment type)"): "Why we cant identify WC ya". Step 2.
+4. c07 ("4 in 1 bathroom furniture set" not found): "This should be spec, why we cant find". Step 2.
+5. c13 (earlier turn: "Have video about this" got the menu "this (customer) / this (form)"): "This is quite sus, why
+   got this this lol". Step 1 (a reference to the held subject keeps it; CHAT-STATE round 8).
+6. c19 ("Which kind of file do you need?" for a span certificate ask): "Again our certification got type, should we
+   pass that in". Step 2.
+7. c21 ("How many units of <code>?" failed as needless): "This is fine, dont be too constrained by this". Grader.
+8. c22 ("Dealer" answered with a how-many plus the dealer promo file): "This is fine but the previous msg should have
+   stamping right". The earlier bot turn did list "1. dealer"; the card folded it, so the page now shows it open.
+9. c27 ("any double flexible kitchan tap in chrome color for mocha or sorento lite？"): "We should have understood this
+   better". Step 2. Crew bench note on the same card: the catalogue has no double-flexible chrome kitchen tap for Mocha
+   or a "Sorento Lite" line (double flexible exists only by name on two Sorento taps, finish not recorded); the gold
+   now says none on record (crew file `items/none_on_record_verified.jsonl`), and the bot's reply there, an
+   unknown-word dead end, still fails.
+
+## Grader changes for both rounds (`targets.py`, rounds 28 to 29e on #1745, red-first, kill-proof per round, opus review per round)
+
+- Attribute asks (`_attribute_answered`): a number after the attribute word (digits inside a product code do not
+  count), or an honest none about that attribute when the record's item has no such field ("Not defined" counts as
+  none); a none statement takes the none branch only.
+- Set replies (`_set_list_check`, every slice): the bot's header "Here's what you want: ... (N)" or "(N, showing A to
+  B)" (thousands commas, the moved-count note, a prefix line above it) needs listed products; a cut list needs
+  "showing A to B" or a see-more cue; the last page "That is all N." has no rows by design and is not checked.
+- Price-tier asks on spec items (`_tier_spec_check`): could-not-judge only when the products found are all in the
+  gold spec set; found nothing or off-spec fails; a leak fails any item.
+- How-many (`_quantity_check`, owner round 2): fails only when it takes the place of a files, promotion or spec-info
+  answer (gold fact or label, attachment slice, spec slice without stock words, spec / size / colour refines); stock
+  asks and asks of unknown type may ask in any Stock Visibility mode. The bot's own quantity slots, menu options and
+  list numbers are not an answer; answer blocks, code-led value rows, a number outside product codes or a file sent
+  are. Chinese 多少 counts (not 多少钱).
+- Refine `applied`: a filter already held before the turn must reach a lookup's arguments.
+- Spec items whose gold says none on record are graded on an honest none ("But none matched.", "But no <X> matched
+  these.", the value-miss line "Couldn't find: <value> (<label>)."), never on the unknown-word line.
+
+Regrade ($0, 3 runs, held-out): follow-ups 72.6 / 74.8 / 71.4 (reply to my question 50 -> 62.5), code lookups
+75.0 / 74.3 / 73.6, spec 54.1 / 55.3 / 54.1 (two how-many replies that list products now pass; two items that asked the
+price tier before finding any product, five run results, now fail), attachment 61.5 / 53.8 / 65.4, customer access
+97.5 / 95.0 / 92.5 (was 91.7 mean); leaks 2 replies per run (#1648); made-up 0 confirmed.
 
