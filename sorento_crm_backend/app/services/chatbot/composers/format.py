@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.services.chatbot import jsc
@@ -112,3 +113,45 @@ def missing_line(what: str, product: str, *, fill: Any = None) -> str:
     if fill is not None:
         return fill(key, what=what, product=product)
     return key.format(what=what, product=product)
+
+
+def money(amount: Any, currency: str = "MYR") -> str:
+    """`MYR 1,234.00`: the one money shape (R13)."""
+    return f"{currency} {Decimal(str(amount)):,.2f}"
+
+
+#: The keyed money fields (`_line_money`) and the unkeyed ones (`_money`) the presenter prints
+#: as `CUR 1234.00`; `money_field` is the inverse of that one printer.
+MONEY_KEYS = frozenset({"unit_cost", "discount_per_unit", "unit_cost_after_discount"})
+MONEY_LABELS = frozenset({"List Price", "Selling Price"})
+_MONEY_VALUE_RE = re.compile(r"([A-Z]{2,3}) (-?\d+\.\d{2})")
+
+
+def money_field(f: Any) -> Any:
+    """The field's value, with a presenter money value reprinted `MYR 1,234.00`; anything else as is."""
+    value = f.get("value") if isinstance(f, dict) else None
+    if not (isinstance(f, dict) and (f.get("key") in MONEY_KEYS or f.get("label") in MONEY_LABELS)):
+        return value
+    match = _MONEY_VALUE_RE.fullmatch(value) if isinstance(value, str) else None
+    if not match:
+        return value
+    try:
+        return money(match.group(2), match.group(1))
+    except InvalidOperation:
+        return value
+
+
+def present(v: Any) -> bool:
+    """False for the empty values and the presenter's `Not defined` marker."""
+    if v is None:
+        return False
+    text = str(v).strip()
+    return bool(text) and text != "Not defined"
+
+
+_TITLE_WORD_RE = re.compile(r"[A-Z][a-z]+")
+
+
+def noun(label: str) -> str:
+    """A label as a noun in a sentence: each Title-case word lower-cased, other words kept."""
+    return " ".join(w.lower() if _TITLE_WORD_RE.fullmatch(w) else w for w in label.split(" "))

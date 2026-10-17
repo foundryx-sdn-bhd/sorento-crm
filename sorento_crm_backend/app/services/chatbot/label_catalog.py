@@ -361,6 +361,11 @@ LABELS: dict[str, dict[str, str]] = {
     "But no product matched these.": {"ms": 'Tiada produk yang sepadan.', "zh": '没有匹配的产品。'},
     "But no SPO line matched these.": {"ms": 'Tiada baris SPO yang sepadan.', "zh": '没有匹配的 SPO 行。'},
     "No {what} on record for {product}.": {"ms": 'Tiada {what} dalam rekod untuk {product}.', "zh": '{product} 没有{what}记录。'},
+    # CHAT-COMPOSER S6: an asked spec or price with no value, one line per product. `{noun}` is a
+    # lower-case spec word, so it never takes the official-type wording of the key above.
+    "No {noun} on record for {product}.": {"ms": 'Tiada {noun} direkodkan untuk {product}.', "zh": '没有 {product} 的{noun}记录。'},
+    "No list price on record for {product}.": {"ms": 'Tiada harga senarai direkodkan untuk {product}.', "zh": '没有 {product} 的标价记录。'},
+    "No dimensions on record for {product}.": {"ms": 'Tiada dimensi direkodkan untuk {product}.', "zh": '没有 {product} 的尺寸记录。'},
     'I have {names}.': {"ms": 'Saya ada {names}.', "zh": '我已记下 {names}。'},
     'What would you like me to know?': {"ms": 'Apa yang anda mahu saya tahu?', "zh": '您想让我了解什么？'},
     "Sorry, we don't support direct goods receive & SPO at the moment. You may ask about incoming stock for a specific product or container": {"ms": 'Maaf, kami belum menyokong penerimaan barang terus & SPO buat masa ini. Anda boleh bertanya tentang stok masuk bagi produk atau kontena tertentu', "zh": '抱歉，我们目前暂不支持直接收货和 SPO 查询。您可以询问特定产品或货柜的到货库存'},
@@ -804,7 +809,10 @@ _NUMERIC_TOKENS = frozenset({"available"})
 
 
 def _token_pattern(name: str) -> str:
-    body = r"\d[\d,]*" if name in _NUMERIC_TOKENS else f"[^\\n]{{1,{_TOKEN_MAX}}}?"
+    if name == "noun":
+        body = f"[a-z][^\\n]{{0,{_TOKEN_MAX - 1}}}?"  # a spec word starts lower-case
+    else:
+        body = r"\d[\d,]*" if name in _NUMERIC_TOKENS else f"[^\\n]{{1,{_TOKEN_MAX}}}?"
     return f"(?P<{name}>{body})"
 
 
@@ -830,6 +838,7 @@ def _inline_pattern(english: str, target: str) -> tuple[re.Pattern[str], str, in
 #: must never rewrite (a kind with no noun translation is said in English, not garbled into
 #: `{what}` = "mirror is").
 _GENERIC_MISSING = "No {what} on record for {product}."
+_GENERIC_NOUN_MISSING = "No {noun} on record for {product}."
 
 
 def _find_none_patterns() -> list[re.Pattern[str]]:
@@ -851,6 +860,7 @@ class Localizer:
         # fixed characters, token names). Longest fixed text wins where two start together.
         self._inline: list[tuple[re.Pattern[str], str, int, tuple[str, ...]]] = []
         self._find_none = _find_none_patterns() if _GENERIC_MISSING in table else []
+        self._generic_targets = {table[k] for k in (_GENERIC_MISSING, _GENERIC_NOUN_MISSING) if k in table}
         for english, target in table.items():
             if english in INLINE and english not in DIRECT_ONLY:
                 self._inline.append(_inline_pattern(english, target))
@@ -900,7 +910,7 @@ class Localizer:
             if is_inline and not inline:
                 continue  # INLINE sentences are replaced by `reply()` at their own boundaries
             m = regex.fullmatch(s)
-            if m and target == self.table.get(_GENERIC_MISSING) and self._is_find_none(s):
+            if m and target in self._generic_targets and self._is_find_none(s):
                 continue
             if m and (best is None or fixed > best[0]):
                 best = (fixed, m.groupdict(), target)
@@ -943,7 +953,7 @@ class Localizer:
         for regex, target, fixed, names in self._inline:
             for m in regex.finditer(text):
                 values = m.groupdict()
-                if names == ("what", "product") and self._is_find_none(m.group(0)):
+                if target in self._generic_targets and self._is_find_none(m.group(0)):
                     continue
                 found.append((m.start(), m.end(), fixed, _TOKEN.sub(lambda t: values.get(t.group(1), t.group(0)), target)))
         found.sort(key=lambda f: (f[0], -f[2]))

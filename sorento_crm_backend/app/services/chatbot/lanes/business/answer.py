@@ -36,7 +36,7 @@ from app.services.chatbot import jsc, label_catalog, quick_reply_guard
 from app.services.chatbot.lanes.business.fetch import DATE_PARAMS, space_id_or_default
 from app.services.ledger_family import customer_group_of, customer_header_words
 from app.services.product_spec_registry import SPEC_ACRONYMS
-from app.services.chatbot.tail.scope_block import live_brand_words
+from app.services.chatbot.tail.scope_block import live_brand_words, search_scope_header
 from app.services.chatbot.turn import refer
 from app.services.chatbot.turn.state import token_key
 from app.services.chatbot.turn_runtime import SPEC_TIER
@@ -3452,6 +3452,9 @@ def not_found_error_message(
             )
 
         disp_by_uuid: dict[Any, Any] = {}
+        # CHAT-COMPOSER H1: an order's own customer, said as its group (R3), for the printed
+        # bullet only; `disp_by_uuid` stays the ledger label because it is also a grouping key.
+        shown_by_uuid: dict[Any, Any] = {}
         for match in all_matches:
             if not jsc.truthy(match):
                 continue
@@ -3465,6 +3468,13 @@ def not_found_error_message(
                     name = f"{jsc.js_string(code)} ({jsc.js_string(customer)})" if jsc.truthy(customer) else code
                 else:
                     name = customer if jsc.truthy(customer) else ""
+                if jsc.truthy(customer) and composers.enabled():
+                    group_words = customer_header_words([(jsc.js_string(customer), customer_group_of(jsc.js_string(customer)))])
+                    if group_words:
+                        shown_by_uuid.setdefault(
+                            jsc.get(match, "uuid"),
+                            f"{jsc.js_string(code)} ({group_words})" if jsc.truthy(code) else group_words,
+                        )
             elif jsc.get(match, "entity_type") in _CODE_FIRST_TYPES:
                 # CODE FIRST. The code is what the customer typed, what is on the carton and
                 # what they will type again; the name is a description for somebody else.
@@ -3569,7 +3579,7 @@ def not_found_error_message(
                 continue
             entity_type = jsc.get(c, "entity_type")
             entity_type = entity_type if jsc.truthy(entity_type) else "item"
-            base = disp_by_uuid.get(jsc.get(c, "uuid"))
+            base = shown_by_uuid.get(jsc.get(c, "uuid")) or disp_by_uuid.get(jsc.get(c, "uuid"))
             if not jsc.truthy(base):
                 # Hand pass 12, Group F: `disp_by_uuid` is built from the RESOLVER's own
                 # matches (`r["resolutions"]`), empty on a turn that resolved nothing
@@ -3768,6 +3778,11 @@ def not_found_error_message(
             rendered = ", ".join(
                 ", ".join(with_quantity(l) for l in by_code[b]) for b in named_codes
             )
+            if entity_type == "customer" and composers.enabled():
+                # CHAT-COMPOSER (R3): a customer is named by its group, with no "(+N more)".
+                group_words = customer_header_words([(b, customer_group_of(b)) for b in order])
+                if group_words:
+                    rendered, extra = group_words, ""
             # ATTACHMENT-MULTI R5: "• attachment type:", never the raw `attachment_type` key.
             found_lines.append(f"• {_prettify_type(entity_type)}: {rendered}{extra}")
         found_summary = "\n".join(found_lines)
@@ -3899,7 +3914,14 @@ def not_found_error_message(
                 jsc.js_string(domain_hint if jsc.truthy(domain_hint) else "").lower()
                 in _DATE_SCOPE_DOMAINS
             )
-            if is_order_scope:
+            from app.services.chatbot import composers
+
+            if is_order_scope and composers.enabled():
+                # CHAT-COMPOSER F1: the miss header is the hit path's header (one writer).
+                scope_header = search_scope_header(domain=domain_hint, qf=q, gate_json=g, resolver_json=r)
+                if scope_header:
+                    parts.append(scope_header)
+            elif is_order_scope:
                 start = date_start if jsc.truthy(date_start) else None
                 end = date_end if jsc.truthy(date_end) else None
                 head: list[str] = []
@@ -4420,6 +4442,11 @@ def not_found_error_message(
                     for order_match in order_matches:
                         display = jsc.get(order_match, "display") or {}
                         customer = jsc.get(display, "customer_name")
+                        if jsc.truthy(customer) and composers.enabled():
+                            # CHAT-COMPOSER H2: the order's customer as its group (R3).
+                            customer = customer_header_words(
+                                [(jsc.js_string(customer), customer_group_of(jsc.js_string(customer)))]
+                            ) or customer
                         label = jsc.js_string(jsc.get(order_match, "canonical_code")) + (
                             f" ({jsc.js_string(customer)})" if jsc.truthy(customer) else ""
                         )
