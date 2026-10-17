@@ -149,3 +149,9 @@ def test_red_a_did_you_mean_on_a_typo_is_no_answer_even_when_the_lookup_ran():
     res = grade_turn(r, item("code_lookup", **GOLD_CL))
     assert res["checks"]["no_picker"] is False, res["checks"]
     assert res["passed"] is False
+
+
+def test_guard_a_gold_head_without_a_digit_has_no_family_even_when_the_option_heads_match():
+    res = _full("SRT-A100", _pick("SRT-B200", "SRT-C300"))
+    assert res["checks"]["no_picker"] is False, res["checks"]
+    assert res["passed"] is False
