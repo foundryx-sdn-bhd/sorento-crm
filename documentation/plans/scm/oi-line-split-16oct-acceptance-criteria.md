@@ -24,6 +24,8 @@ make sure the sort handler is at the leftmost, go"), Q1 drag yes, Q2-Q4 (a), Q5 
   change also shows "AutoCount now <qty> · <date>" under its delivery date; a line AutoCount added
   (base 0) shows QTY 0 and "Added in AutoCount: <qty> · <date>" and cannot be split or dragged. A line
   other lines' splits sit on shows "+N from line M" for each.
+  A line whose saved splits no longer act (`split_state` stale) shows an "AutoCount changed" pill
+  under its delivery date; an applied line shows none (as built).
 - AC-A4 A line that is not split reads REMAIN in CHANGE QUANTITY and CHANGE DATE, its remark editable.
   Clicking a REMAIN cell, or typing a digit (either cell) or "/" (date cell) on it, turns the line
   into one split row (base qty, base date, this line) with focus in that cell (the typed key in it).
