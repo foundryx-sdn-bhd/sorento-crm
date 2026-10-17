@@ -449,7 +449,8 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                     # A member of two typed sets is one entity (fetched once) listed under both.
                     held = by_uuid.get(member_uuid)
                     codes = [*(held.get("set_codes") or [])] if held else []
-                    codes.append(jsc.get(m, "canonical_code"))
+                    if jsc.get(m, "canonical_code") not in codes:
+                        codes.append(jsc.get(m, "canonical_code"))
                     by_uuid[member_uuid] = {
                         "uuid": member_uuid,
                         "entity_type": "product",
