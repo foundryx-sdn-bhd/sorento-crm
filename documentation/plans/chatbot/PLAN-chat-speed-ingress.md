@@ -30,8 +30,16 @@ nothing (D15). Measured saving: P+Q, p50 2.30 s / p90 3.53 s (dev copy, 11-15 Oc
      a turn with no actions. Every POST writes an outbound `integration_log` row. A failed POST
      also appends a trace record, so the turn screen shows it. No automatic retry (R4).
 4. **Doorway**: `app/tasks/chat_turns.py` gains `enqueue_direct_turn` (called by the webhook,
-   never raises) and `run_direct_turn_job` (the RQ job on `chat`). The webhook stays outside
-   the chatbot package (import boundary).
+   never raises) and `run_direct_turn_job`. The webhook stays outside the chatbot package
+   (import boundary). **The turn runs on a bounded thread pool inside the API process**
+   (`DIRECT_TURN_THREADS = 8` per process), not on RQ. Measured on a dev stack, 18 Oct:
+   - an RQ work-horse is forked per job, and spent a median 0.86 s from job start to the turn
+     row (cold start), against a warm thread's ~0.01 s, out of a 2.30 s saving;
+   - `worker_fast` is one process shared with `media`, `respond_io` and `notifications`
+     (code review S1).
+
+   `/chat/turn` already runs on an API thread per n8n call, so this is today's model. When
+   the pool is full, the message is left to the n8n copy ("busy").
 5. **Engine, two lines**: while direct ingress covers a contact, every live turn of it takes
    the per-contact ticket, the n8n copy included (prod runs with S7 ordering off, so nothing
    else would serialise a direct turn against a later message's n8n copy).
@@ -44,9 +52,10 @@ nothing (D15). Measured saving: P+Q, p50 2.30 s / p90 3.53 s (dev copy, 11-15 Oc
 The `sorento-main` export (6 Sep, may lag prod) stops a message for four reasons. This path
 handles each one:
 
-1. **Trigger: text and attachments only.** Here, text only. Media stays on the n8n path: its
-   extraction job drains on the same single `worker_fast` process the turn job would be
-   holding, so the turn would wait on a job that cannot start (`skip_reason` "not_text").
+1. **Trigger: text and attachments only.** Here, text only (`skip_reason` "not_text"). Media
+   stays on the n8n path for now: its intake waits up to the media budget on an extraction
+   job, which would hold one of the few direct-turn threads that long. Trigger to add it:
+   direct text live for a week, with the pool never full.
 2. **Failover carve** (`failover_watermark`, an n8n table the CRM cannot read): not
    mirrored, because it does not need to be. A carved contact's messages reach `/chat/turn`
    through the poller. Whichever copy lands first runs, and the other is a D15 duplicate that
@@ -78,6 +87,18 @@ Residual, accepted by name (no code):
 - **L2, DNS rebinding on the sender URL.** This is the residual already accepted for the
   retry ingress, now reached on inbound traffic rather than on an operator click. The URL is
   admin-set and re-checked at use.
+
+## Code review (18 Oct): fixed
+
+- **B1:** the engine's real `_read_switches` builder is tested.
+- **B2:** the rate limit is one atomic INCR+EXPIRE script, and its TTL is tested.
+- **S1:** the turn runs on the API thread pool (above).
+- **S2:** no sender URL leaves the message to n8n ("no_sender").
+- **S3:** the delegate refusal is tested for direct turns, and its error names direct ingress.
+- **S4:** the FE clear-sender-key path is tested.
+- **S5:** the 120 s window is re-checked when the turn starts.
+- **Pinned contract:** `Envelope.ingress` gains `respond_webhook`, recorded in
+  `external_contract_main_f14802a7c.json` (additive; no n8n caller sends it).
 
 ## Rollback
 

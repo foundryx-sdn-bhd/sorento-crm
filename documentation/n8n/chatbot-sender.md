@@ -58,5 +58,6 @@ the owner's step.
 
 - One respond.io contact GET per direct text (the takeover flag is not in the webhook
   body), about what `findcontact` already costs inside the producer.
-- Media, human-held contacts, stale or duplicate messages, and bursts over 30 per second stay
-  on the n8n path. Nothing in `sorento-main` changes.
+- Media, human-held contacts, stale or duplicate messages, bursts over 30 per second, and
+  anything past the API's 8 direct turns in flight per process stay on the n8n path.
+  Nothing in `sorento-main` changes.

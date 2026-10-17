@@ -546,3 +546,52 @@ def test_on_default_workspace_reads_the_contacts_own_workspace():
         assert direct_ingress._on_default_workspace(db, "ZZT-c-none") is True
         assert direct_ingress._on_default_workspace(db, "ZZT-c-unknown") is True
         assert direct_ingress._on_default_workspace(db, "ZZT-c-other") is False
+
+
+# --------------------------------------------------------------------------- #
+# Review B1 / S3 / S5
+# --------------------------------------------------------------------------- #
+
+
+def test_read_switches_carries_the_direct_ingress_fields():
+    """B1: the engine's per-turn snapshot is a manual builder; the ordering rule reads it."""
+    from app.models.user import SystemSetting
+    from tests._pg_fixture import blank_session
+
+    with blank_session() as db:
+        db.add(SystemSetting(
+            id=str(uuid.uuid4()), name="ZZT Co",
+            chatbot_direct_ingress_mode="contacts", chatbot_direct_ingress_contacts="ZZT-a\nZZT-b",
+        ))
+        db.commit()
+        switches = engine_mod._read_switches(db)
+        assert switches.chatbot_direct_ingress_mode == "contacts"
+        assert switches.chatbot_direct_ingress_contacts == "ZZT-a\nZZT-b"
+        assert direct_ingress.covers(switches, "ZZT-b") is True
+        assert direct_ingress.covers(switches, "ZZT-c") is False
+
+
+def test_a_delegating_direct_turn_is_closed_not_left_delegated(
+    contacts, stub_engine_seams, sender, monkeypatch
+):
+    """S3: no n8n spine waits on a direct turn, so a lane that would delegate fails it with
+    an error that names direct ingress (not S7, which is off here)."""
+    monkeypatch.setattr(engine_mod, "_s7_mode", lambda *args, **kwargs: False)
+    monkeypatch.setattr(engine_mod, "CRM_COMPLETED_BRANCH_KINDS", frozenset())
+    contact = contacts("delegate")
+    outcome = chat_turns.run_direct_turn_job(_payload(contact, _message_id()))
+    turn = _turns(contact)[0]
+    assert turn.status == "failed", (turn.status, turn.error)
+    assert "direct ingress" in (turn.error or "").lower()
+    assert "turn s7 mode off" not in (turn.error or "").lower()
+    assert outcome["duplicate"] is False
+
+
+def test_a_job_that_runs_late_is_dropped(contacts, stub_engine_seams, sender, lookup):
+    """S5: the 120 s window is re-checked when the job starts, so a turn that waited behind a
+    backlog never answers a message the n8n copy has long since handled."""
+    contact = contacts("late")
+    outcome = chat_turns.run_direct_turn_job(_payload(contact, _message_id(age_seconds=121)))
+    assert outcome["skipped"] == "stale"
+    assert lookup.calls == []
+    assert _turns(contact) == []

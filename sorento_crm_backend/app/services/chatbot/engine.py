@@ -7326,6 +7326,11 @@ def _run_stages_body(  # noqa: PLR0915
                 f"completed in the CRM. Add {branch_kind!r} to "
                 f"system_settings.chatbot_completed_lanes on a build that can complete "
                 f"it, or turn S7 mode off."
+                if s7_mode
+                else f"This turn came through direct ingress (the respond.io webhook), "
+                f"which has no n8n spine to finish the {delegate!r} lane. Leave this "
+                f"lane's messages to n8n by turning direct ingress off until the CRM "
+                f"completes {branch_kind!r}."
             )
             logger.error("chatbot turn %s: %s", turn_id, orphan_error)
             turn_trace.record(
@@ -7336,7 +7341,7 @@ def _run_stages_body(  # noqa: PLR0915
                     "S7 mode retires the n8n tail, so a lane that still delegates has "
                     "nobody left to complete it."
                 ),
-                facts={"lane": delegate, "s7_mode": True, "lane_completed_by_crm": False},
+                facts={"lane": delegate, "s7_mode": s7_mode, "ingress": envelope.ingress, "lane_completed_by_crm": False},
                 error=orphan_error,
                 raw={"item": item},
             )

@@ -12,8 +12,9 @@ Three parts, one module:
 * `skip_reason` - the gate the webhook asks, AFTER it has stored the message. None means
   enqueue. Everything else is left to the n8n copy, which keeps running untouched, so a skip
   here costs nothing but the saving.
-* `run` - the RQ job body (`app/tasks/chat_turns.py::run_direct_turn_job`). It runs the turn
-  with `ingress = "respond_webhook"`, then hands the actions to the n8n sender.
+* `run` - the turn body, on the API process's bounded direct-turn pool
+  (`app/tasks/chat_turns.py::_submit`). It looks the contact up, runs the turn with
+  `ingress = "respond_webhook"`, then hands the actions to the n8n sender.
 * `send` - one POST of the finished actions to the thin n8n sender. **The CRM still does not
   send** (D9): the sender runs the same `action.kind` Switch the spine runs after `/chat/turn`.
 
@@ -48,12 +49,12 @@ MODES = (MODE_OFF, MODE_CONTACTS, MODE_ALL)
 # the n8n copy still answers anything older, so nothing is lost by refusing it.
 STALE_AFTER_SECONDS = 120.0
 
-# A sender source that is a person or a system, not the customer. respond.io marks the
-# customer's own messages `contact`; the rule is a deny list so an unknown future source
-# (respond.io renames things) still lets the customer through, guarded by `traffic`.
 # The producer's per-contact burst limit (Redis INCR, 1 s TTL, more than 30 is dropped).
 RATE_LIMIT_PER_SECOND = 30
 
+# A sender source that is a person or a system, not the customer. respond.io marks the
+# customer's own messages `contact`; the rule is a deny list so an unknown future source
+# (respond.io renames things) still lets the customer through, guarded by `traffic`.
 STAFF_SENDER_SOURCES = frozenset({"user", "api", "workflow", "ai_agent", "echo", "broadcast"})
 
 SENDER_KEY_HEADER = "X-Chatbot-Sender-Key"
@@ -185,16 +186,31 @@ def skip_reason(
         return "stale"
     inner = message.get("message") if isinstance(message.get("message"), dict) else {}
     if str(inner.get("type") or "").strip().lower() != "text":
-        # Media stays on the n8n path: its extraction job drains on the same single
-        # `worker_fast` process this turn would be holding, so the turn would wait on a job
-        # that cannot start until it finishes.
+        # Media stays on the n8n path for now: its intake waits up to the media budget on
+        # an extraction job, which would hold one of the few direct-turn threads that long.
         return "not_text"
+    if not _sender_url(db):
+        # Review S2: the direct turn would win and send nothing, and the n8n copy would
+        # come back a duplicate. Without a sender, the n8n path keeps the message.
+        return "no_sender"
     # Last, so only a message this path would otherwise take counts against the limit.
     if _over_rate_limit(contact_id):
         return "rate_limited"
     # The takeover flag is NOT in the signed webhook body (crew, 8,434 rows: no
     # `custom_fields`), so the job reads it through the contact lookup, before the turn.
     return None
+
+
+_RATE_SCRIPT = (
+    "local c = redis.call('INCR', KEYS[1]) "
+    "if c == 1 then redis.call('EXPIRE', KEYS[1], 1) end "
+    "return c"
+)
+
+
+def _sender_url(db: Any) -> str:
+    workspace = _default_workspace(db)
+    return (getattr(workspace, "chatbot_sender_url", None) or "").strip() if workspace else ""
 
 
 def rate_key(contact_id: str) -> str:
@@ -210,9 +226,9 @@ def _over_rate_limit(contact_id: str) -> bool:
 
     key = rate_key(contact_id)
     try:
-        count = int(redis_conn.incr(key))
-        if count == 1:
-            redis_conn.expire(key, 1)
+        # One script, so the TTL is set in the same step as the first increment: an INCR
+        # that lost its EXPIRE would hold a contact over the limit forever (review B2).
+        count = int(redis_conn.eval(_RATE_SCRIPT, 1, key))
     except Exception:  # noqa: BLE001
         logger.warning("direct ingress: rate limit unreadable for %s", contact_id, exc_info=True)
         return True
@@ -285,6 +301,12 @@ def run(payload: dict[str, Any], session_factory: Callable[[], Any] | None = Non
     factory = session_factory or SessionLocal
     contact_id = _contact_id(payload)
     skipped = {"turn_id": None, "status": None, "duplicate": False, "sent": False}
+    message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
+    age = message_age_seconds(message)
+    if age is None or age > STALE_AFTER_SECONDS:
+        # Re-checked here, not only at the webhook (review S5): a turn that waited behind
+        # a backlog must not answer what the n8n copy has long since handled.
+        return {**skipped, "skipped": "stale"}
     db = factory()
     try:
         if not _on_default_workspace(db, contact_id):

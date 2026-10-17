@@ -206,3 +206,18 @@ describe('the chatbot sender save, at the wire', () => {
     expect('chatbot_sender_key' in body).toBe(false);
   });
 });
+
+describe('the chatbot sender key, removed', () => {
+  it('sends chatbot_sender_key: "" after "Remove stored sender key"', async () => {
+    ROW.has_chatbot_sender_key = true;
+    try {
+      await openEditDialog();
+      fireEvent.click(screen.getByRole('button', { name: /remove stored sender key/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^update$/i }));
+      await waitFor(() => expect(retryCall()).toBeDefined());
+      expect(retryCall()!.body!.chatbot_sender_key).toBe('');
+    } finally {
+      ROW.has_chatbot_sender_key = false;
+    }
+  });
+});

@@ -5,8 +5,9 @@
 the contact is also put on the `chat` queue as a turn, so the CRM no longer waits for the n8n
 producer and dispatcher (plan `documentation/plans/chatbot/PLAN-chat-speed-ingress.md`).
 
-The queue is faked at `queue_service.enqueue_job`: these tests grade WHETHER the webhook
-enqueues and with what, never the turn itself (that is `tests/chatbot/test_direct_ingress.py`).
+The hand-off is faked at `chat_turns._submit` (the API process's bounded direct-turn pool):
+these tests grade WHETHER the webhook hands a turn over and with what, never the turn itself
+(that is `tests/chatbot/test_direct_ingress.py`).
 """
 from __future__ import annotations
 
@@ -59,20 +60,22 @@ def _quiet_bus():
 
 @pytest.fixture
 def enqueued(monkeypatch):
-    """Every `enqueue_job` call, as (func name, args, kwargs). Pushes are not faked away:
-    `notifications` jobs land here too, so tests filter on the `chat` queue."""
+    """Every turn handed to the direct-turn pool, as (func name, args, kwargs)."""
+    from app.tasks import chat_turns
+
     calls: list[tuple[str, tuple, dict]] = []
 
     def _fake(func, *args, **kwargs):
         calls.append((getattr(func, "__name__", str(func)), args, kwargs))
-        return None
+        return True
 
-    monkeypatch.setattr(queue_service, "enqueue_job", _fake)
+    monkeypatch.setattr(chat_turns, "_submit", _fake)
+    monkeypatch.setattr(queue_service, "enqueue_job", lambda *a, **k: None)
     return calls
 
 
 def _chat_jobs(calls):
-    return [c for c in calls if c[2].get("queue_name") == "chat"]
+    return list(calls)
 
 
 @pytest.fixture
@@ -94,7 +97,10 @@ def client(db, monkeypatch):
         app.dependency_overrides.clear()
 
 
-def _mode(db, mode: str, contacts: str | None = None) -> None:
+def _mode(db, mode: str, contacts: str | None = None, *, sender: bool = True) -> None:
+    from app.schemas.respond_workspace import RespondWorkspaceCreate
+    from app.services.respond_workspace_service import RespondWorkspaceService
+
     row = db.query(SystemSetting).first()
     if row is None:
         row = SystemSetting(id=str(uuid.uuid4()), name=f"{TEST_PREFIX} Co")
@@ -102,6 +108,12 @@ def _mode(db, mode: str, contacts: str | None = None) -> None:
     row.chatbot_direct_ingress_mode = mode
     row.chatbot_direct_ingress_contacts = contacts
     db.commit()
+    if sender:
+        workspace = RespondWorkspaceService(db).get_default() or RespondWorkspaceService(db).create(
+            RespondWorkspaceCreate(space_id="ZZT-space-direct", api_key="k", is_default=True)
+        )
+        workspace.chatbot_sender_url = "https://automate-zzt.example.com/webhook/chatbot-sender"
+        db.commit()
 
 
 def _now_message_id(age_seconds: float = 1.0) -> int:
@@ -193,6 +205,7 @@ def test_all_mode_enqueues_one_job(client, db, enqueued):
     assert len(jobs) == 1, enqueued
     name, args, kwargs = jobs[0]
     assert name == "run_direct_turn_job"
+    assert kwargs == {}
     payload = args[0]
     # The respond.io body travels verbatim: it IS the envelope's `message`.
     assert payload["message"]["messageId"] == body["message"]["messageId"]
@@ -370,16 +383,57 @@ def test_skip_message_from_a_staff_member(client, db, enqueued):
 
 
 def test_enqueue_failure_is_swallowed(client, db, monkeypatch):
+    from app.tasks import chat_turns
+
     _mode(db, "all")
 
     def _boom(func, *args, **kwargs):
-        if kwargs.get("queue_name") == "chat":
-            raise ConnectionError("redis is down (zzt)")
-        return None
+        raise RuntimeError("cannot schedule new futures after shutdown (zzt)")
 
-    monkeypatch.setattr(queue_service, "enqueue_job", _boom)
+    monkeypatch.setattr(chat_turns, "_submit", _boom)
     body = _event()
     r = _post(client, body)
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "created"
     assert _stored(db, body["message"]["messageId"]) == 1
+
+
+def test_skip_when_no_sender_is_configured(client, db, enqueued):
+    """Review S2: with no sender URL the direct turn would win and send nothing, and the n8n
+    copy would come back a duplicate. So the message stays on the n8n path."""
+    _mode(db, "all", sender=False)
+    assert _post(client, _event()).status_code == 200
+    assert _chat_jobs(enqueued) == []
+
+
+def test_rate_limit_counter_expires(client, db, enqueued):
+    """Review B2: the counter carries a TTL from its first increment, so it resets."""
+    from app.services.chatbot import direct_ingress
+
+    _mode(db, "all")
+    key = direct_ingress.rate_key(CONTACT_ID)
+    queue_service.redis_conn.delete(key)
+    try:
+        assert _post(client, _event()).status_code == 200
+        ttl_ms = queue_service.redis_conn.pttl(key)
+        assert 0 < ttl_ms <= 1000, ttl_ms
+        time.sleep(1.2)
+        assert queue_service.redis_conn.get(key) is None
+    finally:
+        queue_service.redis_conn.delete(key)
+
+
+def test_a_full_pool_leaves_the_message_to_n8n(client, db, monkeypatch):
+    """The API process runs at most `DIRECT_TURN_THREADS` direct turns at once; past that the
+    n8n copy answers, so a burst degrades to today's path rather than queueing here."""
+    from app.tasks import chat_turns
+
+    _mode(db, "all")
+    ran: list[str] = []
+    monkeypatch.setattr(chat_turns, "run_direct_turn_job", lambda payload: ran.append("ran"))
+    monkeypatch.setattr(chat_turns, "_in_flight", chat_turns.DIRECT_TURN_THREADS)
+    try:
+        assert _post(client, _event()).status_code == 200
+        assert ran == []
+    finally:
+        monkeypatch.setattr(chat_turns, "_in_flight", 0)
