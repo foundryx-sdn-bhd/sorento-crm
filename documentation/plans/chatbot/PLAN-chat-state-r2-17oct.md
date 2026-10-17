@@ -56,3 +56,4 @@ passes both arms: no TRAIN signal for the held-out 62.5%), refine 1/1 of 5, swit
 - r2-INT: red 459967eff9 (combined schema) + the read-once test red after the merge 697df41293; fix 7833e7365e.
 - r2 round 1: red 18bb534d6c (22 red: r2-A held qty 9, r2-D last-answer domain 8, r2-B/D prompt text 2, r2-C combined publish 3);
   fix 18c6556187; kill-proof: reverted 22 failed / restored 196 passed (chat_state apply/block/parser_input/seam).
+- L1 replay gate r2 (faa9d0f11e) vs integration base 697df41293, --split dev: grounding 0/1506, turn 0/585 unintended.
