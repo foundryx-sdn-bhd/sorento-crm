@@ -3528,6 +3528,10 @@ def not_found_error_message(
             entity_type = jsc.get(c, "entity_type")
             entity_type = entity_type if jsc.truthy(entity_type) else "item"
             base = disp_by_uuid.get(jsc.get(c, "uuid"))
+            if jsc.truthy(jsc.get(c, "set_code")):
+                # CHAT-CODE-LOOKUP R2: a product set read as its members is named by the code
+                # the customer typed (the set's), one label for all its members.
+                base = jsc.get(c, "set_code")
             if not jsc.truthy(base):
                 # Hand pass 12, Group F: `disp_by_uuid` is built from the RESOLVER's own
                 # matches (`r["resolutions"]`), empty on a turn that resolved nothing

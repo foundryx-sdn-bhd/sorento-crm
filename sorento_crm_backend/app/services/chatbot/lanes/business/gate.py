@@ -71,6 +71,9 @@ def _roster_cap(
 # The matrices, verbatim.
 # --------------------------------------------------------------------------- #
 
+#: Domains where a product set (CHAT-CODE-LOOKUP R2) is read as its member products.
+_SET_MEMBER_DOMAINS = frozenset({"master_products", "inventory"})
+
 ALLOWED: dict[str, list[str]] = {
     "master_products": ["product", "category", "brand"],
     "product_attachment": [
@@ -433,7 +436,21 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
     flat.extend(_flatten_by_entity_type(resolver.get("by_entity_type")))
 
     by_uuid: dict[Any, dict[str, Any]] = {}
+    # CHAT-CODE-LOOKUP R2: under the gate a flyer code that is a product set answers as its
+    # member products (product info and stock), the set's code riding on each as `set_code`.
+    set_members = parser.get("code_lookup") is True and domain in _SET_MEMBER_DOMAINS
     for m in flat:
+        if set_members and jsc.get(m, "entity_type") == "product_set":
+            for member in jsc.array(jsc.get(jsc.get(m, "display"), "members")):
+                member_uuid = jsc.get(member, "uuid")
+                if jsc.truthy(member_uuid):
+                    by_uuid[member_uuid] = {
+                        "uuid": member_uuid,
+                        "entity_type": "product",
+                        "code": jsc.get(member, "product_code"),
+                        "set_code": jsc.get(m, "canonical_code"),
+                    }
+            continue
         if jsc.truthy(m) and jsc.truthy(jsc.get(m, "uuid")):
             entity = {
                 "uuid": jsc.get(m, "uuid"),
@@ -482,6 +499,8 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
             if not matches:
                 continue
             types = [jsc.get(m, "entity_type") for m in matches if jsc.truthy(m)]
+            if set_members:
+                types = ["product" if t == "product_set" else t for t in types]
             if types and not any(t in allowed for t in types):
                 token = jsc.get(resolution, "token")
                 if jsc.truthy(token):

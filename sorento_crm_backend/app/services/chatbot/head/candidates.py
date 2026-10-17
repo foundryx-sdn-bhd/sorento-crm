@@ -238,18 +238,61 @@ def _value_candidates(db: "Session", tokens: list[str]) -> list[WordCandidates]:
     return list(by_gram.values()) + numbered
 
 
-def _code_label(code: str, name: str | None, holds: bool) -> str:
+def _code_label(code: str, name: str | None, holds: bool, kind: str = "code") -> str:
     from app.services.chatbot_prompt_vars import _one_line
 
     # Product rows are staff / import text: one line each, so a stored newline can never
     # start a line of its own in the user turn (security review, 17 Oct 2026).
     code, name = _one_line(code), _one_line(name or "")
-    label = f"code {code} ({name})" if name else f"code {code}"
+    label = f"{kind} {code} ({name})" if name else f"{kind} {code}"
     return label if holds else f"near {label}"
 
 
 def _fold_code(code: str) -> str:
     return re.sub(r"[-\s]+", "", code).casefold()
+
+
+def _set_rows(db: "Session", word: str) -> list[tuple[str, str | None]]:
+    """CHAT-CODE-LOOKUP R2: the active product sets whose code holds `word` or is spelt near
+    it, each only when it has members and every member is a chat-searchable product (a set
+    with a hidden part is not a code the customer may be told about). Company scope applies
+    through the ORM listener; `NEAR_CODE_NO_EXACT` is the widest floor the caller uses."""
+    from sqlalchemy import func, not_, or_
+
+    from app.models.product import Product, chat_searchable_products
+    from app.models.product_set import ProductSet, ProductSetMember
+
+    norm = func.lower(func.regexp_replace(ProductSet.set_code, r"[-\s]+", "", "g"))
+    members = db.query(ProductSetMember.id).filter(ProductSetMember.product_set_id == ProductSet.id)
+    hidden = members.join(Product, Product.id == ProductSetMember.product_id).filter(not_(chat_searchable_products()))
+    return [
+        (code, name)
+        for code, name in db.query(ProductSet.set_code, ProductSet.name)
+        .filter(
+            ProductSet.is_active.is_(True),
+            or_(norm.contains(word, autoescape=True), func.similarity(norm, word) >= NEAR_CODE_NO_EXACT),
+            members.exists(),
+            not_(hidden.exists()),
+        )
+        .order_by(ProductSet.set_code)
+        .limit(CAP_PER_WORD * 4)
+        .all()
+    ]
+
+
+def _ranked(word: str, rows: list[tuple[str, str | None, str]], floor: float) -> list[tuple[str, str | None, bool, str]]:
+    """Product and set rows ranked together (exact, prefix, contains, near by similarity;
+    a set before a product on a tie), the near ones kept from `floor` up, capped."""
+    typed = trigrams(word)
+    keyed = []
+    for code, name, kind in rows:
+        folded = _fold_code(code)
+        score = similarity(typed, trigrams(code))
+        rank = 0 if folded == word else 1 if folded.startswith(word) else 2 if word in folded else 3
+        if rank == 3 and score < floor:
+            continue
+        keyed.append(((rank, -score, kind != "set code", code), (code, name, rank < 3, kind)))
+    return [row for _key, row in sorted(keyed)][:CAP_PER_WORD]
 
 
 def _code_candidates(db: "Session", tokens: list[str], *, code_lookup: bool = False) -> list[WordCandidates]:
@@ -298,7 +341,9 @@ def _code_candidates(db: "Session", tokens: list[str], *, code_lookup: bool = Fa
                 .limit(CAP_PER_WORD)
                 .all()
             )
-            if code_lookup and not any(_fold_code(code) == word for code, _name, _holds in rows):
+            sets = _set_rows(db, word) if code_lookup else []
+            set_exact = any(_fold_code(code) == word for code, _name in sets)
+            if code_lookup and not set_exact and not any(_fold_code(code) == word for code, _name, _holds in rows):
                 held = [(code, name, True) for code, name, holds in rows if holds]
                 rows = held + [
                     (code, name, False)
@@ -309,6 +354,14 @@ def _code_candidates(db: "Session", tokens: list[str], *, code_lookup: bool = Fa
                     .all()
                 ]
             labelled = [(_code_label(code, name, holds), code) for code, name, holds in rows]
+            if sets:
+                exact = set_exact or any(_fold_code(code) == word for code, _name, _holds in rows)
+                merged = _ranked(
+                    word,
+                    [(code, name, "code") for code, name, _holds in rows] + [(code, name, "set code") for code, name in sets],
+                    NEAR_CODE if exact else NEAR_CODE_NO_EXACT,
+                )
+                labelled = [(_code_label(code, name, holds, kind), code) for code, name, holds, kind in merged]
         else:
             labelled = [(_code_label(code, name, True), code) for code, name in by_word.get(word, [])]
         if labelled:

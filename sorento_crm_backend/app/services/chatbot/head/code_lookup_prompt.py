@@ -21,6 +21,8 @@ the code the message means: the same digits with letters swapped, missing or one
 digits is another product. When exactly one near code is plainly meant, pick it: the assistant answers that code and
 names it. When two or more are equally plausible, or none is plainly meant, pick none (canonical_code null, confident
 false): the assistant asks which code.
+A "set code X (name)" line is a product set: hint "product", canonical_code X; with a spec word (P-trap, S-trap, a size),
+pick the set whose name carries it.
 """
 
 
