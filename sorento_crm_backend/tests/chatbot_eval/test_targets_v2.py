@@ -1351,6 +1351,19 @@ def test_a_different_warehouse_does_not_match_the_gold_filter():
     assert res["checks"]["filter"] is False, res["checks"]
 
 
+PRICE_ASK = "Promo price for SRTA100 is RM 90. How many units?"
+NO_ANSWER_ASK = "How many units of SRTA100?"
+
+
+def _price_given_or_blocked(res, given):
+    """Owner round 29: a how-many beside the price is fine; one that replaces the answer fails with its own reason."""
+    if given:
+        assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+    else:
+        assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+        assert "instead of giving the answer" in res["reason"], res["reason"]
+
+
 # ------------------------------------------------------------------ review round 21 part 2 (needless questions, crew policy)
 # Where the resolved Stock Visibility mode lives in the trace: the stock tool envelope carries
 # `stock_visibility: {"mode": ...}` (lanes/business/miss_suggest.py:898 reads it the same way; the mode itself is
@@ -1379,13 +1392,14 @@ def test_the_same_quantity_question_is_fine_for_a_detailed_or_compact_stock_cont
     assert res["passed"] is True, res["checks"]
 
 
-def test_a_quantity_question_after_a_promo_answer_fails_an_and_x_item():
+@pytest.mark.parametrize("reply,given", [(PRICE_ASK, True), (NO_ANSWER_ASK, False)])
+def test_a_quantity_question_after_a_promo_answer_fails_an_and_x_item_only_when_no_price_is_given(reply, given):
     tool = {"name": "crm_promotions_list", "args": {"product_ids": [UA]}, "envelope": {"items": [{"code": "SRTA100"}]}}
     r = row2(domains=("promotion",), state_products=[prod("SRTA100", UA)], mem_before=[prod("SRTOLD1", UB)],
-             mem_after=[prod("SRTA100", UA)], tools=[tool], reply="Promo price for SRTA100 is RM 90. How many units?")
+             mem_after=[prod("SRTA100", UA)], tools=[tool], reply=reply)
     res = grade_turn(r, item("followup", "and_x", fact="promotion", subject_after=["SRTA100"]))
     assert res["checks"]["new_subject"] is True, res["checks"]
-    assert res["passed"] is False, res["checks"]
+    _price_given_or_blocked(res, given)
 
 
 # Q2a: product-variant pickers fail unless the gold code is ambiguous
@@ -1446,18 +1460,18 @@ def test_a_tier_menu_after_a_promo_ask_is_unknown():
 
 # ------------------------------------------------------------------ review round 22
 # 1. the quantity policy runs on every slice and follow-up kind, and a stock ask comes from the gold only
-def _promo_widened_to_inventory(**kw):
-    return row2(domains=("promotion", "inventory"), tools=[_stock_tool("availability")],
-                reply="Promo price for SRTA100 is RM 90. How many units?", **kw)
+def _promo_widened_to_inventory(reply=PRICE_ASK, **kw):
+    return row2(domains=("promotion", "inventory"), tools=[_stock_tool("availability")], reply=reply, **kw)
 
 
-def test_a_promo_answer_followup_asking_how_many_fails_even_if_the_bot_widened_its_plan_to_inventory():
+@pytest.mark.parametrize("reply,given", [(PRICE_ASK, True), (NO_ANSWER_ASK, False)])
+def test_a_promo_answer_followup_asking_how_many_fails_only_without_the_price_even_if_the_plan_widened_to_inventory(reply, given):
     q = COLOUR_Q
-    r = _promo_widened_to_inventory(state_oq=q, oq={"before": q, "after": None, "writer": "engine"})
+    r = _promo_widened_to_inventory(reply, state_oq=q, oq={"before": q, "after": None, "writer": "engine"})
     r["trace"] = [dict(e, verdict=_picks([1])) if e.get("kind") == "apply" else e for e in r["trace"]]
     res = grade_turn(r, item("followup", "answer", option="white", fact="promotion"))
     assert res["checks"]["answered"] is True and res["checks"]["option"] is True, res["checks"]
-    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+    _price_given_or_blocked(res, given)
 
 
 def test_a_pick_followup_on_a_non_stock_gold_whose_reply_gives_the_price_may_ask_how_many():
@@ -1476,10 +1490,11 @@ def test_a_pick_followup_on_a_stock_gold_in_availability_mode_may_ask_how_many()
     check(grade_turn(r, item("followup", "pick", position=1, code="SRTA100", fact="inventory")), True)
 
 
-def test_a_code_lookup_whose_gold_is_not_stock_fails_a_how_many_even_when_the_plan_includes_inventory():
-    r = _promo_widened_to_inventory(state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)])
+@pytest.mark.parametrize("reply,given", [(PRICE_ASK, True), (NO_ANSWER_ASK, False)])
+def test_a_code_lookup_whose_gold_is_not_stock_fails_a_how_many_only_without_the_price_even_when_the_plan_includes_inventory(reply, given):
+    r = _promo_widened_to_inventory(reply, state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)])
     res = grade_turn(r, item("code_lookup", code="srta100", fact="promotion"))
-    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+    _price_given_or_blocked(res, given)
 
 
 # 2. a spec answer that showed products and leaves a product list open is not a needless picker
@@ -1540,11 +1555,12 @@ def test_the_stock_word_makes_no_difference_when_the_bots_plan_is_the_only_stock
     assert res["checks"].get("no_qty_ask") is False, res["checks"]
 
 
-def test_a_non_stock_gold_fact_stays_not_a_stock_ask_whatever_the_message_says():
+@pytest.mark.parametrize("reply,given", [(PRICE_ASK, True), (NO_ANSWER_ASK, False)])
+def test_a_non_stock_gold_fact_stays_not_a_stock_ask_whatever_the_message_says(reply, given):
     r = row2(message="promo price, is it in stock?", state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)],
-             tools=[_stock_tool("availability")], reply="Promo price for SRTA100 is RM 90. How many units?")
+             tools=[_stock_tool("availability")], reply=reply)
     res = grade_turn(r, item("code_lookup", code="srta100", fact="promotion"))
-    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+    _price_given_or_blocked(res, given)
 
 
 # ------------------------------------------------------------------ review round 24
