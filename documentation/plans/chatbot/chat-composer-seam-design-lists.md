@@ -294,3 +294,18 @@ Reviewer (Opus) NOT READY on B1; security-reviewer PASS with one should-fix.
 - Test gaps to close (tester, red first): B1 twins + two-type token; LD3 `{n}`; LD5 bare number picks card 2; S1 a gone
   card through `run_fetch` returns the error fragment (K2); K3 a DO block longer than the SO block; LD6 a non-staff
   verdict with `ref_staff: true` and a verdict-supplied `ref_page` are both refused.
+
+## Review round 2 (18 Oct, head 422859b78): crew decision + lead rulings (override anything above)
+
+- LD7 (crew decision (a), replaces LD3's capped detection and LD4). A code-lookup list that needs more than one message
+  NEVER states a total: the resolver caps a token at 20 product rows or `20 // n_types` (entity_resolver.py:5541-5551) and
+  the rows reaching the reply carry no token or type count, so no total it could print is known to be true. Page 1 range
+  `(showing 1 to 9)`, pages 2+ the Sets header with the same total-less range, no `That is all N.` for a code list; the
+  last page (no more line) ends `Those are the first {n} matches. Send more of the code to narrow it.` ({n} = codes
+  listed, the last line above the footer); a "more" past the end replies that sentence alone. The capped-detection
+  code (`_code_list_ids` per-token cap, the `capped` flag) goes: a code-list carry is always total-less. A list that
+  fits one message is unchanged (no range, no line). (b) (plumb a resolver cap flag) only if the owner later asks for
+  `That is all N.` on complete code lists.
+- LD8 (security re-check should-fix). `lane_parse_output` (turn_runtime.py:1990) drops `ref_staff` and `ref_page` from
+  the verdict, so every `run_fetch` caller (the tool runner AND the engine's tier-ask probe, engine.py:6422) starts
+  without them; the runner then sets `ref_staff` from the profile and `ref_page` only from the carry.
