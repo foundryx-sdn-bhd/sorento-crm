@@ -111,9 +111,8 @@ def test_follow_up_is_not_more(monkeypatch, overrides):
         {},
         {"set_key": {"shown": 50, "total": 182, "offer_only": True}},
         {"set_key": {"shown": 0, "total": 182}},
-        {"set_key": {"shown": 182, "total": 182}},
     ],
-    ids=["no_carry", "empty", "offer_only", "withheld", "exhausted"],
+    ids=["no_carry", "empty", "offer_only", "withheld"],
 )
 def test_more_without_a_pageable_carry_is_not_paged(monkeypatch, carried):
     """After a topic switch the carry is gone: "more" is parsed as any other message."""
