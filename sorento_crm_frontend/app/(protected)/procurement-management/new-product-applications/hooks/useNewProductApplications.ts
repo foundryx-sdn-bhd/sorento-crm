@@ -240,6 +240,11 @@ export function useNewProductApplicationMutations() {
       productId: string;
     }) => linkNewProductApplicationLine(id, lineId, productId),
     ...move('Failed to link the product', 'Product linked'),
+    // Two purchasers on one line: the second write is refused (409) and the screen refreshes.
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to link the product');
+      refresh();
+    },
   });
   const close = useMutation({
     mutationFn: ({
