@@ -145,3 +145,11 @@ Request: the held-out code-lookup fails counted by failing check name (no items)
   other listed code is as close, and otherwise leaves it for the did-you-mean; parser gold N=3 in BOTH directions
   (ambiguous typos ask, clear typos and transpositions still answer). The #1755 vague clarify that suppresses the
   did-you-mean goes to CHAT-CLOSED-LISTS.
+- Crew decision 18 Oct after the R2-6 measurement (parser gold N=3, v170 vs v171: amb 0/18 both, tie 0/12, part 0/12,
+  trans 6/12 both, typo 18 -> 17, set 3 -> 0; the parser picks the FIRST listed near code in every amb/tie/part row on
+  both versions): (a) revert R2-6, keep the 10 gold rows as measurement; (b) drop the dead "Several listed codes"
+  paragraph if N=3 shows no regression; (c) one experiment, cap USD 1: the existing D2 shortlist score on each
+  near-code line (code never chooses), kept only if amb/tie/part improve with no typo/trans/set loss. If (c) fails:
+  the plan records that the parser picks the first listed near code and R2-4's post-parse refusal is the only
+  effective guard; the csk11b class stays red; next are the bigger classes (fact, clarified, made-up family codes).
+  Model finding for the owner (crew): gpt-5.4-mini ignores tie rules and has a position bias.
