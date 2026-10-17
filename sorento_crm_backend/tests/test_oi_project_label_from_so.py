@@ -913,7 +913,8 @@ def test_summary_matrix_and_export_all_honour_the_project_filter(api):
     )
     assert export.status_code == 200, export.text
     book = openpyxl.load_workbook(io.BytesIO(export.content))
-    sheet = book["JAN 26"]
+    assert book.sheetnames == ["ORDER INQUIRY"]
+    sheet = book["ORDER INQUIRY"]
     item_codes = {
         sheet.cell(row=r, column=3).value for r in range(3, sheet.max_row + 1)
     }

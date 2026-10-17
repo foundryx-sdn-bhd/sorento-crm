@@ -739,6 +739,8 @@ class Focus(BaseModel):
     # "<kind>:<side>" for mirror / shelf), `turn/state.py::Focus.relation`. Optional, so a stored
     # focus without it still reads.
     relation: str | None = None
+    # CHAT-STATE: the numbered list the last reply showed (`turn/state.py::Focus.last_list`).
+    last_list: list[dict[str, Any]] | None = None
 
 
 class SessionVars(BaseModel):

@@ -1418,11 +1418,13 @@ def _with_oq(r, q, asking=None):
     return r
 
 
-def test_a_variant_picker_fails_a_code_lookup_on_a_non_ambiguous_code():
+# owner ruling 17 Oct (answer.py:4846-4848): a sibling picker after a full answer is right, not needless
+def test_a_sibling_picker_after_a_full_code_lookup_answer_is_not_needless():
     r = _with_oq(row2(state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[TOOL_A]), VARIANT_Q)
     res = grade_turn(r, item("code_lookup", **GOLD_CL))
     assert res["checks"]["code"] is True and res["checks"]["tool_ran"] is True, res["checks"]
-    assert res["passed"] is False, res["checks"]
+    assert res["checks"]["no_picker"] is not False, res["checks"]
+    assert res["passed"] is True, res["checks"]
 
 
 def test_a_variant_picker_fails_an_attachment_item():
@@ -1431,11 +1433,13 @@ def test_a_variant_picker_fails_an_attachment_item():
     assert grade_turn(r, item("attachment", **GOLD_TS))["passed"] is False
 
 
-def test_a_variant_picker_fails_an_and_x_item():
+# owner ruling 17 Oct (answer.py:4846-4848): a sibling picker after a full answer is right, not needless
+def test_a_sibling_picker_after_a_full_and_x_answer_is_not_needless():
     r = _with_oq(row2(mem_before=[prod("SRTOLD1", UB)], mem_after=[prod("SRTA100", UA)], tools=[TOOL_A]), VARIANT_Q)
     res = grade_turn(r, item("followup", "and_x", fact="inventory", subject_after=["SRTA100"]))
     assert res["checks"]["new_subject"] is True, res["checks"]
-    assert res["passed"] is False, res["checks"]
+    assert res["checks"]["no_picker"] is not False, res["checks"]
+    assert res["passed"] is True, res["checks"]
 
 
 def test_a_variant_picker_is_right_when_the_gold_code_is_ambiguous():

@@ -61,3 +61,53 @@ export function flattenDirectoryOptions(
   walk(tree, '');
   return out;
 }
+
+/** Folder ids from the top level down to `folderId` (inclusive), or null if not in the tree. */
+export function findPathIds(
+  nodes: AttachmentDirectoryTreeNode[],
+  folderId: string,
+  path: string[] = []
+): string[] | null {
+  for (const node of nodes) {
+    const next = [...path, node.id];
+    if (node.id === folderId) return next;
+    if (node.children?.length) {
+      const found = findPathIds(node.children, folderId, next);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * True when the URL names a folder the loaded tree does not hold: deleted, in Trash,
+ * outside the viewer's companies, or a mistyped link. The drive listing returns an empty
+ * 200 for such an id, so without this the page would show a silent empty folder. False
+ * while the tree is still loading, so a valid deep link never flashes the error.
+ */
+export function isFolderUnavailable(
+  tree: AttachmentDirectoryTreeNode[],
+  treeReady: boolean,
+  folderId: string | null
+): boolean {
+  if (!folderId || !treeReady) return false;
+  return findPathIds(tree, folderId) === null;
+}
+
+/**
+ * Where to go after `deletedId` is deleted while `currentId` is open: the deleted folder's
+ * parent (null = drive root) when it is the open folder or one of its ancestors, otherwise
+ * `undefined` (stay put).
+ */
+export function folderAfterDelete(
+  tree: AttachmentDirectoryTreeNode[],
+  currentId: string | null,
+  deletedId: string
+): string | null | undefined {
+  if (!currentId) return undefined;
+  const path = findPathIds(tree, currentId);
+  if (!path) return undefined;
+  const idx = path.indexOf(deletedId);
+  if (idx === -1) return undefined;
+  return idx === 0 ? null : path[idx - 1];
+}
