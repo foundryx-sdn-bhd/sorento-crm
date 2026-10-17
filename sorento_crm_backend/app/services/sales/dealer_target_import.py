@@ -1390,7 +1390,7 @@ _ACCOUNT_SUFFIX = re.compile(r"\bA\s*+/\s*+C\.?\s*+([IVX]++|\d++)\s*+[)\]]?\s*+\
 
 def _is_account_marker(text: str) -> bool:
     """A bracketed "A/C I" / "A/C 1", never a branch that merely starts with L ("(LABUAN)")."""
-    return re.fullmatch(r"L\d+|RAW\w+", account_key(text) or "") is not None
+    return re.fullmatch(r"L\d+|RAW(?:\d+|[IVX]+)", account_key(text) or "") is not None
 
 
 def branch_key(name: Optional[str]) -> str:
