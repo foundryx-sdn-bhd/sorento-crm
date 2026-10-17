@@ -200,7 +200,7 @@ class SystemSettingUpdate(BaseModel):
     # 422 instead of being stored and read as off. Same rule as every block above - it must
     # appear HERE and in the GET dict, because both are manual.
     chatbot_direct_ingress_mode: Optional[Literal["off", "contacts", "all"]] = None
-    chatbot_direct_ingress_contacts: Optional[str] = None
+    chatbot_direct_ingress_contacts: Optional[str] = Field(None, max_length=20000)
     # Price tag packages (D2): the product classes a request line is WARNED about
     # when it reaches marketing without its catalogue package. Same rule as every
     # block above - it must appear HERE and in the GET dict, because both are manual.

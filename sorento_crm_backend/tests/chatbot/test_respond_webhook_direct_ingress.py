@@ -275,6 +275,22 @@ def test_fresh_message_just_inside_the_window_enqueues(client, db, enqueued):
     assert len(_chat_jobs(enqueued)) == 1
 
 
+def test_skip_shared_secret_header_delivery(client, db, enqueued, monkeypatch):
+    """Security review M1: the shared-secret header mode carries the key in every request,
+    so its holder can write any body, fresh clock included. Only a body HMAC starts a turn;
+    the n8n copy still answers a header-mode delivery."""
+    _mode(db, "all")
+    body = _event()
+    r = client.post(
+        WEBHOOK_URL,
+        content=json.dumps(body).encode("utf-8"),
+        headers={"x-respond-webhook-secret": SECRET, "content-type": "application/json"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "created"
+    assert _chat_jobs(enqueued) == []
+
+
 def test_skip_bad_signature(client, db, enqueued):
     _mode(db, "all")
     r = _post(client, _event(), secret="zzt-not-the-configured-key-xx")

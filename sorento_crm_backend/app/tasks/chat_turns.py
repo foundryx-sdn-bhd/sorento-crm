@@ -76,6 +76,7 @@ def enqueue_direct_turn(
     traffic: str,
     channel: str,
     already_existed: bool,
+    hmac_signed: bool,
 ) -> bool:
     """CHAT-SPEED: put a webhook message on `chat` as a turn, when the gate allows it.
 
@@ -95,6 +96,7 @@ def enqueue_direct_turn(
             traffic=traffic,
             channel=channel,
             already_existed=already_existed,
+            hmac_signed=hmac_signed,
         )
         if reason is not None:
             if reason not in ("off", "contact_not_listed"):

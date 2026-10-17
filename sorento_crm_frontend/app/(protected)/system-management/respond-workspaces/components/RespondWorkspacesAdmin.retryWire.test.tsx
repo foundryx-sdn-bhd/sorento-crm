@@ -180,7 +180,7 @@ describe('the chatbot sender save, at the wire', () => {
     const url = screen.getByLabelText(/Chatbot sender webhook URL/i) as HTMLInputElement;
     expect(url.value).toBe('');
     fireEvent.change(url, {
-      target: { value: 'https://automate-sorento.foundryx.my/webhook/chatbot-sender' },
+      target: { value: 'https://automate-zzt.example.com/webhook/chatbot-sender' },
     });
     fireEvent.change(screen.getByLabelText(/^Sender key/i), {
       target: { value: 'zzt-sender-key' },
@@ -190,7 +190,7 @@ describe('the chatbot sender save, at the wire', () => {
     await waitFor(() => expect(retryCall()).toBeDefined());
     const body = retryCall()!.body!;
     expect(body.chatbot_sender_url).toBe(
-      'https://automate-sorento.foundryx.my/webhook/chatbot-sender',
+      'https://automate-zzt.example.com/webhook/chatbot-sender',
     );
     expect(body.chatbot_sender_key).toBe('zzt-sender-key');
     // The retry URL rides along unchanged.

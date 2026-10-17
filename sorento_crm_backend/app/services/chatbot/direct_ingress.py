@@ -147,6 +147,7 @@ def skip_reason(
     traffic: str,
     channel: str,
     already_existed: bool,
+    hmac_signed: bool,
     now: float | None = None,
 ) -> str | None:
     """Why this stored message must NOT start a turn here, or None to enqueue it.
@@ -161,6 +162,11 @@ def skip_reason(
         return "off"
     if not covers(row, contact_id):
         return "contact_not_listed"
+    if not hmac_signed:
+        # Security review M1: the shared-secret header mode sends the key itself on every
+        # request, so whoever holds it can write any body, a fresh clock included. Only a
+        # body HMAC proves respond.io wrote this message; the n8n copy answers the rest.
+        return "unsigned"
     if already_existed:
         # A respond.io retry, or the n8n mirror got there first: a turn is already on its way.
         return "duplicate"
@@ -224,13 +230,30 @@ def _contact_id(payload: dict[str, Any]) -> str:
     return str(contact.get("id") or message.get("contactId") or "").strip()
 
 
+def _on_default_workspace(db: Any, contact_id: str) -> bool:
+    """Is this contact on the default respond workspace? The sender URL and n8n's single
+    respond.io credential speak for that one (security review L3), so a contact stored
+    against another workspace stays on the n8n path. No row, or no workspace, reads as the
+    default, the same fallback `RespondClient` takes."""
+    from app.services.respond_identifier import contact_for_identifier
+
+    contact = contact_for_identifier(db, contact_id)
+    workspace_id = getattr(contact, "workspace_id", None) if contact is not None else None
+    if not workspace_id:
+        return True
+    default = _default_workspace(db)
+    return default is not None and str(default.id) == str(workspace_id)
+
+
 def _lookup_contact(db: Any, contact_id: str) -> dict[str, Any] | None:
     """respond.io's contact record, `custom_fields` included: the call n8n's `findcontact`
     makes, so the engine reads the same contact on both paths. None when it fails."""
     from app.services.integration_service import RespondClient
 
     try:
-        record = RespondClient.for_contact_id(db, contact_id).get_contact_by_identifier(contact_id)
+        # `for_identifier`, not `for_contact_id`: the id here is respond.io's, and the latter
+        # matches the CRM's own row id.
+        record = RespondClient.for_identifier(db, contact_id).get_contact_by_identifier(contact_id)
     except Exception:  # noqa: BLE001 - the n8n copy answers a message this path cannot
         logger.warning("direct ingress: contact lookup failed for %s", contact_id, exc_info=True)
         return None
@@ -264,6 +287,8 @@ def run(payload: dict[str, Any], session_factory: Callable[[], Any] | None = Non
     skipped = {"turn_id": None, "status": None, "duplicate": False, "sent": False}
     db = factory()
     try:
+        if not _on_default_workspace(db, contact_id):
+            return {**skipped, "skipped": "non_default_workspace"}
         record = _lookup_contact(db, contact_id)
     finally:
         db.close()
@@ -416,7 +441,8 @@ def _log_call(
                 business_id=turn_id,
                 external_reference=contact_id,
                 direction="outbound",
-                endpoint=url[:512],
+                # No query string: an admin could have put a token there.
+                endpoint=url.split("?", 1)[0][:512],
                 http_method="POST",
                 request_headers=json.dumps({"Content-Type": "application/json"}),
                 request_payload=json.dumps(body, default=str)[:MAX_LOGGED_BODY_CHARS],

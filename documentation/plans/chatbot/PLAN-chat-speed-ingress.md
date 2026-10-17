@@ -63,6 +63,22 @@ handles each one:
 4. **Rate limit** (more than 30 per contact per second): the same Redis INCR, 1 s TTL. Over
    the limit, the n8n copy still sends its fixed reply.
 
+## Security review (18 Oct): fixed and residual
+
+Fixed in the build:
+- **M1:** only a body-HMAC delivery starts a turn. The shared-secret header mode carries the
+  key on every request, so its holder could write any body.
+- **L3:** a contact stored against a non-default workspace stays on the n8n path.
+- **Nits:** a length cap on the contact list, and the sender URL logged without its query
+  string.
+
+Residual, accepted by name (no code):
+- **L1, no global cap across contacts.** The n8n path has none either. Trigger: the first day
+  `chatbot_sender` outbound rows exceed the n8n path's own peak per minute.
+- **L2, DNS rebinding on the sender URL.** This is the residual already accepted for the
+  retry ingress, now reached on inbound traffic rather than on an operator click. The URL is
+  admin-set and re-checked at use.
+
 ## Rollback
 
 Mode `off`, effective on the next message with no deploy. In `off` the webhook does exactly

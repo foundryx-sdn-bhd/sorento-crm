@@ -276,6 +276,13 @@ def _log(db: Session, request: Request, body: str, reference: str, status_code: 
         logger.warning("Failed to create integration log for the Respond webhook", exc_info=True)
 
 
+def _hmac_signed(headers: Any) -> bool:
+    """Was the request proved by a body HMAC (not the shared-secret header)?
+    `verify_request` checks the signature header whenever one is present, so after it has
+    passed, a signature header means the body itself was signed."""
+    return any(headers.get(name) for name in SIGNATURE_HEADERS)
+
+
 def _handle(db: Session, request: Request, raw: bytes) -> dict:
     text_body = raw.decode("utf-8", errors="replace")
     try:
@@ -328,6 +335,7 @@ def _handle(db: Session, request: Request, raw: bytes) -> dict:
         traffic=row.type,
         channel=row.channel,
         already_existed=already_existed,
+        hmac_signed=_hmac_signed(request.headers),
     )
     return {"id": message_pk, "status": "duplicate" if already_existed else "created"}
 

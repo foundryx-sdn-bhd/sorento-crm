@@ -85,7 +85,9 @@ def contacts():
                     "INSERT INTO respond_contacts (id, respond_io_id, phone_number, session_vars) "
                     "VALUES (gen_random_uuid()::text, :cid, :phone, CAST(:sv AS jsonb))"
                 ),
-                {"cid": cid, "phone": "+60000000901", "sv": json.dumps({"variables": {}})},
+                # A phone of its own: `respond_contacts.phone_number` is UNIQUE, and the
+                # suite runs files in parallel against one database.
+                {"cid": cid, "phone": f"+600{uuid.uuid4().int % 10**9:09d}", "sv": json.dumps({"variables": {}})},
             )
             db.commit()
         finally:
@@ -508,3 +510,39 @@ def test_failed_lookup_runs_no_turn(contacts, stub_engine_seams, sender, lookup,
     assert outcome["skipped"] == "lookup_failed"
     assert _turns(contact) == []
     assert sender.posts == []
+
+
+# --------------------------------------------------------------------------- #
+# Security review L3: the sender speaks for the DEFAULT workspace only
+# --------------------------------------------------------------------------- #
+
+
+def test_a_contact_of_another_workspace_runs_no_turn(contacts, stub_engine_seams, sender, monkeypatch):
+    contact = contacts("otherws")
+    monkeypatch.setattr(direct_ingress, "_on_default_workspace", lambda db, contact_id: False)
+    outcome = chat_turns.run_direct_turn_job(_payload(contact, _message_id()))
+    assert outcome["skipped"] == "non_default_workspace"
+    assert _turns(contact) == []
+    assert sender.posts == []
+
+
+def test_on_default_workspace_reads_the_contacts_own_workspace():
+    from app.models.access import RespondContact
+    from app.schemas.respond_workspace import RespondWorkspaceCreate
+    from app.services.respond_workspace_service import RespondWorkspaceService
+    from tests._pg_fixture import blank_session
+
+    with blank_session() as db:
+        svc = RespondWorkspaceService(db)
+        default = svc.create(RespondWorkspaceCreate(space_id="ZZT-ws-default", api_key="k", is_default=True))
+        other = svc.create(RespondWorkspaceCreate(space_id="ZZT-ws-other", api_key="k"))
+        for cid, ws in (("ZZT-c-default", default.id), ("ZZT-c-other", other.id), ("ZZT-c-none", None)):
+            db.add(RespondContact(
+                respond_io_id=cid, phone_number=f"+600{uuid.uuid4().int % 10**9:09d}", workspace_id=ws
+            ))
+        db.commit()
+
+        assert direct_ingress._on_default_workspace(db, "ZZT-c-default") is True
+        assert direct_ingress._on_default_workspace(db, "ZZT-c-none") is True
+        assert direct_ingress._on_default_workspace(db, "ZZT-c-unknown") is True
+        assert direct_ingress._on_default_workspace(db, "ZZT-c-other") is False
