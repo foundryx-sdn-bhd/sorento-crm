@@ -8,7 +8,8 @@ Keys back to
   change_text, duplicate_choice}``; ``confirm`` is derived, never read from the model.
 - **AC-1202** - ``title`` cut to 8 words.
 - **AC-1203** - a natural skip ("dunno lah, can skip this one?") produces
-  ``skip == ["impact"]``.
+  ``skip == ["desired_outcome"]`` (IDEA-CAPTURE: the optional keys are now desired_outcome,
+  use_cases, current_workaround).
 - **AC-1204** - a question ABOUT a field produces an empty ``skip`` and no field set.
 - **AC-1205** - ``problem`` can never appear in ``skip`` (deterministic guard).
 - **AC-1208** - "yes"/"ok"/"boleh"/"submit"/"confirm" in review -> ``review_action ==
@@ -93,6 +94,7 @@ def _extraction(
         "review_action": "none",
         "change_text": "",
         "duplicate_choice": "none",
+        "use_cases": [],
         **payload,
     }
     with patch(
@@ -153,12 +155,12 @@ def test_short_title_untouched(configured):
 def test_natural_skip_phrase(configured):
     out = _extraction(
         configured,
-        {"skip": ["impact"]},
+        {"skip": ["desired_outcome"]},
         message_text="dunno lah, can skip this one?",
         status="collecting",
-        next_field="impact",
+        next_field="desired_outcome",
     )
-    assert out.skip == ["impact"]
+    assert out.skip == ["desired_outcome"]
 
 
 # --------------------------------------------------------------------------- #
@@ -168,9 +170,9 @@ def test_clarifying_question_is_not_a_skip(configured):
     out = _extraction(
         configured,
         {"fields": [], "skip": []},
-        message_text="what do you mean impact?",
+        message_text="what do you mean desired outcome?",
         status="collecting",
-        next_field="impact",
+        next_field="desired_outcome",
     )
     assert out.skip == []
     assert out.fields == {}
@@ -180,14 +182,23 @@ def test_clarifying_question_is_not_a_skip(configured):
 # AC-1205 - problem can never be skipped (deterministic guard)                #
 # --------------------------------------------------------------------------- #
 def test_problem_dropped_from_skip(configured):
-    out = _extraction(configured, {"skip": ["problem", "impact"]})
-    assert out.skip == ["impact"]
+    out = _extraction(configured, {"skip": ["problem", "desired_outcome"]})
+    assert out.skip == ["desired_outcome"]
     assert "problem" not in out.skip
 
 
 def test_unknown_skip_key_dropped(configured):
-    out = _extraction(configured, {"skip": ["impact", "not_a_real_key"]})
-    assert out.skip == ["impact"]
+    out = _extraction(configured, {"skip": ["desired_outcome", "not_a_real_key"]})
+    assert out.skip == ["desired_outcome"]
+
+
+def test_ac05_skip_keeps_only_the_three_optional_keys(configured):
+    out = _extraction(
+        configured,
+        {"skip": ["problem", "desired_outcome", "use_cases", "current_workaround",
+                  "proposed_solution", "impact", "department"]},
+    )
+    assert out.skip == ["desired_outcome", "use_cases", "current_workaround"]
 
 
 # --------------------------------------------------------------------------- #
@@ -210,16 +221,16 @@ def test_change_request_in_review(configured):
     out = _extraction(
         configured,
         {
-            "fields": [{"key": "impact", "value": "faster checkout"}],
+            "fields": [{"key": "desired_outcome", "value": "faster checkout"}],
             "review_action": "change",
-            "change_text": "change the impact to faster checkout",
+            "change_text": "change the desired outcome to faster checkout",
         },
-        message_text="change the impact to faster checkout",
+        message_text="change the desired outcome to faster checkout",
         status="review",
     )
     assert out.review_action == "change"
-    assert out.change_text == "change the impact to faster checkout"
-    assert out.fields == {"impact": "faster checkout"}
+    assert out.change_text == "change the desired outcome to faster checkout"
+    assert out.fields == {"desired_outcome": "faster checkout"}
     assert out.confirm is False
 
 
@@ -264,7 +275,7 @@ def test_semantic_capture_ignores_next_field_hint(configured):
         next_field="proposed_solution",
     )
     assert "problem" in out.fields
-    assert "proposed_solution" not in out.fields
+    assert "desired_outcome" not in out.fields
 
 
 def test_context_block_carries_next_field_and_candidate_hint(configured):
@@ -451,14 +462,14 @@ def test_context_block_lists_captured_fields_one_per_line_no_semicolon_join(conf
             configured,
             message_text="more detail on the same idea",
             status="collecting",
-            captured={"problem": "a", "impact": "b"},
+            captured={"problem": "a", "desired_outcome": "b"},
         )
 
     user_content = captured_messages["messages"][1]["content"]
-    assert "a; impact" not in user_content
+    assert "a; desired_outcome" not in user_content
     lines = [line.strip() for line in user_content.splitlines()]
     assert any(line == "- problem: a" for line in lines)
-    assert any(line == "- impact: b" for line in lines)
+    assert any(line == "- desired_outcome: b" for line in lines)
 
 
 # --------------------------------------------------------------------------- #
@@ -492,21 +503,14 @@ def test_ideation_reply_fmt_migration_exists_and_bumps_both_prompts():
 from app.services.ideation_extractor import derive_confirm, normalise_field_value, normalise_title  # noqa: E402
 
 
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
-        ("the manufacturing?", "Manufacturing"),
-        ("manufacturing?", "Manufacturing"),
-        ("  sales manager  ", "Sales Manager"),
-        ("IT", "IT"),
-        ("our operations team!", "Operations Team"),
-        ("Manufacturing", "Manufacturing"),
-    ],
-)
-def test_normaliser_department(raw, expected):
-    assert normalise_field_value("department", raw) == expected
+def test_ac08_department_normaliser_is_gone():
+    """AC-08: no Title Case / article stripping for a department any more."""
+    assert normalise_field_value("department", "sales manager") == "Sales manager"
+    assert normalise_field_value("department", "the manufacturing?") == "The manufacturing"
+    assert normalise_field_value("department", "our operations team!") == "Our operations team"
 
 
+@pytest.mark.parametrize("key", ["desired_outcome", "current_workaround", "problem"])
 @pytest.mark.parametrize(
     "raw,expected",
     [
@@ -515,10 +519,11 @@ def test_normaliser_department(raw, expected):
         ("faster delivery ??", "Faster delivery"),
         ("  more sales！", "More sales"),
         ("提高销量？", "提高销量"),
+        ('"copy into excel first"', "Copy into excel first"),
     ],
 )
-def test_normaliser_impact(raw, expected):
-    assert normalise_field_value("impact", raw) == expected
+def test_normaliser_remaining_keys(key, raw, expected):
+    assert normalise_field_value(key, raw) == expected
 
 
 @pytest.mark.parametrize(
@@ -560,10 +565,9 @@ def test_extractor_prompt_cleans_every_value_and_never_keeps_typed_punctuation()
 
     text = ai_prompt_registry.PROMPT_KEYS["ideate_extractor"].fallback()
     lower = text.lower()
-    # W2: the owner's own example, and the punctuation rule.
-    assert "the manufactuirng?" in lower and "'manufacturing'" in lower
+    # W2: the punctuation rule (the department example is gone with the department field, AC-07/08).
     assert "question mark" in lower
-    assert "title case" in lower
+    assert "manufactuirng" not in lower and "title case" not in lower
     # W1: a stated idea gets the need behind it as its problem; a raw captured value is re-cleaned.
     assert "the need behind it" in lower and "never invent a problem for a message that names no idea" in lower
     assert "re-emit" in lower
@@ -621,3 +625,320 @@ def test_has_idea_parser_gives_none_for_missing_or_non_bool(configured, payload)
 
 def test_has_idea_defaults_to_none_on_a_failed_parse():
     assert IdeateExtraction().has_idea is None
+
+
+# --------------------------------------------------------------------------- #
+# IDEA-CAPTURE (13 Oct): the canny-style fields                               #
+# UAC: idea-capture-fields-13oct-acceptance-criteria.md                       #
+# --------------------------------------------------------------------------- #
+from app.services.ideation_extractor import IDEATE_EXTRACTION_JSON_SCHEMA  # noqa: E402
+
+_KEYS = {"problem", "desired_outcome", "current_workaround"}
+
+
+def _key_schema() -> dict:
+    return IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["fields"]["items"]["properties"]["key"]
+
+
+def test_ac01_schema_field_keys_are_exactly_the_three():
+    key = _key_schema()
+    assert set(key["enum"]) == _KEYS
+    assert len(key["enum"]) == 3
+    for dropped in ("proposed_solution", "impact", "department"):
+        assert dropped not in key["enum"]
+
+
+def test_ac02_schema_has_required_use_cases_array_of_strings():
+    schema = IDEATE_EXTRACTION_JSON_SCHEMA
+    assert "use_cases" in schema["required"]
+    prop = schema["properties"]["use_cases"]
+    assert prop["type"] == "array"
+    assert prop["items"] == {"type": "string"}
+    desc = prop["description"].lower()
+    assert "5" in desc
+    assert "never" in desc and "suggest" in desc
+    assert set(schema["required"]) == set(schema["properties"])
+
+
+def test_ac06_schema_descriptions_carry_each_field_meaning():
+    fields_desc = IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["fields"]["description"]
+    key_desc = _key_schema().get("description", "")
+    text = (fields_desc + " " + key_desc).lower()
+    assert "business problem" in text
+    for key in _KEYS:
+        assert key in text
+    for dropped in ("proposed_solution", "impact", "department"):
+        assert dropped not in text
+    assert "desired outcome" in text or "afterwards" in text
+    assert "workaround" in text
+
+
+def test_ac03_use_cases_are_cleaned_deduped_and_capped(configured):
+    out = _extraction(
+        configured,
+        {
+            "use_cases": [
+                "a dealer checks whether his PO shipped?",
+                "  ",
+                "",
+                '"A project customer checks the site delivery date"',
+                "A dealer checks whether his PO shipped",
+                "finance checks the invoice date",
+                "sales checks stock before quoting",
+                "logistics checks the truck slot",
+                "a sixth one that must be cut",
+            ]
+        },
+    )
+    assert out.use_cases == [
+        "A dealer checks whether his PO shipped",
+        "A project customer checks the site delivery date",
+        "Finance checks the invoice date",
+        "Sales checks stock before quoting",
+        "Logistics checks the truck slot",
+    ]
+
+
+def test_ac03_use_cases_default_empty_and_tolerate_absent_or_bad_values(configured):
+    assert IdeateExtraction().use_cases == []
+    assert _extraction(configured, {}).use_cases == []
+    assert _extraction(configured, {"use_cases": None}).use_cases == []
+    assert _extraction(configured, {"use_cases": ["", "   "]}).use_cases == []
+
+
+def test_ac04_unknown_field_keys_are_dropped(configured):
+    out = _extraction(
+        configured,
+        {
+            "fields": [
+                {"key": "problem", "value": "Quotes are priced by hand"},
+                {"key": "impact", "value": "Saves an hour a day"},
+                {"key": "proposed_solution", "value": "Build a pricing tool"},
+                {"key": "department", "value": "Sales"},
+                {"key": "current_workaround", "value": "Copy from Excel"},
+                {"key": "desired_outcome", "value": "Prices fill in by themselves"},
+            ]
+        },
+    )
+    assert out.fields == {
+        "problem": "Quotes are priced by hand",
+        "current_workaround": "Copy from Excel",
+        "desired_outcome": "Prices fill in by themselves",
+    }
+
+
+def test_ac07_fallback_prompt_names_the_four_fields_and_none_of_the_dropped():
+    from app.services import ai_prompt_registry
+
+    text = ai_prompt_registry.PROMPT_KEYS["ideate_extractor"].fallback()
+    for name in ("problem", "desired_outcome", "use_cases", "current_workaround"):
+        assert name in text
+    for dropped in ("proposed_solution", "impact", "department"):
+        assert dropped not in text, dropped
+    lowered = text.lower()
+    assert "business problem" in lowered
+    assert "empty" in lowered
+    assert "use cases" in lowered or "use_cases" in lowered
+    assert "never suggest" in lowered or "never invent" in lowered or "do not suggest" in lowered
+    assert "suggest" in lowered
+
+
+# --------------------------------------------------------------------------- #
+# IDEA-CAPTURE fix round 2 (reviewer B1): the routing rule lives IN THE       #
+# SCHEMA, so an owner-edited production prompt that still describes the old   #
+# fields cannot push a solution into `problem`.                               #
+# --------------------------------------------------------------------------- #
+import re  # noqa: E402
+
+
+def _schema_texts() -> dict[str, str]:
+    props = IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["fields"]
+    return {
+        "fields.description": props["description"].lower(),
+        "key.description": props["items"]["properties"]["key"].get("description", "").lower(),
+    }
+
+
+@pytest.fixture(params=["fields.description", "key.description"])
+def schema_text(request) -> str:
+    return _schema_texts()[request.param]
+
+
+def test_b1_problem_never_holds_a_solution_or_wish(schema_text):
+    assert re.search(
+        r"problem[^.;]{0,100}?\b(never|not|no)\b[^.;]{0,60}?(solution|wish|want)", schema_text
+    ) or re.search(
+        r"\b(never|not|no)\b[^.;]{0,60}?(solution|wish|want)[^.;]{0,60}?problem", schema_text
+    ), schema_text
+
+
+def test_b1_stated_solution_goes_to_desired_outcome_in_their_words(schema_text):
+    assert re.search(r"solution.{0,160}desired_outcome|desired_outcome.{0,160}solution", schema_text), schema_text
+    assert any(w in schema_text for w in ("their words", "own words", "their own", "verbatim")), schema_text
+
+
+def test_b1_a_named_cost_stays_in_problem(schema_text):
+    assert re.search(r"cost[^.;]{0,80}problem|problem[^.;]{0,80}cost", schema_text), schema_text
+
+
+def test_b1_dropped_fields_do_not_exist(schema_text):
+    # a stated benefit belongs in problem; a stated team name is not a field
+    assert "benefit" in schema_text, schema_text
+    assert re.search(
+        r"(team|department)[^.;]{0,80}\b(not|no|never)\b|\b(not|no|never)\b[^.;]{0,80}(team|department)",
+        schema_text,
+    ), schema_text
+
+
+def test_b1_fallback_prompt_has_no_leftover_department_example():
+    from app.services import ai_prompt_registry
+
+    assert "manufactur" not in ai_prompt_registry.PROMPT_KEYS["ideate_extractor"].fallback().lower()
+
+
+# --------------------------------------------------------------------------- #
+# IDEA-CAPTURE fix round 3 (crew live check, gpt-5.4-mini): truthfulness and  #
+# language rules live in the fallback prompt AND the schema.                  #
+# --------------------------------------------------------------------------- #
+def _fallback_text() -> str:
+    from app.services import ai_prompt_registry
+
+    return ai_prompt_registry.PROMPT_KEYS["ideate_extractor"].fallback().lower()
+
+
+def _bullet(text: str, name: str) -> str:
+    """The fallback's '- <name>:' bullet, up to the next bullet or blank line."""
+    m = re.search(rf"^- {re.escape(name)}\b.*?(?=^\s*-\s|\n\n|\Z)", text, re.S | re.M)
+    assert m, f"no '- {name}' bullet in the fallback"
+    return m.group(0)
+
+
+def _field_texts() -> dict[str, str]:
+    return _schema_texts()
+
+
+@pytest.fixture(params=["fields.description", "key.description"])
+def field_schema_text(request) -> str:
+    return _field_texts()[request.param]
+
+
+# a) use cases: a named situation, never a noun lifted from the problem
+def _assert_use_case_rule(t: str) -> None:
+    assert "situation" in t or "scenario" in t, t
+    assert any(w in t for w in ("noun", "phrase", "lifted", "copied", "word from")), t
+    assert "problem" in t, t
+
+
+def test_r3a_schema_use_cases_are_named_situations_never_lifted_from_the_problem():
+    _assert_use_case_rule(IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["use_cases"]["description"].lower())
+
+
+def test_r3a_fallback_use_cases_are_named_situations_never_lifted_from_the_problem():
+    _assert_use_case_rule(_bullet(_fallback_text(), "use_cases"))
+
+
+# b) desired outcome: only when a want or solution was stated; a complaint gives none
+def _assert_outcome_rule(t: str) -> None:
+    assert re.search(r"desired_outcome.{0,400}?(complaint|problem alone|only a problem|alone|only describes)", t, re.S), t
+    assert re.search(r"desired_outcome.{0,400}?\b(infer|guess|invent|assume)", t, re.S), t
+    assert "empty" in t or "leave it out" in t or "no desired_outcome" in t, t
+
+
+def test_r3b_schema_desired_outcome_needs_a_stated_want_and_is_never_inferred(field_schema_text):
+    _assert_outcome_rule(field_schema_text)
+
+
+def test_r3b_fallback_desired_outcome_needs_a_stated_want_and_is_never_inferred():
+    _assert_outcome_rule(_bullet(_fallback_text(), "desired_outcome"))
+
+
+# c) current workaround: what they do today, in en / ms / zh phrasings
+def test_r3c_schema_workaround_is_what_they_do_today_or_now(field_schema_text):
+    assert re.search(r"current_workaround.{0,300}?\b(now|right now)\b", field_schema_text, re.S), field_schema_text
+    assert "today" in field_schema_text
+
+
+def test_r3c_fallback_workaround_carries_multilingual_phrasings():
+    b = _bullet(_fallback_text(), "current_workaround")
+    for phrase in ("right now we", "sekarang kita", "现在只能"):
+        assert phrase in b, (phrase, b)
+
+
+# d) values and title are written in the language of the message
+def test_r3d_schema_title_is_in_the_message_language_never_translated():
+    t = IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["title"]["description"].lower()
+    assert "language" in t and "translat" in t, t
+
+
+def test_r3d_schema_fields_values_are_in_the_message_language_never_translated():
+    t = IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["fields"]["description"].lower()
+    assert "language" in t and "translat" in t, t
+
+
+def test_r3d_fallback_title_is_in_the_message_language():
+    b = _bullet(_fallback_text(), "title")
+    assert "language" in b, b
+
+
+# e) the golden script
+def _golden_module():
+    import importlib.util
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "ideation_capture_golden.py"
+    spec = importlib.util.spec_from_file_location("_ideation_capture_golden_under_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_r3e_golden_set_has_twelve_cases_with_zh_workaround_and_ms_solution_only():
+    mod = _golden_module()
+    cases = mod.GOLDEN
+    assert len(cases) >= 12
+    assert len({text for _label, text in cases}) == len(cases)
+    cjk = re.compile(r"[一-鿿]")
+    assert any(cjk.search(text) and ("现在" in text or "目前" in text) for _l, text in cases), "zh workaround case"
+    assert any(
+        ("solution" in label.lower())
+        and ("ms" in label.lower().split() or "malay" in label.lower())
+        and not cjk.search(text)
+        for label, text in cases
+    ), "Malay solution-only case (label names ms and solution)"
+
+
+def test_r3e_golden_docstring_names_the_migration_that_publishes_the_prompt():
+    doc = (_golden_module().__doc__ or "")
+    assert "idea_capture_fields_0001" in doc
+    assert "--from-db" in doc
+
+
+# --------------------------------------------------------------------------- #
+# IDEA-CAPTURE fix round 4: a stated "what we do now" sentence goes to        #
+# current_workaround and is not kept in problem (zh crew check).              #
+# --------------------------------------------------------------------------- #
+def _workaround_passages() -> dict[str, str]:
+    fields = IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["fields"]["description"].lower()
+    return {
+        "schema.fields.description": fields[fields.index("current_workaround"):],
+        "fallback.current_workaround": _bullet(_fallback_text(), "current_workaround"),
+    }
+
+
+@pytest.fixture(params=["schema.fields.description", "fallback.current_workaround"])
+def workaround_passage(request) -> str:
+    return _workaround_passages()[request.param]
+
+
+def test_r4_what_they_do_now_goes_to_workaround_and_not_into_problem(workaround_passage):
+    t = workaround_passage
+    assert re.search(
+        r"\b(?:not|never|leaves? out|left out|kept out)\b[^.]{0,120}?problem"
+        r"|problem[^.]{0,120}?\b(?:not|never|leaves? out|left out|kept out)\b",
+        t,
+    ), t
+    assert "现在只能" in t, t
+    # Crew live check (13 Oct): a list of phrasings alone left the coping sentence inside
+    # problem 3/5 on gpt-5.4-mini. What fixed it is a WORKED split: a zh message where the
+    # coping sentence is shown landing in current_workaround, problem keeping the rest.
+    assert re.search(r"current_workaround\W{0,6}(?:=|is)\s*\W?现在只能", t), t
